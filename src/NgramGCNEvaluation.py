@@ -1,6 +1,6 @@
 # ==============================================================================
 # Combined Protein-Protein Interaction Evaluation and N-gramGCN Embedding Generation Script
-# VERSION: Final, with selectable Full-Graph/Mini-Batch modes and Restored Logging
+# VERSION: 3.0 (Main Block Refactored for Compatibility)
 # ==============================================================================
 import os
 import sys
@@ -8,11 +8,11 @@ import shutil
 import numpy as np
 import pandas as pd
 import time
-import random
 import gc
 import h5py
 import math
 import re
+import random
 from tqdm.auto import tqdm
 from typing import List, Optional, Dict, Any, Set, Tuple, Union, Callable
 from collections import defaultdict, Counter
@@ -46,6 +46,17 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import community as community_louvain
 
+# Dask for memory-efficient graph construction
+try:
+    import dask
+    import dask.dataframe as dd
+    from dask.distributed import Client
+    import pyarrow
+
+    DASK_AVAILABLE = True
+except ImportError:
+    DASK_AVAILABLE = False
+
 # --- TensorFlow GPU Configuration ---
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 tf.get_logger().setLevel('ERROR')
@@ -60,67 +71,88 @@ if gpu_devices:
 else:
     print("TensorFlow: Warning: No GPU detected. Running on CPU.")
 
-# ==============================================================================
-# --- MAIN CONFIGURATION ---
-# ==============================================================================
-DEBUG_VERBOSE = True
-RANDOM_STATE = 42
-BASE_OUTPUT_DIR = "./ppi_evaluation_results_final/"
-
-# --- NEW: TRAINING MODE SELECTION ---
-TRAINING_MODE = 'full_graph'  # OPTIONS: 'full_graph', 'mini_batch'
-
-# --- N-gramGCN Generation Configuration ---
-RUN_AND_EVALUATE_NGRAM_GCN = True
-NGRAM_GCN_INPUT_FASTA_PATH = "C:/ProgramData/ProtDiGCN/uniprot_sequences_sample.fasta"
-NGRAM_GCN_OUTPUT_EMBEDDINGS_DIR = os.path.join(BASE_OUTPUT_DIR, "ngram_gcn_generated_embeddings")
-NGRAM_GCN_MAX_N = 5
-NGRAM_GCN_1GRAM_INIT_DIM = 64
-NGRAM_GCN_HIDDEN_DIM_1 = 128
-NGRAM_GCN_HIDDEN_DIM_2 = 64
-NGRAM_GCN_PE_MAX_LEN = 10
-NGRAM_GCN_DROPOUT = 0.5
-NGRAM_GCN_LR = 0.0005
-NGRAM_GCN_WEIGHT_DECAY = 1e-4
-NGRAM_GCN_EPOCHS_PER_LEVEL = 1000
-NGRAM_GCN_USE_VECTOR_COEFFS = True
-NGRAM_GCN_GENERATED_EMB_NAME = "NgramGCN-Generated"
-NGRAM_GCN_TASK_PER_LEVEL: Dict[int, str] = {1: 'community_label'}
-NGRAM_GCN_DEFAULT_TASK_MODE = 'next_node'
-
-# --- Mini-Batch Specific Configuration ---
-NGRAM_GCN_BATCH_SIZE = 512
-NGRAM_GCN_NUM_NEIGHBORS = [25, 15, 10]
-NGRAM_GCN_INFERENCE_BATCH_SIZE = 1024
-
-# --- Link Prediction Evaluation Configuration ---
-normal_positive_interactions_path = os.path.normpath('C:/ProgramData/ProtDiGCN/ground_truth/positive_interactions.csv')
-normal_negative_interactions_path = os.path.normpath('C:/ProgramData/ProtDiGCN/ground_truth/negative_interactions.csv')
-normal_sample_negative_pairs: Optional[int] = 20000
-normal_embedding_files_to_evaluate = [{"path": "C:/ProgramData/ProtDiGCN/models/per-protein.h5", "name": "ProtT5-Precomputed", "loader_func_key": "load_h5_embeddings_selectively"}, ]
-normal_output_main_dir = os.path.join(BASE_OUTPUT_DIR, "normal_run_output_combined")
-EDGE_EMBEDDING_METHOD_LP = 'concatenate'
-N_FOLDS_LP = 2
-PLOT_TRAINING_HISTORY_LP = True
-MLP_DENSE1_UNITS_LP = 128
-MLP_DROPOUT1_RATE_LP = 0.4
-MLP_DENSE2_UNITS_LP = 64
-MLP_DROPOUT2_RATE_LP = 0.4
-MLP_L2_REG_LP = 0.001
-BATCH_SIZE_LP = 64
-EPOCHS_LP = 10
-LEARNING_RATE_LP = 1e-3
-K_VALUES_FOR_RANKING_METRICS_LP = [10, 50, 100, 200]
-K_VALUES_FOR_TABLE_DISPLAY_LP = [50, 100]
-MAIN_EMBEDDING_NAME_FOR_STATS_LP = NGRAM_GCN_GENERATED_EMB_NAME if RUN_AND_EVALUATE_NGRAM_GCN else "ProtT5_Example_Data"
-STATISTICAL_TEST_METRIC_KEY_LP = 'test_auc_sklearn'
-STATISTICAL_TEST_ALPHA_LP = 0.05
-
 
 # ==============================================================================
-# START: ID PARSING & GRAPH CONSTRUCTION (FROM YOUR SCRIPT)
+# --- MAIN CONFIGURATION CLASS ---
+# ==============================================================================
+class ScriptConfig:
+    """
+    Centralized configuration class for the entire script.
+    Modify parameters here.
+    """
+
+    def __init__(self):
+        # --- GENERAL SETTINGS ---
+        self.DEBUG_VERBOSE = True
+        self.RANDOM_STATE = 42
+
+        # !!! IMPORTANT: SET YOUR BASE DIRECTORIES HERE !!!
+        # This is the root directory where your input data (FASTA, interaction files) is located.
+        self.BASE_DATA_DIR = "C:/ProgramData/ProtDiGCN/"
+        # This is the root directory where all outputs will be saved.
+        self.BASE_OUTPUT_DIR = "C:/ProgramData/ProtDiGCN/ppi_evaluation_results_final/"
+
+        # --- TRAINING MODE SELECTION ---
+        # 'full_graph': Original method, loading the entire graph. May learn better but uses more memory.
+        # 'mini_batch': Uses NeighborLoader for memory efficiency. Necessary for large graphs.
+        self.TRAINING_MODE = 'full_graph'  # OPTIONS: 'full_graph', 'mini_batch'
+
+        # --- N-gramGCN Generation Configuration ---
+        self.RUN_AND_EVALUATE_NGRAM_GCN = True
+        self.NGRAM_GCN_INPUT_FASTA_PATH = os.path.join(self.BASE_DATA_DIR, "uniprot_sequences_sample.fasta")
+        self.NGRAM_GCN_OUTPUT_EMBEDDINGS_DIR = os.path.join(self.BASE_OUTPUT_DIR, "ngram_gcn_generated_embeddings")
+        self.NGRAM_GCN_MAX_N = 5
+        self.NGRAM_GCN_1GRAM_INIT_DIM = 64
+        self.NGRAM_GCN_HIDDEN_DIM_1 = 128
+        self.NGRAM_GCN_HIDDEN_DIM_2 = 64
+        self.NGRAM_GCN_PE_MAX_LEN = 10  # Max positional encoding length within an n-gram
+        self.NGRAM_GCN_DROPOUT = 0.5
+        self.NGRAM_GCN_LR = 0.001
+        self.NGRAM_GCN_WEIGHT_DECAY = 1e-4
+        self.NGRAM_GCN_EPOCHS_PER_LEVEL = 1000
+        self.NGRAM_GCN_USE_VECTOR_COEFFS = True
+        self.NGRAM_GCN_GENERATED_EMB_NAME = "NgramGCN-Generated"
+        self.NGRAM_GCN_TASK_PER_LEVEL: Dict[int, str] = {1: 'community_label'}
+        self.NGRAM_GCN_DEFAULT_TASK_MODE = 'next_node'
+
+        # --- Mini-Batch Specific Configuration (only used if TRAINING_MODE = 'mini_batch') ---
+        self.NGRAM_GCN_BATCH_SIZE = 512
+        self.NGRAM_GCN_NUM_NEIGHBORS = [25, 15, 10]
+        self.NGRAM_GCN_INFERENCE_BATCH_SIZE = 1024
+
+        # --- Efficient Graph Construction Config ---
+        self.DASK_CHUNK_SIZE = 2000000
+        self.TEMP_FILE_DIR = os.path.join(self.BASE_OUTPUT_DIR, "temp")
+
+        # --- Link Prediction Evaluation Configuration ---
+        self.LP_POSITIVE_INTERACTIONS_PATH = os.path.join(self.BASE_DATA_DIR, 'ground_truth/positive_interactions.csv')
+        self.LP_NEGATIVE_INTERACTIONS_PATH = os.path.join(self.BASE_DATA_DIR, 'ground_truth/negative_interactions.csv')
+        self.LP_SAMPLE_NEGATIVE_PAIRS: Optional[int] = 20000
+        self.LP_EMBEDDING_FILES_TO_EVALUATE = [{"path": os.path.join(self.BASE_DATA_DIR, "models/per-protein.h5"), "name": "ProtT5-Precomputed", "loader_func_key": "load_h5_embeddings_selectively"}, ]
+        self.LP_OUTPUT_MAIN_DIR = os.path.join(self.BASE_OUTPUT_DIR, "link_prediction_evaluation")
+        self.LP_EDGE_EMBEDDING_METHOD = 'concatenate'
+        self.LP_N_FOLDS = 2
+        self.LP_PLOT_TRAINING_HISTORY = True
+        self.LP_MLP_DENSE1_UNITS = 128
+        self.LP_MLP_DROPOUT1_RATE = 0.4
+        self.LP_MLP_DENSE2_UNITS = 64
+        self.LP_MLP_DROPOUT2_RATE = 0.4
+        self.LP_MLP_L2_REG = 0.001
+        self.LP_BATCH_SIZE = 64
+        self.LP_EPOCHS = 10
+        self.LP_LEARNING_RATE = 1e-3
+        self.LP_K_VALUES_FOR_RANKING_METRICS = [10, 50, 100, 200]
+        self.LP_K_VALUES_FOR_TABLE_DISPLAY = [50, 100]
+        self.LP_STATISTICAL_TEST_METRIC_KEY = 'test_auc_sklearn'
+        self.LP_STATISTICAL_TEST_ALPHA = 0.05
+
+
+# (The rest of the script, including all function definitions from the previous turn, remains unchanged here...)
+# ==============================================================================
+# START: ID PARSING & EFFICIENT GRAPH CONSTRUCTION
 # ==============================================================================
 def extract_canonical_id_and_type(header_or_id_line: str) -> tuple[Optional[str], Optional[str]]:
+    """Extracts a canonical protein identifier (like a UniProt ID) from a FASTA header."""
     hid = header_or_id_line.strip().lstrip('>')
     up_match = re.match(r"^(?:sp|tr)\|([A-Z0-9]{6,10}(?:-\d+)?)\|", hid, re.IGNORECASE)
     if up_match: return "UniProt", up_match.group(1)
@@ -147,10 +179,11 @@ def extract_canonical_id_and_type(header_or_id_line: str) -> tuple[Optional[str]
     return "Unknown", hid
 
 
-def parse_fasta_sequences_with_ids_ngram(filepath: str) -> list[tuple[str, str]]:
+def parse_fasta_sequences_with_ids_ngram(filepath: str, config: ScriptConfig) -> list[tuple[str, str]]:
+    """Parses a FASTA file to extract canonical IDs and sequences."""
     protein_data = []
     if not os.path.exists(filepath):
-        if DEBUG_VERBOSE: print(f"NgramGCN: FASTA file not found at {filepath}")
+        if config.DEBUG_VERBOSE: print(f"NgramGCN: FASTA file not found at {filepath}")
         return protein_data
     try:
         for record in SeqIO.parse(filepath, "fasta"):
@@ -158,77 +191,142 @@ def parse_fasta_sequences_with_ids_ngram(filepath: str) -> list[tuple[str, str]]
             if canonical_id:
                 protein_data.append((canonical_id, str(record.seq).upper()))
             else:
-                if DEBUG_VERBOSE: print(f"NgramGCN: Could not extract canonical ID from '{record.id[:50]}...', using full ID as fallback: {record.id}")
+                if config.DEBUG_VERBOSE: print(f"NgramGCN: Could not extract canonical ID from '{record.id[:50]}...', using full ID as fallback: {record.id}")
                 protein_data.append((record.id, str(record.seq).upper()))
-        if DEBUG_VERBOSE and not protein_data:
+        if config.DEBUG_VERBOSE and not protein_data:
             print(f"NgramGCN: Warning - Parsed 0 sequences from {filepath}")
-        elif DEBUG_VERBOSE:
+        elif config.DEBUG_VERBOSE:
             print(f"NgramGCN: Parsed {len(protein_data)} sequences with extracted/standardized IDs from {filepath}")
     except Exception as e:
         print(f"NgramGCN: Error parsing FASTA file {filepath}: {e}")
     return protein_data
 
 
-def get_ngrams_and_transitions_ngram(sequences: list[str], n: int):
-    all_ngrams, all_transitions = [], []
-    for seq in sequences:
-        if len(seq) < n: continue
-        current_seq_ngrams = [tuple(seq[i: i + n]) for i in range(len(seq) - n + 1)]
-        all_ngrams.extend(current_seq_ngrams)
-        for i in range(len(current_seq_ngrams) - 1): all_transitions.append((current_seq_ngrams[i], current_seq_ngrams[i + 1]))
-    return all_ngrams, all_transitions
+def stream_ngram_chunks_from_fasta(fasta_path: str, n: int, chunk_size: int):
+    """Yields chunks of n-grams from a FASTA file for memory-efficient processing."""
+    ngrams_buffer = []
+    for record in SeqIO.parse(fasta_path, "fasta"):
+        seq = str(record.seq).upper()
+        if len(seq) >= n:
+            for i in range(len(seq) - n + 1):
+                ngrams_buffer.append("".join(seq[i: i + n]))
+                if len(ngrams_buffer) >= chunk_size:
+                    yield pd.DataFrame(ngrams_buffer, columns=['ngram']).astype('string')
+                    ngrams_buffer = []
+    if ngrams_buffer:
+        yield pd.DataFrame(ngrams_buffer, columns=['ngram']).astype('string')
 
 
-def build_ngram_graph_data_ngram(ngrams: list[tuple], transitions: list[tuple[tuple, tuple]], node_prob_from_prev_graph: Optional[dict[tuple, float]] = None, n_val: int = 1) -> tuple[
-    Optional[Data], dict[tuple, int], dict[int, tuple]]:
-    if not ngrams: return None, {}, {}
-    unique_ngrams_list = sorted(list(set(ngrams)))
-    ngram_to_idx = {ngram: i for i, ngram in enumerate(unique_ngrams_list)}
-    idx_to_ngram = {i: ngram for ngram, i in ngram_to_idx.items()}
-    num_nodes = len(unique_ngrams_list)
+def stream_transitions_from_fasta(fasta_path: str, n: int):
+    """Yields n-gram to n-gram transitions from sequences in a FASTA file."""
+    for record in SeqIO.parse(fasta_path, "fasta"):
+        seq = str(record.seq).upper()
+        if len(seq) >= n + 1:
+            current_seq_ngrams = ["".join(seq[i: i + n]) for i in range(len(seq) - n + 1)]
+            for i in range(len(current_seq_ngrams) - 1):
+                yield (current_seq_ngrams[i], current_seq_ngrams[i + 1])
 
-    source_nodes_idx, target_nodes_idx, edge_weights = [], [], []
-    edge_counts = Counter(transitions)
-    source_ngram_outgoing_counts = defaultdict(int)
-    for (src_ng, _), count in edge_counts.items(): source_ngram_outgoing_counts[src_ng] += count
 
-    for (source_ngram, target_ngram), count in edge_counts.items():
-        if source_ngram in ngram_to_idx and target_ngram in ngram_to_idx:
-            source_idx, target_idx = ngram_to_idx[source_ngram], ngram_to_idx[target_ngram]
-            transition_prob = count / source_ngram_outgoing_counts[source_ngram] if source_ngram_outgoing_counts[source_ngram] > 0 else 0.0
-            if transition_prob > 1e-9:
-                source_nodes_idx.append(source_idx)
-                target_nodes_idx.append(target_idx)
-                edge_weights.append(transition_prob)
+def build_node_map_with_dask(fasta_path: str, n: int, output_parquet_path: str, chunk_size: int):
+    """
+    Pass 1 of graph construction. Uses Dask to find all unique n-grams in a FASTA file
+    and assigns a unique integer ID to each, saving the map to a Parquet file.
+    """
+    if not DASK_AVAILABLE:
+        raise ImportError("Dask is required for graph construction but not installed.")
 
-    data = Data()
-    data.num_nodes = num_nodes
-    if source_nodes_idx:
-        edge_index = torch.tensor([source_nodes_idx, target_nodes_idx], dtype=torch.long)
-        edge_attr_squeezed = torch.tensor(edge_weights, dtype=torch.float)
-        data.edge_index_out = edge_index
-        data.edge_weight_out = edge_attr_squeezed
-        data.edge_index_in = edge_index.flip(dims=[0]) if edge_index.numel() > 0 else torch.empty((2, 0), dtype=torch.long)
-        data.edge_weight_in = edge_attr_squeezed
-    else:
-        data.edge_index_out = torch.empty((2, 0), dtype=torch.long)
-        data.edge_weight_out = torch.empty(0, dtype=torch.float)
-        data.edge_index_in = torch.empty((2, 0), dtype=torch.long)
-        data.edge_weight_in = torch.empty(0, dtype=torch.float)
-        if num_nodes == 0: return None, ngram_to_idx, idx_to_ngram
+    client = None
+    try:
+        client = Client()
+        print(f"Dask client dashboard available at: {client.dashboard_link}")
+        print("Pass 1: Discovering unique n-grams with Dask...")
+        lazy_chunks = [dask.delayed(chunk) for chunk in stream_ngram_chunks_from_fasta(fasta_path, n, chunk_size)]
+        ddf = dd.from_delayed(lazy_chunks, meta={'ngram': 'string'})
 
+        unique_ngrams_ddf = ddf.drop_duplicates().reset_index(drop=True)
+        unique_ngrams_ddf['id'] = 1
+        unique_ngrams_ddf['id'] = (unique_ngrams_ddf['id'].cumsum() - 1).astype('int64')
+
+        print("Executing Dask computation and writing to Parquet...")
+        unique_ngrams_ddf.to_parquet(output_parquet_path, engine='pyarrow', write_index=False, overwrite=True, compression=None)
+        print(f"Pass 1 Complete. N-gram map saved to: {output_parquet_path}")
+    finally:
+        if client:
+            client.close()
+
+
+def build_edge_file_from_stream(fasta_path: str, n: int, ngram_to_idx_series: pd.Series, output_edge_path: str):
+    """
+    Pass 2 of graph construction. Streams n-gram transitions, converts them to integer IDs
+    using the pre-computed map, and writes the edge list to a CSV file.
+    """
+    print(f"Pass 2: Generating edge list and saving to {output_edge_path}...")
+    with open(output_edge_path, 'w') as f:
+        for source_ngram, target_ngram in tqdm(stream_transitions_from_fasta(fasta_path, n), desc="Generating edges"):
+            source_id = ngram_to_idx_series.get(source_ngram)
+            target_id = ngram_to_idx_series.get(target_ngram)
+            if source_id is not None and target_id is not None:
+                f.write(f"{int(source_id)},{int(target_id)}\n")
+    print("Pass 2 Complete: Edge file has been created.")
+
+
+def build_graph_from_disk(parquet_path: str, edge_file_path: str) -> Optional[Data]:
+    """
+    Constructs the final PyTorch Geometric `Data` object from the n-gram map (Parquet)
+    and the edge list (CSV). Calculates transition probabilities for edge weights.
+    """
+    print("Building final graph object from disk files...")
+    if not os.path.exists(parquet_path) or not os.path.exists(edge_file_path):
+        print("Error: Graph disk files not found.")
+        return None
+
+    map_df = pd.read_parquet(parquet_path)
+    num_nodes = len(map_df)
+    if num_nodes == 0: return None
+
+    ngram_to_idx = pd.Series(map_df.id.values, index=map_df.ngram).to_dict()
+    idx_to_ngram = {v: k for k, v in ngram_to_idx.items()}
+
+    edge_df = pd.read_csv(edge_file_path, header=None, names=['source', 'target'])
+
+    data = Data(num_nodes=num_nodes)
+    data.ngram_to_idx = ngram_to_idx
+    data.idx_to_ngram = idx_to_ngram
+
+    source_nodes = torch.tensor(edge_df['source'].values, dtype=torch.long)
+    target_nodes = torch.tensor(edge_df['target'].values, dtype=torch.long)
+    directed_edge_index = torch.stack([source_nodes, target_nodes], dim=0)
+
+    # Efficiently calculate edge weights (transition probabilities)
+    edge_counts = edge_df.groupby(['source', 'target']).size()
+    source_outgoing_counts = edge_df.groupby('source').size()
+    edge_weights_series = edge_counts / source_outgoing_counts.loc[edge_counts.index.get_level_values('source')].values
+    edge_weights_df = edge_weights_series.reset_index(name='weight')
+
+    # Align weights with the original edge_df order
+    merged_df = pd.merge(edge_df.reset_index(), edge_weights_df, on=['source', 'target'], how='left')
+    merged_df = merged_df.sort_values('index').set_index('index')
+
+    edge_weights_tensor = torch.tensor(merged_df['weight'].values, dtype=torch.float)
+
+    data.edge_index_out = directed_edge_index
+    data.edge_weight_out = edge_weights_tensor
+    data.edge_index_in = directed_edge_index.flip(dims=[0])
+    data.edge_weight_in = edge_weights_tensor  # Assuming symmetric weights for in-edges for this model
+    data.edge_index = to_undirected(directed_edge_index, num_nodes=num_nodes)
+
+    # Prepare labels for the 'next_node' prediction task
     adj_for_next_node_task = defaultdict(list)
-    for (source_ngram, target_ngram) in transitions:
-        if source_ngram in ngram_to_idx and target_ngram in ngram_to_idx:
-            adj_for_next_node_task[ngram_to_idx[source_ngram]].append(ngram_to_idx[target_ngram])
+    for _, row in edge_df.iterrows():
+        adj_for_next_node_task[row['source']].append(row['target'])
 
     y_next_node = torch.full((num_nodes,), -1, dtype=torch.long)
     for src_node, successors in adj_for_next_node_task.items():
-        if successors:
-            y_next_node[src_node] = random.choice(successors)
+        if successors: y_next_node[src_node] = random.choice(successors)
     data.y_next_node = y_next_node
 
-    return data, ngram_to_idx, idx_to_ngram
+    print("Graph object created successfully.")
+    return data
 
 
 # ==============================================================================
@@ -236,8 +334,10 @@ def build_ngram_graph_data_ngram(ngrams: list[tuple], transitions: list[tuple[tu
 # ==============================================================================
 
 class CustomDiGCNLayerPyG_ngram(MessagePassing):
+    """Custom Directed GCN Layer for the full-graph model."""
+
     def __init__(self, in_channels: int, out_channels: int, num_nodes_for_coeffs: int, use_vector_coeffs: bool = True):
-        super(CustomDiGCNLayerPyG_ngram, self).__init__(aggr='add')
+        super().__init__(aggr='add')
         self.lin_main_in = nn.Linear(in_channels, out_channels, bias=False)
         self.lin_main_out = nn.Linear(in_channels, out_channels, bias=False)
         self.lin_skip = nn.Linear(in_channels, out_channels, bias=False)
@@ -246,7 +346,6 @@ class CustomDiGCNLayerPyG_ngram(MessagePassing):
         self.bias_skip_in = nn.Parameter(torch.Tensor(out_channels))
         self.bias_skip_out = nn.Parameter(torch.Tensor(out_channels))
         self.use_vector_coeffs = use_vector_coeffs
-        self.num_nodes_for_coeffs_init = num_nodes_for_coeffs
         actual_vec_size = max(1, num_nodes_for_coeffs)
         if self.use_vector_coeffs:
             self.C_in_vec = nn.Parameter(torch.Tensor(actual_vec_size, 1))
@@ -286,9 +385,9 @@ class CustomDiGCNLayerPyG_ngram(MessagePassing):
         c_in_final = self.C_in_vec if self.use_vector_coeffs else self.C_in
         c_out_final = self.C_out_vec if self.use_vector_coeffs else self.C_out
 
+        # This logic handles potential size mismatches, especially during mini-batching if this layer were used there.
         if self.use_vector_coeffs and c_in_final.size(0) != x.size(0):
-            if c_in_final.size(0) > 0 and c_in_final.size(0) != 1:
-                if DEBUG_VERBOSE: print(f"NgramGCN Layer Warning: C_vec size ({c_in_final.size(0)}) != x.size(0) ({x.size(0)}). Resizing.")
+            # Fallback to repeating the coefficients if sizes don't match
             c_in_final = c_in_final.view(-1).repeat(math.ceil(x.size(0) / c_in_final.size(0)))[:x.size(0)].view(-1, 1)
             c_out_final = c_out_final.view(-1).repeat(math.ceil(x.size(0) / c_out_final.size(0)))[:x.size(0)].view(-1, 1)
 
@@ -300,19 +399,17 @@ class CustomDiGCNLayerPyG_ngram(MessagePassing):
 
 
 class ProtDiGCNEncoderDecoder_ngram(nn.Module):
+    """The main GCN model for full-graph training, incorporating residual connections and positional encoding."""
+
     def __init__(self, num_initial_features: int, hidden_dim1: int, hidden_dim2: int, num_graph_nodes_for_gnn_coeffs: int, task_num_output_classes: int, n_gram_length_for_pe: int, one_gram_embed_dim_for_pe: int,
-                 max_allowable_len_for_pe_layer: int, dropout_rate: float, use_vector_coeffs_in_gnn: bool = True):
+                 max_len_for_pe: int, dropout_rate: float, use_vector_coeffs_in_gnn: bool = True):
         super().__init__()
         self.n_gram_length_for_pe = n_gram_length_for_pe
         self.one_gram_embed_dim_for_pe = one_gram_embed_dim_for_pe
         self.dropout_rate = dropout_rate
         self.l2_norm_eps = 1e-12
-        self.learnable_pe_active = False
-        if self.one_gram_embed_dim_for_pe > 0 and max_allowable_len_for_pe_layer > 0:
-            self.positional_encoder_layer = nn.Embedding(max_allowable_len_for_pe_layer, self.one_gram_embed_dim_for_pe)
-            self.learnable_pe_active = True
-        else:
-            self.positional_encoder_layer = None
+
+        self.positional_encoder_layer = nn.Embedding(max_len_for_pe, self.one_gram_embed_dim_for_pe) if one_gram_embed_dim_for_pe > 0 and max_len_for_pe > 0 else None
 
         self.conv1 = CustomDiGCNLayerPyG_ngram(num_initial_features, hidden_dim1, num_graph_nodes_for_gnn_coeffs, use_vector_coeffs_in_gnn)
         self.conv2 = CustomDiGCNLayerPyG_ngram(hidden_dim1, hidden_dim1, num_graph_nodes_for_gnn_coeffs, use_vector_coeffs_in_gnn)
@@ -322,27 +419,38 @@ class ProtDiGCNEncoderDecoder_ngram(nn.Module):
         self.residual_proj_3 = nn.Linear(hidden_dim1, hidden_dim2) if hidden_dim1 != hidden_dim2 else nn.Identity()
 
         self.decoder_fc = nn.Linear(hidden_dim2, task_num_output_classes)
-        self.final_normalized_embedding_output = None
 
     def _apply_positional_encoding(self, x: torch.Tensor) -> torch.Tensor:
-        if not self.learnable_pe_active or self.positional_encoder_layer is None:
+        """
+        Applies learnable positional encoding to the input features.
+        Crucially, it clones the input tensor to avoid in-place modification.
+        """
+        if self.positional_encoder_layer is None:
             return x
 
-        x_to_modify = x.clone()
-        if self.n_gram_length_for_pe == 1 and x_to_modify.shape[1] == self.one_gram_embed_dim_for_pe:
-            if self.positional_encoder_layer.num_embeddings > 0:
-                position_idx = torch.tensor([0], device=x.device, dtype=torch.long)
-                x_to_modify = x_to_modify + self.positional_encoder_layer(position_idx)
-        elif self.n_gram_length_for_pe > 1 and x_to_modify.shape[1] == self.n_gram_length_for_pe * self.one_gram_embed_dim_for_pe:
-            x_reshaped = x_to_modify.view(-1, self.n_gram_length_for_pe, self.one_gram_embed_dim_for_pe)
-            num_positions_to_encode = min(self.n_gram_length_for_pe, self.positional_encoder_layer.num_embeddings)
-            if num_positions_to_encode > 0:
-                position_indices = torch.arange(0, num_positions_to_encode, device=x.device, dtype=torch.long)
-                pe_to_add = self.positional_encoder_layer(position_indices)
-                modified_slice = x_reshaped[:, :num_positions_to_encode, :] + pe_to_add.unsqueeze(0)
-                final_reshaped = torch.cat((modified_slice, x_reshaped[:, num_positions_to_encode:, :]), dim=1) if num_positions_to_encode < self.n_gram_length_for_pe else modified_slice
-                x_to_modify = final_reshaped.view(-1, self.n_gram_length_for_pe * self.one_gram_embed_dim_for_pe)
-        return x_to_modify
+        # --- FIX: Clone the tensor to prevent modifying the original data.x ---
+        x_pe = x.clone()
+
+        # Reshape for PE: (num_nodes, n * one_gram_dim) -> (num_nodes, n, one_gram_dim)
+        try:
+            x_reshaped = x_pe.view(-1, self.n_gram_length_for_pe, self.one_gram_embed_dim_for_pe)
+        except RuntimeError:
+            # This can happen if the feature dimension doesn't match the expected PE dimensions,
+            # especially for n > 1. In that case, we skip PE.
+            return x
+
+        # Get number of positions to encode, cannot exceed n-gram length or embedding layer size
+        num_positions_to_encode = min(self.n_gram_length_for_pe, self.positional_encoder_layer.num_embeddings)
+
+        if num_positions_to_encode > 0:
+            position_indices = torch.arange(0, num_positions_to_encode, device=x.device, dtype=torch.long)
+            pe_to_add = self.positional_encoder_layer(position_indices)  # Shape: (num_pos, one_gram_dim)
+
+            # Add PE to the corresponding positions in each n-gram
+            x_reshaped[:, :num_positions_to_encode, :] = x_reshaped[:, :num_positions_to_encode, :] + pe_to_add.unsqueeze(0)
+
+        # Reshape back to original feature dimension
+        return x_reshaped.view(-1, self.n_gram_length_for_pe * self.one_gram_embed_dim_for_pe)
 
     def forward(self, data: Data) -> tuple[torch.Tensor, torch.Tensor]:
         x = data.x
@@ -350,48 +458,56 @@ class ProtDiGCNEncoderDecoder_ngram(nn.Module):
         edge_index_out, edge_weight_out = data.edge_index_out, data.edge_weight_out
 
         x_pe = self._apply_positional_encoding(x)
+
+        # Layer 1
         h1_conv_out = self.conv1(x_pe, edge_index_in, edge_weight_in, edge_index_out, edge_weight_out)
         x_proj1 = self.residual_proj_1(x_pe)
         h1_res_sum = x_proj1 + h1_conv_out
         h1_activated = F.tanh(h1_res_sum)
         h1 = F.dropout(h1_activated, p=self.dropout_rate, training=self.training)
 
+        # Layer 2
         h2_conv_out = self.conv2(h1, edge_index_in, edge_weight_in, edge_index_out, edge_weight_out)
-        h2_res_sum = h1 + h2_conv_out
+        h2_res_sum = h1 + h2_conv_out  # Residual connection
         h2_activated = F.tanh(h2_res_sum)
         h2 = F.dropout(h2_activated, p=self.dropout_rate, training=self.training)
 
+        # Layer 3
         h3_conv_out = self.conv3(h2, edge_index_in, edge_weight_in, edge_index_out, edge_weight_out)
         h2_proj3 = self.residual_proj_3(h2)
         h3_res_sum = h2_proj3 + h3_conv_out
         final_gcn_activated_output = F.tanh(h3_res_sum)
 
+        # Decoder and Final Embeddings
         h_embed_for_decoder_dropped = F.dropout(final_gcn_activated_output, p=self.dropout_rate, training=self.training)
         task_logits = self.decoder_fc(h_embed_for_decoder_dropped)
+
         norm = torch.norm(final_gcn_activated_output, p=2, dim=1, keepdim=True)
-        self.final_normalized_embedding_output = final_gcn_activated_output / (norm + self.l2_norm_eps)
+        final_normalized_embedding_output = final_gcn_activated_output / (norm + self.l2_norm_eps)
 
-        return F.log_softmax(task_logits, dim=-1), self.final_normalized_embedding_output
+        return F.log_softmax(task_logits, dim=-1), final_normalized_embedding_output
 
 
-def train_ngram_model_full_graph(model: ProtDiGCNEncoderDecoder_ngram, data: Data, optimizer: optim.Optimizer, epochs: int, device: torch.device, task_mode: str):
+def train_ngram_model_full_graph(model: ProtDiGCNEncoderDecoder_ngram, data: Data, optimizer: optim.Optimizer, epochs: int, device: torch.device, task_mode: str, config: ScriptConfig):
+    """Training loop for the full-graph model."""
     model.train()
     model.to(device)
     data = data.to(device)
     criterion = nn.NLLLoss()
 
+    # Determine the target labels based on the task
     if task_mode == 'next_node':
         if not hasattr(data, 'y_next_node'):
-            if DEBUG_VERBOSE: print(f"NgramGCN ({task_mode}): 'y_next_node' attribute missing. Cannot train.")
+            if config.DEBUG_VERBOSE: print(f"NgramGCN ({task_mode}): 'y_next_node' attribute missing. Cannot train.")
             return
         targets = data.y_next_node
-        train_mask = targets != -1
+        train_mask = targets != -1  # Only train on nodes with successors
         if train_mask.sum() == 0:
-            if DEBUG_VERBOSE: print(f"NgramGCN ({task_mode}): No valid training samples. Cannot train.")
+            if config.DEBUG_VERBOSE: print(f"NgramGCN ({task_mode}): No valid training samples. Cannot train.")
             return
     elif task_mode == 'community_label':
         if not hasattr(data, 'y_task_labels'):
-            if DEBUG_VERBOSE: print(f"NgramGCN ({task_mode}): 'y_task_labels' attribute missing. Cannot train.")
+            if config.DEBUG_VERBOSE: print(f"NgramGCN ({task_mode}): 'y_task_labels' attribute missing. Cannot train.")
             return
         targets = data.y_task_labels
     else:
@@ -412,13 +528,15 @@ def train_ngram_model_full_graph(model: ProtDiGCNEncoderDecoder_ngram, data: Dat
             loss.backward()
             optimizer.step()
             if epoch % (max(1, epochs // 20)) == 0 or epoch == epochs:
-                if DEBUG_VERBOSE: print(f"NgramGCN ({task_mode}): Epoch: {epoch:03d}, Loss: {loss.item():.4f}")
+                if config.DEBUG_VERBOSE: print(f"NgramGCN ({task_mode}): Epoch: {epoch:03d}, Loss: {loss.item():.4f}")
 
 
 # ==============================================================================
 # START: MINI-BATCH MODEL AND TRAINING (NEW ALTERNATIVE)
 # ==============================================================================
 class ProtDiGCNEncoderDecoder_minibatch(nn.Module):
+    """A standard GCN model designed for mini-batch training using PyG's NeighborLoader."""
+
     def __init__(self, in_channels, hidden_channels1, hidden_channels2, out_channels, dropout):
         super().__init__()
         self.conv1 = GCNConv(in_channels, hidden_channels1)
@@ -443,35 +561,43 @@ class ProtDiGCNEncoderDecoder_minibatch(nn.Module):
         return F.log_softmax(task_logits, dim=-1), final_embeddings
 
     @torch.no_grad()
-    def inference(self, full_graph_x, inference_loader, device):
+    def inference(self, full_graph_x, inference_loader, device, config: ScriptConfig):
+        """Performs batched inference to generate embeddings for all nodes in the graph."""
         self.eval()
         all_embeds = []
-        for batch in tqdm(inference_loader, desc="Batched Inference", leave=False, disable=not DEBUG_VERBOSE):
+        for batch in tqdm(inference_loader, desc="Batched Inference", leave=False, disable=not config.DEBUG_VERBOSE):
             batch = batch.to(device)
-            x = full_graph_x[batch.n_id].to(device)
+            # We need the features of all nodes in the current computation graph (batch + neighbors)
+            x_batch = full_graph_x[batch.n_id].to(device)
 
-            x = self.conv1(x, batch.edge_index)
+            # The model's forward pass is essentially run here
+            x = self.conv1(x_batch, batch.edge_index)
             x = F.relu(x)
             x_final_gcn = self.conv2(x, batch.edge_index)
 
             norm = torch.norm(x_final_gcn, p=2, dim=1, keepdim=True)
             normalized_embeds = x_final_gcn / (norm + self.l2_norm_eps)
+
+            # We only keep the embeddings for the root nodes of the batch
             all_embeds.append(normalized_embeds[:batch.batch_size].cpu())
+
         return torch.cat(all_embeds, dim=0)
 
 
-def train_ngram_model_minibatch(model, loader: NeighborLoader, optimizer: optim.Optimizer, epochs: int, device: torch.device, task_mode: str):
+def train_ngram_model_minibatch(model, loader: NeighborLoader, optimizer: optim.Optimizer, epochs: int, device: torch.device, task_mode: str, config: ScriptConfig):
+    """Training loop for the mini-batch model."""
     model.train()
     model.to(device)
     criterion = nn.NLLLoss()
     for epoch in range(1, epochs + 1):
         total_loss = 0
-        pbar = tqdm(loader, desc=f"Mini-Batch Epoch {epoch:03d}", leave=False, disable=not DEBUG_VERBOSE)
+        pbar = tqdm(loader, desc=f"Mini-Batch Epoch {epoch:03d}", leave=False, disable=not config.DEBUG_VERBOSE)
         for batch in pbar:
             batch = batch.to(device)
             optimizer.zero_grad()
             log_probs, _ = model(batch)
             log_probs_batch = log_probs[:batch.batch_size]
+
             loss = None
             if task_mode == 'community_label':
                 targets = batch.y_task_labels[:batch.batch_size]
@@ -491,39 +617,47 @@ def train_ngram_model_minibatch(model, loader: NeighborLoader, optimizer: optim.
         if hasattr(loader, 'dataset') and loader.dataset is not None and len(loader.dataset) > 0:
             avg_loss = total_loss / len(loader.dataset)
             if epoch % (max(1, epochs // 20)) == 0 or epoch == epochs:
-                if DEBUG_VERBOSE:
+                if config.DEBUG_VERBOSE:
                     print(f"NgramGCN ({task_mode}): Epoch: {epoch:03d}, Avg Loss: {avg_loss:.4f}")
 
 
-def extract_node_embeddings_ngram_batched(model, full_graph_data: Data, config: Dict, device: torch.device) -> Optional[np.ndarray]:
+def extract_node_embeddings_ngram_batched(model, full_graph_data: Data, config: ScriptConfig, device: torch.device) -> Optional[np.ndarray]:
+    """Wrapper function to perform batched inference for the mini-batch model."""
     model.eval()
     model.to(device)
-    inference_loader = NeighborLoader(full_graph_data, num_neighbors=config.get('num_neighbors', [-1]), batch_size=config.get('inference_batch_size', 1024), shuffle=False)
+    inference_loader = NeighborLoader(full_graph_data, num_neighbors=config.NGRAM_GCN_NUM_NEIGHBORS, batch_size=config.NGRAM_GCN_INFERENCE_BATCH_SIZE, shuffle=False)
     with torch.no_grad():
-        all_node_embeddings = model.inference(full_graph_data.x.to(device), inference_loader, device)
+        all_node_embeddings = model.inference(full_graph_data.x.to(device), inference_loader, device, config)
     return all_node_embeddings.cpu().numpy() if all_node_embeddings is not None else None
 
 
 # ==============================================================================
 # START: GENERAL UTILITY FUNCTIONS
 # ==============================================================================
-def detect_communities_louvain(edge_index: torch.Tensor, num_nodes: int, random_state_louvain: Optional[int] = None) -> Tuple[Optional[torch.Tensor], int]:
+def detect_communities_louvain(edge_index: torch.Tensor, num_nodes: int, config: ScriptConfig) -> Tuple[Optional[torch.Tensor], int]:
+    """Detects node communities using the Louvain algorithm."""
     if num_nodes == 0: return None, 0
     if edge_index.numel() == 0:
         return torch.arange(num_nodes, dtype=torch.long), num_nodes
+
+    # Use the undirected graph for community detection
     nx_graph = nx.Graph()
     nx_graph.add_nodes_from(range(num_nodes))
     nx_graph.add_edges_from(edge_index.cpu().numpy().T)
+
     if nx_graph.number_of_edges() == 0:
         return torch.arange(num_nodes, dtype=torch.long), num_nodes
+
     try:
-        partition = community_louvain.best_partition(nx_graph, random_state=random_state_louvain)
+        partition = community_louvain.best_partition(nx_graph, random_state=config.RANDOM_STATE)
         if not partition: return torch.arange(num_nodes, dtype=torch.long), num_nodes
+
         labels = torch.zeros(num_nodes, dtype=torch.long)
         for node, comm_id in partition.items():
             labels[node] = comm_id
+
         num_communities = len(torch.unique(labels))
-        if DEBUG_VERBOSE: print(f"NgramGCN Community: Detected {num_communities} communities.")
+        if config.DEBUG_VERBOSE: print(f"NgramGCN Community: Detected {num_communities} communities.")
         return labels, num_communities
     except Exception as e:
         print(f"NgramGCN Community Error: {e}.")
@@ -531,294 +665,385 @@ def detect_communities_louvain(edge_index: torch.Tensor, num_nodes: int, random_
 
 
 def extract_node_embeddings_ngram(model, data: Data, device: torch.device) -> Optional[np.ndarray]:
+    """Extracts node embeddings from the full-graph model."""
     model.eval()
     model.to(device)
     data = data.to(device)
-    if not hasattr(data, 'x') or data.x is None or (hasattr(data, 'num_nodes') and data.num_nodes > 0 and data.x.numel() == 0):
-        out_dim = model.decoder_fc.in_features
-        return np.array([]).reshape(0, out_dim) if out_dim > 0 else np.array([])
     with torch.no_grad():
         _, embeddings = model(data)
         return embeddings.cpu().numpy() if embeddings is not None and embeddings.numel() > 0 else None
 
 
 # ==============================================================================
-# START: MAIN N-GRAM EMBEDDING GENERATION WORKFLOW (WITH SWITCH)
+# START: MAIN N-GRAM EMBEDDING GENERATION WORKFLOW
 # ==============================================================================
-def generate_and_save_ngram_embeddings(fasta_filepath: str, protein_ids_to_generate_for: Set[str], gcn_config: Dict) -> Tuple[Optional[str], Optional[str]]:
-    output_dir = gcn_config['output_dir']
-    max_n = gcn_config['max_n']
-    os.makedirs(output_dir, exist_ok=True)
+def generate_and_save_ngram_embeddings(config: ScriptConfig, protein_ids_to_generate_for: Set[str]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Main orchestrator for the N-gramGCN embedding generation process. It iterates from n=1 to max_n,
+    building a graph, training a GCN model, and generating embeddings at each level.
+    The embeddings from level n-1 are used as features for level n.
+
+    Returns:
+        The file path to the final per-protein H5 embedding file.
+    """
+    os.makedirs(config.NGRAM_GCN_OUTPUT_EMBEDDINGS_DIR, exist_ok=True)
+    os.makedirs(config.TEMP_FILE_DIR, exist_ok=True)
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"NgramGCN: Using device: {device}")
 
-    all_protein_data = parse_fasta_sequences_with_ids_ngram(fasta_filepath)
+    all_protein_data = parse_fasta_sequences_with_ids_ngram(config.NGRAM_GCN_INPUT_FASTA_PATH, config)
     sequences_map = {pid: seq for pid, seq in all_protein_data if pid in protein_ids_to_generate_for}
-    sequences_list_for_ngram = list(sequences_map.values())
 
     level_embeddings: dict[int, np.ndarray] = {}
     level_ngram_to_idx: dict[int, dict] = {}
     level_idx_to_ngram: dict[int, dict] = {}
-    per_protein_emb_path = os.path.join(output_dir, f"per_protein_embeddings_from_{max_n}gram.h5")
+    per_protein_emb_path = os.path.join(config.NGRAM_GCN_OUTPUT_EMBEDDINGS_DIR, f"per_protein_embeddings_from_{config.NGRAM_GCN_MAX_N}gram.h5")
 
-    for n_val in range(1, max_n + 1):
+    for n_val in range(1, config.NGRAM_GCN_MAX_N + 1):
         print(f"\n--- Processing N-gram Level: n = {n_val} ---")
-        current_ngrams, current_transitions = get_ngrams_and_transitions_ngram(sequences_list_for_ngram, n_val)
-        graph_data, ngram_to_idx_map, idx_to_ngram_map = build_ngram_graph_data_ngram(current_ngrams, current_transitions, n_val=n_val)
+
+        # --- Unified Efficient Graph Construction ---
+        parquet_path = os.path.join(config.TEMP_FILE_DIR, f"ngram_map_n{n_val}.parquet")
+        edge_path = os.path.join(config.TEMP_FILE_DIR, f"edge_list_n{n_val}.txt")
+        build_node_map_with_dask(config.NGRAM_GCN_INPUT_FASTA_PATH, n_val, parquet_path, config.DASK_CHUNK_SIZE)
+
+        map_df = pd.read_parquet(parquet_path)
+        ngram_map_series = pd.Series(map_df.id.values, index=map_df.ngram)
+        del map_df
+        gc.collect()
+
+        build_edge_file_from_stream(config.NGRAM_GCN_INPUT_FASTA_PATH, n_val, ngram_map_series, edge_path)
+        graph_data = build_graph_from_disk(parquet_path, edge_path)
 
         if graph_data is None:
             print(f"NgramGCN: Could not build graph for n={n_val}. Stopping.")
-            break
+            return None, "Graph construction failed."
 
-        # RESTORED: Logging for graph stats
         num_out_edges = graph_data.edge_index_out.size(1) if hasattr(graph_data, 'edge_index_out') and graph_data.edge_index_out is not None else 0
-        if DEBUG_VERBOSE: print(f"NgramGCN: Built graph for n={n_val}: {graph_data.num_nodes} nodes, {num_out_edges} out-edges.")
+        if config.DEBUG_VERBOSE: print(f"NgramGCN: Built graph for n={n_val}: {graph_data.num_nodes} nodes, {num_out_edges} out-edges.")
 
-        level_ngram_to_idx[n_val] = ngram_to_idx_map
-        level_idx_to_ngram[n_val] = idx_to_ngram_map
+        level_ngram_to_idx[n_val] = graph_data.ngram_to_idx
+        level_idx_to_ngram[n_val] = graph_data.idx_to_ngram
 
-        task_mode = gcn_config['task_per_level'].get(n_val, gcn_config['default_task_mode'])
+        # --- Task and Feature Setup ---
+        task_mode = config.NGRAM_GCN_TASK_PER_LEVEL.get(n_val, config.NGRAM_GCN_DEFAULT_TASK_MODE)
         actual_num_output_classes = 0
         if task_mode == 'community_label':
-            labels, num_comms = detect_communities_louvain(graph_data.edge_index_out, graph_data.num_nodes, RANDOM_STATE)
+            # Use the undirected edge_index for Louvain
+            labels, num_comms = detect_communities_louvain(graph_data.edge_index, graph_data.num_nodes, config)
             if labels is not None and num_comms > 1:
                 graph_data.y_task_labels = labels
                 actual_num_output_classes = num_comms
             else:
-                task_mode = gcn_config['default_task_mode']
+                print(f"NgramGCN: Community detection failed or found <= 1 community. Falling back to '{config.NGRAM_GCN_DEFAULT_TASK_MODE}' task.")
+                task_mode = config.NGRAM_GCN_DEFAULT_TASK_MODE
+
         if task_mode == 'next_node':
             actual_num_output_classes = graph_data.num_nodes
+
         if actual_num_output_classes == 0:
             print(f"NgramGCN: Cannot determine number of classes for task '{task_mode}' at n={n_val}. Skipping.")
             break
 
+        # --- Feature Generation ---
         if n_val == 1:
-            current_feature_dim = gcn_config['one_gram_dim']
+            current_feature_dim = config.NGRAM_GCN_1GRAM_INIT_DIM
             graph_data.x = torch.randn(graph_data.num_nodes, current_feature_dim)
         else:
-            base_embeds, base_map = level_embeddings.get(1), level_ngram_to_idx.get(1)
-            if base_embeds is None or base_map is None or base_embeds.size == 0:
-                print(f"NgramGCN: Cannot generate features for n={n_val} due to missing 1-gram embeddings. Stopping.")
+            prev_embeds_np = level_embeddings.get(n_val - 1)
+            prev_map = level_ngram_to_idx.get(n_val - 1)
+            prev_embed_dim = prev_embeds_np.shape[1]
+
+            if prev_embeds_np is None or prev_map is None:
+                print(f"NgramGCN: Cannot generate features for n={n_val} due to missing (n-1)-gram embeddings. Stopping.")
                 break
+
+            # Corrected logic: an n-gram is composed of two overlapping (n-1)-grams.
+            expected_concat_dim = 2 * prev_embed_dim
+
+            # Create features by concatenating the embeddings of the two (n-1)-grams that form the n-gram.
+            current_idx_to_ngram_map = level_idx_to_ngram[n_val]
+
             features_list = []
-            expected_concat_dim = n_val * gcn_config['one_gram_dim']
-            for i in range(graph_data.num_nodes):
-                ngram = idx_to_ngram_map.get(i)
-                feature_parts = []
-                if ngram:
-                    for char_element in ngram:
-                        char_key = (char_element,)
-                        char_idx = base_map.get(char_key)
-                        if char_idx is not None and char_idx < len(base_embeds):
-                            feature_parts.append(torch.from_numpy(base_embeds[char_idx].copy()).float())
-                        else:
-                            feature_parts.append(torch.zeros(gcn_config['one_gram_dim']))
-                concat_feat = torch.cat(feature_parts) if feature_parts and len(feature_parts) == n_val else torch.zeros(expected_concat_dim)
-                features_list.append(concat_feat)
+            for i in tqdm(range(graph_data.num_nodes), desc=f"Generating features for n={n_val}"):
+                ngram_str = current_idx_to_ngram_map.get(i)
+                if ngram_str and len(ngram_str) == n_val:
+                    sub_gram1 = ngram_str[:-1]
+                    sub_gram2 = ngram_str[1:]
+
+                    idx1 = prev_map.get(sub_gram1)
+                    idx2 = prev_map.get(sub_gram2)
+
+                    if idx1 is not None and idx2 is not None:
+                        feat = np.concatenate([prev_embeds_np[idx1], prev_embeds_np[idx2]])
+                        features_list.append(torch.from_numpy(feat).float())
+                    else:
+                        features_list.append(torch.zeros(expected_concat_dim))
+                else:
+                    features_list.append(torch.zeros(expected_concat_dim))
+
             graph_data.x = torch.stack(features_list)
             current_feature_dim = graph_data.x.shape[1]
 
         # --- MODEL & TRAINING PIPELINE SELECTION ---
         node_embeddings_np = None
-        if gcn_config['training_mode'] == 'full_graph':
-            model = ProtDiGCNEncoderDecoder_ngram(num_initial_features=current_feature_dim, hidden_dim1=gcn_config['hidden1'], hidden_dim2=gcn_config['hidden2'], num_graph_nodes_for_gnn_coeffs=graph_data.num_nodes,
-                task_num_output_classes=actual_num_output_classes, n_gram_length_for_pe=n_val, one_gram_embed_dim_for_pe=gcn_config['one_gram_dim'], max_allowable_len_for_pe_layer=graph_data.num_nodes,
-                dropout_rate=gcn_config['dropout'], use_vector_coeffs_in_gnn=gcn_config['use_vector_coeffs'])
-            # RESTORED: Logging for model architecture
-            if DEBUG_VERBOSE:
+        model = None
+
+        if config.TRAINING_MODE == 'full_graph':
+            model = ProtDiGCNEncoderDecoder_ngram(num_initial_features=current_feature_dim, hidden_dim1=config.NGRAM_GCN_HIDDEN_DIM_1, hidden_dim2=config.NGRAM_GCN_HIDDEN_DIM_2,
+                                                  num_graph_nodes_for_gnn_coeffs=graph_data.num_nodes, task_num_output_classes=actual_num_output_classes, n_gram_length_for_pe=n_val,
+                                                  one_gram_embed_dim_for_pe=(config.NGRAM_GCN_1GRAM_INIT_DIM if n_val == 1 else 0),  # PE only on 1-grams
+                                                  max_len_for_pe=config.NGRAM_GCN_PE_MAX_LEN, dropout_rate=config.NGRAM_GCN_DROPOUT, use_vector_coeffs_in_gnn=config.NGRAM_GCN_USE_VECTOR_COEFFS)
+            if config.DEBUG_VERBOSE:
                 print(f"\nNgramGCN Model Architecture (for n={n_val}, task='{task_mode}', mode='full_graph'):")
                 print(model)
                 print("-" * 60)
-
-            optimizer = optim.Adam(model.parameters(), lr=gcn_config['lr'], weight_decay=gcn_config['l2_reg'])
-            train_ngram_model_full_graph(model, graph_data, optimizer, gcn_config['epochs'], device, task_mode)
+            optimizer = optim.Adam(model.parameters(), lr=config.NGRAM_GCN_LR, weight_decay=config.NGRAM_GCN_WEIGHT_DECAY)
+            train_ngram_model_full_graph(model, graph_data, optimizer, config.NGRAM_GCN_EPOCHS_PER_LEVEL, device, task_mode, config)
             node_embeddings_np = extract_node_embeddings_ngram(model, graph_data, device)
 
         else:  # 'mini_batch'
-            model = ProtDiGCNEncoderDecoder_minibatch(in_channels=current_feature_dim, hidden_channels1=gcn_config['hidden1'], hidden_channels2=gcn_config['hidden2'], out_channels=actual_num_output_classes,
-                dropout=gcn_config['dropout'])
-            # RESTORED: Logging for model architecture
-            if DEBUG_VERBOSE:
+            model = ProtDiGCNEncoderDecoder_minibatch(in_channels=current_feature_dim, hidden_channels1=config.NGRAM_GCN_HIDDEN_DIM_1, hidden_channels2=config.NGRAM_GCN_HIDDEN_DIM_2,
+                                                      out_channels=actual_num_output_classes, dropout=config.NGRAM_GCN_DROPOUT)
+            if config.DEBUG_VERBOSE:
                 print(f"\nNgramGCN Model Architecture (for n={n_val}, task='{task_mode}', mode='mini_batch'):")
                 print(model)
                 print("-" * 60)
+            optimizer = optim.Adam(model.parameters(), lr=config.NGRAM_GCN_LR, weight_decay=config.NGRAM_GCN_WEIGHT_DECAY)
 
-            optimizer = optim.Adam(model.parameters(), lr=gcn_config['lr'], weight_decay=gcn_config['l2_reg'])
-            loader_config = {'num_neighbors': gcn_config['num_neighbors'], 'batch_size': gcn_config['batch_size']}
-            train_loader = NeighborLoader(graph_data, **loader_config, shuffle=True)
-            train_ngram_model_minibatch(model, train_loader, optimizer, gcn_config['epochs'], device, task_mode)
-
-            inference_config = {'num_neighbors': gcn_config['num_neighbors'], 'inference_batch_size': gcn_config['inference_batch_size']}
-            node_embeddings_np = extract_node_embeddings_ngram_batched(model, graph_data, inference_config, device)
+            train_loader = NeighborLoader(graph_data, num_neighbors=config.NGRAM_GCN_NUM_NEIGHBORS, batch_size=config.NGRAM_GCN_BATCH_SIZE, shuffle=True)
+            train_ngram_model_minibatch(model, train_loader, optimizer, config.NGRAM_GCN_EPOCHS_PER_LEVEL, device, task_mode, config)
+            node_embeddings_np = extract_node_embeddings_ngram_batched(model, graph_data, config, device)
 
         if node_embeddings_np is None or node_embeddings_np.size == 0:
             print(f"NgramGCN: Failed to generate embeddings for n={n_val}. Stopping.")
             break
-        level_embeddings[n_val] = node_embeddings_np
 
-    # Final per-protein pooling
-    final_embeddings = level_embeddings.get(max_n)
-    final_map = level_ngram_to_idx.get(max_n)
+        level_embeddings[n_val] = node_embeddings_np
+        del graph_data, model, optimizer, node_embeddings_np
+        gc.collect()
+
+    # --- Final Per-Protein Embedding Aggregation ---
+    final_embeddings = level_embeddings.get(config.NGRAM_GCN_MAX_N)
+    final_map = level_ngram_to_idx.get(config.NGRAM_GCN_MAX_N)
     if final_embeddings is not None and final_map is not None and final_embeddings.size > 0:
         with h5py.File(per_protein_emb_path, 'w') as hf:
-            for prot_id, seq in sequences_map.items():
-                if len(seq) < max_n: continue
-                indices = [final_map.get(tuple(seq[i:i + max_n])) for i in range(len(seq) - max_n + 1)]
+            print(f"Aggregating final {config.NGRAM_GCN_MAX_N}-gram embeddings to per-protein embeddings...")
+            for prot_id, seq in tqdm(sequences_map.items(), desc="Pooling Protein Embeddings"):
+                if len(seq) < config.NGRAM_GCN_MAX_N: continue
+
+                indices = [final_map.get("".join(seq[i:i + config.NGRAM_GCN_MAX_N])) for i in range(len(seq) - config.NGRAM_GCN_MAX_N + 1)]
                 valid_indices = [idx for idx in indices if idx is not None]
+
                 if valid_indices:
-                    hf.create_dataset(prot_id, data=np.mean(final_embeddings[valid_indices], axis=0))
+                    # Mean pooling of n-gram embeddings for the protein
+                    protein_embedding = np.mean(final_embeddings[valid_indices], axis=0)
+                    hf.create_dataset(prot_id, data=protein_embedding)
         print(f"NgramGCN: Per-protein embeddings saved to {per_protein_emb_path}")
         return per_protein_emb_path, None
     else:
-        print(f"NgramGCN: Final embeddings for n={max_n} not available. No output file generated.")
-        return None, None
+        error_msg = f"NgramGCN: Final embeddings for n={config.NGRAM_GCN_MAX_N} not available. No output file generated."
+        print(error_msg)
+        return None, error_msg
 
 
 # ==============================================================================
 # MEMORY-EFFICIENT LINK PREDICTION EVALUATION
 # ==============================================================================
-def create_edge_embedding_generator(pairs: List[Tuple[str, str, int]], embeddings: Dict[str, np.ndarray], batch_size: int, embedding_dim: int, method: str = 'concatenate'):
-    num_pairs = len(pairs)
-    while True:
-        random.shuffle(pairs)
-        for i in range(0, num_pairs, batch_size):
-            batch_pairs = pairs[i:i + batch_size]
-            if not batch_pairs: continue
-            edge_feats_batch, labels_batch = [], []
-            for p1, p2, lbl in batch_pairs:
-                e1, e2 = embeddings.get(p1), embeddings.get(p2)
-                if e1 is not None and e2 is not None and e1.shape[0] == embedding_dim and e2.shape[0] == embedding_dim:
-                    if method == 'concatenate':
-                        feat = np.concatenate((e1, e2))
-                    elif method == 'average':
-                        feat = (e1 + e2) / 2.0
-                    elif method == 'hadamard':
-                        feat = e1 * e2
-                    else:
-                        feat = np.abs(e1 - e2)
-                    edge_feats_batch.append(feat)
-                    labels_batch.append(lbl)
-            if edge_feats_batch:
-                yield (np.array(edge_feats_batch, dtype=np.float32), np.array(labels_batch, dtype=np.int32))
+
+def load_h5_embeddings_selectively(filepath: str, protein_ids: Set[str]) -> Dict[str, np.ndarray]:
+    """Loads specific protein embeddings from an H5 file."""
+    embeddings = {}
+    try:
+        with h5py.File(filepath, 'r') as hf:
+            loaded_ids = set(hf.keys())
+            ids_to_load = list(protein_ids & loaded_ids)
+            for prot_id in ids_to_load:
+                embeddings[prot_id] = hf[prot_id][:]
+    except Exception as e:
+        print(f"Error loading H5 file {filepath}: {e}")
+    return embeddings
 
 
-def build_mlp_model_lp(input_shape: int, mlp_params: Dict) -> Model:
-    inputs = Input(shape=(input_shape,))
-    x = Dense(units=mlp_params['dense1_units'], activation='relu', kernel_regularizer=l2(mlp_params['l2_reg']))(inputs)
-    x = Dropout(mlp_params['dropout1_rate'])(x)
-    x = Dense(units=mlp_params['dense2_units'], activation='relu', kernel_regularizer=l2(mlp_params['l2_reg']))(x)
-    x = Dropout(mlp_params['dropout2_rate'])(x)
-    outputs = Dense(1, activation='sigmoid')(x)
-    return Model(inputs=inputs, outputs=outputs)
+def create_edge_embedding_generator(pairs_df: pd.DataFrame, embeddings: Dict[str, np.ndarray], batch_size: int, embed_method: str) -> Callable:
+    """
+    Creates a Python generator to yield batches of edge embeddings for training/testing the MLP.
+    This is memory-efficient as it doesn't store all edge embeddings in memory at once.
+    """
+    num_samples = len(pairs_df)
+
+    def generator():
+        for start in range(0, num_samples, batch_size):
+            end = min(start + batch_size, num_samples)
+            batch_pairs = pairs_df.iloc[start:end]
+
+            batch_embeds1 = [embeddings.get(p1) for p1 in batch_pairs['protein1']]
+            batch_embeds2 = [embeddings.get(p2) for p2 in batch_pairs['protein2']]
+            labels = batch_pairs['label'].values
+
+            valid_indices = [i for i, (e1, e2) in enumerate(zip(batch_embeds1, batch_embeds2)) if e1 is not None and e2 is not None]
+
+            if not valid_indices: continue
+
+            valid_embeds1 = np.array([batch_embeds1[i] for i in valid_indices])
+            valid_embeds2 = np.array([batch_embeds2[i] for i in valid_indices])
+            valid_labels = labels[valid_indices]
+
+            if embed_method == 'concatenate':
+                edge_features = np.concatenate([valid_embeds1, valid_embeds2], axis=1)
+            elif embed_method == 'hadamard':
+                edge_features = valid_embeds1 * valid_embeds2
+            elif embed_method == 'average':
+                edge_features = (valid_embeds1 + valid_embeds2) / 2
+            else:  # Default to concatenate
+                edge_features = np.concatenate([valid_embeds1, valid_embeds2], axis=1)
+
+            yield edge_features, valid_labels
+
+    return generator
 
 
-def main_workflow_cv_lp(embedding_name_cv: str, protein_embeddings_cv: Dict[str, np.ndarray], positive_pairs_cv: List[Tuple[str, str, int]], negative_pairs_cv: List[Tuple[str, str, int]], mlp_params_dict_cv: Dict,
-                        lp_config: Dict) -> Dict[str, Any]:
-    if DEBUG_VERBOSE: print(f"\n--- Starting Memory-Efficient Link Prediction CV for: {embedding_name_cv} ---")
+def build_mlp_model_lp(input_dim: int, config: ScriptConfig) -> Model:
+    """Builds the Keras MLP model for link prediction."""
+    inp = Input(shape=(input_dim,))
+    x = Dense(config.LP_MLP_DENSE1_UNITS, activation='relu', kernel_regularizer=l2(config.LP_MLP_L2_REG))(inp)
+    x = Dropout(config.LP_MLP_DROPOUT1_RATE)(x)
+    x = Dense(config.LP_MLP_DENSE2_UNITS, activation='relu', kernel_regularizer=l2(config.LP_MLP_L2_REG))(x)
+    x = Dropout(config.LP_MLP_DROPOUT2_RATE)(x)
+    out = Dense(1, activation='sigmoid')(x)
 
-    first_key = next(iter(protein_embeddings_cv), None)
-    if not first_key:
-        print("LinkPred CV Error: Protein embeddings dictionary is empty.")
-        return {}
+    model = Model(inputs=inp, outputs=out)
+    optimizer = Adam(learning_rate=config.LP_LEARNING_RATE)
+    model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+    return model
 
-    embedding_dim = protein_embeddings_cv[first_key].shape[0]
-    edge_feature_dim = embedding_dim * 2 if lp_config['edge_emb_method'] == 'concatenate' else embedding_dim
 
-    all_pairs = positive_pairs_cv + negative_pairs_cv
-    labels_for_stratify = [p[2] for p in all_pairs]
-    skf = StratifiedKFold(n_splits=lp_config['n_folds'], shuffle=True, random_state=lp_config['random_state'])
+def run_evaluation_for_one_embedding(config: ScriptConfig, all_pairs_df: pd.DataFrame, emb_name: str, embeddings: Dict[str, np.ndarray]):
+    """
+    Performs K-fold cross-validation for a single, pre-loaded set of embeddings.
+    """
+    # Filter pairs where both proteins have an embedding
+    valid_pairs_mask = all_pairs_df['protein1'].isin(embeddings.keys()) & all_pairs_df['protein2'].isin(embeddings.keys())
+    eval_pairs_df = all_pairs_df[valid_pairs_mask].reset_index(drop=True)
+
+    print(f"Found embeddings for {len(eval_pairs_df)} / {len(all_pairs_df)} pairs in '{emb_name}'.")
+    if eval_pairs_df.empty:
+        print("No valid pairs with embeddings to evaluate. Skipping.")
+        return None
+
+    skf = StratifiedKFold(n_splits=config.LP_N_FOLDS, shuffle=True, random_state=config.RANDOM_STATE)
     fold_results = []
 
-    for fold, (train_idx, val_idx) in enumerate(skf.split(all_pairs, labels_for_stratify)):
-        print(f"\n--- Fold {fold + 1}/{lp_config['n_folds']} ---")
-        train_pairs = [all_pairs[i] for i in train_idx]
-        val_pairs = [all_pairs[i] for i in val_idx]
-        val_labels = [p[2] for p in val_pairs]
+    for fold, (train_idx, test_idx) in enumerate(skf.split(eval_pairs_df, eval_pairs_df['label'])):
+        print(f"\n-- Fold {fold + 1}/{config.LP_N_FOLDS} --")
+        train_df = eval_pairs_df.iloc[train_idx]
+        test_df = eval_pairs_df.iloc[test_idx]
 
-        train_gen = lambda: create_edge_embedding_generator(train_pairs, protein_embeddings_cv, lp_config['batch_size'], embedding_dim, lp_config['edge_emb_method'])
-        val_gen = lambda: create_edge_embedding_generator(val_pairs, protein_embeddings_cv, lp_config['batch_size'], embedding_dim, lp_config['edge_emb_method'])
+        # Get embedding dimension from the first available embedding
+        embed_dim = next(iter(embeddings.values())).shape[0]
+        input_dim = embed_dim * 2 if config.LP_EDGE_EMBEDDING_METHOD == 'concatenate' else embed_dim
 
-        output_signature = (tf.TensorSpec(shape=(None, edge_feature_dim), dtype=tf.float32), tf.TensorSpec(shape=(None,), dtype=tf.int32))
-        train_ds = tf.data.Dataset.from_generator(train_gen, output_signature=output_signature)
-        val_ds = tf.data.Dataset.from_generator(val_gen, output_signature=output_signature)
+        model = build_mlp_model_lp(input_dim, config)
 
-        train_steps = math.ceil(len(train_pairs) / lp_config['batch_size'])
-        val_steps = math.ceil(len(val_pairs) / lp_config['batch_size'])
+        train_gen_func = create_edge_embedding_generator(train_df, embeddings, config.LP_BATCH_SIZE, config.LP_EDGE_EMBEDDING_METHOD)
+        test_gen_func = create_edge_embedding_generator(test_df, embeddings, config.LP_BATCH_SIZE, config.LP_EDGE_EMBEDDING_METHOD)
 
-        model = build_mlp_model_lp(edge_feature_dim, mlp_params_dict_cv)
-        model.compile(optimizer=Adam(learning_rate=lp_config['learning_rate']), loss='binary_crossentropy', metrics=['AUC'])
+        output_types = (tf.float32, tf.int32)
+        output_shapes = (tf.TensorShape([None, input_dim]), tf.TensorShape([None, ]))
 
-        history = model.fit(train_ds, epochs=lp_config['epochs'], steps_per_epoch=train_steps, validation_data=val_ds, validation_steps=val_steps, verbose=1)
+        train_dataset = tf.data.Dataset.from_generator(train_gen_func, output_types=output_types, output_shapes=output_shapes)
+        test_dataset = tf.data.Dataset.from_generator(test_gen_func, output_types=output_types, output_shapes=output_shapes)
 
-        print("Predicting on validation set...")
-        val_pred_ds = tf.data.Dataset.from_generator(val_gen, output_signature=output_signature).take(val_steps)
-        val_predictions = model.predict(val_pred_ds).flatten()
+        history = model.fit(train_dataset, epochs=config.LP_EPOCHS, verbose=1 if config.DEBUG_VERBOSE else 0)
 
-        if len(val_predictions) > len(val_labels): val_predictions = val_predictions[:len(val_labels)]
+        # Evaluation on Test Set
+        y_pred_probs = model.predict(test_dataset).flatten()
 
-        fold_res = {'test_auc_sklearn': roc_auc_score(val_labels, val_predictions), 'test_precision': precision_score(val_labels, (val_predictions > 0.5).astype(int), zero_division=0),
-            'test_recall': recall_score(val_labels, (val_predictions > 0.5).astype(int), zero_division=0), 'test_f1': f1_score(val_labels, (val_predictions > 0.5).astype(int), zero_division=0), }
+        # Since the generator skips invalid pairs, we must align predictions with true labels
+        test_gen_for_labels = create_edge_embedding_generator(test_df, embeddings, config.LP_BATCH_SIZE, config.LP_EDGE_EMBEDDING_METHOD)
+        y_true_aligned = np.concatenate([labels for _, labels in test_gen_for_labels()])
+
+        auc = roc_auc_score(y_true_aligned, y_pred_probs)
+        precision = precision_score(y_true_aligned, y_pred_probs > 0.5)
+        recall = recall_score(y_true_aligned, y_pred_probs > 0.5)
+        f1 = f1_score(y_true_aligned, y_pred_probs > 0.5)
+
+        fold_res = {'fold': fold, 'test_auc_sklearn': auc, 'test_precision': precision, 'test_recall': recall, 'test_f1': f1}
         fold_results.append(fold_res)
-        print(f"Fold {fold + 1} Results: AUC={fold_res['test_auc_sklearn']:.4f}, F1={fold_res['test_f1']:.4f}")
-        del model, train_ds, val_ds, val_pred_ds;
-        gc.collect();
-        tf.keras.backend.clear_session()
+        print(f"Fold {fold + 1} Results for '{emb_name}': AUC={auc:.4f}, F1={f1:.4f}")
 
-    avg_auc = np.mean([res['test_auc_sklearn'] for res in fold_results])
-    print(f"\nCV Finished for {embedding_name_cv}. Average Test AUC: {avg_auc:.4f}")
-    return {'embedding_name': embedding_name_cv, 'cv_results': fold_results}
+    # Aggregate results for the current embedding
+    avg_results = pd.DataFrame(fold_results).mean().to_dict()
+    avg_results['embedding_name'] = emb_name
+    return avg_results
 
 
 # ==============================================================================
-# MAIN EXECUTION BLOCK
+# MAIN EXECUTION BLOCK (REFACTORED)
 # ==============================================================================
 if __name__ == '__main__':
     print("--- Combined N-gramGCN Generation and Link Prediction Evaluation Script (Selectable Mode) ---")
+    config = ScriptConfig()
 
     # --- 1. N-gramGCN Generation ---
-    prot_emb_path = None
-    if RUN_AND_EVALUATE_NGRAM_GCN:
+    generated_prot_emb_path = None
+    if config.RUN_AND_EVALUATE_NGRAM_GCN:
         print("\n" + "=" * 20 + " Step 1: N-gramGCN Generation " + "=" * 20)
-        all_fasta_data = parse_fasta_sequences_with_ids_ngram(NGRAM_GCN_INPUT_FASTA_PATH)
-        all_fasta_ids = {pid for pid, seq in all_fasta_data}
 
-        if not all_fasta_ids:
-            print("Could not parse any IDs from the FASTA file. Aborting GCN training.")
+        # To generate relevant embeddings, we first find which proteins are in our evaluation set
+        try:
+            pos_df_gcn = pd.read_csv(config.LP_POSITIVE_INTERACTIONS_PATH, dtype=str).dropna()
+            neg_df_gcn = pd.read_csv(config.LP_NEGATIVE_INTERACTIONS_PATH, dtype=str).dropna()
+            proteins_in_pairs_for_gcn = set(pos_df_gcn.iloc[:, 0]) | set(pos_df_gcn.iloc[:, 1]) | set(neg_df_gcn.iloc[:, 0]) | set(neg_df_gcn.iloc[:, 1])
+        except FileNotFoundError:
+            print("Interaction files not found. Cannot determine which proteins to generate. Aborting GCN step.")
+            proteins_in_pairs_for_gcn = set()
+
+        if not proteins_in_pairs_for_gcn:
+            print("Could not identify any proteins from interaction files. Aborting GCN training.")
         else:
-            print(f"Found {len(all_fasta_ids)} total proteins in FASTA file to train on.")
-            gcn_params = {'training_mode': TRAINING_MODE, 'output_dir': NGRAM_GCN_OUTPUT_EMBEDDINGS_DIR, 'max_n': NGRAM_GCN_MAX_N, 'one_gram_dim': NGRAM_GCN_1GRAM_INIT_DIM, 'hidden1': NGRAM_GCN_HIDDEN_DIM_1,
-                'hidden2': NGRAM_GCN_HIDDEN_DIM_2, 'pe_max_len': NGRAM_GCN_PE_MAX_LEN, 'dropout': NGRAM_GCN_DROPOUT, 'lr': NGRAM_GCN_LR, 'l2_reg': NGRAM_GCN_WEIGHT_DECAY, 'epochs': NGRAM_GCN_EPOCHS_PER_LEVEL,
-                'use_vector_coeffs': NGRAM_GCN_USE_VECTOR_COEFFS, 'task_per_level': NGRAM_GCN_TASK_PER_LEVEL, 'default_task_mode': NGRAM_GCN_DEFAULT_TASK_MODE, 'batch_size': NGRAM_GCN_BATCH_SIZE,
-                'num_neighbors': NGRAM_GCN_NUM_NEIGHBORS, 'inference_batch_size': NGRAM_GCN_INFERENCE_BATCH_SIZE}
-            prot_emb_path, _ = generate_and_save_ngram_embeddings(fasta_filepath=NGRAM_GCN_INPUT_FASTA_PATH, protein_ids_to_generate_for=all_fasta_ids, gcn_config=gcn_params)
+            print(f"Found {len(proteins_in_pairs_for_gcn)} unique proteins in interaction data to target for embedding generation.")
+            generated_prot_emb_path, error_msg = generate_and_save_ngram_embeddings(config=config, protein_ids_to_generate_for=proteins_in_pairs_for_gcn)
 
-            if prot_emb_path and os.path.exists(prot_emb_path):
-                normal_embedding_files_to_evaluate.append({"path": prot_emb_path, "name": NGRAM_GCN_GENERATED_EMB_NAME, "loader_func_key": "load_h5_embeddings_selectively"})
+            if generated_prot_emb_path and os.path.exists(generated_prot_emb_path):
+                print(f"N-gramGCN embedding generation successful. File saved to: {generated_prot_emb_path}")
+                # Prepend the newly generated embeddings to the list of files to be evaluated
+                new_embedding_info = {"path": generated_prot_emb_path, "name": config.NGRAM_GCN_GENERATED_EMB_NAME, "loader_func_key": "load_h5_embeddings_selectively"}
+                config.LP_EMBEDDING_FILES_TO_EVALUATE.insert(0, new_embedding_info)
+            else:
+                print(f"N-gramGCN embedding generation failed. Reason: {error_msg}")
 
     # --- 2. Load Interaction Data for Evaluation ---
     print("\n" + "=" * 20 + " Step 2: Loading Interaction Data " + "=" * 20)
+    all_interaction_pairs_df = None
+    all_proteins_in_pairs = set()
     try:
-        pos_df = pd.read_csv(normal_positive_interactions_path, dtype=str).dropna()
-        neg_df = pd.read_csv(normal_negative_interactions_path, dtype=str).dropna()
-        if normal_sample_negative_pairs and len(neg_df) > 0:
-            neg_df = neg_df.sample(n=min(normal_sample_negative_pairs, len(neg_df)), random_state=RANDOM_STATE)
-        positive_pairs = list(zip(pos_df.iloc[:, 0], pos_df.iloc[:, 1], [1] * len(pos_df)))
-        negative_pairs = list(zip(neg_df.iloc[:, 0], neg_df.iloc[:, 1], [0] * len(neg_df)))
-        all_proteins_in_pairs = set(pos_df.iloc[:, 0]) | set(pos_df.iloc[:, 1]) | set(neg_df.iloc[:, 0]) | set(neg_df.iloc[:, 1])
+        pos_df = pd.read_csv(config.LP_POSITIVE_INTERACTIONS_PATH, dtype=str, header=None, names=['protein1', 'protein2']).dropna()
+        neg_df = pd.read_csv(config.LP_NEGATIVE_INTERACTIONS_PATH, dtype=str, header=None, names=['protein1', 'protein2']).dropna()
+
+        if config.LP_SAMPLE_NEGATIVE_PAIRS and len(neg_df) > 0:
+            neg_df = neg_df.sample(n=min(config.LP_SAMPLE_NEGATIVE_PAIRS, len(neg_df)), random_state=config.RANDOM_STATE)
+
+        pos_df['label'] = 1
+        neg_df['label'] = 0
+        all_interaction_pairs_df = pd.concat([pos_df, neg_df], ignore_index=True)
+        all_proteins_in_pairs = set(all_interaction_pairs_df['protein1']) | set(all_interaction_pairs_df['protein2'])
+        print(f"Loaded {len(pos_df)} positive and {len(neg_df)} negative pairs.")
         print(f"Found {len(all_proteins_in_pairs)} unique proteins required for link prediction.")
     except FileNotFoundError:
         print("Interaction CSV files not found. Cannot run link prediction evaluation.")
-        all_proteins_in_pairs = set()
 
     # --- 3. Gatekeeper Check ---
+    print("\n" + "=" * 20 + " Step 3: Gatekeeper Check " + "=" * 20)
     can_proceed_with_evaluation = False
-    if not all_proteins_in_pairs:
-        print("\nNo proteins found in interaction files. Skipping evaluation.")
-    elif RUN_AND_EVALUATE_NGRAM_GCN and not (prot_emb_path and os.path.exists(prot_emb_path)):
-        print(f"\nN-gram GCN was set to run but its embedding file was not generated. Skipping all evaluations.")
-    elif RUN_AND_EVALUATE_NGRAM_GCN:
-        print(f"\nChecking relevance of generated N-gram GCN embeddings at: {prot_emb_path}")
-        with h5py.File(prot_emb_path, 'r') as hf:
+    if all_interaction_pairs_df is None or all_interaction_pairs_df.empty:
+        print("No interaction data loaded. Skipping evaluation.")
+    elif config.RUN_AND_EVALUATE_NGRAM_GCN and not (generated_prot_emb_path and os.path.exists(generated_prot_emb_path)):
+        print("N-gram GCN was set to run but its embedding file was not generated. Skipping all evaluations.")
+    elif config.RUN_AND_EVALUATE_NGRAM_GCN:
+        print(f"Checking relevance of generated N-gram GCN embeddings at: {generated_prot_emb_path}")
+        with h5py.File(generated_prot_emb_path, 'r') as hf:
             relevant_ids_found = {pid for pid in all_proteins_in_pairs if pid in hf}
 
         if relevant_ids_found:
@@ -827,29 +1052,48 @@ if __name__ == '__main__':
         else:
             print("No overlap found between interaction proteins and generated N-gram GCN embeddings. Skipping all link prediction evaluations.")
     else:
-        print("\nN-gram GCN generation was disabled. Proceeding with evaluation of pre-existing files.")
+        print("N-gram GCN generation was disabled. Proceeding with evaluation of pre-existing files.")
         can_proceed_with_evaluation = True
 
     # --- 4. Conditional Link Prediction Evaluation ---
     if can_proceed_with_evaluation:
-        print("\n" + "=" * 20 + " Step 3: Link Prediction Evaluation " + "=" * 20)
-        mlp_params = {'dense1_units': MLP_DENSE1_UNITS_LP, 'dropout1_rate': MLP_DROPOUT1_RATE_LP, 'dense2_units': MLP_DENSE2_UNITS_LP, 'dropout2_rate': MLP_DROPOUT2_RATE_LP, 'l2_reg': MLP_L2_REG_LP}
-        lp_params = {'edge_emb_method': EDGE_EMBEDDING_METHOD_LP, 'n_folds': N_FOLDS_LP, 'random_state': RANDOM_STATE, 'batch_size': BATCH_SIZE_LP, 'epochs': EPOCHS_LP, 'learning_rate': LEARNING_RATE_LP}
+        print("\n" + "=" * 20 + " Step 4: Link Prediction Evaluation " + "=" * 20)
+        all_results = []
+        embedding_loader_map = {"load_h5_embeddings_selectively": load_h5_embeddings_selectively}
 
-        for emb_config in normal_embedding_files_to_evaluate:
-            print(f"\n--- Evaluating file: {emb_config['name']} ---")
+        for emb_config in config.LP_EMBEDDING_FILES_TO_EVALUATE:
+            emb_path = emb_config['path']
+            emb_name = emb_config['name']
+            loader_func = embedding_loader_map[emb_config['loader_func_key']]
+
+            print(f"\n--- Evaluating file: {emb_name} from {emb_path} ---")
+
+            if not os.path.exists(emb_path):
+                print("File not found. Skipping.")
+                continue
+
             try:
-                with h5py.File(emb_config['path'], 'r') as hf:
-                    protein_embeddings = {pid: hf[pid][:] for pid in all_proteins_in_pairs if pid in hf}
+                protein_embeddings = loader_func(emb_path, all_proteins_in_pairs)
             except Exception as e:
-                print(f"Could not load embeddings from {emb_config['path']}: {e}");
+                print(f"Could not load embeddings from {emb_path}: {e}")
                 continue
 
             if not protein_embeddings:
-                print(f"No relevant embeddings for interaction pairs found in this file. Skipping.");
+                print(f"No relevant embeddings for interaction pairs found in this file. Skipping.")
                 continue
 
-            main_workflow_cv_lp(embedding_name_cv=emb_config['name'], protein_embeddings_cv=protein_embeddings, positive_pairs_cv=positive_pairs, negative_pairs_cv=negative_pairs, mlp_params_dict_cv=mlp_params,
-                lp_config=lp_params)
+            # Run evaluation for this specific embedding file
+            results_for_emb = run_evaluation_for_one_embedding(config, all_interaction_pairs_df, emb_name, protein_embeddings)
+            if results_for_emb:
+                all_results.append(results_for_emb)
+
+        # Display Final Summary
+        if all_results:
+            results_df = pd.DataFrame(all_results)
+            print("\n\n--- Final Link Prediction Evaluation Summary ---")
+            print(results_df[['embedding_name', 'test_auc_sklearn', 'test_f1', 'test_precision', 'test_recall']].round(4))
+            print("-" * 50)
+        else:
+            print("\nNo embeddings were successfully evaluated.")
 
     print("\n--- Script Finished ---")
