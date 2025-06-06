@@ -1,201 +1,207 @@
 import os
 import time
-import pickle
 import gc
 import glob
-from collections import defaultdict
-from typing import List, Iterator, Tuple, Dict  # Removed unused 'Dict' from here for a moment
+from collections.abc import Iterator
+from typing import List, Tuple, Dict
 
 import numpy as np
 import h5py
 from gensim.models import Word2Vec
 from tqdm.auto import tqdm
+from sklearn.decomposition import PCA
+import concurrent.futures
 
 # --- User Configuration ---
-# Describe the dataset/run for output filenames
-DATASET_TAG = "uniref50_w2v_per_residue_memfix"  # Updated tag
 
-# Input FASTA files:
+# General settings
+RUN_TAG = "UniRef50_Word2Vec_Pooled_v1"
+BASE_OUTPUT_DIR = "C:/tmp/Models/protein_embeddings/"
+
+# FASTA input configuration
 FASTA_INPUT_DIR = "C:/Users/islam/My Drive/Knowledge/Research/TWU/Topics/Data Mining in Proteomics/Projects/Link Prediction in Protein Interaction Networks via Sequence Embedding/Data/fasta/uniref50/"
-FASTA_FILE_PATHS_LIST = None
-
-# Output paths
-OUTPUT_BASE_DIR = "C:/tmp/Models/word2vec_per_residue/"  # Using local path that worked previously for outputs
-WORD2VEC_MODEL_FILENAME = f"word2vec_char_model_{DATASET_TAG}.model"
-PER_RESIDUE_H5_FILENAME = f"word2vec_per_residue_embeddings_{DATASET_TAG}.h5"
 
 # Word2Vec Hyperparameters
 W2V_VECTOR_SIZE = 100
 W2V_WINDOW = 5
 W2V_MIN_COUNT = 1
+W2V_EPOCHS = 1
 W2V_WORKERS = max(1, os.cpu_count() - 2 if os.cpu_count() else 1)
-W2V_EPOCHS = 1  # Consider increasing for better embeddings if time permits
-W2V_SG = 1
-W2V_COMPUTE_LOSS = False
+W2V_SG = 1  # Use Skip-Gram
+
+# Pooling and PCA settings
+POOLING_STRATEGY = 'mean'  # 'mean', 'sum', or 'max'
+APPLY_PCA = True
+PCA_TARGET_DIM = 64
+SEED = 42
 
 
 # --- End User Configuration ---
 
-def count_sequences_in_fasta_fast(filepath: str) -> int:
-    filepath = os.path.normpath(filepath)
-    count = 0
-    try:
-        with open(filepath, 'rb') as f:
-            chunk_size = 32 * 1024 * 1024
-            while True:
-                chunk = f.read(chunk_size)
-                if not chunk: break
-                count += chunk.count(b'>')
-    except Exception as e:
-        print(f"Warning: Fast count failed for {filepath}: {e}")
-        return 0  # Return 0 if counting fails, so sum still works
-    return count
 
+def fast_fasta_parser(fasta_filepath: str) -> Iterator[Tuple[str, str]]:
+    """
+    An efficient FASTA parser that reads one sequence at a time.
 
-def simple_fasta_parser(fasta_filepath: str) -> Iterator[Tuple[str, str]]:
+    Args:
+        fasta_filepath: The path to the FASTA file.
+
+    Yields:
+        A tuple containing the protein ID and its sequence.
+    """
     fasta_filepath = os.path.normpath(fasta_filepath)
-    current_id_full_header = None
-    uniprot_id = None
+    protein_id = None
     sequence_parts = []
     try:
-        with open(fasta_filepath, 'r', encoding='utf-8', errors='ignore') as f:  # Added errors='ignore' for robustness
+        with open(fasta_filepath, 'r', encoding='utf-8', errors='ignore') as f:
             for line in f:
                 line = line.strip()
-                if not line: continue
+                if not line:
+                    continue
                 if line.startswith('>'):
-                    if current_id_full_header and sequence_parts:
-                        final_id = uniprot_id if uniprot_id else current_id_full_header.split()[0]
-                        yield final_id, "".join(sequence_parts)
-                    current_id_full_header = line[1:]
-                    # Attempt to extract a cleaner ID (UniProt ID or first word of header)
-                    parts = current_id_full_header.split('|')
+                    if protein_id and sequence_parts:
+                        yield protein_id, "".join(sequence_parts)
+
+                    # Extract a clean ID
+                    header = line[1:]
+                    parts = header.split('|')
                     if len(parts) > 1 and parts[1]:
-                        uniprot_id = parts[1]
+                        protein_id = parts[1]
                     else:
-                        uniprot_id = current_id_full_header.split()[0]
+                        protein_id = header.split()[0]
                     sequence_parts = []
-                elif current_id_full_header:
+                else:
                     sequence_parts.append(line.upper())
-            if current_id_full_header and sequence_parts:  # Yield last sequence
-                final_id = uniprot_id if uniprot_id else current_id_full_header.split()[0]
-                yield final_id, "".join(sequence_parts)
+
+            if protein_id and sequence_parts:
+                yield protein_id, "".join(sequence_parts)
     except FileNotFoundError:
-        print(f"Warning: FASTA file not found: {fasta_filepath}")
-    except Exception as e:
-        print(f"Warning: Error parsing FASTA file {fasta_filepath}: {e}")
+        print(f"Error: FASTA file not found at {fasta_filepath}")
 
 
-class FastaCorpusForWord2Vec:
-    def __init__(self, fasta_file_paths_list: List[str], total_sequences_for_tqdm: int = 0):  # Default total to 0
-        self.fasta_file_paths_list = fasta_file_paths_list
-        self.total_sequences_for_tqdm = total_sequences_for_tqdm
-        self.pbar = None
+class FastaCorpus:
+    """
+    A memory-efficient corpus for Word2Vec training that reads from FASTA files.
+    """
+
+    def __init__(self, fasta_files: List[str]):
+        self.fasta_files = fasta_files
 
     def __iter__(self) -> Iterator[List[str]]:
-        if self.pbar is not None:
-            self.pbar.reset(total=self.total_sequences_for_tqdm if self.total_sequences_for_tqdm > 0 else None)
-        elif self.total_sequences_for_tqdm is not None and self.total_sequences_for_tqdm > 0:
-            self.pbar = tqdm(total=self.total_sequences_for_tqdm, desc="Word2Vec Corpus Iteration")
+        for f_path in self.fasta_files:
+            for _, sequence in fast_fasta_parser(f_path):
+                yield list(sequence)
 
-        for f_path in self.fasta_file_paths_list:
-            for _, sequence_str in simple_fasta_parser(f_path):
-                if sequence_str:
-                    if self.pbar: self.pbar.update(1)
-                    yield list(sequence_str)
-        if self.pbar: self.pbar.close(); self.pbar = None
+
+def pool_protein_embedding(sequence: str, w2v_model: Word2Vec, pooling_strategy: str = 'mean') -> np.ndarray:
+    """
+    Generates a per-protein embedding by pooling per-residue vectors.
+
+    Args:
+        sequence: The protein sequence.
+        w2v_model: The trained Word2Vec model.
+        pooling_strategy: The pooling method ('mean', 'sum', or 'max').
+
+    Returns:
+        The pooled per-protein embedding.
+    """
+    embedding_dim = w2v_model.vector_size
+
+    sum_of_vectors = np.zeros(embedding_dim, dtype=np.float32)
+    max_vector = np.full(embedding_dim, -np.inf, dtype=np.float32)
+    valid_residues_count = 0
+
+    for residue in sequence:
+        if residue in w2v_model.wv:
+            vec = w2v_model.wv[residue]
+            sum_of_vectors += vec
+            max_vector = np.maximum(max_vector, vec)
+            valid_residues_count += 1
+
+    if valid_residues_count == 0:
+        return np.zeros(embedding_dim, dtype=np.float32)
+
+    if pooling_strategy == 'mean':
+        return sum_of_vectors / valid_residues_count
+    elif pooling_strategy == 'sum':
+        return sum_of_vectors
+    elif pooling_strategy == 'max':
+        return max_vector
+    else:
+        raise ValueError(f"Unknown pooling strategy: {pooling_strategy}")
 
 
 def main():
-    print("--- Script A: Word2Vec Model Training & Per-Residue Embedding Generation ---")
-    os.makedirs(OUTPUT_BASE_DIR, exist_ok=True)
-    word2vec_model_path = os.path.normpath(os.path.join(OUTPUT_BASE_DIR, WORD2VEC_MODEL_FILENAME))
-    per_residue_h5_path = os.path.normpath(os.path.join(OUTPUT_BASE_DIR, PER_RESIDUE_H5_FILENAME))
+    """
+    Main function to train Word2Vec, generate, and save pooled protein embeddings.
+    """
+    print(f"--- Protein Embedding Generation (Tag: {RUN_TAG}) ---")
+    start_time = time.time()
 
-    actual_fasta_files = []
-    if FASTA_FILE_PATHS_LIST:
-        actual_fasta_files = [os.path.normpath(f) for f in FASTA_FILE_PATHS_LIST if os.path.isfile(os.path.normpath(f))]
-    elif FASTA_INPUT_DIR and os.path.isdir(os.path.normpath(FASTA_INPUT_DIR)):
-        norm_fasta_input_dir = os.path.normpath(FASTA_INPUT_DIR)
-        print(f"Scanning directory '{norm_fasta_input_dir}' for FASTA files...")
-        for ext in ('*.fasta', '*.fas', '*.fa', '*.fna'):
-            actual_fasta_files.extend(glob.glob(os.path.join(norm_fasta_input_dir, ext)))
-    else:
-        print(f"Error: FASTA input directory not found or invalid: {FASTA_INPUT_DIR}")
+    os.makedirs(BASE_OUTPUT_DIR, exist_ok=True)
+
+    # --- 1. Find FASTA files ---
+    fasta_files = [os.path.normpath(f) for f in glob.glob(os.path.join(FASTA_INPUT_DIR, '*.fasta'))]
+    if not fasta_files:
+        print(f"Error: No FASTA files found in {FASTA_INPUT_DIR}")
         return
 
-    if not actual_fasta_files: print("Error: No FASTA files found. Exiting."); return
-    print(f"Found {len(actual_fasta_files)} FASTA file(s) to process.")
+    print(f"Found {len(fasta_files)} FASTA file(s).")
 
-    print("Performing initial scan to count total sequences for progress bar...")
-    total_sequences = sum(count_sequences_in_fasta_fast(f) for f in actual_fasta_files)
-    if total_sequences == 0: print("Warning: No sequences counted. Word2Vec training may be empty or fail.")
+    # --- 2. Train Word2Vec model ---
+    print("\nTraining Word2Vec model...")
+    corpus = FastaCorpus(fasta_files)
+    w2v_model = Word2Vec(sentences=corpus, vector_size=W2V_VECTOR_SIZE, window=W2V_WINDOW, min_count=W2V_MIN_COUNT, workers=W2V_WORKERS, sg=W2V_SG, epochs=W2V_EPOCHS)
+    print("Word2Vec model training complete.")
 
-    print(f"Total sequences for Word2Vec training: {total_sequences}")
-    corpus_iterator = FastaCorpusForWord2Vec(actual_fasta_files, total_sequences_for_tqdm=total_sequences)
+    # --- 3. Generate and pool embeddings ---
+    print("\nGenerating and pooling per-protein embeddings...")
+    pooled_embeddings = {}
 
-    print(
-        f"Training Word2Vec model (Size:{W2V_VECTOR_SIZE}, Window:{W2V_WINDOW}, MinCount:{W2V_MIN_COUNT}, Epochs:{W2V_EPOCHS}, Workers:{W2V_WORKERS})...")
-    start_time = time.time()
-    word2vec_model = Word2Vec(sentences=corpus_iterator, vector_size=W2V_VECTOR_SIZE, window=W2V_WINDOW,
-                              min_count=W2V_MIN_COUNT, workers=W2V_WORKERS, sg=W2V_SG, epochs=W2V_EPOCHS,
-                              compute_loss=W2V_COMPUTE_LOSS)
-    print(f"Word2Vec model trained in {time.time() - start_time:.2f} seconds.")
-    print(f"Saving Word2Vec model to: {word2vec_model_path}")
-    word2vec_model.save(word2vec_model_path);
-    print("Word2Vec model saved.")
+    for fasta_file in tqdm(fasta_files, desc="Processing FASTA files"):
+        for protein_id, sequence in fast_fasta_parser(fasta_file):
+            pooled_embeddings[protein_id] = pool_protein_embedding(sequence, w2v_model, POOLING_STRATEGY)
 
-    print(f"\nGenerating and saving per-residue Word2Vec embeddings to: {per_residue_h5_path}")
-    with h5py.File(per_residue_h5_path, 'w') as hf:
-        sequences_embedded_count = 0
-        # Use a new tqdm progress bar for this part
-        total_files_to_process_for_embedding = len(actual_fasta_files)
-        # If total_sequences is 0, use number of files for progress bar, otherwise use total sequences for a rough guide
-        pbar_embedding = tqdm(total=total_sequences if total_sequences > 0 else total_files_to_process_for_embedding,
-                              desc="Generating/Saving Per-Residue Embeddings")
+    print(f"Generated {len(pooled_embeddings)} pooled protein embeddings.")
 
-        processed_in_current_file_count = 0
+    # --- 4. Apply PCA (optional) ---
+    final_embeddings = pooled_embeddings
+    if APPLY_PCA and len(pooled_embeddings) > 1:
+        print(f"\nApplying PCA to reduce dimensions to {PCA_TARGET_DIM}...")
 
-        for fasta_file_idx, fasta_file in enumerate(actual_fasta_files):
-            # print(f"Processing file {fasta_file_idx+1}/{total_files_to_process_for_embedding}: {fasta_file}")
-            for prot_id, sequence in simple_fasta_parser(fasta_file):
-                if not sequence:
-                    # print(f"Warning: Skipping protein {prot_id} from {fasta_file} due to empty sequence.")
-                    if total_sequences == 0: pbar_embedding.update(1)  # Update per file if no seq count
-                    continue
+        ids = list(pooled_embeddings.keys())
+        embedding_matrix = np.array([pooled_embeddings[pid] for pid in ids])
 
-                # Sanitize protein ID for HDF5 dataset name (HDF5 doesn't like slashes)
-                safe_prot_id = str(prot_id).replace('/', '_SLASH_').replace('\\', '_BSLASH_')
+        pca = PCA(n_components=PCA_TARGET_DIM, random_state=SEED)
+        reduced_embeddings = pca.fit_transform(embedding_matrix)
 
-                if safe_prot_id in hf:
-                    # print(f"Warning: Dataset for {safe_prot_id} (original: {prot_id}) already exists. Skipping.")
-                    if total_sequences > 0: pbar_embedding.update(1)  # Update per sequence
-                    continue
+        final_embeddings = {ids[i]: reduced_embeddings[i] for i in range(len(ids))}
+        print("PCA application complete.")
 
-                try:
-                    # Create dataset first, then fill it iteratively
-                    dset = hf.create_dataset(safe_prot_id, shape=(len(sequence), W2V_VECTOR_SIZE), dtype=np.float32)
-                    for i, char_residue in enumerate(sequence):
-                        if char_residue in word2vec_model.wv:
-                            dset[i] = word2vec_model.wv[char_residue]
-                        else:
-                            dset[i] = np.zeros(W2V_VECTOR_SIZE, dtype=np.float32)
-                    sequences_embedded_count += 1
-                except Exception as e:
-                    print(
-                        f"Error processing or saving embeddings for protein {prot_id} (safe_id: {safe_prot_id}) from {fasta_file}: {e}")
+    # --- 5. Save final embeddings ---
+    output_filename = f"{RUN_TAG}_pooled_embeddings.h5"
+    if APPLY_PCA:
+        output_filename = f"{RUN_TAG}_pooled_pca_{PCA_TARGET_DIM}_embeddings.h5"
 
-                if total_sequences > 0: pbar_embedding.update(1)  # Update per sequence
+    output_path = os.path.join(BASE_OUTPUT_DIR, output_filename)
 
-            if total_sequences == 0:  # If no sequence count, update pbar per file processed
-                pbar_embedding.update(1)
+    print(f"\nSaving final embeddings to: {output_path}")
+    with h5py.File(output_path, 'w') as hf:
+        for protein_id, embedding in final_embeddings.items():
+            safe_id = protein_id.replace('/', '_')  # HDF5 doesn't like slashes in names
+            hf.create_dataset(safe_id, data=embedding)
 
-        pbar_embedding.close()
-        hf.attrs['embedding_type'] = 'word2vec_per_residue'
-        hf.attrs['vector_size'] = W2V_VECTOR_SIZE
-        hf.attrs['dataset_tag'] = DATASET_TAG
-        print(f"Saved per-residue embeddings for {sequences_embedded_count} proteins.")
+        hf.attrs['run_tag'] = RUN_TAG
+        hf.attrs['pooling_strategy'] = POOLING_STRATEGY
+        hf.attrs['w2v_vector_size'] = W2V_VECTOR_SIZE
+        if APPLY_PCA:
+            hf.attrs['pca_applied'] = True
+            hf.attrs['pca_target_dim'] = PCA_TARGET_DIM
 
-    print("Script A finished.")
+    print("Embeddings saved successfully.")
+
+    gc.collect()
+    print(f"\nTotal script execution time: {time.time() - start_time:.2f} seconds.")
 
 
 if __name__ == "__main__":

@@ -98,10 +98,13 @@ class ScriptConfig:
         self.TRAINING_MODE = 'full_graph'  # OPTIONS: 'full_graph', 'mini_batch'
 
         # --- N-gramGCN Generation Configuration ---
-        self.RUN_AND_EVALUATE_NGRAM_GCN = True
-        self.NGRAM_GCN_INPUT_FASTA_PATH = os.path.join(self.BASE_DATA_DIR, "uniprot_sequences_sample.fasta")
+
+        self.RUN_NGRAM_GCN_GENERATION = False  # Set to True to run the entire N-gramGCN generation
+        self.RUN_LINK_PREDICTION_EVALUATION = True  # Set to True to run the link prediction evaluation
+
+        self.NGRAM_GCN_INPUT_FASTA_PATH = os.path.join(self.BASE_DATA_DIR, "uniprot_sprot.fasta")
         self.NGRAM_GCN_OUTPUT_EMBEDDINGS_DIR = os.path.join(self.BASE_OUTPUT_DIR, "ngram_gcn_generated_embeddings")
-        self.NGRAM_GCN_MAX_N = 5
+        self.NGRAM_GCN_MAX_N = 3
         self.NGRAM_GCN_1GRAM_INIT_DIM = 64
         self.NGRAM_GCN_HIDDEN_DIM_1 = 128
         self.NGRAM_GCN_HIDDEN_DIM_2 = 64
@@ -124,11 +127,16 @@ class ScriptConfig:
         self.DASK_CHUNK_SIZE = 2000000
         self.TEMP_FILE_DIR = os.path.join(self.BASE_OUTPUT_DIR, "temp")
 
+        self.PARALLEL_CONSTRUCTION_WORKERS: Optional[int] = 16
+
         # --- Link Prediction Evaluation Configuration ---
         self.LP_POSITIVE_INTERACTIONS_PATH = os.path.join(self.BASE_DATA_DIR, 'ground_truth/positive_interactions.csv')
         self.LP_NEGATIVE_INTERACTIONS_PATH = os.path.join(self.BASE_DATA_DIR, 'ground_truth/negative_interactions.csv')
-        self.LP_SAMPLE_NEGATIVE_PAIRS: Optional[int] = 20000
-        self.LP_EMBEDDING_FILES_TO_EVALUATE = [{"path": os.path.join(self.BASE_DATA_DIR, "models/per-protein.h5"), "name": "ProtT5-Precomputed", "loader_func_key": "load_h5_embeddings_selectively"}, ]
+        # self.LP_SAMPLE_NEGATIVE_PAIRS: Optional[int] = 1006807
+        self.LP_DESIRED_POS_TO_NEG_RATIO: float = 1.0  # Controls the pos:neg ratio, e.g., 1.0 means 1:1
+        self.LP_EMBEDDING_FILES_TO_EVALUATE = [{"path": os.path.join(self.BASE_DATA_DIR, "models/per-protein.h5"), "name": "ProtT5-Precomputed", "loader_func_key": "load_h5_embeddings_selectively"},
+                                               {"path": os.path.join(self.BASE_DATA_DIR, "ppi_evaluation_results_final/ngram_gcn_generated_embeddings/per_protein_embeddings_from_3gram.h5"),
+                                                "name": "ProtNgramGCN-Generated", "loader_func_key": "load_h5_embeddings_selectively"}]
         self.LP_OUTPUT_MAIN_DIR = os.path.join(self.BASE_OUTPUT_DIR, "link_prediction_evaluation")
         self.LP_EDGE_EMBEDDING_METHOD = 'concatenate'
         self.LP_N_FOLDS = 2
@@ -138,8 +146,8 @@ class ScriptConfig:
         self.LP_MLP_DENSE2_UNITS = 64
         self.LP_MLP_DROPOUT2_RATE = 0.4
         self.LP_MLP_L2_REG = 0.001
-        self.LP_BATCH_SIZE = 64
-        self.LP_EPOCHS = 10
+        self.LP_BATCH_SIZE = 128
+        self.LP_EPOCHS = 2
         self.LP_LEARNING_RATE = 1e-3
         self.LP_K_VALUES_FOR_RANKING_METRICS = [10, 50, 100, 200]
         self.LP_K_VALUES_FOR_TABLE_DISPLAY = [50, 100]
@@ -231,28 +239,26 @@ def build_node_map_with_dask(fasta_path: str, n: int, output_parquet_path: str, 
     """
     Pass 1 of graph construction. Uses Dask to find all unique n-grams in a FASTA file
     and assigns a unique integer ID to each, saving the map to a Parquet file.
+
+    MODIFIED: This version no longer creates its own client or prints a dashboard link.
     """
     if not DASK_AVAILABLE:
         raise ImportError("Dask is required for graph construction but not installed.")
 
-    client = None
-    try:
-        client = Client()
-        print(f"Dask client dashboard available at: {client.dashboard_link}")
-        print("Pass 1: Discovering unique n-grams with Dask...")
-        lazy_chunks = [dask.delayed(chunk) for chunk in stream_ngram_chunks_from_fasta(fasta_path, n, chunk_size)]
-        ddf = dd.from_delayed(lazy_chunks, meta={'ngram': 'string'})
+    # The Client() and the dashboard print statement have been removed.
 
-        unique_ngrams_ddf = ddf.drop_duplicates().reset_index(drop=True)
-        unique_ngrams_ddf['id'] = 1
-        unique_ngrams_ddf['id'] = (unique_ngrams_ddf['id'].cumsum() - 1).astype('int64')
+    print("Pass 1: Discovering unique n-grams with Dask...")
+    lazy_chunks = [dask.delayed(chunk) for chunk in stream_ngram_chunks_from_fasta(fasta_path, n, chunk_size)]
+    ddf = dd.from_delayed(lazy_chunks, meta={'ngram': 'string'})
 
-        print("Executing Dask computation and writing to Parquet...")
-        unique_ngrams_ddf.to_parquet(output_parquet_path, engine='pyarrow', write_index=False, overwrite=True, compression=None)
-        print(f"Pass 1 Complete. N-gram map saved to: {output_parquet_path}")
-    finally:
-        if client:
-            client.close()
+    unique_ngrams_ddf = ddf.drop_duplicates().reset_index(drop=True)
+    unique_ngrams_ddf['id'] = 1
+    unique_ngrams_ddf['id'] = (unique_ngrams_ddf['id'].cumsum() - 1).astype('int64')
+
+    print("Executing Dask computation and writing to Parquet...")
+    # This .compute() call will now use the scheduler set in the parent worker
+    unique_ngrams_ddf.to_parquet(output_parquet_path, engine='pyarrow', write_index=False, overwrite=True, compression=None)
+    print(f"Pass 1 Complete. N-gram map saved to: {output_parquet_path}")
 
 
 def build_edge_file_from_stream(fasta_path: str, n: int, ngram_to_idx_series: pd.Series, output_edge_path: str):
@@ -273,7 +279,7 @@ def build_edge_file_from_stream(fasta_path: str, n: int, ngram_to_idx_series: pd
 def build_graph_from_disk(parquet_path: str, edge_file_path: str) -> Optional[Data]:
     """
     Constructs the final PyTorch Geometric `Data` object from the n-gram map (Parquet)
-    and the edge list (CSV). Calculates transition probabilities for edge weights.
+    and the edge list (CSV). This version uses a compressed graph and efficient calculations.
     """
     print("Building final graph object from disk files...")
     if not os.path.exists(parquet_path) or not os.path.exists(edge_file_path):
@@ -287,45 +293,57 @@ def build_graph_from_disk(parquet_path: str, edge_file_path: str) -> Optional[Da
     ngram_to_idx = pd.Series(map_df.id.values, index=map_df.ngram).to_dict()
     idx_to_ngram = {v: k for k, v in ngram_to_idx.items()}
 
+    # This can still be a large file, but pandas handles it efficiently.
+    print(f"Reading the edge file from {edge_file_path} into memory...")
     edge_df = pd.read_csv(edge_file_path, header=None, names=['source', 'target'])
+    print(f"Finished reading {len(edge_df)} total edges.")
+
+    # --- Aggregate to unique edges and their counts ---
+    print("Aggregating edges to find unique transitions and their counts...")
+    edge_counts = edge_df.groupby(['source', 'target']).size()
+    unique_edges_df = edge_counts.reset_index(name='count')
+    print(f"Found {len(unique_edges_df)} unique directed edges.")
+
+    # --- Calculate transition probabilities for these unique edges ---
+    print("Calculating total outgoing transitions per source node...")
+    source_outgoing_total_counts = edge_df.groupby('source').size()
+
+    print("Calculating final edge weights...")
+    source_totals_for_unique_edges = unique_edges_df['source'].map(source_outgoing_total_counts)
+    transition_probabilities = unique_edges_df['count'] / source_totals_for_unique_edges
+    edge_weights_tensor = torch.tensor(transition_probabilities.values, dtype=torch.float)
+
+    # --- Build edge_index from UNIQUE edges ---
+    source_nodes = torch.tensor(unique_edges_df['source'].values, dtype=torch.long)
+    target_nodes = torch.tensor(unique_edges_df['target'].values, dtype=torch.long)
+    directed_edge_index = torch.stack([source_nodes, target_nodes], dim=0)
 
     data = Data(num_nodes=num_nodes)
     data.ngram_to_idx = ngram_to_idx
     data.idx_to_ngram = idx_to_ngram
 
-    source_nodes = torch.tensor(edge_df['source'].values, dtype=torch.long)
-    target_nodes = torch.tensor(edge_df['target'].values, dtype=torch.long)
-    directed_edge_index = torch.stack([source_nodes, target_nodes], dim=0)
-
-    # Efficiently calculate edge weights (transition probabilities)
-    edge_counts = edge_df.groupby(['source', 'target']).size()
-    source_outgoing_counts = edge_df.groupby('source').size()
-    edge_weights_series = edge_counts / source_outgoing_counts.loc[edge_counts.index.get_level_values('source')].values
-    edge_weights_df = edge_weights_series.reset_index(name='weight')
-
-    # Align weights with the original edge_df order
-    merged_df = pd.merge(edge_df.reset_index(), edge_weights_df, on=['source', 'target'], how='left')
-    merged_df = merged_df.sort_values('index').set_index('index')
-
-    edge_weights_tensor = torch.tensor(merged_df['weight'].values, dtype=torch.float)
-
     data.edge_index_out = directed_edge_index
     data.edge_weight_out = edge_weights_tensor
     data.edge_index_in = directed_edge_index.flip(dims=[0])
-    data.edge_weight_in = edge_weights_tensor  # Assuming symmetric weights for in-edges for this model
+    data.edge_weight_in = edge_weights_tensor
     data.edge_index = to_undirected(directed_edge_index, num_nodes=num_nodes)
 
-    # Prepare labels for the 'next_node' prediction task
-    adj_for_next_node_task = defaultdict(list)
-    for _, row in edge_df.iterrows():
-        adj_for_next_node_task[row['source']].append(row['target'])
+    # --- FIX: Replace the slow for-loop with a single, fast groupby operation ---
+    print("Building adjacency list for next-node task (this may take a moment)...")
+    adj_for_next_node_task = edge_df.groupby('source')['target'].apply(list).to_dict()
+    adj_for_next_node_task = defaultdict(list, adj_for_next_node_task)
 
+    print("Assigning labels for next-node task...")
     y_next_node = torch.full((num_nodes,), -1, dtype=torch.long)
     for src_node, successors in adj_for_next_node_task.items():
         if successors: y_next_node[src_node] = random.choice(successors)
     data.y_next_node = y_next_node
 
-    print("Graph object created successfully.")
+    # --- Free up memory from the large dataframe as it's no longer needed ---
+    del edge_df, edge_counts, unique_edges_df, source_outgoing_total_counts
+    gc.collect()
+
+    print("Compressed graph object created successfully.")
     return data
 
 
@@ -674,10 +692,40 @@ def extract_node_embeddings_ngram(model, data: Data, device: torch.device) -> Op
         return embeddings.cpu().numpy() if embeddings is not None and embeddings.numel() > 0 else None
 
 
+def build_graph_files_for_level_n(n_val: int, config: ScriptConfig):
+    """
+    A self-contained worker function to build the graph files for a single n-gram level.
+    This function is designed to be called in a separate process.
+    """
+    # --- NEW: Configure Dask to run sequentially within this worker process ---
+    dask.config.set(scheduler='synchronous')
+
+    print(f"[Worker n={n_val}]: Starting graph file construction.")
+    try:
+        # --- Pass 1: Build Node Map ---
+        parquet_path = os.path.join(config.TEMP_FILE_DIR, f"ngram_map_n{n_val}.parquet")
+        build_node_map_with_dask(config.NGRAM_GCN_INPUT_FASTA_PATH, n_val, parquet_path, config.DASK_CHUNK_SIZE)
+
+        # --- Pass 2: Build Edge File ---
+        edge_path = os.path.join(config.TEMP_FILE_DIR, f"edge_list_n{n_val}.txt")
+        map_df = pd.read_parquet(parquet_path)
+        ngram_map_series = pd.Series(map_df.id.values, index=map_df.ngram)
+        del map_df
+        gc.collect()
+
+        build_edge_file_from_stream(config.NGRAM_GCN_INPUT_FASTA_PATH, n_val, ngram_map_series, edge_path)
+
+        print(f"[Worker n={n_val}]: Successfully completed graph file construction.")
+        return n_val, True
+    except Exception as e:
+        print(f"[Worker n={n_val}]: FAILED with error: {e}")
+        return n_val, False
+
+
 # ==============================================================================
 # START: MAIN N-GRAM EMBEDDING GENERATION WORKFLOW
 # ==============================================================================
-def generate_and_save_ngram_embeddings(config: ScriptConfig, protein_ids_to_generate_for: Set[str]) -> Tuple[Optional[str], Optional[str]]:
+def generate_and_save_ngram_embeddings_sequential_training(config: ScriptConfig, protein_ids_to_generate_for: Set[str]) -> Tuple[Optional[str], Optional[str]]:
     """
     Main orchestrator for the N-gramGCN embedding generation process. It iterates from n=1 to max_n,
     building a graph, training a GCN model, and generating embeddings at each level.
@@ -703,22 +751,16 @@ def generate_and_save_ngram_embeddings(config: ScriptConfig, protein_ids_to_gene
     for n_val in range(1, config.NGRAM_GCN_MAX_N + 1):
         print(f"\n--- Processing N-gram Level: n = {n_val} ---")
 
-        # --- Unified Efficient Graph Construction ---
+        # --- MODIFIED: Load pre-built graph files instead of generating them ---
         parquet_path = os.path.join(config.TEMP_FILE_DIR, f"ngram_map_n{n_val}.parquet")
         edge_path = os.path.join(config.TEMP_FILE_DIR, f"edge_list_n{n_val}.txt")
-        build_node_map_with_dask(config.NGRAM_GCN_INPUT_FASTA_PATH, n_val, parquet_path, config.DASK_CHUNK_SIZE)
 
-        map_df = pd.read_parquet(parquet_path)
-        ngram_map_series = pd.Series(map_df.id.values, index=map_df.ngram)
-        del map_df
-        gc.collect()
-
-        build_edge_file_from_stream(config.NGRAM_GCN_INPUT_FASTA_PATH, n_val, ngram_map_series, edge_path)
+        print(f"Loading pre-built graph for n={n_val} from disk...")
         graph_data = build_graph_from_disk(parquet_path, edge_path)
 
         if graph_data is None:
-            print(f"NgramGCN: Could not build graph for n={n_val}. Stopping.")
-            return None, "Graph construction failed."
+            print(f"NgramGCN: Could not load pre-built graph for n={n_val}. Stopping.")
+            return None, "Graph loading failed."
 
         num_out_edges = graph_data.edge_index_out.size(1) if hasattr(graph_data, 'edge_index_out') and graph_data.edge_index_out is not None else 0
         if config.DEBUG_VERBOSE: print(f"NgramGCN: Built graph for n={n_val}: {graph_data.num_nodes} nodes, {num_out_edges} out-edges.")
@@ -919,17 +961,12 @@ def build_mlp_model_lp(input_dim: int, config: ScriptConfig) -> Model:
     return model
 
 
-def run_evaluation_for_one_embedding(config: ScriptConfig, all_pairs_df: pd.DataFrame, emb_name: str, embeddings: Dict[str, np.ndarray]):
+def run_evaluation_for_one_embedding(config: ScriptConfig, eval_pairs_df: pd.DataFrame, emb_name: str, embeddings: Dict[str, np.ndarray]):
     """
-    Performs K-fold cross-validation for a single, pre-loaded set of embeddings.
+    Performs K-fold cross-validation for a single, pre-loaded, and pre-sampled set of embeddings.
     """
-    # Filter pairs where both proteins have an embedding
-    valid_pairs_mask = all_pairs_df['protein1'].isin(embeddings.keys()) & all_pairs_df['protein2'].isin(embeddings.keys())
-    eval_pairs_df = all_pairs_df[valid_pairs_mask].reset_index(drop=True)
-
-    print(f"Found embeddings for {len(eval_pairs_df)} / {len(all_pairs_df)} pairs in '{emb_name}'.")
     if eval_pairs_df.empty:
-        print("No valid pairs with embeddings to evaluate. Skipping.")
+        print("Received an empty DataFrame for evaluation. Skipping.")
         return None
 
     skf = StratifiedKFold(n_splits=config.LP_N_FOLDS, shuffle=True, random_state=config.RANDOM_STATE)
@@ -940,7 +977,6 @@ def run_evaluation_for_one_embedding(config: ScriptConfig, all_pairs_df: pd.Data
         train_df = eval_pairs_df.iloc[train_idx]
         test_df = eval_pairs_df.iloc[test_idx]
 
-        # Get embedding dimension from the first available embedding
         embed_dim = next(iter(embeddings.values())).shape[0]
         input_dim = embed_dim * 2 if config.LP_EDGE_EMBEDDING_METHOD == 'concatenate' else embed_dim
 
@@ -957,23 +993,27 @@ def run_evaluation_for_one_embedding(config: ScriptConfig, all_pairs_df: pd.Data
 
         history = model.fit(train_dataset, epochs=config.LP_EPOCHS, verbose=1 if config.DEBUG_VERBOSE else 0)
 
-        # Evaluation on Test Set
         y_pred_probs = model.predict(test_dataset).flatten()
 
-        # Since the generator skips invalid pairs, we must align predictions with true labels
-        test_gen_for_labels = create_edge_embedding_generator(test_df, embeddings, config.LP_BATCH_SIZE, config.LP_EDGE_EMBEDDING_METHOD)
-        y_true_aligned = np.concatenate([labels for _, labels in test_gen_for_labels()])
+        # --- FIX: Re-create the generator to reliably get the true labels ---
+        y_true_gen = create_edge_embedding_generator(test_df, embeddings, config.LP_BATCH_SIZE, config.LP_EDGE_EMBEDDING_METHOD)
+        y_true_aligned = np.concatenate([labels for _, labels in y_true_gen()])
+
+        # Handle the case where no positive predictions were made
+        if len(np.unique(np.round(y_pred_probs))) == 1:
+            print("Warning: Model only predicted one class. Precision/F1 will be 0.")
+            precision, recall, f1 = 0.0, 0.0, 0.0
+        else:
+            precision = precision_score(y_true_aligned, y_pred_probs > 0.5)
+            recall = recall_score(y_true_aligned, y_pred_probs > 0.5)
+            f1 = f1_score(y_true_aligned, y_pred_probs > 0.5)
 
         auc = roc_auc_score(y_true_aligned, y_pred_probs)
-        precision = precision_score(y_true_aligned, y_pred_probs > 0.5)
-        recall = recall_score(y_true_aligned, y_pred_probs > 0.5)
-        f1 = f1_score(y_true_aligned, y_pred_probs > 0.5)
 
         fold_res = {'fold': fold, 'test_auc_sklearn': auc, 'test_precision': precision, 'test_recall': recall, 'test_f1': f1}
         fold_results.append(fold_res)
         print(f"Fold {fold + 1} Results for '{emb_name}': AUC={auc:.4f}, F1={f1:.4f}")
 
-    # Aggregate results for the current embedding
     avg_results = pd.DataFrame(fold_results).mean().to_dict()
     avg_results['embedding_name'] = emb_name
     return avg_results
@@ -982,118 +1022,149 @@ def run_evaluation_for_one_embedding(config: ScriptConfig, all_pairs_df: pd.Data
 # ==============================================================================
 # MAIN EXECUTION BLOCK (REFACTORED)
 # ==============================================================================
+# ==============================================================================
+# MAIN EXECUTION BLOCK (REFACTORED FOR PARALLEL CONSTRUCTION)
+# ==============================================================================
+# ==============================================================================
+# MAIN EXECUTION BLOCK (FINAL, FULLY INTEGRATED VERSION)
+# ==============================================================================
+# ==============================================================================
+# MAIN EXECUTION BLOCK (FINAL DE-COUPLED VERSION)
+# ==============================================================================
 if __name__ == '__main__':
-    print("--- Combined N-gramGCN Generation and Link Prediction Evaluation Script (Selectable Mode) ---")
+    # Required for multiprocessing to work correctly
+    import multiprocessing
+    from itertools import repeat
+    import sys
+
+    print("--- Modular N-gramGCN and Link Prediction Script ---")
     config = ScriptConfig()
 
-    # --- 1. N-gramGCN Generation ---
-    generated_prot_emb_path = None
-    if config.RUN_AND_EVALUATE_NGRAM_GCN:
-        print("\n" + "=" * 20 + " Step 1: N-gramGCN Generation " + "=" * 20)
+    # ==========================================================================
+    # --- PART 1: N-GRAM GCN EMBEDDING GENERATION ---
+    # ==========================================================================
+    if config.RUN_NGRAM_GCN_GENERATION:
+        print("\n" + "#" * 20 + " RUNNING: N-gramGCN Generation " + "#" * 20)
 
-        # To generate relevant embeddings, we first find which proteins are in our evaluation set
+        # --- Phase 1: Parallel Graph File Construction ---
+        print("\n" + "=" * 20 + " Phase 1: Parallel Graph Construction " + "=" * 20)
+        os.makedirs(config.TEMP_FILE_DIR, exist_ok=True)
+        levels_to_process = list(range(1, config.NGRAM_GCN_MAX_N + 1))
+
+        if config.PARALLEL_CONSTRUCTION_WORKERS is None:
+            num_workers = min(len(levels_to_process), max(1, multiprocessing.cpu_count() - 2))
+            print(f"Number of workers not specified. Auto-detecting: {num_workers} cores.")
+        else:
+            num_workers = config.PARALLEL_CONSTRUCTION_WORKERS
+            print(f"Using user-specified number of workers: {num_workers}.")
+
+        with multiprocessing.Pool(processes=num_workers) as pool:
+            results = pool.starmap(build_graph_files_for_level_n, zip(levels_to_process, repeat(config)))
+
+        if not all(success for _, success in results):
+            print("\nOne or more graph construction processes failed. Aborting the script.")
+            sys.exit(1)
+        else:
+            print("\nAll graph files have been successfully pre-built.")
+
+        # --- Phase 2: Sequential Model Training ---
+        print("\n" + "=" * 20 + " Phase 2: Sequential Model Training " + "=" * 20)
         try:
             pos_df_gcn = pd.read_csv(config.LP_POSITIVE_INTERACTIONS_PATH, dtype=str).dropna()
             neg_df_gcn = pd.read_csv(config.LP_NEGATIVE_INTERACTIONS_PATH, dtype=str).dropna()
             proteins_in_pairs_for_gcn = set(pos_df_gcn.iloc[:, 0]) | set(pos_df_gcn.iloc[:, 1]) | set(neg_df_gcn.iloc[:, 0]) | set(neg_df_gcn.iloc[:, 1])
         except FileNotFoundError:
-            print("Interaction files not found. Cannot determine which proteins to generate. Aborting GCN step.")
-            proteins_in_pairs_for_gcn = set()
+            print("Interaction files not found. Cannot determine which proteins to generate. Aborting.")
+            sys.exit(1)
 
-        if not proteins_in_pairs_for_gcn:
-            print("Could not identify any proteins from interaction files. Aborting GCN training.")
+        generated_prot_emb_path, error_msg = generate_and_save_ngram_embeddings_sequential_training(config, proteins_in_pairs_for_gcn)
+
+        if generated_prot_emb_path:
+            print(f"\nSUCCESS: N-gramGCN Generation complete.")
+            print(f"Embeddings saved to: {generated_prot_emb_path}")
+            print("To evaluate this file, manually add its path to 'LP_EMBEDDING_FILES_TO_EVALUATE' in the config.")
         else:
-            print(f"Found {len(proteins_in_pairs_for_gcn)} unique proteins in interaction data to target for embedding generation.")
-            generated_prot_emb_path, error_msg = generate_and_save_ngram_embeddings(config=config, protein_ids_to_generate_for=proteins_in_pairs_for_gcn)
+            print(f"\nFAILED: Training phase failed. Reason: {error_msg}")
+            sys.exit(1)
 
-            if generated_prot_emb_path and os.path.exists(generated_prot_emb_path):
-                print(f"N-gramGCN embedding generation successful. File saved to: {generated_prot_emb_path}")
-                # Prepend the newly generated embeddings to the list of files to be evaluated
-                new_embedding_info = {"path": generated_prot_emb_path, "name": config.NGRAM_GCN_GENERATED_EMB_NAME, "loader_func_key": "load_h5_embeddings_selectively"}
-                config.LP_EMBEDDING_FILES_TO_EVALUATE.insert(0, new_embedding_info)
+    # ==============================================================================
+    # --- MAIN EXECUTION BLOCK (PART 2 - REFACTORED WITH SHUFFLING) ---
+    # ==============================================================================
+    # (This should be the second 'if' block in your if __name__ == '__main__' section)
+    # ==============================================================================
+    if config.RUN_LINK_PREDICTION_EVALUATION:
+        print("\n" + "#" * 20 + " RUNNING: Link Prediction Evaluation " + "#" * 20)
+
+        try:
+            all_pos_df = pd.read_csv(config.LP_POSITIVE_INTERACTIONS_PATH, dtype=str, header=None, names=['protein1', 'protein2']).dropna()
+            all_neg_df = pd.read_csv(config.LP_NEGATIVE_INTERACTIONS_PATH, dtype=str, header=None, names=['protein1', 'protein2']).dropna()
+            all_pos_df['label'] = 1
+            all_neg_df['label'] = 0
+            print(f"Loaded {len(all_pos_df)} total positive and {len(all_neg_df)} total negative candidate pairs.")
+        except FileNotFoundError:
+            print("Interaction CSV files not found. Cannot run link prediction evaluation.")
+            all_pos_df, all_neg_df = pd.DataFrame(), pd.DataFrame()
+
+        if not all_pos_df.empty:
+            all_results = []
+            embedding_loader_map = {"load_h5_embeddings_selectively": load_h5_embeddings_selectively}
+
+            for emb_config in config.LP_EMBEDDING_FILES_TO_EVALUATE:
+                emb_path = emb_config['path']
+                emb_name = emb_config['name']
+                loader_func = embedding_loader_map[emb_config['loader_func_key']]
+
+                print(f"\n--- Evaluating file: {emb_name} from {emb_path} ---")
+
+                if not os.path.exists(emb_path):
+                    print(f"File not found: {emb_path}. Skipping.")
+                    continue
+
+                all_proteins_in_network = set(all_pos_df['protein1']) | set(all_pos_df['protein2']) | set(all_neg_df['protein1']) | set(all_neg_df['protein2'])
+                protein_embeddings = loader_func(emb_path, all_proteins_in_network)
+
+                if not protein_embeddings:
+                    print(f"No relevant embeddings could be loaded from this file. Skipping.")
+                    continue
+
+                # --- Automatic Sampling Logic ---
+                valid_pos_mask = all_pos_df['protein1'].isin(protein_embeddings.keys()) & all_pos_df['protein2'].isin(protein_embeddings.keys())
+                valid_pos_df = all_pos_df[valid_pos_mask]
+                num_valid_pos = len(valid_pos_df)
+
+                valid_neg_mask = all_neg_df['protein1'].isin(protein_embeddings.keys()) & all_neg_df['protein2'].isin(protein_embeddings.keys())
+                valid_neg_df = all_neg_df[valid_neg_mask]
+
+                target_neg_count = int(num_valid_pos / config.LP_DESIRED_POS_TO_NEG_RATIO)
+
+                print(f"Found {num_valid_pos} valid positive pairs with embeddings.")
+                print(f"Sampling {target_neg_count} negative pairs from {len(valid_neg_df)} valid candidates to achieve a ~{config.LP_DESIRED_POS_TO_NEG_RATIO}:1 pos:neg ratio.")
+
+                if len(valid_neg_df) >= target_neg_count:
+                    sampled_neg_df = valid_neg_df.sample(n=target_neg_count, random_state=config.RANDOM_STATE)
+                else:
+                    print(f"Warning: Not enough valid negative pairs to meet the desired ratio. Using all {len(valid_neg_df)} available.")
+                    sampled_neg_df = valid_neg_df
+
+                eval_pairs_df = pd.concat([valid_pos_df, sampled_neg_df], ignore_index=True)
+
+                # --- FIX: Shuffle the entire dataset before splitting into folds ---
+                # This is crucial to prevent the model from learning the order of the data.
+                eval_pairs_df = eval_pairs_df.sample(frac=1, random_state=config.RANDOM_STATE).reset_index(drop=True)
+
+                print(f"Created and shuffled final evaluation set with {len(eval_pairs_df)} total pairs.")
+
+                results_for_emb = run_evaluation_for_one_embedding(config, eval_pairs_df, emb_name, protein_embeddings)
+                if results_for_emb:
+                    all_results.append(results_for_emb)
+
+            if all_results:
+                results_df = pd.DataFrame(all_results)
+                print("\n\n--- Final Link Prediction Evaluation Summary ---")
+                print(results_df[['embedding_name', 'test_auc_sklearn', 'test_f1', 'test_precision', 'test_recall']].round(4))
             else:
-                print(f"N-gramGCN embedding generation failed. Reason: {error_msg}")
-
-    # --- 2. Load Interaction Data for Evaluation ---
-    print("\n" + "=" * 20 + " Step 2: Loading Interaction Data " + "=" * 20)
-    all_interaction_pairs_df = None
-    all_proteins_in_pairs = set()
-    try:
-        pos_df = pd.read_csv(config.LP_POSITIVE_INTERACTIONS_PATH, dtype=str, header=None, names=['protein1', 'protein2']).dropna()
-        neg_df = pd.read_csv(config.LP_NEGATIVE_INTERACTIONS_PATH, dtype=str, header=None, names=['protein1', 'protein2']).dropna()
-
-        if config.LP_SAMPLE_NEGATIVE_PAIRS and len(neg_df) > 0:
-            neg_df = neg_df.sample(n=min(config.LP_SAMPLE_NEGATIVE_PAIRS, len(neg_df)), random_state=config.RANDOM_STATE)
-
-        pos_df['label'] = 1
-        neg_df['label'] = 0
-        all_interaction_pairs_df = pd.concat([pos_df, neg_df], ignore_index=True)
-        all_proteins_in_pairs = set(all_interaction_pairs_df['protein1']) | set(all_interaction_pairs_df['protein2'])
-        print(f"Loaded {len(pos_df)} positive and {len(neg_df)} negative pairs.")
-        print(f"Found {len(all_proteins_in_pairs)} unique proteins required for link prediction.")
-    except FileNotFoundError:
-        print("Interaction CSV files not found. Cannot run link prediction evaluation.")
-
-    # --- 3. Gatekeeper Check ---
-    print("\n" + "=" * 20 + " Step 3: Gatekeeper Check " + "=" * 20)
-    can_proceed_with_evaluation = False
-    if all_interaction_pairs_df is None or all_interaction_pairs_df.empty:
-        print("No interaction data loaded. Skipping evaluation.")
-    elif config.RUN_AND_EVALUATE_NGRAM_GCN and not (generated_prot_emb_path and os.path.exists(generated_prot_emb_path)):
-        print("N-gram GCN was set to run but its embedding file was not generated. Skipping all evaluations.")
-    elif config.RUN_AND_EVALUATE_NGRAM_GCN:
-        print(f"Checking relevance of generated N-gram GCN embeddings at: {generated_prot_emb_path}")
-        with h5py.File(generated_prot_emb_path, 'r') as hf:
-            relevant_ids_found = {pid for pid in all_proteins_in_pairs if pid in hf}
-
-        if relevant_ids_found:
-            print(f"Found {len(relevant_ids_found)} relevant proteins in the N-gram GCN embeddings. Proceeding with all evaluations.")
-            can_proceed_with_evaluation = True
+                print("\nNo embeddings were successfully evaluated.")
         else:
-            print("No overlap found between interaction proteins and generated N-gram GCN embeddings. Skipping all link prediction evaluations.")
-    else:
-        print("N-gram GCN generation was disabled. Proceeding with evaluation of pre-existing files.")
-        can_proceed_with_evaluation = True
-
-    # --- 4. Conditional Link Prediction Evaluation ---
-    if can_proceed_with_evaluation:
-        print("\n" + "=" * 20 + " Step 4: Link Prediction Evaluation " + "=" * 20)
-        all_results = []
-        embedding_loader_map = {"load_h5_embeddings_selectively": load_h5_embeddings_selectively}
-
-        for emb_config in config.LP_EMBEDDING_FILES_TO_EVALUATE:
-            emb_path = emb_config['path']
-            emb_name = emb_config['name']
-            loader_func = embedding_loader_map[emb_config['loader_func_key']]
-
-            print(f"\n--- Evaluating file: {emb_name} from {emb_path} ---")
-
-            if not os.path.exists(emb_path):
-                print("File not found. Skipping.")
-                continue
-
-            try:
-                protein_embeddings = loader_func(emb_path, all_proteins_in_pairs)
-            except Exception as e:
-                print(f"Could not load embeddings from {emb_path}: {e}")
-                continue
-
-            if not protein_embeddings:
-                print(f"No relevant embeddings for interaction pairs found in this file. Skipping.")
-                continue
-
-            # Run evaluation for this specific embedding file
-            results_for_emb = run_evaluation_for_one_embedding(config, all_interaction_pairs_df, emb_name, protein_embeddings)
-            if results_for_emb:
-                all_results.append(results_for_emb)
-
-        # Display Final Summary
-        if all_results:
-            results_df = pd.DataFrame(all_results)
-            print("\n\n--- Final Link Prediction Evaluation Summary ---")
-            print(results_df[['embedding_name', 'test_auc_sklearn', 'test_f1', 'test_precision', 'test_recall']].round(4))
-            print("-" * 50)
-        else:
-            print("\nNo embeddings were successfully evaluated.")
+            print("Skipping evaluation as no interaction data was loaded.")
 
     print("\n--- Script Finished ---")
