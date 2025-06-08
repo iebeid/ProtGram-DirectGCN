@@ -104,24 +104,6 @@ class RGCN(BaseGNN):
         return F.log_softmax(x, dim=1), self.embedding_output
 
 
-# class MoNet(BaseGNN):
-#     """A Mixture Model Network (MoNet)."""
-#
-#     def __init__(self, num_features: int, num_classes: int, hidden_channels: int = 64, dropout: float = 0.5, pseudo_dim: int = 1):
-#         super().__init__();
-#         self.dropout = dropout
-#         self.conv1 = MoNetConv(num_features, hidden_channels, dim=pseudo_dim, kernel_size=5)
-#         self.conv2 = MoNetConv(hidden_channels, num_classes, dim=pseudo_dim, kernel_size=5)
-#
-#     def forward(self, x, edge_index, pseudo_coords=None, **kwargs):
-#         if pseudo_coords is None:  # Create dummy pseudo-coordinates if not provided
-#             pseudo_coords = torch.ones((x.size(0), 1), device=x.device)
-#         self.embedding_output = F.relu(self.conv1(x, edge_index, pseudo_coords));
-#         x = F.dropout(self.embedding_output, p=self.dropout, training=self.training)
-#         x = self.conv2(x, edge_index, pseudo_coords);
-#         return F.log_softmax(x, dim=1), self.embedding_output
-
-
 # --- Model Factory ---
 def get_gnn_model_from_zoo(model_name: str, num_features: int, num_classes: int, num_relations: int = 1) -> BaseGNN:
     """A factory function to create a GNN model instance from the zoo."""
