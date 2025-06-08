@@ -7,14 +7,14 @@
 import time
 
 # Import the configuration and the main run function from each module
-from config import Config
-from utils.diagnostics import check_gpu_environment
-from pipeline.build_graphs import run_graph_building
-from pipeline.gcn_trainer import run_gcn_training
-from pipeline.word2vec_embedder import run_word2vec_training
-from pipeline.transformer_embedder import run_transformer_embedding_generation
-from pipeline.evaluator import run_evaluation
-from benchmarking.gnn_evaluator import run_gnn_benchmarking
+from src.config import Config
+from src.utils.checker import check_gpu_environment
+from src.pipeline.graph_builder import run_graph_building
+from src.pipeline.prot_ngram_gcn_trainer import run_gcn_training
+from src.pipeline.word2vec_embedder import run_word2vec_training
+from src.pipeline.transformer_embedder import run_transformer_embedding_generation
+from src.pipeline.evaluator import run_evaluation
+from src.benchmarks.gnn_evaluator import run_gnn_benchmarking
 
 
 def main():

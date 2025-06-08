@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: pipeline/4_transformer_embedder.py
+# MODULE: pipeline/transformer_embedder.py
 # PURPOSE: Generates per-protein embeddings using pre-trained Transformer
 #          models from Hugging Face.
 # ==============================================================================

@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: pipeline/5_evaluator.py
+# MODULE: pipeline/evaluator.py
 # PURPOSE: Contains the complete workflow for evaluating one or more sets of
 #          protein embeddings on a link prediction task.
 # ==============================================================================

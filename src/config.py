@@ -15,9 +15,9 @@ class Config:
 
         # --- Workflow Control Flags ---
         # Master switches to run each part of the pipeline.
-        self.RUN_GCN_PIPELINE = True
-        self.RUN_WORD2VEC_PIPELINE = True
-        self.RUN_TRANSFORMER_PIPELINE = True
+        self.RUN_GCN_PIPELINE = False
+        self.RUN_WORD2VEC_PIPELINE = False
+        self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = True
         self.RUN_DUMMY_TEST = True  # Run a quick test of the evaluation pipeline
         self.CLEANUP_DUMMY_DATA = True
@@ -42,7 +42,7 @@ class Config:
 
         # --- 2. GCN PIPELINE PARAMETERS ---
 
-        # --- Graph Building (pipeline/1_graph_builder.py) ---
+        # --- Graph Building (pipeline/graph_builder.py) ---
         self.GCN_NGRAM_MAX_N = 3
         self.DASK_CHUNK_SIZE = 2000000
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 2)
@@ -68,7 +68,7 @@ class Config:
         self.APPLY_PCA_TO_GCN = True
         self.PCA_TARGET_DIMENSION = 64
 
-        # --- 3. WORD2VEC PIPELINE PARAMETERS (pipeline/3_word2vec_embedder.py) ---
+        # --- 3. WORD2VEC PIPELINE PARAMETERS (pipeline/word2vec_embedder.py) ---
         self.W2V_INPUT_FASTA_DIR = os.path.join(self.BASE_DATA_DIR, "uniprot_sprot.fasta")  # Example path
         self.W2V_VECTOR_SIZE = 100
         self.W2V_WINDOW = 5
@@ -78,7 +78,7 @@ class Config:
         self.W2V_POOLING_STRATEGY = 'mean'
         self.APPLY_PCA_TO_W2V = True
 
-        # --- 4. TRANSFORMER PIPELINE PARAMETERS (pipeline/4_transformer_embedder.py) ---
+        # --- 4. TRANSFORMER PIPELINE PARAMETERS (pipeline/transformer_embedder.py) ---
         self.TRANSFORMER_INPUT_FASTA_DIR = os.path.join(self.BASE_DATA_DIR, "uniprot_sprot.fasta")  # Example path
         self.TRANSFORMER_MODELS_TO_RUN = [{"name": "ProtBERT", "hf_id": "Rostlab/prot_bert", "is_t5": False, "batch_size_multiplier": 1}, ]
         self.TRANSFORMER_MAX_LENGTH = 1024
@@ -86,7 +86,7 @@ class Config:
         self.TRANSFORMER_POOLING_STRATEGY = 'mean'
         self.APPLY_PCA_TO_TRANSFORMER = True
 
-        # --- 5. EVALUATION PARAMETERS (pipeline/5_evaluator.py) ---
+        # --- 5. EVALUATION PARAMETERS (pipeline/evaluator.py) ---
         self.PERFORM_H5_INTEGRITY_CHECK = True
         self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 500000
         self.TF_DATASET_STRATEGY = 'from_tensor_slices'  # Options: 'from_tensor_slices', 'from_generator'

@@ -52,13 +52,7 @@ def _plot_confusion_matrix(y_true, y_pred, class_names, dataset_name, model_name
     plt.close()
 
 
-def _train_and_evaluate_model(
-        model: BaseGNN,
-        data: Data,
-        device: torch.device,
-        config: Config,
-        dataset_name: str
-) -> Dict[str, Any]:
+def _train_and_evaluate_model(model: BaseGNN, data: Data, device: torch.device, config: Config, dataset_name: str) -> Dict[str, Any]:
     """
     Trains and evaluates a single GNN model on a given dataset's splits.
     Returns a dictionary of performance metrics.
@@ -88,13 +82,9 @@ def _train_and_evaluate_model(
         _plot_confusion_matrix(true_cpu, pred_cpu, class_names, dataset_name, model.name, plots_dir)
 
         # Calculate all metrics
-        metrics = {
-            'accuracy': accuracy_score(true_cpu, pred_cpu),
-            'f1_weighted': f1_score(true_cpu, pred_cpu, average='weighted', zero_division=0),
-            'precision_weighted': precision_score(true_cpu, pred_cpu, average='weighted', zero_division=0),
-            'recall_weighted': recall_score(true_cpu, pred_cpu, average='weighted', zero_division=0),
-            'mcc': matthews_corrcoef(true_cpu, pred_cpu)
-        }
+        metrics = {'accuracy': accuracy_score(true_cpu, pred_cpu), 'f1_weighted': f1_score(true_cpu, pred_cpu, average='weighted', zero_division=0),
+            'precision_weighted': precision_score(true_cpu, pred_cpu, average='weighted', zero_division=0), 'recall_weighted': recall_score(true_cpu, pred_cpu, average='weighted', zero_division=0),
+            'mcc': matthews_corrcoef(true_cpu, pred_cpu)}
         return metrics
 
 
@@ -127,11 +117,8 @@ def run_gnn_benchmarking(config: Config):
 
             try:
                 if model_name == "ProtNgramGCN":
-                    model = ProtNgramGCN(
-                        num_initial_features=num_features, hidden_dim1=config.GCN_HIDDEN_DIM_1,
-                        hidden_dim2=config.GCN_HIDDEN_DIM_2, num_graph_nodes=data.num_nodes,
-                        task_num_output_classes=num_classes, n_gram_len=3, one_gram_dim=0, max_pe_len=0,
-                        dropout=config.GCN_DROPOUT, use_vector_coeffs=True)
+                    model = ProtNgramGCN(num_initial_features=num_features, hidden_dim1=config.GCN_HIDDEN_DIM_1, hidden_dim2=config.GCN_HIDDEN_DIM_2, num_graph_nodes=data.num_nodes, task_num_output_classes=num_classes,
+                        n_gram_len=3, one_gram_dim=0, max_pe_len=0, dropout=config.GCN_DROPOUT, use_vector_coeffs=True)
                 else:
                     model = get_gnn_model_from_zoo(model_name, num_features, num_classes, num_relations=num_relations)
 

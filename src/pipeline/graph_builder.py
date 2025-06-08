@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: pipeline/1_graph_builder.py
+# MODULE: pipeline/graph_builder.py
 # PURPOSE: Builds n-gram graphs from a FASTA file and saves them as objects.
 # ==============================================================================
 
@@ -26,8 +26,8 @@ except ImportError:
 from Bio import SeqIO
 
 # Import from our new project structure
-from utils import graph_processing
-from config import Config
+from src.utils import graph_processor
+from src.config import Config
 
 
 # --- Helper Functions for Graph Construction ---

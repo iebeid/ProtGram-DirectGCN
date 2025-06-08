@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: pipeline/3_word2vec_embedder.py
+# MODULE: pipeline/word2vec_embedder.py
 # PURPOSE: Trains a Word2Vec model on protein sequences and generates
 #          pooled per-protein embeddings.
 # ==============================================================================
