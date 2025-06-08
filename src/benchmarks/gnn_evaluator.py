@@ -1,20 +1,14 @@
-# ==============================================================================
-# MODULE: benchmarking/gnn_evaluator.py
-# PURPOSE: Contains the workflow for benchmarking GNN models on standard
-#          academic graph datasets using cross-validation.
-# VERSION: 3.0 (Adds CV, Early Stopping, New Metrics, and New Models/Datasets)
-# ==============================================================================
-
 import os
 import time
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from torch_geometric.datasets import Planetoid, WebKB, KarateClub
+from torch_geometric.datasets import Planetoid, WebKB, KarateClub  # WebKB is already imported
 from torch_geometric.utils import degree
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, matthews_corrcoef, confusion_matrix
+import mlflow
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, Any, List, Tuple
@@ -26,8 +20,13 @@ from src.models.gnn_zoo import get_gnn_model_from_zoo, BaseGNN
 
 def _get_benchmark_datasets(config: Config) -> List[Tuple[torch.Tensor, str]]:
     """Loads standard benchmark datasets from PyTorch Geometric."""
+    # --- MODIFICATION START ---
+    # Added "Cornell" to the list of datasets to load.
     datasets_to_load = [{"name": "Cora", "class": Planetoid}, {"name": "CiteSeer", "class": Planetoid}, {"name": "PubMed", "class": Planetoid}, {"name": "Texas", "class": WebKB}, {"name": "Wisconsin", "class": WebKB},
+        {"name": "Cornell", "class": WebKB},  # This line was added
         {"name": "KarateClub", "class": KarateClub}]
+    # --- MODIFICATION END ---
+
     datasets = []
     for item in datasets_to_load:
         try:
@@ -113,28 +112,46 @@ def run_gnn_benchmarking(config: Config):
         num_classes = data.y.max().item() + 1
 
         for model_name in models_to_benchmark:
-            print(f"  Testing model: {model_name}...")
-            fold_metrics = []
-            kf = StratifiedKFold(n_splits=config.EVAL_N_FOLDS, shuffle=True, random_state=config.RANDOM_STATE)
-            for fold, (train_idx, test_idx) in enumerate(kf.split(np.zeros(data.num_nodes), data.y.cpu())):
-                try:
-                    model = ProtNgramGCN(num_initial_features=num_features, hidden_dim1=config.GCN_HIDDEN_DIM_1, hidden_dim2=config.GCN_HIDDEN_DIM_2, num_graph_nodes=data.num_nodes, task_num_output_classes=num_classes,
-                                         n_gram_len=1, one_gram_dim=0, max_pe_len=0, dropout=config.GCN_DROPOUT, use_vector_coeffs=True) if model_name == "ProtNgramGCN" else get_gnn_model_from_zoo(model_name,
-                                                                                                                                                                                                     num_features,
-                                                                                                                                                                                                     num_classes)
-                    metrics = _train_and_evaluate_fold(model, data, train_idx, test_idx, device, config, dataset_name, model_name)
-                    fold_metrics.append(metrics)
-                except Exception as e:
-                    print(f"    - ERROR on fold {fold + 1} for {model_name}: {e}");
-                    break
+            # --- MLFLOW INTEGRATION ---
+            run_name = f"{dataset_name}_{model_name}"
+            with mlflow.start_run(run_name=run_name, nested=True) as run:
+                print(f"  Testing model: {model_name}...")
 
-            if fold_metrics:
-                df = pd.DataFrame(fold_metrics)
-                mean_metrics = df.mean().add_suffix('_mean')
-                std_metrics = df.std().add_suffix('_std')
-                result_row = {'dataset': dataset_name, 'model': model_name, **mean_metrics, **std_metrics}
-                all_results.append(result_row)
-                print(f"    - Avg Results: Acc={result_row['accuracy_mean']:.4f}±{result_row['accuracy_std']:.4f}, F1={result_row['f1_weighted_mean']:.4f}±{result_row['f1_weighted_std']:.4f}")
+                if config.USE_MLFLOW:
+                    mlflow.log_param("model_name", model_name)
+                    mlflow.log_param("dataset_name", dataset_name)
+                    mlflow.log_param("learning_rate", config.GCN_LR)
+                    mlflow.log_param("epochs", config.GCN_EPOCHS_PER_LEVEL)
+                    mlflow.log_param("n_folds", config.EVAL_N_FOLDS)
+
+                fold_metrics = []
+                kf = StratifiedKFold(n_splits=config.EVAL_N_FOLDS, shuffle=True, random_state=config.RANDOM_STATE)
+                for fold, (train_idx, test_idx) in enumerate(kf.split(np.zeros(data.num_nodes), data.y.cpu())):
+                    try:
+                        model = ProtNgramGCN(num_initial_features=num_features, hidden_dim1=config.GCN_HIDDEN_DIM_1, hidden_dim2=config.GCN_HIDDEN_DIM_2, num_graph_nodes=data.num_nodes,
+                                             task_num_output_classes=num_classes,
+                                             n_gram_len=1, one_gram_dim=0, max_pe_len=0, dropout=config.GCN_DROPOUT, use_vector_coeffs=True) if model_name == "ProtNgramGCN" else get_gnn_model_from_zoo(model_name,
+                                                                                                                                                                                                         num_features,
+                                                                                                                                                                                                         num_classes)
+                        metrics = _train_and_evaluate_fold(model, data, train_idx, test_idx, device, config, dataset_name, model_name)
+                        fold_metrics.append(metrics)
+                    except Exception as e:
+                        print(f"    - ERROR on fold {fold + 1} for {model_name}: {e}");
+                        break
+
+                if fold_metrics:
+                    df = pd.DataFrame(fold_metrics)
+                    mean_metrics = df.mean().add_suffix('_mean')
+                    std_metrics = df.std().add_suffix('_std')
+
+                    if config.USE_MLFLOW:
+                        # Log mean and std metrics to MLflow
+                        mlflow.log_metrics(mean_metrics.to_dict())
+                        mlflow.log_metrics(std_metrics.to_dict())
+
+                    result_row = {'dataset': dataset_name, 'model': model_name, **mean_metrics, **std_metrics}
+                    all_results.append(result_row)
+                    print(f"    - Avg Results: Acc={result_row['accuracy_mean']:.4f}±{result_row['accuracy_std']:.4f}, F1={result_row['f1_weighted_mean']:.4f}±{result_row['f1_weighted_std']:.4f}")
 
     if all_results:
         results_df = pd.DataFrame(all_results).round(4)

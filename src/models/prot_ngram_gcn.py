@@ -96,8 +96,22 @@ class ProtNgramGCN(nn.Module):
             x_reshaped[:, :pos_to_enc, :] += pe.unsqueeze(0)
         return x_reshaped.view(-1, self.n_gram_len * self.one_gram_dim)
 
-    def forward(self, data):
-        x, ei_in, ew_in, ei_out, ew_out = data.x, data.edge_index_in, data.edge_weight_in, data.edge_index_out, data.edge_weight_out
+    def forward(self, data=None, x=None, edge_index=None, **kwargs):
+        """
+        A flexible forward pass that can accept either a PyG Data object
+        or individual tensors as keyword arguments.
+        """
+        if data is not None:
+            # Called from the main GCN training pipeline
+            x, ei_in, ew_in, ei_out, ew_out = data.x, data.edge_index_in, data.edge_weight_in, data.edge_index_out, data.edge_weight_out
+        elif x is not None and edge_index is not None:
+            # Called from the GNN benchmarking pipeline
+            # The benchmark datasets have undirected edges, so we'll use the same edge_index for in and out.
+            ei_in, ew_in = edge_index, kwargs.get('edge_weight', None)
+            ei_out, ew_out = edge_index, kwargs.get('edge_weight', None)
+        else:
+            raise ValueError("ProtNgramGCN forward pass requires either a 'data' object or 'x' and 'edge_index' arguments.")
+
         x_pe = self._apply_pe(x)
 
         h1 = F.tanh(self.conv1(x_pe, ei_in, ew_in, ei_out, ew_out) + self.res_proj1(x_pe))

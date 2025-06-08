@@ -87,9 +87,52 @@ class Config:
         self.APPLY_PCA_TO_TRANSFORMER = True
 
         # --- 5. EVALUATION PARAMETERS (pipeline/evaluator.py) ---
+        self.PLOT_TRAINING_HISTORY = True  # Add this line
+        self.EARLY_STOPPING_PATIENCE = 10  # Add this line
+
         self.PERFORM_H5_INTEGRITY_CHECK = True
         self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 500000
         self.TF_DATASET_STRATEGY = 'from_tensor_slices'  # Options: 'from_tensor_slices', 'from_generator'
+
+        # In src/config.py
+
+        # --- 6. MLFLOW & EXPERIMENT TRACKING ---
+        self.USE_MLFLOW = True  # Master switch to enable/disable MLflow
+        # Location to store MLflow runs. A local 'mlruns' folder will be created.
+        self.MLFLOW_TRACKING_URI = "file://" + os.path.join(self.BASE_OUTPUT_DIR, "mlruns")
+        # Experiment name for the main link prediction evaluation
+        self.MLFLOW_EXPERIMENT_NAME = "PPI-Link-Prediction"
+        # Experiment name for the GNN benchmarking
+        self.MLFLOW_BENCHMARK_EXPERIMENT_NAME = "GNN-Benchmarking"
+
+        # In src/config.py, inside the Config class __init__ method
+
+        # --- 5. EVALUATION PARAMETERS (pipeline/evaluator.py) ---
+        self.PLOT_TRAINING_HISTORY = True
+        self.EARLY_STOPPING_PATIENCE = 10
+
+        # --- ADD THIS VARIABLE ---
+        # A list of dictionaries, where each dict defines an embedding file to be evaluated.
+        # You must provide the 'name' for plotting and the 'path' to the H5 file.
+        self.LP_EMBEDDING_FILES_TO_EVALUATE = [
+            {
+                "name": "ProtNgramGCN-n3-PCA64",
+                "path": os.path.join(self.GCN_EMBEDDINGS_DIR, "gcn_n3_embeddings_pca64.h5")
+            },
+            {
+                "name": "ProtBERT-Mean-PCA64",
+                "path": os.path.join(self.TRANSFORMER_EMBEDDINGS_DIR, "ProtBERT_mean_pca64.h5")
+            },
+            {
+                "name": "Word2Vec-Mean-PCA64",
+                "path": os.path.join(self.WORD2VEC_EMBEDDINGS_DIR, "word2vec_dim100_mean_pca64.h5")
+            }
+            # Add any other embedding files you want to compare here.
+        ]
+        # --- END OF ADDITION ---
+
+        self.PERFORM_H5_INTEGRITY_CHECK = True
+        self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 500000
 
         # Evaluation MLP Architecture & Training
         self.EVAL_EDGE_EMBEDDING_METHOD = 'concatenate'

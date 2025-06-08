@@ -20,7 +20,7 @@ def plot_training_history(history_dict: Dict[str, Any], model_name: str, plots_o
     """
     if not history_dict:
         print(f"Plotting: No history data for {model_name} to plot.")
-        return
+        return None
 
     os.makedirs(plots_output_dir, exist_ok=True)
     plot_filename = os.path.join(plots_output_dir, f"history_{model_name.replace(' ', '_')}.png")
@@ -59,6 +59,7 @@ def plot_training_history(history_dict: Dict[str, Any], model_name: str, plots_o
     except Exception as e:
         print(f"  Error saving plot {plot_filename}: {e}")
     plt.close()
+    return plot_filename
 
 
 def plot_roc_curves(results_list: List[Dict[str, Any]], plots_output_dir: str):
@@ -81,7 +82,7 @@ def plot_roc_curves(results_list: List[Dict[str, Any]], plots_output_dir: str):
     if not plotted_anything:
         print("Plotting: No valid ROC data available for any model.")
         plt.close()
-        return
+        return None
 
     plt.plot([0, 1], [0, 1], 'k--', label='Random Chance')
     plt.xlim([0.0, 1.0]);
@@ -98,6 +99,7 @@ def plot_roc_curves(results_list: List[Dict[str, Any]], plots_output_dir: str):
     except Exception as e:
         print(f"  Error saving ROC plot {plot_filename}: {e}")
     plt.close()
+    return plot_filename
 
 
 def plot_comparison_charts(results_list: List[Dict[str, Any]], k_vals_table: List[int], plots_output_dir: str):
@@ -105,7 +107,7 @@ def plot_comparison_charts(results_list: List[Dict[str, Any]], k_vals_table: Lis
     Generates a set of bar charts comparing key performance metrics across all models.
     (Adapted from evaluater.py)
     """
-    if not results_list: return
+    if not results_list: return None
     os.makedirs(plots_output_dir, exist_ok=True)
     plot_filename = os.path.join(plots_output_dir, "comparison_metrics_barchart.png")
 
@@ -141,6 +143,7 @@ def plot_comparison_charts(results_list: List[Dict[str, Any]], k_vals_table: Lis
     except Exception as e:
         print(f"  Error saving comparison chart {plot_filename}: {e}")
     plt.close()
+    return plot_filename
 
 
 def write_summary_file(results_list: List[Dict[str, Any]], output_dir: str, main_emb_name: str, test_metric: str, alpha: float, k_vals_table: List[int]):
@@ -148,7 +151,7 @@ def write_summary_file(results_list: List[Dict[str, Any]], output_dir: str, main
     Writes a formatted summary table and statistical test results to a text file.
     (Merges logic from print_results_table and perform_statistical_tests from evaluater.py)
     """
-    if not results_list: return
+    if not results_list: return None
     os.makedirs(output_dir, exist_ok=True)
     filepath = os.path.join(output_dir, "evaluation_summary.txt")
 
@@ -196,3 +199,4 @@ def write_summary_file(results_list: List[Dict[str, Any]], output_dir: str, main
             f.write(f"Could not perform stats: Baseline model '{main_emb_name}' or its fold scores ('{scores_key}') not found.\n")
 
     print(f"Results summary saved to {filepath}")
+    return filepath

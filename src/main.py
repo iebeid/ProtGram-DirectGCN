@@ -1,12 +1,8 @@
-# ==============================================================================
-# SCRIPT: main_orchestrator.py
-# PURPOSE: The single, central entry point for running all workflows in the
-#          PPI pipeline, including embedding generation, evaluation, and
-#          GNN benchmarking.
-# ==============================================================================
+# In src/main.py
 
 import time
 import os
+import mlflow  # Import mlflow
 
 # Import the configuration and the main run function from each module
 from src.config import Config
@@ -32,8 +28,14 @@ def main():
     config = Config()
     check_gpu_environment()
 
+    # --- MLFLOW SETUP ---
+    if config.USE_MLFLOW:
+        mlflow.set_tracking_uri(config.MLFLOW_TRACKING_URI)
+
     # 2. Run the GNN Benchmarking Pipeline (Optional)
     if config.RUN_BENCHMARKING_PIPELINE:
+        if config.USE_MLFLOW:
+            mlflow.set_experiment(config.MLFLOW_BENCHMARK_EXPERIMENT_NAME)
         run_gnn_benchmarking(config)
 
     # 3. Run the N-gram GCN Pipeline to generate embeddings (Optional)
@@ -51,14 +53,23 @@ def main():
     if config.RUN_TRANSFORMER_PIPELINE:
         run_transformer_embedding_generation(config)
 
+    # --- Set experiment for the main evaluation ---
+    if config.USE_MLFLOW:
+        mlflow.set_experiment(config.MLFLOW_EXPERIMENT_NAME)
+
     # 6. Run the Evaluation Pipeline
     # This step evaluates the embeddings created by the steps above.
     if config.RUN_DUMMY_TEST:
-        run_evaluation(config, use_dummy_data=True)
+        # Tag dummy runs in MLflow to easily filter them
+        with mlflow.start_run(run_name="Dummy_Run_Parent") as parent_run:
+            mlflow.set_tag("run_type", "dummy_test")
+            run_evaluation(config, use_dummy_data=True, parent_run_id=parent_run.info.run_id)
 
     # Always run the main evaluation on the user-configured files
-    print("\nNote: The main evaluation will now run on the files specified in your config's EMBEDDING_FILES_TO_COMPARE list.")
-    run_evaluation(config, use_dummy_data=False)
+    print("\nNote: The main evaluation will now run on the files specified in your config's LP_EMBEDDING_FILES_TO_EVALUATE list.")
+    with mlflow.start_run(run_name="Production_Run_Parent") as parent_run:
+        mlflow.set_tag("run_type", "production_eval")
+        run_evaluation(config, use_dummy_data=False, parent_run_id=parent_run.info.run_id)
 
     print("\n======================================================")
     print(f"### Full Orchestration Finished in {time.time() - script_start_time:.2f} seconds. ###")

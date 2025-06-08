@@ -17,6 +17,7 @@ import tensorflow as tf
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score, roc_curve, ndcg_score
 from typing import List, Optional, Dict, Any, Set, Tuple
+import mlflow
 
 # Import from our new project structure
 from src.config import Config
@@ -78,7 +79,7 @@ def _run_cv_workflow(embedding_name: str, X_full: np.ndarray, y_full: np.ndarray
         y_pred_class = (y_pred_proba > 0.5).astype(int)
 
         current_metrics = {'precision_sklearn': precision_score(y_val, y_pred_class, zero_division=0), 'recall_sklearn': recall_score(y_val, y_pred_class, zero_division=0),
-            'f1_sklearn': f1_score(y_val, y_pred_class, zero_division=0)}
+                           'f1_sklearn': f1_score(y_val, y_pred_class, zero_division=0)}
 
         if len(np.unique(y_val)) > 1:
             current_metrics['auc_sklearn'] = roc_auc_score(y_val, y_pred_proba)
@@ -112,7 +113,7 @@ def _run_cv_workflow(embedding_name: str, X_full: np.ndarray, y_full: np.ndarray
 
 
 # --- Main Orchestration Function for this Module ---
-def run_evaluation(config: Config, use_dummy_data: bool = False):
+def run_evaluation(config: Config, use_dummy_data: bool = False, parent_run_id: Optional[str] = None):
     """Main entry point for the evaluation pipeline step."""
     if use_dummy_data:
         print("\n" + "#" * 30 + " RUNNING DUMMY EVALUATION " + "#" * 30)
@@ -121,7 +122,12 @@ def run_evaluation(config: Config, use_dummy_data: bool = False):
     else:
         print("\n" + "#" * 30 + " RUNNING MAIN EVALUATION " + "#" * 30)
         output_dir = config.EVALUATION_RESULTS_DIR
-        pos_fp, neg_fp, emb_configs = config.INTERACTIONS_POSITIVE_PATH, config.INTERACTIONS_NEGATIVE_PATH, config.LP_EMBEDDING_FILES_TO_EVALUATE
+        # Safely get the list of embedding files to evaluate, defaulting to an empty list if not specified in config.
+        # This prevents an AttributeError if the config variable is missing.
+        emb_configs = getattr(config, 'LP_EMBEDDING_FILES_TO_EVALUATE', [])
+        pos_fp, neg_fp = config.INTERACTIONS_POSITIVE_PATH, config.INTERACTIONS_NEGATIVE_PATH
+        if not emb_configs:
+            print("Warning: The 'LP_EMBEDDING_FILES_TO_EVALUATE' list is not defined in your config or is empty. No production evaluation will be run.")
 
     plots_dir = os.path.join(output_dir, "plots");
     os.makedirs(output_dir, exist_ok=True);
@@ -136,29 +142,57 @@ def run_evaluation(config: Config, use_dummy_data: bool = False):
 
     all_cv_results = []
     for emb_config in emb_configs:
-        print(f"\n{'=' * 25} Processing: {emb_config['name']} {'=' * 25}")
-        if config.PERFORM_H5_INTEGRITY_CHECK:
-            check_h5_embeddings(emb_config['path'])
+        # --- MLFLOW INTEGRATION ---
+        run_name = emb_config['name']
+        with mlflow.start_run(run_name=run_name, nested=True) as run:
+            print(f"\n{'=' * 25} Processing: {emb_config['name']} {'=' * 25}")
 
-        protein_embeddings = load_h5_embeddings_selectively(emb_config['path'], required_ids)
-        if not protein_embeddings: print(f"Skipping {emb_config['name']}: No relevant embeddings loaded."); continue
+            if config.USE_MLFLOW:
+                mlflow.log_params({"embedding_name": emb_config['name'], "embedding_path": emb_config.get('path', 'N/A'), "edge_embedding_method": config.EVAL_EDGE_EMBEDDING_METHOD, "n_folds": config.EVAL_N_FOLDS,
+                    "epochs": config.EVAL_EPOCHS, "batch_size": config.EVAL_BATCH_SIZE, "learning_rate": config.EVAL_LEARNING_RATE, })
 
-        X_full, y_full = EdgeFeatureProcessor.create_edge_embeddings(positive_pairs + negative_pairs, protein_embeddings, method=config.EVAL_EDGE_EMBEDDING_METHOD)
-        if X_full is None: print(f"Skipping {emb_config['name']}: Failed to create edge features."); continue
+            if config.PERFORM_H5_INTEGRITY_CHECK:
+                check_h5_embeddings(emb_config['path'])
 
-        results = _run_cv_workflow(emb_config['name'], X_full, y_full, config)
-        all_cv_results.append(results)
+            protein_embeddings = load_h5_embeddings_selectively(emb_config['path'], required_ids)
+            if not protein_embeddings: print(f"Skipping {emb_config['name']}: No relevant embeddings loaded."); continue
 
-        if config.PLOT_TRAINING_HISTORY and results.get('history_dict_fold1'):
-            plot_training_history(results['history_dict_fold1'], results['embedding_name'], plots_dir)
-        del protein_embeddings, X_full, y_full, results;
-        gc.collect()
+            X_full, y_full = EdgeFeatureProcessor.create_edge_embeddings(positive_pairs + negative_pairs, protein_embeddings, method=config.EVAL_EDGE_EMBEDDING_METHOD)
+            if X_full is None: print(f"Skipping {emb_config['name']}: Failed to create edge features."); continue
 
+            results = _run_cv_workflow(emb_config['name'], X_full, y_full, config)
+            all_cv_results.append(results)
+
+            if config.USE_MLFLOW:
+                # Filter for metrics to log, removing complex objects
+                metrics_to_log = {k: v for k, v in results.items() if isinstance(v, (int, float, np.number))}
+                mlflow.log_metrics(metrics_to_log)
+
+            if config.PLOT_TRAINING_HISTORY and results.get('history_dict_fold1'):
+                history_plot_path = plot_training_history(results['history_dict_fold1'], results['embedding_name'], plots_dir)
+                if config.USE_MLFLOW and history_plot_path:
+                    mlflow.log_artifact(history_plot_path, "plots")
+
+            del protein_embeddings, X_full, y_full, results;
+            gc.collect()
+
+    # --- Log summary artifacts to the parent run ---
     if all_cv_results:
-        print("\n" + "=" * 25 + " FINAL AGGREGATE RESULTS " + "=" * 25)
-        write_summary_file(all_cv_results, output_dir, config.EVAL_MAIN_EMBEDDING_FOR_STATS, 'test_auc_sklearn', config.EVAL_STATISTICAL_TEST_ALPHA, config.EVAL_K_VALUES_FOR_TABLE)
-        plot_roc_curves(all_cv_results, plots_dir)
-        plot_comparison_charts(all_cv_results, config.EVAL_K_VALUES_FOR_TABLE, plots_dir)
+        # Switch context back to the parent run if it exists
+        with mlflow.start_run(run_id=parent_run_id):
+            print("\n" + "=" * 25 + " FINAL AGGREGATE RESULTS " + "=" * 25)
+
+            summary_path = write_summary_file(all_cv_results, output_dir, config.EVAL_MAIN_EMBEDDING_FOR_STATS, 'test_auc_sklearn', config.EVAL_STATISTICAL_TEST_ALPHA, config.EVAL_K_VALUES_FOR_TABLE)
+            roc_plot_path = plot_roc_curves(all_cv_results, plots_dir)
+            comparison_chart_path = plot_comparison_charts(all_cv_results, config.EVAL_K_VALUES_FOR_TABLE, plots_dir)
+
+            if config.USE_MLFLOW:
+                if summary_path:
+                    mlflow.log_artifact(summary_path, "summary")
+                if roc_plot_path:
+                    mlflow.log_artifact(roc_plot_path, "summary_plots")
+                if comparison_chart_path:
+                    mlflow.log_artifact(comparison_chart_path, "summary_plots")
     else:
         print("\nNo results generated from any configurations.")
 
