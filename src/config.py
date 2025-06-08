@@ -86,7 +86,7 @@ class Config:
         self.TRANSFORMER_POOLING_STRATEGY = 'mean'
         self.APPLY_PCA_TO_TRANSFORMER = True
 
-        # --- 5. EVALUATION PARAMETERS (pipeline/evaluator.py) ---
+        # --- 5. EVALUATION PARAMETERS (pipeline/ppi_evaluator.py) ---
         self.PLOT_TRAINING_HISTORY = True  # Add this line
         self.EARLY_STOPPING_PATIENCE = 10  # Add this line
 
