@@ -1,10 +1,12 @@
 # ==============================================================================
 # SCRIPT: main_orchestrator.py
-# PURPOSE: The single entry point for running all workflows in the PPI pipeline,
-#          including GCN training, other embedding generation, and evaluation.
+# PURPOSE: The single, central entry point for running all workflows in the
+#          PPI pipeline, including embedding generation, evaluation, and
+#          GNN benchmarking.
 # ==============================================================================
 
 import time
+import os
 
 # Import the configuration and the main run function from each module
 from src.config import Config
@@ -19,7 +21,7 @@ from src.benchmarks.gnn_evaluator import run_gnn_benchmarking
 
 def main():
     """
-    The main orchestration function that runs the selected pipelines.
+    The main orchestration function that runs the selected pipelines based on config flags.
     """
     script_start_time = time.time()
     print("======================================================")
@@ -34,9 +36,11 @@ def main():
     if config.RUN_BENCHMARKING_PIPELINE:
         run_gnn_benchmarking(config)
 
-    # 3. Run the N-gram GCN Pipeline (Optional)
+    # 3. Run the N-gram GCN Pipeline to generate embeddings (Optional)
     if config.RUN_GCN_PIPELINE:
+        # Step 3a: Build the n-gram graphs
         run_graph_building(config)
+        # Step 3b: Train the GCN model to produce embeddings
         run_gcn_training(config)
 
     # 4. Run the Word2Vec Embedding Pipeline (Optional)
@@ -49,11 +53,11 @@ def main():
 
     # 6. Run the Evaluation Pipeline
     # This step evaluates the embeddings created by the steps above.
-    # It includes its own dummy test case controlled from the config.
     if config.RUN_DUMMY_TEST:
         run_evaluation(config, use_dummy_data=True)
 
-    # Always run the main evaluation on the configured files
+    # Always run the main evaluation on the user-configured files
+    print("\nNote: The main evaluation will now run on the files specified in your config's EMBEDDING_FILES_TO_COMPARE list.")
     run_evaluation(config, use_dummy_data=False)
 
     print("\n======================================================")

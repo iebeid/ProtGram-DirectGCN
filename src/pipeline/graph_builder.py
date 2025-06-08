@@ -4,6 +4,7 @@
 # ==============================================================================
 
 import os
+import sys
 import shutil
 import multiprocessing
 from itertools import repeat
@@ -156,7 +157,7 @@ def run_graph_building(config: Config):
 
         # 2. Instantiate the DirectedNgramGraph object
         print(f"Instantiating DirectedNgramGraph object for n={n_val}...")
-        graph_object = graph_processing.DirectedNgramGraph(nodes=nodes_dict, edges=weighted_edge_list)
+        graph_object = graph_processor.DirectedNgramGraph(nodes=nodes_dict, edges=weighted_edge_list)
 
         # 3. Save the final graph object using pickle
         output_filepath = os.path.join(config.GRAPH_OBJECTS_DIR, f"graph_n{n_val}.pkl")

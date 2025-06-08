@@ -9,7 +9,7 @@ import networkx as nx
 import tensorflow as tf
 from collections import defaultdict
 from tqdm.auto import tqdm
-from typing import List, Optional, Dict, Set, Tuple
+from typing import List, Optional, Dict, Set, Tuple, Any
 
 
 # --- Utility Functions for Graph Classes ---
@@ -127,11 +127,7 @@ class EdgeFeatureProcessor:
     """A class to handle the creation of edge embeddings for the evaluation MLP."""
 
     @staticmethod
-    def create_edge_embeddings(
-            interaction_pairs: List[Tuple[str, str, int]],
-            protein_embeddings: Dict[str, np.ndarray],
-            method: str = 'concatenate'
-    ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    def create_edge_embeddings(interaction_pairs: List[Tuple[str, str, int]], protein_embeddings: Dict[str, np.ndarray], method: str = 'concatenate') -> Optional[Tuple[np.ndarray, np.ndarray]]:
         """
         Creates edge features for link prediction from per-protein embeddings.
         This version pre-allocates the NumPy array for better memory efficiency.

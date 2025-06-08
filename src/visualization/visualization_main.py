@@ -9,7 +9,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 # Import the worker class from our other file
-from tsne_worker import TSNEWorker
+from visualization_worker import TSNEWorker
 
 
 class MplCanvas(FigureCanvas):

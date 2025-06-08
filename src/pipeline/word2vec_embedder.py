@@ -13,9 +13,9 @@ from tqdm import tqdm
 from typing import List, Iterator
 
 # Import from our new project structure
-from config import Config
-from utils.data_loader import fast_fasta_parser
-from utils.embedding_tools import apply_pca
+from src.config import Config
+from src.utils.data_loader import fast_fasta_parser
+from src.utils.math_helper import apply_pca
 
 
 class _FastaCorpus:

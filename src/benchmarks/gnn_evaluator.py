@@ -1,8 +1,8 @@
 # ==============================================================================
 # MODULE: benchmarking/gnn_evaluator.py
-# PURPOSE: Contains the workflow for benchmarking GNN models, including our
-#          custom ProtNgramGCN, on standard academic graph datasets.
-# VERSION: 2.0 (With expanded metrics and models)
+# PURPOSE: Contains the workflow for benchmarking GNN models on standard
+#          academic graph datasets using cross-validation.
+# VERSION: 3.0 (Adds CV, Early Stopping, New Metrics, and New Models/Datasets)
 # ==============================================================================
 
 import os
@@ -11,141 +11,138 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from torch_geometric.datasets import Planetoid
-from torch_geometric.data import Data
+from torch_geometric.datasets import Planetoid, WebKB, KarateClub
+from torch_geometric.utils import degree
+from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, matthews_corrcoef, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, Any, List, Tuple
 
-# Import from our new project structure
 from src.config import Config
 from src.models.prot_ngram_gcn import ProtNgramGCN
 from src.models.gnn_zoo import get_gnn_model_from_zoo, BaseGNN
 
 
-def _get_benchmark_datasets(config: Config) -> List[Tuple[Data, str]]:
+def _get_benchmark_datasets(config: Config) -> List[Tuple[torch.Tensor, str]]:
     """Loads standard benchmark datasets from PyTorch Geometric."""
-    dataset_names = ["Cora", "CiteSeer", "PubMed"]
+    datasets_to_load = [{"name": "Cora", "class": Planetoid}, {"name": "CiteSeer", "class": Planetoid}, {"name": "PubMed", "class": Planetoid}, {"name": "Texas", "class": WebKB}, {"name": "Wisconsin", "class": WebKB},
+        {"name": "KarateClub", "class": KarateClub}]
     datasets = []
-    for name in dataset_names:
+    for item in datasets_to_load:
         try:
-            dataset_path = os.path.join(config.BASE_DATA_DIR, 'benchmark_datasets', name)
-            dataset = Planetoid(root=dataset_path, name=name)
-            datasets.append((dataset[0], name))
-            print(f"Loaded benchmark dataset: {name}")
+            path = os.path.join(config.BASE_DATA_DIR, 'benchmark_datasets', item["name"])
+            dataset = item["class"](root=path, name=item["name"]) if item["class"] != KarateClub else item["class"]()
+            data = dataset[0]
+            # Create pseudo-coordinates for MoNet using node degrees
+            data.pseudo_coords = degree(data.edge_index[0], data.num_nodes).view(-1, 1).float()
+            datasets.append((data, item["name"]))
+            print(f"Loaded benchmark dataset: {item['name']}")
         except Exception as e:
-            print(f"Could not load benchmark dataset {name}. Error: {e}")
+            print(f"Could not load benchmark dataset {item['name']}. Error: {e}")
     return datasets
 
 
-def _plot_confusion_matrix(y_true, y_pred, class_names, dataset_name, model_name, output_dir):
-    """Generates and saves a confusion matrix heatmap."""
-    cm = confusion_matrix(y_true, y_pred)
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
+def _plot_confusion_matrix(y_true, y_pred, dataset_name, model_name, output_dir):
+    cm = confusion_matrix(y_true, y_pred);
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues');
     plt.title(f'Confusion Matrix: {model_name} on {dataset_name}')
-    plt.ylabel('Actual Class')
-    plt.xlabel('Predicted Class')
+    plt.ylabel('Actual');
+    plt.xlabel('Predicted');
     filename = f"confusion_matrix_{dataset_name}_{model_name}.png"
-    plt.savefig(os.path.join(output_dir, filename))
+    plt.savefig(os.path.join(output_dir, filename));
     plt.close()
 
 
-def _train_and_evaluate_model(model: BaseGNN, data: Data, device: torch.device, config: Config, dataset_name: str) -> Dict[str, Any]:
-    """
-    Trains and evaluates a single GNN model on a given dataset's splits.
-    Returns a dictionary of performance metrics.
-    """
-    model.to(device)
+def _train_and_evaluate_fold(model, data, train_idx, test_idx, device, config, dataset_name, model_name):
+    """Trains and evaluates a single fold and returns metrics."""
+    model.reset_parameters() if hasattr(model, 'reset_parameters') else None
+    model.to(device);
     data = data.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.GCN_LR, weight_decay=config.GCN_WEIGHT_DECAY)
+    best_val_loss, patience_counter, best_epoch = float('inf'), 0, 0
 
-    model.train()
-    for epoch in range(config.GCN_EPOCHS_PER_LEVEL):
+    for epoch in range(1, config.GCN_EPOCHS_PER_LEVEL + 1):
+        model.train()
         optimizer.zero_grad()
-        out, _ = model(data.x, data.edge_index)
-        loss = F.nll_loss(out[data.train_mask], data.y[data.train_mask])
-        loss.backward()
+        out, _ = model(x=data.x, edge_index=data.edge_index, edge_type=getattr(data, 'edge_type', None), pseudo_coords=getattr(data, 'pseudo_coords', None))
+        loss = F.nll_loss(out[train_idx], data.y[train_idx])
+        loss.backward();
         optimizer.step()
+
+        # Early stopping logic
+        model.eval()
+        with torch.no_grad():
+            val_out, _ = model(x=data.x, edge_index=data.edge_index, edge_type=getattr(data, 'edge_type', None), pseudo_coords=getattr(data, 'pseudo_coords', None))
+            val_loss = F.nll_loss(val_out[test_idx], data.y[test_idx])
+        if val_loss < best_val_loss:
+            best_val_loss, best_epoch, patience_counter = val_loss, epoch, 0
+        else:
+            patience_counter += 1
+        if patience_counter >= config.EARLY_STOPPING_PATIENCE:
+            print(f"    Early stopping at epoch {epoch}. Best epoch: {best_epoch}");
+            break
 
     model.eval()
     with torch.no_grad():
-        pred_logits, _ = model(data.x, data.edge_index)
-        pred_cpu = pred_logits[data.test_mask].argmax(dim=1).cpu()
-        true_cpu = data.y[data.test_mask].cpu()
-
-        # Generate and save confusion matrix plot
-        class_names = [str(i) for i in range(data.y.max().item() + 1)]
-        plots_dir = os.path.join(config.BENCHMARKING_RESULTS_DIR, "plots")
-        os.makedirs(plots_dir, exist_ok=True)
-        _plot_confusion_matrix(true_cpu, pred_cpu, class_names, dataset_name, model.name, plots_dir)
-
-        # Calculate all metrics
+        pred_logits, _ = model(x=data.x, edge_index=data.edge_index, edge_type=getattr(data, 'edge_type', None), pseudo_coords=getattr(data, 'pseudo_coords', None))
+        pred_cpu = pred_logits[test_idx].argmax(dim=1).cpu();
+        true_cpu = data.y[test_idx].cpu()
         metrics = {'accuracy': accuracy_score(true_cpu, pred_cpu), 'f1_weighted': f1_score(true_cpu, pred_cpu, average='weighted', zero_division=0),
-            'precision_weighted': precision_score(true_cpu, pred_cpu, average='weighted', zero_division=0), 'recall_weighted': recall_score(true_cpu, pred_cpu, average='weighted', zero_division=0),
-            'mcc': matthews_corrcoef(true_cpu, pred_cpu)}
-        return metrics
+                   'precision_weighted': precision_score(true_cpu, pred_cpu, average='weighted', zero_division=0), 'recall_weighted': recall_score(true_cpu, pred_cpu, average='weighted', zero_division=0),
+                   'mcc': matthews_corrcoef(true_cpu, pred_cpu), 'convergence_epoch': best_epoch}
+    return metrics
 
 
 def run_gnn_benchmarking(config: Config):
-    """
-    The main entry point for the GNN benchmarking pipeline step.
-    """
-    print("\n" + "=" * 80)
-    print("### PIPELINE STEP: Benchmarking GNN Architectures ###")
+    """Main entry point for the GNN benchmarking pipeline step."""
+    print("\n" + "=" * 80);
+    print("### PIPELINE STEP: Benchmarking GNN Architectures ###");
     print("=" * 80)
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     datasets = _get_benchmark_datasets(config)
-    if not datasets:
-        print("No benchmark datasets loaded. Skipping benchmarking.")
-        return
+    if not datasets: print("No benchmark datasets loaded. Skipping benchmarking."); return
 
-    # Define the models to benchmark, now including RGCN
     models_to_benchmark = ["GCN", "GAT", "GraphSAGE", "GIN", "RGCN", "ProtNgramGCN"]
     all_results = []
 
     for data, dataset_name in datasets:
         print(f"\n--- Benchmarking on Dataset: {dataset_name} ---")
-        num_features = data.num_features
+        num_features = data.num_features;
         num_classes = data.y.max().item() + 1
-        num_relations = data.num_edge_types if hasattr(data, 'num_edge_types') and data.num_edge_types else 1
 
         for model_name in models_to_benchmark:
             print(f"  Testing model: {model_name}...")
-
-            try:
-                if model_name == "ProtNgramGCN":
+            fold_metrics = []
+            kf = StratifiedKFold(n_splits=config.EVAL_N_FOLDS, shuffle=True, random_state=config.RANDOM_STATE)
+            for fold, (train_idx, test_idx) in enumerate(kf.split(np.zeros(data.num_nodes), data.y.cpu())):
+                try:
                     model = ProtNgramGCN(num_initial_features=num_features, hidden_dim1=config.GCN_HIDDEN_DIM_1, hidden_dim2=config.GCN_HIDDEN_DIM_2, num_graph_nodes=data.num_nodes, task_num_output_classes=num_classes,
-                        n_gram_len=3, one_gram_dim=0, max_pe_len=0, dropout=config.GCN_DROPOUT, use_vector_coeffs=True)
-                else:
-                    model = get_gnn_model_from_zoo(model_name, num_features, num_classes, num_relations=num_relations)
+                                         n_gram_len=1, one_gram_dim=0, max_pe_len=0, dropout=config.GCN_DROPOUT, use_vector_coeffs=True) if model_name == "ProtNgramGCN" else get_gnn_model_from_zoo(model_name,
+                                                                                                                                                                                                     num_features,
+                                                                                                                                                                                                     num_classes)
+                    metrics = _train_and_evaluate_fold(model, data, train_idx, test_idx, device, config, dataset_name, model_name)
+                    fold_metrics.append(metrics)
+                except Exception as e:
+                    print(f"    - ERROR on fold {fold + 1} for {model_name}: {e}");
+                    break
 
-                model.name = model_name  # Assign name for plotting
-                metrics = _train_and_evaluate_model(model, data, device, config, dataset_name)
-
-                result_row = {'dataset': dataset_name, 'model': model_name, **metrics}
+            if fold_metrics:
+                df = pd.DataFrame(fold_metrics)
+                mean_metrics = df.mean().add_suffix('_mean')
+                std_metrics = df.std().add_suffix('_std')
+                result_row = {'dataset': dataset_name, 'model': model_name, **mean_metrics, **std_metrics}
                 all_results.append(result_row)
-                print(f"    - Results: Acc={metrics['accuracy']:.4f}, F1={metrics['f1_weighted']:.4f}, MCC={metrics['mcc']:.4f}")
-            except Exception as e:
-                print(f"    - ERROR running {model_name} on {dataset_name}: {e}")
+                print(f"    - Avg Results: Acc={result_row['accuracy_mean']:.4f}±{result_row['accuracy_std']:.4f}, F1={result_row['f1_weighted_mean']:.4f}±{result_row['f1_weighted_std']:.4f}")
 
-    # --- Reporting Results ---
     if all_results:
-        results_df = pd.DataFrame(all_results)
-        # Reorder columns for clarity
-        cols_order = ['dataset', 'model', 'accuracy', 'f1_weighted', 'precision_weighted', 'recall_weighted', 'mcc']
-        results_df = results_df[[c for c in cols_order if c in results_df.columns]]
-
-        print("\n--- Benchmark Results Summary ---")
+        results_df = pd.DataFrame(all_results).round(4)
+        print("\n--- Benchmark Results Summary ---");
         print(results_df.to_string(index=False))
-
         output_path = os.path.join(config.BENCHMARKING_RESULTS_DIR, "gnn_benchmark_summary.txt")
         os.makedirs(config.BENCHMARKING_RESULTS_DIR, exist_ok=True)
-        with open(output_path, 'w') as f:
-            f.write("--- GNN Benchmark Results Summary ---\n")
-            f.write(results_df.to_string(index=False))
+        with open(output_path, 'w') as f: f.write("--- GNN Benchmark Results Summary ---\n"); f.write(results_df.to_string(index=False))
         print(f"Benchmark summary saved to: {output_path}")
 
     print("\n### GNN Benchmarking FINISHED ###")

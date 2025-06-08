@@ -22,10 +22,10 @@ from functools import partial
 from multiprocessing import Pool
 
 # Import from our new project structure
-from config import Config
-from utils import graph_processing, id_mapping
-from utils.math_helper import apply_pca
-from models.prot_ngram_gcn import ProtNgramGCN
+from src.config import Config
+from src.utils import graph_processor, id_mapper
+from src.utils.math_helper import apply_pca
+from src.models.prot_ngram_gcn import ProtNgramGCN
 
 
 # Helper functions specific to this training module
@@ -73,9 +73,6 @@ def _pool_single_protein(protein_data, n_val, ngram_map, ngram_embeddings):
     return original_id, None
 
 
-
-
-
 # --- Main Orchestration Function for this Module ---
 def run_gcn_training(config: Config):
     print("\n" + "=" * 80);
@@ -84,7 +81,7 @@ def run_gcn_training(config: Config):
     os.makedirs(config.GCN_EMBEDDINGS_DIR, exist_ok=True)
 
     # 1. Perform ID Mapping
-    id_map = id_mapping.generate_id_mapping(config)
+    id_map = id_mapper.generate_id_mapping(config)
 
     # 2. Train GCN for each n-gram level
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -100,7 +97,7 @@ def run_gcn_training(config: Config):
         s, t, w = zip(*[(e[0], e[1], e[2]) for e in graph_obj.edges]);
         data.edge_index_out = torch.tensor([s, t], dtype=torch.long);
         data.edge_weight_out = torch.tensor(w, dtype=torch.float)
-        fs, ft, fw = zip(*[(e[0], e[1], e[2]) for e in graph_processing._flip_list(graph_obj.edges)]);
+        fs, ft, fw = zip(*[(e[0], e[1], e[2]) for e in graph_processor._flip_list(graph_obj.edges)]);
         data.edge_index_in = torch.tensor([fs, ft], dtype=torch.long);
         data.edge_weight_in = torch.tensor(fw, dtype=torch.float)
 
@@ -123,7 +120,7 @@ def run_gcn_training(config: Config):
     final_ngram_embeds = level_embeddings[config.GCN_NGRAM_MAX_N]
     final_ngram_map = level_ngram_to_idx[config.GCN_NGRAM_MAX_N]
 
-    from utils.data_loader import fast_fasta_parser
+    from src.utils.data_loader import fast_fasta_parser
     protein_sequences = list(fast_fasta_parser(config.GCN_INPUT_FASTA_PATH))
     pool_func = partial(_pool_single_protein, n_val=config.GCN_NGRAM_MAX_N, ngram_map=final_ngram_map, ngram_embeddings=final_ngram_embeds)
 

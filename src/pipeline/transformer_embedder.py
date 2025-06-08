@@ -17,9 +17,9 @@ from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
 from tqdm.auto import tqdm
 
 # Import from our new project structure
-from config import Config
-from utils.data_loader import fast_fasta_parser
-from utils.embedding_tools import apply_pca
+from src.config import Config
+from src.utils.data_loader import fast_fasta_parser
+from src.utils.math_helper import apply_pca
 
 
 def _get_model_inference_function(model: tf.keras.Model, is_t5: bool, use_xla: bool) -> tf.types.experimental.GenericFunction:
