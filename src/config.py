@@ -28,7 +28,7 @@ class Config:
         self.BASE_OUTPUT_DIR = os.path.join(self.BASE_DATA_DIR, "pipeline_output")
 
         # Input data paths
-        self.GCN_INPUT_FASTA_PATH = os.path.join(self.BASE_DATA_DIR, "uniprot_sequences_sample.fasta")
+        self.GCN_INPUT_FASTA_PATH = os.path.join(self.BASE_DATA_DIR, "sequences/uniprot_sequences_sample.fasta")
         self.INTERACTIONS_POSITIVE_PATH = os.path.join(self.BASE_DATA_DIR, 'ground_truth/positive_interactions.csv')
         self.INTERACTIONS_NEGATIVE_PATH = os.path.join(self.BASE_DATA_DIR, 'ground_truth/negative_interactions.csv')
 
@@ -50,7 +50,7 @@ class Config:
         # --- Model Training (pipeline/2_gcn_trainer.py) ---
         # ID Mapping
         self.ID_MAPPING_MODE = 'regex'  # Options: 'none', 'regex', 'api'
-        self.ID_MAPPING_OUTPUT_FILE = os.path.join(self.BASE_OUTPUT_DIR, "gcn_id_mapping.tsv")
+        self.ID_MAPPING_OUTPUT_FILE = os.path.join(self.BASE_OUTPUT_DIR, "mappings/gcn_id_mapping.tsv")
         self.API_MAPPING_FROM_DB = "UniRef50"
         self.API_MAPPING_TO_DB = "UniProtKB"
 

@@ -22,9 +22,13 @@ def _get_benchmark_datasets(config: Config) -> List[Tuple[torch.Tensor, str]]:
     """Loads standard benchmark datasets from PyTorch Geometric."""
     # --- MODIFICATION START ---
     # Added "Cornell" to the list of datasets to load.
-    datasets_to_load = [{"name": "Cora", "class": Planetoid}, {"name": "CiteSeer", "class": Planetoid}, {"name": "PubMed", "class": Planetoid}, {"name": "Texas", "class": WebKB}, {"name": "Wisconsin", "class": WebKB},
-        {"name": "Cornell", "class": WebKB},  # This line was added
-        {"name": "KarateClub", "class": KarateClub}]
+    datasets_to_load = [#{"name": "Cora", "class": Planetoid},
+                        #{"name": "CiteSeer", "class": Planetoid},
+                        #{"name": "PubMed", "class": Planetoid},
+                        #{"name": "Texas", "class": WebKB},
+                        #{"name": "Wisconsin", "class": WebKB},
+                        #{"name": "Cornell", "class": WebKB},  # This line was added
+                        {"name": "KarateClub", "class": KarateClub}]
     # --- MODIFICATION END ---
 
     datasets = []
