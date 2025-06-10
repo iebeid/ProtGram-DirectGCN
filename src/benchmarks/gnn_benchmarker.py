@@ -5,8 +5,6 @@
 # ==============================================================================
 
 import os
-import torch
-import torch.nn.functional as F
 import pandas as pd
 from sklearn.metrics import f1_score
 from torch_geometric.datasets import PPI

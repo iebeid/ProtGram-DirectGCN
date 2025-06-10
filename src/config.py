@@ -68,6 +68,7 @@ class Config:
         self.GCN_LR = 0.001
         self.GCN_DROPOUT = 0.5
         self.GCN_WEIGHT_DECAY = 1e-4
+        self.GCN_L2_REG_LAMBDA = 0.0001
 
         # Pooling & PCA
         self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 8) if os.cpu_count() else 1
