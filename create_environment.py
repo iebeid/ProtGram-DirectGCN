@@ -37,6 +37,7 @@ def run_command(command, description=""):
         print(f"\n>--- Running: {description} ---")
     print(f">--- Command: {command} ---")
     try:
+        # Use shell=True for conda commands to be found in the system's PATH
         process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True)
         for line in process.stdout:
             print(line, end='')
@@ -91,7 +92,7 @@ def is_env_created(env_name, conda_base_path):
 if __name__ == "__main__":
     # --- Argument Parsing ---
     parser = argparse.ArgumentParser(description="Create a Conda environment with GPU support for TensorFlow and PyTorch.", formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument("env_name", type=str, help="The name for the new Conda environment.")
+    parser.add_argument("env_name", type=str, help="The name for the new or existing Conda environment.")
     args = parser.parse_args()
     env_name = args.env_name
 
@@ -99,11 +100,24 @@ if __name__ == "__main__":
     python_version = "3.11"
     channels = ["conda-forge", "defaults"]
 
+    # Base packages, common to all OS
     conda_packages = [f"python={python_version}", "tqdm", "dask", "dask-expr", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx"]
+
+    # --- OS-Agnostic Compiler and Build Tools ---
+    current_os = platform.system()
+    if current_os == "Linux":
+        print("--- Detected Linux OS. Adding Linux build tools. ---")
+        conda_packages.extend(["gxx_linux-64", "gcc_linux-64", "make"])
+    elif current_os == "Windows":
+        print("--- Detected Windows OS. Adding Windows build tools. ---")
+        # m2w64-toolchain provides gcc, g++, make, and other necessary tools on Windows
+        conda_packages.extend(["m2w64-toolchain"])
+    else:
+        print(f"--- WARNING: Unsupported OS '{current_os}' detected. Build tools for PyG may be missing. ---")
 
     pip_packages = ["torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv", "torch-geometric", "gensim", "python-louvain", "transformers", "torch-geometric-signed-directed"]
 
-    print_header(f"GPU Environment Creation for '{env_name}' (Python {python_version})")
+    print_header(f"GPU Environment Setup for '{env_name}' (Python {python_version})")
 
     solver = "mamba" if check_mamba() else "conda"
     print(f"--- Using {solver.capitalize()} for installation. ---")
@@ -111,39 +125,43 @@ if __name__ == "__main__":
     conda_base_path = get_conda_base_prefix()
     TOTAL_STEPS = 4
 
-    # === [Step 1/4] Create Base Conda Environment ===
-    if not is_env_created(env_name, conda_base_path):
-        print_step(1, TOTAL_STEPS, f"Creating environment '{env_name}' with base packages...")
-        create_command = f"{solver} create --name {env_name} -y {' '.join(['-c ' + c for c in channels])} {' '.join(conda_packages)}"
-        if not run_command(create_command, "Conda Environment Creation"):
-            print_error_and_exit("Failed to create the conda environment.")
-        print_success("Base environment created successfully!")
+    # Decide between 'create' and 'install' based on whether the environment exists
+    if is_env_created(env_name, conda_base_path):
+        print_step(1, TOTAL_STEPS, f"Environment '{env_name}' already exists. Installing/verifying packages...")
+        conda_command = f"{solver} install --name {env_name} -y {' '.join(['-c ' + c for c in channels])} {' '.join(conda_packages)}"
+        command_desc = "Conda Package Installation"
     else:
-        print_step(1, TOTAL_STEPS, f"Environment '{env_name}' already exists. Skipping creation.")
+        print_step(1, TOTAL_STEPS, f"Creating environment '{env_name}' with base packages...")
+        conda_command = f"{solver} create --name {env_name} -y {' '.join(['-c ' + c for c in channels])} {' '.join(conda_packages)}"
+        command_desc = "Conda Environment Creation"
+
+    if not run_command(conda_command, command_desc):
+        print_error_and_exit(f"Failed to set up conda packages in '{env_name}'.")
+    print_success("Base environment and compilers are set up successfully!")
 
     pip_exe = get_pip_executable(env_name, conda_base_path)
 
     # === [Step 2/4] Install TensorFlow with CUDA ===
-    print_step(2, TOTAL_STEPS, "Installing TensorFlow and its CUDA dependencies via pip...")
+    print_step(2, TOTAL_STEPS, "Installing/Verifying TensorFlow and its CUDA dependencies...")
     tf_command = f'{pip_exe} install "tensorflow[and-cuda]"'
     if not run_command(tf_command, "Installing TensorFlow with CUDA support"):
         print_error_and_exit("Failed to install TensorFlow.")
     print_success("TensorFlow and CUDA libraries installed successfully!")
 
     # === [Step 3/4] Install PyTorch with CUDA ===
-    print_step(3, TOTAL_STEPS, "Installing PyTorch with CUDA support via pip...")
+    print_step(3, TOTAL_STEPS, "Installing/Verifying PyTorch with CUDA support...")
     pytorch_command = f'{pip_exe} install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121'
     if not run_command(pytorch_command, "Installing PyTorch for CUDA 12.1"):
         print_error_and_exit("Failed to install PyTorch.")
     print_success("PyTorch installed successfully!")
 
     # === [Step 4/4] Install Remaining Pip Packages ===
-    print_step(4, TOTAL_STEPS, "Installing PyTorch Geometric and other remaining packages...")
+    print_step(4, TOTAL_STEPS, "Installing PyTorch Geometric and other critical packages...")
     with tqdm(total=len(pip_packages), desc="Installing Pip Packages") as pbar:
         for pkg in pip_packages:
             command = f"{pip_exe} install {pkg}"
             if not run_command(command, f"Installing {pkg}"):
-                print(f"\n--- WARNING: Failed to install pip package: {pkg}. Continuing... ---", file=sys.stderr)
+                print_error_and_exit(f"Failed to install critical pip package: {pkg}.")
             pbar.update(1)
     print_success("Remaining pip packages installed successfully!")
 
