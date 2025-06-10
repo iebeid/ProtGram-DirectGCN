@@ -3,7 +3,6 @@ import sys
 import os
 import platform
 import argparse
-from tqdm import tqdm
 
 
 def print_header(title):
@@ -12,11 +11,6 @@ def print_header(title):
     print(f"\n{border}")
     print(f"=== {title} ===")
     print(f"{border}")
-
-
-def print_step(current, total, description):
-    """Prints a formatted step message."""
-    print(f"\n[Step {current}/{total}] {description}")
 
 
 def print_success(message):
@@ -53,16 +47,6 @@ def run_command(command, description=""):
         return False
 
 
-def get_pip_executable(env_name, conda_base_path):
-    """Gets the full path to the pip executable for the target environment."""
-    if platform.system() == "Windows":
-        pip_exe = os.path.join(conda_base_path, 'envs', env_name, 'Scripts', 'pip.exe')
-    else:  # Linux or macOS
-        pip_exe = os.path.join(conda_base_path, 'envs', env_name, 'bin', 'pip')
-
-    return f'"{pip_exe}"'
-
-
 def check_mamba():
     """Checks if mamba is installed and available."""
     try:
@@ -72,100 +56,45 @@ def check_mamba():
         return False
 
 
-def get_conda_base_prefix():
-    """Finds the base directory of the Conda installation."""
-    try:
-        result = subprocess.run('conda info --base', shell=True, check=True, text=True, capture_output=True)
-        return result.stdout.strip()
-    except Exception:
-        print_error_and_exit("Could not determine Conda base directory. Is Conda installed and in your PATH?")
-
-
-def is_env_created(env_name, conda_base_path):
-    """Checks if a conda environment already exists."""
-    env_path = os.path.join(conda_base_path, 'envs', env_name)
-    return os.path.exists(env_path)
-
-
 # Main execution block
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Create a Conda environment with GPU support for TensorFlow and PyTorch.")
-    parser.add_argument("env_name", type=str, help="The name for the new or existing Conda environment.")
+    parser = argparse.ArgumentParser(description="Create a Conda environment with GPU support for TensorFlow and PyTorch.", formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("env_name", type=str, help="The name for the new Conda environment.")
     args = parser.parse_args()
     env_name = args.env_name
 
+    # --- Configuration: All packages installed via Conda ---
     python_version = "3.11"
-    channels = ["conda-forge", "defaults"]
+    # Note the channel order: pytorch and nvidia are high priority for official builds.
+    channels = ["pytorch", "nvidia", "conda-forge"]
 
-    conda_packages = [f"python={python_version}", "tqdm", "dask", "dask-expr", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx"]
+    # All packages are now in a single list for a one-shot, robust installation.
+    # This avoids all compilation issues by using pre-built, compatible packages.
+    conda_packages = [f"python={python_version}", # GPU Frameworks
+        "pytorch", "torchvision", "torchaudio", "pytorch-cuda=12.1",  # Specifies the CUDA version for PyTorch
+        "tensorflow", # PyTorch Geometric and its dependencies
+        "pytorch-geometric", "pytorch-scatter", "pytorch-sparse", "pytorch-cluster", "pytorch-spline-conv", # Other project dependencies
+        "tqdm", "dask", "dask-expr", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx", "gensim", "python-louvain", "transformers",
+        "torch-geometric-signed-directed"]
 
-    current_os = platform.system()
-    if current_os == "Linux":
-        print("--- Detected Linux OS. Adding Linux build tools. ---")
-        conda_packages.extend(["gxx_linux-64", "gcc_linux-64", "make"])
-    elif current_os == "Windows":
-        print("--- Detected Windows OS. Adding Windows build tools. ---")
-        conda_packages.extend(["m2w64-toolchain"])
-    else:
-        print(f"--- WARNING: Unsupported OS '{current_os}'. Build tools may be missing. ---")
-
-    pip_packages = ["torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv", "torch-geometric", "gensim", "python-louvain", "transformers", "torch-geometric-signed-directed"]
-
-    print_header(f"GPU Environment Setup for '{env_name}' (Python {python_version})")
+    print_header(f"Unified GPU Environment Setup for '{env_name}'")
 
     solver = "mamba" if check_mamba() else "conda"
     print(f"--- Using {solver.capitalize()} for installation. ---")
 
-    conda_base_path = get_conda_base_prefix()
-    TOTAL_STEPS = 4
+    # --- Single Installation Step ---
+    print("\n[Step 1/1] Creating environment and installing all packages with Conda...")
 
-    if is_env_created(env_name, conda_base_path):
-        print_step(1, TOTAL_STEPS, f"Environment '{env_name}' already exists. Installing/verifying packages...")
-        conda_command = f"{solver} install --name {env_name} -y {' '.join(['-c ' + c for c in channels])} {' '.join(conda_packages)}"
-        command_desc = "Conda Package Installation"
-    else:
-        print_step(1, TOTAL_STEPS, f"Creating environment '{env_name}' with base packages...")
-        conda_command = f"{solver} create --name {env_name} -y {' '.join(['-c ' + c for c in channels])} {' '.join(conda_packages)}"
-        command_desc = "Conda Environment Creation"
+    # Construct the single, robust command
+    channel_flags = " ".join([f"-c {c}" for c in channels])
+    package_list = " ".join(conda_packages)
+    create_command = f"{solver} create --name {env_name} -y {channel_flags} {package_list}"
 
-    if not run_command(conda_command, command_desc):
-        print_error_and_exit(f"Failed to set up conda packages in '{env_name}'.")
-    print_success("Base environment and compilers are set up successfully!")
-
-    pip_exe = get_pip_executable(env_name, conda_base_path)
-
-    print_step(2, TOTAL_STEPS, "Installing/Verifying TensorFlow and its CUDA dependencies...")
-    tf_command = f'{pip_exe} install "tensorflow[and-cuda]"'
-    if not run_command(tf_command, "Installing TensorFlow"):
-        print_error_and_exit("Failed to install TensorFlow.")
-    print_success("TensorFlow and CUDA libraries installed successfully!")
-
-    print_step(3, TOTAL_STEPS, "Installing/Verifying PyTorch with CUDA support...")
-    pytorch_command = f'{pip_exe} install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121'
-    if not run_command(pytorch_command, "Installing PyTorch"):
-        print_error_and_exit("Failed to install PyTorch.")
-    print_success("PyTorch installed successfully!")
-
-    # --- MODIFICATION: Define compiler paths and environment variables ---
-    env_bin_path = os.path.join(conda_base_path, 'envs', env_name, 'bin')
-    env_compiler_vars = ""
-    if current_os == "Linux":
-        # Force pip to use the g++/gcc from the conda env
-        cxx_path = os.path.join(env_bin_path, 'g++')
-        cc_path = os.path.join(env_bin_path, 'gcc')
-        env_compiler_vars = f'CXX="{cxx_path}" CC="{cc_path}"'
-
-    print_step(4, TOTAL_STEPS, "Installing PyTorch Geometric and other critical packages...")
-    with tqdm(total=len(pip_packages), desc="Installing Pip Packages") as pbar:
-        for pkg in pip_packages:
-            # Prepend the compiler environment variables to the pip command
-            command = f"{env_compiler_vars} {pip_exe} install {pkg}"
-            if not run_command(command, f"Installing {pkg}"):
-                print_error_and_exit(f"Failed to install critical pip package: {pkg}.")
-            pbar.update(1)
-    print_success("Remaining pip packages installed successfully!")
+    if not run_command(create_command, "Unified Conda Environment Creation"):
+        print_error_and_exit(f"Failed to create the Conda environment '{env_name}'. Please check the logs.")
 
     print_header("Environment creation complete!")
+    print_success("All packages were installed successfully via Conda.")
     print("To activate your new environment, run:\n")
     print(f"> conda activate {env_name}\n")
     print("You can then run the unit tests to verify the GPU setup for both frameworks.")
