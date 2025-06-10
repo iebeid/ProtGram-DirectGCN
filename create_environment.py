@@ -1,8 +1,9 @@
 # ==============================================================================
-# SCRIPT: create_environment.py (v9 - Final Hybrid with GPU Lock)
-# PURPOSE: A robust, OS-agnostic script to create the Conda environment.
-#          This version forces the installation of GPU-enabled PyTorch by
-#          including the 'pytorch-cuda' metapackage in the core command.
+# SCRIPT: create_environment.py (v12 - Two-Stage Constraint Locking)
+# PURPOSE: A robust, OS-agnostic script that uses a two-stage process
+#          to first "lock in" the GPU-enabled PyTorch build, and then
+#          installs TensorFlow and all other dependencies. This provides a
+#          more reliable solution than previous methods.
 #
 # USAGE:
 #   1. For best results, install mamba in your base env: > conda install -n base mamba
@@ -16,45 +17,24 @@ import platform
 import shutil
 
 # --- Configuration ---
-ENV_NAME = "protgram-directgcn-4"
+ENV_NAME = "protgram-directgcn-8"
 PYTHON_VERSION = "3.9"
 
-# Core packages that MUST be installed together.
-# CRITICAL FIX: Added 'pytorch-cuda' to force the solver to select the GPU-enabled
-# version of PyTorch from the official pytorch channel.
-CORE_PACKAGES = [
-    f"python={PYTHON_VERSION}",
-    "cudatoolkit=11.2.2",
-    "cudnn=8.1.0",
-    "tensorflow=2.10.0",
-    "pytorch=1.12.1",
-    "torchvision",
-    "torchaudio",
-    "pytorch-cuda=11.3",  # This forces the link to CUDA
-    "tqdm"
-]
+# Stage 1: The critical packages to create the GPU foundation.
+# We give the solver a simple problem to solve first.
+GPU_FOUNDATION_PACKAGES = [f"python={PYTHON_VERSION}", "pytorch=1.12.1", "torchvision", "torchaudio", "cudatoolkit=11.3.1", "cudnn=8.2.1", ]
 
-# Other packages that can be safely installed one-by-one.
-EXTRA_CONDA_PACKAGES = [
-    "dask", "dask-expr", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt",
-    "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx"
-]
+# Stage 2: The rest of the packages to be installed into the foundation.
+ADDITIONAL_CONDA_PACKAGES = ["tensorflow=2.10.0", "tqdm", "dask", "dask-expr", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx"]
 
-# Pip packages to be installed last.
-PIP_PACKAGES = [
-    "torch-scatter -f https://data.pyg.org/whl/torch-1.12.1+cu113.html",
-    "torch-sparse -f https://data.pyg.org/whl/torch-1.12.1+cu113.html",
-    "torch-cluster -f https://data.pyg.org/whl/torch-1.12.1+cu113.html",
-    "torch-spline-conv -f https://data.pyg.org/whl/torch-1.12.1+cu113.html",
-    "torch-geometric",
-    "gensim",
-    "python-louvain",
-    "transformers",
-    "torch-geometric-signed-directed"
-]
+# Stage 3: Pip packages to be installed last.
+PIP_PACKAGES = ["torch-scatter -f https://data.pyg.org/whl/torch-1.12.1+cu113.html", "torch-sparse -f https://data.pyg.org/whl/torch-1.12.1+cu113.html",
+    "torch-cluster -f https://data.pyg.org/whl/torch-1.12.1+cu113.html", "torch-spline-conv -f https://data.pyg.org/whl/torch-1.12.1+cu113.html", "torch-geometric", "gensim", "python-louvain", "transformers",
+    "torch-geometric-signed-directed"]
 
 # Define conda channels, prioritizing pytorch and nvidia
 CHANNELS = ["pytorch", "nvidia", "conda-forge", "defaults"]
+
 
 # --- Helper Functions ---
 
@@ -67,6 +47,7 @@ def get_solver():
         print("--- Mamba not found. Using the default Conda solver. ---")
         print("    (For a much faster experience, run: conda install -n base mamba)")
         return "conda"
+
 
 def run_command(command, error_message, step_description=""):
     """Executes a command in real-time and exits if it fails."""
@@ -86,6 +67,7 @@ def run_command(command, error_message, step_description=""):
             print(f"Return code: {e.returncode}")
         sys.exit(1)
 
+
 def get_conda_base_prefix():
     """Finds the base directory of the Conda installation."""
     try:
@@ -94,6 +76,7 @@ def get_conda_base_prefix():
     except Exception:
         print("\n--- ERROR: Could not determine Conda base directory. Is Conda installed and in your PATH? ---")
         sys.exit(1)
+
 
 def check_and_remove_env(env_name, conda_base):
     """Checks if the environment directory exists and removes it if necessary."""
@@ -113,6 +96,7 @@ def check_and_remove_env(env_name, conda_base):
             print("Aborting installation.")
             sys.exit(0)
 
+
 # --- Main Script ---
 
 if __name__ == "__main__":
@@ -124,30 +108,28 @@ if __name__ == "__main__":
     conda_base_path = get_conda_base_prefix()
     check_and_remove_env(ENV_NAME, conda_base_path)
 
-    # Step 1: Create the environment with the core ML stack in one command
-    print(f"\n[Step 1/3] Creating environment with core ML stack using '{solver}'...")
+    # Step 1: Create the core GPU foundation environment
+    print(f"\n[Step 1/3] Creating GPU foundation with PyTorch using '{solver}'...")
     print("This is the most important step and may take several minutes...")
 
     create_command = [solver, 'create', '--name', ENV_NAME, '-y']
     for channel in CHANNELS:
         create_command.extend(['-c', channel])
-    create_command.extend(CORE_PACKAGES)
+    create_command.extend(GPU_FOUNDATION_PACKAGES)
 
-    run_command(create_command, "Failed to create the core ML environment.", f"Creating Core Env with {solver}")
-    print("\n--- Core environment created successfully! ---")
+    run_command(create_command, "Failed to create the GPU foundation environment.", f"Creating GPU Foundation with {solver}")
+    print("\n--- GPU foundation created successfully! ---")
 
+    # Step 2: Install additional Conda packages sequentially
+    print(f"\n[Step 2/3] Installing TensorFlow and other packages using '{solver}'...")
     try:
         from tqdm import tqdm
     except ImportError:
-        def tqdm(iterable, **kwargs):
-            total = len(iterable)
-            for i, item in enumerate(iterable):
-                print(f"\n--- Installing package {i+1}/{total}: {item} ---")
-                yield item
+        # Install tqdm first so we can use it
+        run_command([solver, 'install', '-n', ENV_NAME, '-y', 'tqdm'], "Failed to install tqdm.", "Installing tqdm")
+        from tqdm import tqdm
 
-    # Step 2: Install additional Conda packages sequentially
-    print(f"\n[Step 2/3] Installing additional Conda packages using '{solver}'...")
-    for package in tqdm(EXTRA_CONDA_PACKAGES, desc="Installing Conda Packages"):
+    for package in tqdm(ADDITIONAL_CONDA_PACKAGES, desc="Installing Conda Packages"):
         install_command = [solver, 'install', '-n', ENV_NAME, '-y', package]
         for channel in CHANNELS:
             install_command.extend(['-c', channel])
@@ -156,7 +138,6 @@ if __name__ == "__main__":
 
     # Step 3: Install pip packages sequentially
     print("\n[Step 3/3] Installing PyTorch Geometric and other pip packages...")
-
     if platform.system() == "Windows":
         pip_executable = os.path.join(conda_base_path, 'envs', ENV_NAME, 'Scripts', 'pip.exe')
     else:  # Linux, macOS, WSL
