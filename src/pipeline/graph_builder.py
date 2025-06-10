@@ -16,19 +16,7 @@ from tqdm import tqdm
 # Assuming these are correctly located in your project structure
 from src.utils.graph_processor import DirectedNgramGraph
 from src.config import Config
-
-
-def save_object(obj, filename):
-    """Saves a Python object to a file using pickle."""
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
-    with open(filename, 'wb') as f:
-        pickle.dump(obj, f)
-
-
-def print_header(title):
-    """Prints a formatted header."""
-    border = "=" * (len(title) + 4)
-    print(f"\n{border}\n### {title} ###\n{border}\n")
+from src.utils.file_handler import *
 
 
 def _create_intermediate_files(n, temp_dir, protein_sequence_file, chunk_size):

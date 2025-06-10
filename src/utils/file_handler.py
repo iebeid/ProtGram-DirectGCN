@@ -1,9 +1,15 @@
 import os
-
+import pickle
 def print_header(title):
     """Prints a formatted header to the console."""
     border = "=" * (len(title) + 4)
     print(f"\n{border}\n### {title} ###\n{border}\n")
+
+def save_object(obj, filename):
+    """Saves a Python object to a file using pickle."""
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    with open(filename, 'wb') as f:
+        pickle.dump(obj, f)
 
 
 def save_pandas_dataframe_to_csv(results_df, output_dir):

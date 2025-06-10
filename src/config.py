@@ -117,7 +117,7 @@ class Config:
 
         # Evaluation MLP Architecture & Training
         self.EVAL_EDGE_EMBEDDING_METHOD = 'concatenate'
-        self.EVAL_N_FOLDS = 4
+        self.EVAL_N_FOLDS = 2
         self.EVAL_MLP_DENSE1_UNITS = 128
         self.EVAL_MLP_DROPOUT1_RATE = 0.4
         self.EVAL_MLP_DENSE2_UNITS = 64

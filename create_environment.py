@@ -1,96 +1,77 @@
-import subprocess
-import sys
+import os
+import platform
 import argparse
 
 
-def print_header(title):
-    """Prints a formatted header."""
-    border = "=" * (len(title) + 4)
-    print(f"\n{border}")
-    print(f"=== {title} ===")
-    print(f"{border}")
+# This script generates a shell script to perform the installation.
+# It does not install anything itself.
 
-
-def print_success(message):
-    """Prints a success message."""
-    print(f"\n--- {message} ---")
-
-
-def print_error_and_exit(message):
-    """Prints an error message and exits the script."""
-    print(f"\n*** ERROR: {message} ***", file=sys.stderr)
-    print("*** ABORTING SCRIPT. Please review the error messages above. ***", file=sys.stderr)
-    sys.exit(1)
-
-
-def run_command(command, description=""):
-    """Runs a command in the shell, showing a description and streaming its output."""
-    if description:
-        print(f"\n>--- Running: {description} ---")
-    print(f">--- Command: {command} ---")
-    try:
-        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True)
-        for line in process.stdout:
-            print(line, end='')
-        process.wait()
-        if process.returncode != 0:
-            print(f"\n*** Command failed with exit code {process.returncode} ***", file=sys.stderr)
-            return False
-        return True
-    except FileNotFoundError:
-        print(f"\n*** ERROR: Command not found. Is Conda/Mamba installed and in your PATH? ***", file=sys.stderr)
-        return False
-    except Exception as e:
-        print(f"\n*** An unexpected error occurred: {e} ***", file=sys.stderr)
-        return False
-
-
-def check_mamba():
-    """Checks if mamba is installed and available."""
-    try:
-        subprocess.run("mamba --version", shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
-
-
-# Main execution block
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Create a Conda environment with GPU support for TensorFlow and PyTorch.", formatter_class=argparse.RawTextHelpFormatter)
+def main():
+    parser = argparse.ArgumentParser(description="Generate a robust installation script for the ProtDiGCN environment.", formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("env_name", type=str, help="The name for the new Conda environment.")
     args = parser.parse_args()
     env_name = args.env_name
 
-    # --- Configuration: All packages installed via Conda ---
+    # --- Configuration ---
     python_version = "3.11"
+    torch_version = "2.3.1"
+    cuda_version_for_pytorch = "cu121"
 
-    # **MODIFICATION**: Added the 'pyg' channel specifically for PyTorch Geometric.
-    # The order is important: it tells conda where to look first.
-    channels = ["pyg", "pytorch", "nvidia", "conda-forge"]
+    # --- Define Packages for each step ---
+    # Minimal conda packages
+    base_conda_packages = [f"python={python_version}", "pip", "gxx_linux-64"]
 
-    # All packages in a single list for a one-shot, robust installation.
-    conda_packages = [f"python={python_version}", # GPU Frameworks
-        "pytorch", "torchvision", "torchaudio", "pytorch-cuda=12.1", "tensorflow", # PyTorch Geometric (will now be found in the 'pyg' channel)
-        "pytorch-geometric", # Other project dependencies
-        "tqdm", "dask", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx", "gensim", "python-louvain", "transformers"]
+    # Pip packages for PyTorch
+    torch_pip_packages = f"torch=={torch_version} torchvision torchaudio --index-url https://download.pytorch.org/whl/{cuda_version_for_pytorch}"
 
-    print_header(f"Unified GPU Environment Setup for '{env_name}'")
+    # Pip packages for PyG dependencies (with the crucial find-links flag)
+    pyg_pip_packages = f"--find-links https://data.pyg.org/whl/torch-{torch_version}+{cuda_version_for_pytorch}.html torch-scatter torch-sparse torch-cluster torch-spline-conv"
 
-    solver = "mamba" if check_mamba() else "conda"
-    print(f"--- Using {solver.capitalize()} for installation. ---")
+    # All other remaining packages
+    other_pip_packages = ["pytorch-geometric", "tensorflow[and-cuda]", "tqdm", "dask", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx",
+        "gensim", "python-louvain", "transformers", "torch-geometric-signed-directed"]
 
-    # --- Single Installation Step ---
-    print("\n[Step 1/1] Creating environment and installing all packages with Conda...")
+    # --- Generate the Shell Script ---
+    # Using a .sh extension as the logs show a Linux environment
+    script_filename = f"install_{env_name}.sh"
 
-    channel_flags = " ".join([f"-c {c}" for c in channels])
-    package_list = " ".join(f'"{pkg}"' for pkg in conda_packages)  # Quote packages to handle special characters
-    create_command = f"{solver} create --name {env_name} -y {channel_flags} {package_list}"
+    with open(script_filename, "w") as f:
+        f.write("#!/bin/bash\n")
+        f.write("# This script was auto-generated to create the Conda environment.\n")
+        f.write("# To run it, use the command: bash " + script_filename + "\n\n")
 
-    if not run_command(create_command, "Unified Conda Environment Creation"):
-        print_error_and_exit(f"Failed to create the Conda environment '{env_name}'. Please check the logs.")
+        f.write("# Stop on any error\n")
+        f.write("set -e\n\n")
 
-    print_header("Environment creation complete!")
-    print_success("All packages were installed successfully via Conda. ✅")
-    print("To activate your new environment, run:\n")
-    print(f"> conda activate {env_name}\n")
-    print("You can then run the unit tests to verify the GPU setup for both frameworks.")
+        f.write("# Make sure conda is initialized\n")
+        f.write("eval \"$(conda shell.bash hook)\"\n\n")
+
+        f.write("echo '--- [Step 1/4] Creating minimal Conda environment... ---\n'")
+        f.write(f"conda create --name {env_name} -y -c conda-forge {' '.join(base_conda_packages)}\n\n")
+
+        f.write("echo '--- [Step 2/4] Activating environment and installing PyTorch... ---\n'")
+        f.write(f"conda activate {env_name}\n")
+        f.write(f"pip install {torch_pip_packages}\n\n")
+
+        f.write("echo '--- [Step 3/4] Installing PyTorch Geometric dependencies... ---\n'")
+        f.write(f"pip install {pyg_pip_packages}\n\n")
+
+        f.write("echo '--- [Step 4/4] Installing TensorFlow and all remaining packages... ---\n'")
+        f.write(f"pip install {' '.join(other_pip_packages)}\n\n")
+
+        f.write("echo '✅✅✅ Environment creation complete! ✅✅✅'\n")
+        f.write("echo 'To activate your new environment, run:'\n")
+        f.write(f"echo 'conda activate {env_name}'\n")
+
+    # Make the generated script executable
+    os.chmod(script_filename, 0o755)
+
+    print("=" * 60)
+    print("✅ Generated new installer script!")
+    print(f"   To create your environment, please run the following command in your terminal:")
+    print(f"\n   bash ./{script_filename}\n")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()
