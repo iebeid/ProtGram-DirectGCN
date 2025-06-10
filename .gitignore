@@ -1,2 +1,21 @@
-.idea/
-.idea
+# PyCharm
+./.idea/
+
+# Virtual Environment
+venv/
+
+# Python
+src/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+.Python
+build/
+dist/
+
+# Logs
+*.log
+
+# Example of a sensitive file (replace with your actual file names)
+config/secrets.py

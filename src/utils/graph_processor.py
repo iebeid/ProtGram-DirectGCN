@@ -1,39 +1,14 @@
 # ==============================================================================
 # MODULE: utils/graph_processor.py
-# PURPOSE: Contains classes for n-gram graph representation and for creating
-#          edge features for link prediction.
+# PURPOSE: Contains robust classes for n-gram graph representation and for
+#          creating edge features for link prediction.
 # ==============================================================================
 
 import numpy as np
 import networkx as nx
-import tensorflow as tf
-from collections import defaultdict
 from tqdm.auto import tqdm
-from typing import List, Optional, Dict, Set, Tuple, Any
+from typing import List, Optional, Dict, Tuple, Any
 
-
-# --- Utility Functions for Graph Classes ---
-
-def _flip_list(list_of_tuples: List[Tuple]) -> List[Tuple]:
-    """Flips the first two elements of each tuple in a list."""
-    flipped_edges = []
-    for es in list_of_tuples:
-        # Assuming tuple structure (source, target, weight, ...)
-        flipped_edges.append((es[1], es[0]) + es[2:])
-    return flipped_edges
-
-
-def _are_matrices_identical(A: np.ndarray, B: np.ndarray) -> bool:
-    """Compares two numpy matrices and returns True if they are identical."""
-    if A.shape != B.shape:
-        return False
-    return np.allclose(A, B)
-
-
-# ==============================================================================
-# --- N-GRAM GRAPH REPRESENTATION ---
-# (Adapted from graph_utils.py)
-# ==============================================================================
 
 class NgramGraph:
     """A base class for representing n-gram graphs with nodes and edges."""
@@ -53,7 +28,6 @@ class NgramGraph:
         self.idx_to_node = {}
 
         node_keys = set(self.nodes_map.keys())
-        # Infer nodes from edges if the nodes_map is empty
         if not node_keys and self.edges:
             for pair in self.original_edges:
                 node_keys.add(str(pair[0]))
@@ -86,42 +60,45 @@ class NgramGraph:
             return
 
         weightless_edges = [(e[0], e[1]) for e in self.edges]
-        graph_nx = nx.Graph(weightless_edges)
-        num_components = nx.number_connected_components(graph_nx)
-        if num_components > 1:
-            print(f"WARNING: N-gram graph has {num_components} connected components.")
-        else:
-            print("N-gram graph has a single connected component.")
+        try:
+            graph_nx = nx.Graph(weightless_edges)
+            num_components = nx.number_connected_components(graph_nx)
+            if num_components > 1:
+                print(f"WARNING: N-gram graph has {num_components} connected components.")
+            else:
+                print("N-gram graph has a single connected component.")
+        except Exception as e:
+            print(f"WARNING: Could not perform NetworkX integrity check. Error: {e}")
 
 
 class DirectedNgramGraph(NgramGraph):
     """Represents a directed n-gram graph, computing adjacency and degree matrices."""
 
-    def __init__(self, nodes: Dict[str, Any], edges: List[Tuple]):
-        super().__init__(nodes=nodes, edges=edges)
-        self.in_indexed_edges = _flip_list(self.edges)
-        self.out_adjacency_matrix, self.in_adjacency_matrix = self._adjacency_matrices()
-        self.out_weighted_adjacency, self.in_weighted_adjacency = self._weighted_adjacency_matrices()
-
     def _adjacency_matrices(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Creates binary adjacency matrices."""
         out_adj = np.zeros((self.number_of_nodes, self.number_of_nodes), dtype=np.float32)
-        for s_n, t_n, *_ in self.edges: out_adj[s_n, t_n] = 1
         in_adj = np.zeros((self.number_of_nodes, self.number_of_nodes), dtype=np.float32)
-        for s_n, t_n, *_ in self.in_indexed_edges: in_adj[s_n, t_n] = 1
+        for s_n, t_n, *_ in self.edges:
+            out_adj[s_n, t_n] = 1
+            in_adj[t_n, s_n] = 1
         return out_adj, in_adj
 
     def _weighted_adjacency_matrices(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Creates weighted adjacency matrices."""
         out_w_adj = np.zeros((self.number_of_nodes, self.number_of_nodes), dtype=np.float32)
-        for s_n, t_n, w, *_ in self.edges: out_w_adj[s_n, t_n] = w
         in_w_adj = np.zeros((self.number_of_nodes, self.number_of_nodes), dtype=np.float32)
-        for s_n, t_n, w, *_ in self.in_indexed_edges: in_w_adj[s_n, t_n] = w
+        for s_n, t_n, w, *_ in self.edges:
+            out_w_adj[s_n, t_n] = w
+            in_w_adj[t_n, s_n] = w
         return out_w_adj, in_w_adj
 
+    def __init__(self, nodes: Dict[str, Any], edges: List[Tuple]):
+        super().__init__(nodes=nodes, edges=edges)
+        print("Constructing adjacency matrices for directed graph...")
+        self.out_adjacency_matrix, self.in_adjacency_matrix = self._adjacency_matrices()
+        self.out_weighted_adjacency, self.in_weighted_adjacency = self._weighted_adjacency_matrices()
+        print("Adjacency matrices constructed.")
 
-# ==============================================================================
-# --- EDGE FEATURE ENGINEERING FOR LINK PREDICTION ---
-# (Adapted from evaluater.py)
-# ==============================================================================
 
 class EdgeFeatureProcessor:
     """A class to handle the creation of edge embeddings for the evaluation MLP."""
@@ -130,33 +107,27 @@ class EdgeFeatureProcessor:
     def create_edge_embeddings(interaction_pairs: List[Tuple[str, str, int]], protein_embeddings: Dict[str, np.ndarray], method: str = 'concatenate') -> Optional[Tuple[np.ndarray, np.ndarray]]:
         """
         Creates edge features for link prediction from per-protein embeddings.
-        This version pre-allocates the NumPy array for better memory efficiency.
         """
         print(f"Creating edge embeddings using method: '{method}'...")
         if not protein_embeddings:
             print("ERROR: Protein embeddings dictionary is empty.")
             return None
 
+        # Determine the dimension from the first embedding vector
         embedding_dim = next(iter(protein_embeddings.values())).shape[0]
         feature_dim = embedding_dim * 2 if method == 'concatenate' else embedding_dim
 
-        # Pre-filter pairs to find out the final size of the dataset
-        valid_pairs = []
-        for p1_id, p2_id, label in interaction_pairs:
-            if p1_id in protein_embeddings and p2_id in protein_embeddings:
-                valid_pairs.append((p1_id, p2_id, label))
+        valid_pairs = [pair for pair in interaction_pairs if pair[0] in protein_embeddings and pair[1] in protein_embeddings]
 
         if not valid_pairs:
             print("ERROR: No valid pairs found with available embeddings.")
             return None
 
-        # Pre-allocate NumPy arrays for memory efficiency
         num_valid_pairs = len(valid_pairs)
         edge_features = np.zeros((num_valid_pairs, feature_dim), dtype=np.float32)
         labels = np.zeros(num_valid_pairs, dtype=np.int32)
 
-        idx = 0
-        for p1_id, p2_id, label in tqdm(valid_pairs, desc="Creating Edge Features", leave=False):
+        for idx, (p1_id, p2_id, label) in enumerate(tqdm(valid_pairs, desc="Creating Edge Features")):
             emb1 = protein_embeddings[p1_id]
             emb2 = protein_embeddings[p2_id]
 
@@ -166,14 +137,16 @@ class EdgeFeatureProcessor:
                 feature = (emb1 + emb2) / 2.0
             elif method == 'hadamard':
                 feature = emb1 * emb2
-            elif method == 'subtract':
+            elif method == 'l1':
                 feature = np.abs(emb1 - emb2)
+            elif method == 'l2':
+                feature = (emb1 - emb2) ** 2
             else:
+                # Default to concatenation if method is unknown
                 feature = np.concatenate((emb1, emb2))
 
             edge_features[idx] = feature
             labels[idx] = label
-            idx += 1
 
         print(f"Created {len(edge_features)} edge features with dimension {feature_dim}.")
         return edge_features, labels

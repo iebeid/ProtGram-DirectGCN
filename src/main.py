@@ -1,5 +1,7 @@
 # In src/main.py
 
+import torch
+
 import time
 import os
 import mlflow  # Import mlflow
