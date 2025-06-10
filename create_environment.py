@@ -1,7 +1,5 @@
 import subprocess
 import sys
-import os
-import platform
 import argparse
 
 
@@ -65,17 +63,16 @@ if __name__ == "__main__":
 
     # --- Configuration: All packages installed via Conda ---
     python_version = "3.11"
-    # Note the channel order: pytorch and nvidia are high priority for official builds.
-    channels = ["pytorch", "nvidia", "conda-forge"]
 
-    # All packages are now in a single list for a one-shot, robust installation.
-    # This avoids all compilation issues by using pre-built, compatible packages.
+    # **MODIFICATION**: Added the 'pyg' channel specifically for PyTorch Geometric.
+    # The order is important: it tells conda where to look first.
+    channels = ["pyg", "pytorch", "nvidia", "conda-forge"]
+
+    # All packages in a single list for a one-shot, robust installation.
     conda_packages = [f"python={python_version}", # GPU Frameworks
-        "pytorch", "torchvision", "torchaudio", "pytorch-cuda=12.1",  # Specifies the CUDA version for PyTorch
-        "tensorflow", # PyTorch Geometric and its dependencies
-        "pytorch-geometric", "pytorch-scatter", "pytorch-sparse", "pytorch-cluster", "pytorch-spline-conv", # Other project dependencies
-        "tqdm", "dask", "dask-expr", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx", "gensim", "python-louvain", "transformers",
-        "torch-geometric-signed-directed"]
+        "pytorch", "torchvision", "torchaudio", "pytorch-cuda=12.1", "tensorflow", # PyTorch Geometric (will now be found in the 'pyg' channel)
+        "pytorch-geometric", # Other project dependencies
+        "tqdm", "dask", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx", "gensim", "python-louvain", "transformers"]
 
     print_header(f"Unified GPU Environment Setup for '{env_name}'")
 
@@ -85,16 +82,15 @@ if __name__ == "__main__":
     # --- Single Installation Step ---
     print("\n[Step 1/1] Creating environment and installing all packages with Conda...")
 
-    # Construct the single, robust command
     channel_flags = " ".join([f"-c {c}" for c in channels])
-    package_list = " ".join(conda_packages)
+    package_list = " ".join(f'"{pkg}"' for pkg in conda_packages)  # Quote packages to handle special characters
     create_command = f"{solver} create --name {env_name} -y {channel_flags} {package_list}"
 
     if not run_command(create_command, "Unified Conda Environment Creation"):
         print_error_and_exit(f"Failed to create the Conda environment '{env_name}'. Please check the logs.")
 
     print_header("Environment creation complete!")
-    print_success("All packages were installed successfully via Conda.")
+    print_success("All packages were installed successfully via Conda. ✅")
     print("To activate your new environment, run:\n")
     print(f"> conda activate {env_name}\n")
     print("You can then run the unit tests to verify the GPU setup for both frameworks.")

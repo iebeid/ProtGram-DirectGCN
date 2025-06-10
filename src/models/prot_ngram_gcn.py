@@ -7,10 +7,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
+
 from torch_geometric.nn import MessagePassing
 from typing import Optional, List
-import numpy as np
+
 
 
 class DirectGCNLayer(MessagePassing):
