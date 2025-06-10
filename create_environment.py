@@ -7,63 +7,57 @@ import argparse
 
 def print_header(title):
     """Prints a formatted header."""
-    border = "=" * (len(title) + 4)
+    border = "=" * (len(title) + 6)
     print(f"\n{border}")
-    print(f"=== {title} ===")
+    print(f"|| {title} ||")
     print(f"{border}")
 
 
-def print_step(current, total, description):
+def print_step(message):
     """Prints a formatted step message."""
-    print(f"\n[Step {current}/{total}] {description}")
+    print(f"\n>>> {message}")
 
 
-def print_success(message):
-    """Prints a success message."""
-    print(f"\n--- {message} ---")
-
-
-def print_error_and_exit(message, e=None):
-    """Prints an error message and exits the script."""
-    print(f"\n*** ERROR: {message} ***", file=sys.stderr)
-    if e:
-        print(f"*** Exception: {e} ***", file=sys.stderr)
-    print("*** ABORTING SCRIPT. Please review the error messages above. ***", file=sys.stderr)
-    sys.exit(1)
-
-
-def run_command(command_list):
+def run_command(command_list, check=True):
     """
-    Runs a command specified as a list of arguments.
-    Streams its output and checks for errors.
+    Runs a command, streams its output in real-time, and checks for errors.
+    Uses subprocess.run for robustness.
     """
-    print(f"\n>--- Running Command: {' '.join(command_list)} ---")
+    print(f"    Running Command: {' '.join(command_list)}")
     try:
+        # Popen is used here specifically to stream output in real-time
         process = subprocess.Popen(command_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True)
-        for line in process.stdout:
-            print(line, end='')
-        process.wait()
-        if process.returncode != 0:
-            print(f"\n*** Command failed with exit code {process.returncode} ***", file=sys.stderr)
-            return False
+        for line in iter(process.stdout.readline, ''):
+            print(f"      {line}", end='')
+        process.stdout.close()
+        return_code = process.wait()
+        if check and return_code != 0:
+            raise subprocess.CalledProcessError(return_code, command_list)
         return True
+    except FileNotFoundError as e:
+        print(f"\n*** ERROR: Command not found: '{e.filename}'. Is Conda in your system's PATH? ***")
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print(f"\n*** ERROR: Command failed with exit code {e.returncode}. See output above. ***")
+        sys.exit(1)
     except Exception as e:
-        print_error_and_exit("An unexpected error occurred while running a command.", e)
-        return False
+        print(f"\n*** An unexpected error occurred: {e} ***")
+        sys.exit(1)
 
 
-def get_conda_base_prefix():
+def get_conda_base_path():
     """Finds the base directory of the Conda installation."""
+    print_step("Locating Conda installation...")
     try:
-        result = subprocess.run(['conda', 'info', '--base'], check=True, text=True, capture_output=True)
-        return result.stdout.strip()
-    except Exception as e:
-        print_error_and_exit("Could not determine Conda base directory. Is Conda installed and in your PATH?", e)
+        return subprocess.check_output(['conda', 'info', '--base'], text=True).strip()
+    except Exception:
+        print("\n*** ERROR: Could not find Conda. Please ensure Conda is installed and its 'bin' directory is in your system's PATH. ***")
+        sys.exit(1)
 
 
 # Main execution block
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Create a Conda environment for ProtDiGCN using a robust, step-by-step method.", formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(description="Create a robust, self-contained Conda environment for ProtDiGCN.", formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("env_name", type=str, help="The name for the new Conda environment.")
     args = parser.parse_args()
     env_name = args.env_name
@@ -73,54 +67,55 @@ if __name__ == "__main__":
     torch_version = "2.3.1"
     cuda_version_for_pytorch = "cu121"
 
-    base_conda_packages = [f"python={python_version}", "pip", "gxx_linux-64"]
+    base_conda_packages = [f"python={python_version}", "pip"]
+    if platform.system() == "Linux":
+        base_conda_packages.append("gxx_linux-64")
+
     pyg_dependencies = ["torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv"]
     other_pip_packages = ["pytorch-geometric", "tensorflow[and-cuda]", "tqdm", "dask", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx",
         "gensim", "python-louvain", "transformers", "torch-geometric-signed-directed"]
 
-    print_header(f"Robust GPU Environment Setup for '{env_name}'")
+    print_header(f"Starting Environment Setup for '{env_name}'")
 
-    conda_base_path = get_conda_base_prefix()
-    TOTAL_STEPS = 5
+    conda_base_path = get_conda_base_path()
+    env_path = os.path.join(conda_base_path, 'envs', env_name)
 
     # --- Step 1: Create the minimal Conda environment ---
-    print_step(1, TOTAL_STEPS, "Creating minimal Conda environment with Python and compilers...")
-    conda_create_cmd = ["conda", "create", "--name", env_name, "-y", "-c", "conda-forge"] + base_conda_packages
-    if not run_command(conda_create_cmd):
-        print_error_and_exit("Failed to create the base Conda environment.")
-    print_success("Base environment created successfully!")
+    print_step("STEP 1: Creating minimal Conda environment with Python & Compilers...")
+    if os.path.exists(env_path):
+        print(f"    Environment '{env_name}' already exists. Skipping creation.")
+    else:
+        run_command(["conda", "create", "--name", env_name, "-y", "-c", "conda-forge"] + base_conda_packages)
+    print("--- Minimal environment is ready. ---")
 
     # --- Get the absolute path to the new environment's pip ---
-    pip_exe_path = os.path.join(conda_base_path, 'envs', env_name, 'bin', 'pip')
+    pip_exe = os.path.join(env_path, 'bin', 'pip')
+    if not os.path.exists(pip_exe):
+        print(f"*** FATAL ERROR: Cannot find pip executable at '{pip_exe}'. The environment was not created correctly. ***")
+        sys.exit(1)
 
-    # --- Step 2: Install PyTorch using the new pip executable ---
-    print_step(2, TOTAL_STEPS, "Installing PyTorch for CUDA 12.1...")
-    torch_install_cmd = [pip_exe_path, "install", "--no-cache-dir", f"torch=={torch_version}", "torchvision", "torchaudio", "--index-url", f"https://download.pytorch.org/whl/{cuda_version_for_pytorch}"]
-    if not run_command(torch_install_cmd):
-        print_error_and_exit("Failed to install PyTorch.")
-    print_success("PyTorch installed successfully!")
+    # --- Step 2: Install PyTorch ---
+    print_step("STEP 2: Installing PyTorch for CUDA 12.1...")
+    run_command([pip_exe, "install", "--no-cache-dir", f"torch=={torch_version}", "torchvision", "torchaudio", "--index-url", f"https://download.pytorch.org/whl/{cuda_version_for_pytorch}"])
+    print("--- PyTorch installed successfully. ---")
 
-    # --- Step 3: Install PyG dependencies from their official wheel index ---
-    print_step(3, TOTAL_STEPS, "Installing PyTorch Geometric dependencies...")
-    pyg_install_cmd = [pip_exe_path, "install", "--no-cache-dir"] + pyg_dependencies + ["-f", f"https://data.pyg.org/whl/torch-{torch_version}+{cuda_version_for_pytorch}.html"]
-    if not run_command(pyg_install_cmd):
-        print_error_and_exit("Failed to install PyTorch Geometric dependencies.")
-    print_success("PyG dependencies installed successfully!")
+    # --- Step 3: Install PyTorch Geometric dependencies ---
+    print_step("STEP 3: Installing PyTorch Geometric dependencies...")
+    run_command([pip_exe, "install", "--no-cache-dir"] + pyg_dependencies + ["-f", f"https://data.pyg.org/whl/torch-{torch_version}+{cuda_version_for_pytorch}.html"])
+    print("--- PyG dependencies installed successfully. ---")
 
-    # --- Step 4: Install TensorFlow ---
-    print_step(4, TOTAL_STEPS, "Installing TensorFlow with CUDA support...")
-    tf_install_cmd = [pip_exe_path, "install", "--no-cache-dir", "tensorflow[and-cuda]"]
-    if not run_command(tf_install_cmd):
-        print_error_and_exit("Failed to install TensorFlow.")
-    print_success("TensorFlow installed successfully!")
+    # --- Step 4: Install TensorFlow and remaining packages ---
+    print_step("STEP 4: Installing TensorFlow and all remaining packages...")
+    run_command([pip_exe, "install", "--no-cache-dir"] + other_pip_packages)
+    print("--- All remaining packages installed successfully. ---")
 
-    # --- Step 5: Install all remaining packages ---
-    print_step(5, TOTAL_STEPS, "Installing all remaining packages...")
-    remaining_install_cmd = [pip_exe_path, "install", "--no-cache-dir"] + other_pip_packages
-    if not run_command(remaining_install_cmd):
-        print_error_and_exit("Failed to install one or more of the remaining packages.")
-    print_success("All remaining packages installed successfully!")
+    # --- Step 5: Final Verification ---
+    print_step("STEP 5: Verifying core libraries...")
+    print("    Checking PyTorch...")
+    run_command([os.path.join(env_path, 'bin', 'python'), "-c", "import torch; print(f'PyTorch version: {torch.__version__}'); print('GPU available:', torch.cuda.is_available())"])
+    print("    Checking TensorFlow...")
+    run_command([os.path.join(env_path, 'bin', 'python'), "-c", "import tensorflow as tf; print(f'TensorFlow version: {tf.__version__}'); print('GPU available:', len(tf.config.list_physical_devices('GPU')) > 0)"])
 
-    print_header(f"✅✅✅ Environment '{env_name}' created successfully! ✅✅✅")
-    print("To activate and use the new environment, run:\n")
+    print_header(f"✅✅✅ Environment '{env_name}' created and verified! ✅✅✅")
+    print("To activate and use your new environment, run:\n")
     print(f"    conda activate {env_name}\n")

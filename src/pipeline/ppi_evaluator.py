@@ -21,7 +21,7 @@ import mlflow
 
 # Import from our new project structure
 from src.config import Config
-from src.utils.checker import check_h5_embeddings
+from src.utils.file_handler import check_h5_embeddings
 from src.utils.data_loader import stream_interaction_pairs, H5EmbeddingLoader, get_required_ids_from_files
 from src.utils.graph_processor import EdgeFeatureProcessor
 from src.utils.reporter import plot_training_history, plot_roc_curves, plot_comparison_charts, write_summary_file
