@@ -24,8 +24,10 @@ class Config:
         self.CLEANUP_DUMMY_DATA = True
 
         # --- PATH CONFIGURATION ---
+        self.PROJECT_ROOT = Path(__file__).parent.parent
         # Base directories
-        self.BASE_DATA_DIR = "G:/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction/Data/"
+        self.BASE_DATA_DIR = self.PROJECT_ROOT / "Data/"
+        self.BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.BASE_OUTPUT_DIR = os.path.join(self.BASE_DATA_DIR, "pipeline_output")
 
         # Input data paths

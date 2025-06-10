@@ -2,9 +2,11 @@
 # MODULE: utils/graph_processor.py
 # PURPOSE: Contains robust classes for n-gram graph representation and for
 #          creating edge features for link prediction.
+# VERSION: 5.0 (Correctly Merged)
 # ==============================================================================
 
 import numpy as np
+import pandas as pd
 import networkx as nx
 from tqdm.auto import tqdm
 from typing import List, Optional, Dict, Tuple, Any
@@ -72,7 +74,17 @@ class NgramGraph:
 
 
 class DirectedNgramGraph(NgramGraph):
-    """Represents a directed n-gram graph, computing adjacency and degree matrices."""
+    """
+    Represents a directed n-gram graph, computing adjacency and degree matrices.
+    This class is preserved for any parts of the pipeline that might still use it.
+    """
+
+    def __init__(self, nodes: Dict[str, Any], edges: List[Tuple]):
+        super().__init__(nodes=nodes, edges=edges)
+        print("Constructing standard adjacency matrices for directed graph...")
+        self.out_adjacency_matrix, self.in_adjacency_matrix = self._adjacency_matrices()
+        self.out_weighted_adjacency, self.in_weighted_adjacency = self._weighted_adjacency_matrices()
+        print("Standard adjacency matrices constructed.")
 
     def _adjacency_matrices(self) -> Tuple[np.ndarray, np.ndarray]:
         """Creates binary adjacency matrices."""
@@ -92,12 +104,35 @@ class DirectedNgramGraph(NgramGraph):
             in_w_adj[t_n, s_n] = w
         return out_w_adj, in_w_adj
 
+
+class DirectedNgramGraphForGCN(NgramGraph):
+    """
+    A specialized graph object for the ProtDiGCN model. It stores the raw,
+    unnormalized weighted adjacency matrices (A_out_w, A_in_w), as required
+    by the GCN which performs preprocessing internally.
+    """
+
     def __init__(self, nodes: Dict[str, Any], edges: List[Tuple]):
+        # Initialize the base class to get node indexing
         super().__init__(nodes=nodes, edges=edges)
-        print("Constructing adjacency matrices for directed graph...")
-        self.out_adjacency_matrix, self.in_adjacency_matrix = self._adjacency_matrices()
-        self.out_weighted_adjacency, self.in_weighted_adjacency = self._weighted_adjacency_matrices()
-        print("Adjacency matrices constructed.")
+        print("Creating raw weighted adjacency matrices for ProtDiGCN...")
+        self._create_raw_adjacency_matrices()
+        print("Raw matrices (A_out_w, A_in_w) created successfully for GCN.")
+
+    def _create_raw_adjacency_matrices(self):
+        """Creates the raw weighted adjacency matrices from the edge list counts."""
+        if self.number_of_nodes == 0:
+            self.A_out_w = np.array([], dtype=np.float32).reshape(0, 0)
+            self.A_in_w = np.array([], dtype=np.float32).reshape(0, 0)
+            return
+
+        A_out_w = np.zeros((self.number_of_nodes, self.number_of_nodes), dtype=np.float32)
+        # self.edges is already indexed from the parent __init__ call
+        for s_idx, t_idx, w, *_ in self.edges:
+            A_out_w[s_idx, t_idx] = w
+
+        self.A_out_w = A_out_w
+        self.A_in_w = A_out_w.T
 
 
 class EdgeFeatureProcessor:
@@ -114,7 +149,12 @@ class EdgeFeatureProcessor:
             return None
 
         # Determine the dimension from the first embedding vector
-        embedding_dim = next(iter(protein_embeddings.values())).shape[0]
+        try:
+            embedding_dim = next(iter(protein_embeddings.values())).shape[0]
+        except (StopIteration, AttributeError):
+            print("ERROR: Could not determine embedding dimension.")
+            return None
+
         feature_dim = embedding_dim * 2 if method == 'concatenate' else embedding_dim
 
         valid_pairs = [pair for pair in interaction_pairs if pair[0] in protein_embeddings and pair[1] in protein_embeddings]
@@ -142,7 +182,6 @@ class EdgeFeatureProcessor:
             elif method == 'l2':
                 feature = (emb1 - emb2) ** 2
             else:
-                # Default to concatenation if method is unknown
                 feature = np.concatenate((emb1, emb2))
 
             edge_features[idx] = feature

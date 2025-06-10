@@ -2,7 +2,7 @@
 # MODULE: pipeline/5_evaluator.py
 # PURPOSE: Contains the complete workflow for evaluating one or more sets of
 #          protein embeddings on a link prediction task.
-# VERSION: 2.1 (Final, No Placeholders)
+# VERSION: 2.3 (Stream-Loading and Memory-Efficient CV)
 # ==============================================================================
 
 import os
@@ -22,7 +22,7 @@ import mlflow
 # Import from our new project structure
 from src.config import Config
 from src.utils.checker import check_h5_embeddings
-from src.utils.data_loader import load_interaction_pairs, load_h5_embeddings_selectively
+from src.utils.data_loader import stream_interaction_pairs, H5EmbeddingLoader, get_required_ids_from_files
 from src.utils.graph_processor import EdgeFeatureProcessor
 from src.utils.reporter import plot_training_history, plot_roc_curves, plot_comparison_charts, write_summary_file
 from src.models.mlp import build_mlp_model
@@ -51,24 +51,40 @@ def _create_dummy_data(base_dir: str, num_proteins: int, embedding_dim: int, num
     return dummy_pos_path, dummy_neg_path, dummy_emb_config
 
 
-def _run_cv_workflow(embedding_name: str, X_full: np.ndarray, y_full: np.ndarray, config: Config) -> Dict[str, Any]:
-    """The core CV worker function that trains and evaluates the MLP."""
+def _run_cv_workflow(embedding_name: str, all_pairs: List[Tuple[str, str, int]], protein_embeddings: Dict[str, np.ndarray], config: Config) -> Dict[str, Any]:
+    """
+    The core CV worker function that trains and evaluates the MLP.
+    This version is memory-efficient, creating feature matrices per fold.
+    """
     aggregated_results: Dict[str, Any] = {'embedding_name': embedding_name, 'history_dict_fold1': {}, 'notes': ""}
-    if len(np.unique(y_full)) < 2:
+
+    labels = np.array([p[2] for p in all_pairs])
+    if len(np.unique(labels)) < 2:
         aggregated_results['notes'] = "Single class in dataset.";
         return aggregated_results
 
     skf = StratifiedKFold(n_splits=config.EVAL_N_FOLDS, shuffle=True, random_state=config.RANDOM_STATE)
     fold_metrics_list: List[Dict[str, Any]] = []
 
-    for fold_num, (train_idx, val_idx) in enumerate(skf.split(X_full, y_full)):
+    for fold_num, (train_idx, val_idx) in enumerate(skf.split(np.zeros(len(all_pairs)), labels)):
         print(f"\n--- Fold {fold_num + 1}/{config.EVAL_N_FOLDS} for {embedding_name} ---")
-        X_train, y_train, X_val, y_val = X_full[train_idx], y_full[train_idx], X_full[val_idx], y_full[val_idx]
+
+        train_pairs = [all_pairs[i] for i in train_idx]
+        val_pairs = [all_pairs[i] for i in val_idx]
+
+        print("Creating features for training set...")
+        X_train, y_train = EdgeFeatureProcessor.create_edge_embeddings(train_pairs, protein_embeddings, method=config.EVAL_EDGE_EMBEDDING_METHOD)
+        print("Creating features for validation set...")
+        X_val, y_val = EdgeFeatureProcessor.create_edge_embeddings(val_pairs, protein_embeddings, method=config.EVAL_EDGE_EMBEDDING_METHOD)
+
+        if X_train is None or X_val is None:
+            print(f"Skipping fold {fold_num + 1} due to feature creation failure.")
+            continue
 
         train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(len(X_train)).batch(config.EVAL_BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
         val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).batch(config.EVAL_BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
 
-        mlp_params = {'dense1_units': config.EVAL_MLP_DENSE1_UNITS, 'dropout1_rate': config.EVAL_MLP_DROPOUT1_RATE, 'dense2_units': config.EVAL_MLP_DENSE2_UNITS, 'dropout2_rate': config.EVAL_MLP_DROPOUT2_RATE,
+        mlp_params = {'dense1_units': config.EVAL_MLP_DENSE1_UNITS, 'dropout1_rate': config.EVAL_MLP_DROPOUT1_RATE, 'dense2_units': config.EVAL_MLP_DENSE2_UNITS, 'dropout2_rate': config.EVAL_MLP_DROPOUT2_rate,
                       'l2_reg': config.EVAL_MLP_L2_REG}
         model = build_mlp_model(X_train.shape[1], mlp_params, config.EVAL_LEARNING_RATE)
 
@@ -90,22 +106,18 @@ def _run_cv_workflow(embedding_name: str, X_full: np.ndarray, y_full: np.ndarray
             current_metrics['auc_sklearn'] = 0.5
 
         fold_metrics_list.append(current_metrics)
-        del model, history, train_ds, val_ds;
+        del model, history, train_ds, val_ds, X_train, y_train, X_val, y_val;
         gc.collect();
         tf.keras.backend.clear_session()
 
-    # Aggregate results from all folds
     if fold_metrics_list:
-        # Calculate mean for all collected metrics
         for key in fold_metrics_list[0].keys():
             mean_val = np.nanmean([fm.get(key) for fm in fold_metrics_list])
             aggregated_results[f'test_{key}'] = mean_val
-        # Calculate standard deviation for key metrics
         f1_scores = [fm.get('f1_sklearn') for fm in fold_metrics_list]
         auc_scores = [fm.get('auc_sklearn') for fm in fold_metrics_list]
         aggregated_results['test_f1_sklearn_std'] = np.nanstd(f1_scores)
         aggregated_results['test_auc_sklearn_std'] = np.nanstd(auc_scores)
-        # Store per-fold scores for statistical tests
         aggregated_results['fold_f1_scores'] = f1_scores
         aggregated_results['fold_auc_scores'] = auc_scores
 
@@ -122,77 +134,102 @@ def run_evaluation(config: Config, use_dummy_data: bool = False, parent_run_id: 
     else:
         print("\n" + "#" * 30 + " RUNNING MAIN EVALUATION " + "#" * 30)
         output_dir = config.EVALUATION_RESULTS_DIR
-        # Safely get the list of embedding files to evaluate, defaulting to an empty list if not specified in config.
-        # This prevents an AttributeError if the config variable is missing.
         emb_configs = getattr(config, 'LP_EMBEDDING_FILES_TO_EVALUATE', [])
         pos_fp, neg_fp = config.INTERACTIONS_POSITIVE_PATH, config.INTERACTIONS_NEGATIVE_PATH
         if not emb_configs:
-            print("Warning: The 'LP_EMBEDDING_FILES_TO_EVALUATE' list is not defined in your config or is empty. No production evaluation will be run.")
+            print("Warning: 'LP_EMBEDDING_FILES_TO_EVALUATE' is empty. No evaluation will run.")
 
     plots_dir = os.path.join(output_dir, "plots");
     os.makedirs(output_dir, exist_ok=True);
     os.makedirs(plots_dir, exist_ok=True)
 
-    positive_pairs = load_interaction_pairs(pos_fp, 1, random_state=config.RANDOM_STATE)
-    negative_pairs = load_interaction_pairs(neg_fp, 0, sample_n=config.SAMPLE_NEGATIVE_PAIRS, random_state=config.RANDOM_STATE)
-    if not positive_pairs: print("CRITICAL: No positive pairs loaded."); return
+    # Use the memory-efficient streaming loader to get all pairs
+    # We collect the pairs into a list to be able to use StratifiedKFold, which needs all labels at once.
+    # This is still far more memory-efficient than creating the full feature matrix.
+    all_pairs = []
+    positive_stream = stream_interaction_pairs(pos_fp, 1, batch_size=config.EVAL_BATCH_SIZE, random_state=config.RANDOM_STATE)
+    for batch in positive_stream:
+        all_pairs.extend(batch)
 
-    required_ids = set(p for pair in positive_pairs + negative_pairs for p in pair[:2])
+    negative_stream = stream_interaction_pairs(neg_fp, 0, batch_size=config.EVAL_BATCH_SIZE, sample_n=config.SAMPLE_NEGATIVE_PAIRS, random_state=config.RANDOM_STATE)
+    for batch in negative_stream:
+        all_pairs.extend(batch)
+
+    if not all_pairs:
+        print("CRITICAL: No interaction pairs were loaded from the streams. Exiting.")
+        return
+
+    random.shuffle(all_pairs)
+
+    required_ids = get_required_ids_from_files([pos_fp, neg_fp])
     print(f"Found {len(required_ids)} unique protein IDs that need embeddings.")
 
     all_cv_results = []
     for emb_config in emb_configs:
-        # --- MLFLOW INTEGRATION ---
         run_name = emb_config['name']
         with mlflow.start_run(run_name=run_name, nested=True) as run:
             print(f"\n{'=' * 25} Processing: {emb_config['name']} {'=' * 25}")
 
             if config.USE_MLFLOW:
                 mlflow.log_params({"embedding_name": emb_config['name'], "embedding_path": emb_config.get('path', 'N/A'), "edge_embedding_method": config.EVAL_EDGE_EMBEDDING_METHOD, "n_folds": config.EVAL_N_FOLDS,
-                    "epochs": config.EVAL_EPOCHS, "batch_size": config.EVAL_BATCH_SIZE, "learning_rate": config.EVAL_LEARNING_RATE, })
+                                   "epochs": config.EVAL_EPOCHS, "batch_size": config.EVAL_BATCH_SIZE, "learning_rate": config.EVAL_LEARNING_RATE, })
 
             if config.PERFORM_H5_INTEGRITY_CHECK:
                 check_h5_embeddings(emb_config['path'])
 
-            protein_embeddings = load_h5_embeddings_selectively(emb_config['path'], required_ids)
-            if not protein_embeddings: print(f"Skipping {emb_config['name']}: No relevant embeddings loaded."); continue
+            # protein_embeddings = load_h5_embeddings_selectively(emb_config['path'], required_ids)
+            # if not protein_embeddings:
+            #     print(f"Skipping {emb_config['name']}: No relevant embeddings loaded.")
+            #     continue
+            #
+            # results = _run_cv_workflow(emb_config['name'], all_pairs, protein_embeddings, config)
+            # all_cv_results.append(results)
+            #
+            # if config.USE_MLFLOW:
+            #     metrics_to_log = {k: v for k, v in results.items() if isinstance(v, (int, float, np.number))}
+            #     mlflow.log_metrics(metrics_to_log)
+            #
+            # if config.PLOT_TRAINING_HISTORY and results.get('history_dict_fold1'):
+            #     history_plot_path = plot_training_history(results['history_dict_fold1'], results['embedding_name'], plots_dir)
+            #     if config.USE_MLFLOW and history_plot_path:
+            #         mlflow.log_artifact(history_plot_path, "plots")
+            #
+            # del protein_embeddings;
+            # gc.collect()
 
-            X_full, y_full = EdgeFeatureProcessor.create_edge_embeddings(positive_pairs + negative_pairs, protein_embeddings, method=config.EVAL_EDGE_EMBEDDING_METHOD)
-            if X_full is None: print(f"Skipping {emb_config['name']}: Failed to create edge features."); continue
+            try:
+                # Use the H5EmbeddingLoader as a context manager
+                with H5EmbeddingLoader(emb_config['path']) as protein_embeddings:
+                    results = _run_cv_workflow(emb_config['name'], all_pairs, protein_embeddings, config)
+                    all_cv_results.append(results)
 
-            results = _run_cv_workflow(emb_config['name'], X_full, y_full, config)
-            all_cv_results.append(results)
+                    if config.USE_MLFLOW:
+                        metrics_to_log = {k: v for k, v in results.items() if isinstance(v, (int, float, np.number))}
+                        mlflow.log_metrics(metrics_to_log)
 
-            if config.USE_MLFLOW:
-                # Filter for metrics to log, removing complex objects
-                metrics_to_log = {k: v for k, v in results.items() if isinstance(v, (int, float, np.number))}
-                mlflow.log_metrics(metrics_to_log)
+                    if config.PLOT_TRAINING_HISTORY and results.get('history_dict_fold1'):
+                        history_plot_path = plot_training_history(results['history_dict_fold1'], results['embedding_name'], plots_dir)
+                        if config.USE_MLFLOW and history_plot_path:
+                            mlflow.log_artifact(history_plot_path, "plots")
 
-            if config.PLOT_TRAINING_HISTORY and results.get('history_dict_fold1'):
-                history_plot_path = plot_training_history(results['history_dict_fold1'], results['embedding_name'], plots_dir)
-                if config.USE_MLFLOW and history_plot_path:
-                    mlflow.log_artifact(history_plot_path, "plots")
+            except FileNotFoundError as e:
+                print(f"ERROR: Could not process {emb_config['name']}. Reason: {e}")
+                continue
 
-            del protein_embeddings, X_full, y_full, results;
+            # Garbage collect to be safe, though context manager handles the file.
             gc.collect()
 
-    # --- Log summary artifacts to the parent run ---
     if all_cv_results:
-        # Switch context back to the parent run if it exists
         with mlflow.start_run(run_id=parent_run_id):
             print("\n" + "=" * 25 + " FINAL AGGREGATE RESULTS " + "=" * 25)
-
             summary_path = write_summary_file(all_cv_results, output_dir, config.EVAL_MAIN_EMBEDDING_FOR_STATS, 'test_auc_sklearn', config.EVAL_STATISTICAL_TEST_ALPHA, config.EVAL_K_VALUES_FOR_TABLE)
             roc_plot_path = plot_roc_curves(all_cv_results, plots_dir)
             comparison_chart_path = plot_comparison_charts(all_cv_results, config.EVAL_K_VALUES_FOR_TABLE, plots_dir)
 
             if config.USE_MLFLOW:
-                if summary_path:
-                    mlflow.log_artifact(summary_path, "summary")
-                if roc_plot_path:
-                    mlflow.log_artifact(roc_plot_path, "summary_plots")
-                if comparison_chart_path:
-                    mlflow.log_artifact(comparison_chart_path, "summary_plots")
+                if summary_path: mlflow.log_artifact(summary_path, "summary")
+                if roc_plot_path: mlflow.log_artifact(roc_plot_path, "summary_plots")
+                if comparison_chart_path: mlflow.log_artifact(comparison_chart_path, "summary_plots")
     else:
         print("\nNo results generated from any configurations.")
 

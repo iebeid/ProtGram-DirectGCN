@@ -22,13 +22,13 @@ def _get_benchmark_datasets(config: Config) -> List[Tuple[torch.Tensor, str]]:
     """Loads standard benchmark datasets from PyTorch Geometric."""
     # --- MODIFICATION START ---
     # Added "Cornell" to the list of datasets to load.
-    datasets_to_load = [#{"name": "Cora", "class": Planetoid},
-                        #{"name": "CiteSeer", "class": Planetoid},
-                        #{"name": "PubMed", "class": Planetoid},
-                        #{"name": "Texas", "class": WebKB},
-                        #{"name": "Wisconsin", "class": WebKB},
-                        #{"name": "Cornell", "class": WebKB},  # This line was added
-                        {"name": "KarateClub", "class": KarateClub}]
+    datasets_to_load = [  # {"name": "Cora", "class": Planetoid},
+        # {"name": "CiteSeer", "class": Planetoid},
+        # {"name": "PubMed", "class": Planetoid},
+        # {"name": "Texas", "class": WebKB},
+        # {"name": "Wisconsin", "class": WebKB},
+        # {"name": "Cornell", "class": WebKB},  # This line was added
+        {"name": "KarateClub", "class": KarateClub}]
     # --- MODIFICATION END ---
 
     datasets = []
@@ -133,10 +133,8 @@ def run_gnn_benchmarking(config: Config):
                 for fold, (train_idx, test_idx) in enumerate(kf.split(np.zeros(data.num_nodes), data.y.cpu())):
                     try:
                         model = ProtNgramGCN(num_initial_features=num_features, hidden_dim1=config.GCN_HIDDEN_DIM_1, hidden_dim2=config.GCN_HIDDEN_DIM_2, num_graph_nodes=data.num_nodes,
-                                             task_num_output_classes=num_classes,
-                                             n_gram_len=1, one_gram_dim=0, max_pe_len=0, dropout=config.GCN_DROPOUT, use_vector_coeffs=True) if model_name == "ProtNgramGCN" else get_gnn_model_from_zoo(model_name,
-                                                                                                                                                                                                         num_features,
-                                                                                                                                                                                                         num_classes)
+                                             task_num_output_classes=num_classes, n_gram_len=1, one_gram_dim=0, max_pe_len=0, dropout=config.GCN_DROPOUT,
+                                             use_vector_coeffs=True) if model_name == "ProtNgramGCN" else get_gnn_model_from_zoo(model_name, num_features, num_classes)
                         metrics = _train_and_evaluate_fold(model, data, train_idx, test_idx, device, config, dataset_name, model_name)
                         fold_metrics.append(metrics)
                     except Exception as e:
