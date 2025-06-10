@@ -50,6 +50,9 @@ class Config:
         self.DASK_CHUNK_SIZE = 2000000
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 2) if os.cpu_count() else 1
 
+        # Defines a 3-layer GCN (num_initial_features -> 128 -> 128 -> 64)
+        Config.GCN_HIDDEN_LAYER_DIMS  = [128, 128, 64]
+
         # --- Model Training (pipeline/2_gcn_trainer.py) ---
         # ID Mapping
         self.ID_MAPPING_MODE = 'regex'  # Options: 'none', 'regex', 'api'
