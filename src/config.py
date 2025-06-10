@@ -70,6 +70,19 @@ class Config:
         self.GCN_WEIGHT_DECAY = 1e-4
         self.GCN_L2_REG_LAMBDA = 0.0001
 
+        self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
+            1: "community",
+            2: "next_node",
+            3: "sequence_validity"  # New task type
+            # Add other levels as needed
+        }
+        self.GCN_DEFAULT_TASK_TYPE: str = "community"
+
+        # Parameters for Sequence Validity Task
+        self.GCN_SEQ_VALIDITY_NUM_WALKS_K: int = 3  # Number of walks (k) per node
+        self.GCN_SEQ_VALIDITY_WALK_LENGTH_L: int = 3  # Length (l) of each walk
+        # ...
+
         # Pooling & PCA
         self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 8) if os.cpu_count() else 1
         self.APPLY_PCA_TO_GCN = True
