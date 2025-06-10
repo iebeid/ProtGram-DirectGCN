@@ -2,14 +2,14 @@
 # MODULE: pipeline/2_gcn_trainer.py
 # PURPOSE: Trains the ProtNgramGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 2.3 (Added Sequence Validity Task)
+# VERSION: 2.4 (Replaced Sequence Validity with Closest Amino Acid Task)
 # ==============================================================================
 
 import os
 import gc
 import pickle
-import random # Already imported, good
-import copy   # For deep copying walks
+import random
+import collections  # Added for deque
 import numpy as np
 import h5py
 import torch
@@ -17,17 +17,20 @@ import torch.optim as optim
 from torch_geometric.data import Data
 from torch_geometric.utils import from_scipy_sparse_matrix
 from tqdm import tqdm
-from typing import Dict, Optional, Tuple, List # Already imported
+from typing import Dict, Optional, Tuple, List
 from functools import partial
 from multiprocessing import Pool
 
 # Import from our project structure
 from src.config import Config
-from src.utils.graph_processor import DirectedNgramGraphForGCN
+from src.utils.graph_processor import DirectedNgramGraphForGCN  # Ensure this can hold/provide node_sequences
 from src.utils.data_loader import fast_fasta_parser
 from src.utils import id_mapper
 from src.utils.math_helper import apply_pca
 from src.models.prot_ngram_gcn import ProtNgramGCN
+
+# Define at module level or ensure it's accessible
+AMINO_ACID_ALPHABET = list("ACDEFGHIKLMNPQRSTVWY")
 
 
 def _train_ngram_model(model: ProtNgramGCN, data: Data, optimizer: torch.optim.Optimizer, epochs: int, device: torch.device, l2_lambda: float = 0.0):
@@ -38,7 +41,7 @@ def _train_ngram_model(model: ProtNgramGCN, data: Data, optimizer: torch.optim.O
     model.train()
     model.to(device)
     data = data.to(device)
-    criterion = torch.nn.NLLLoss() # Suitable for all tasks as model outputs log_softmax
+    criterion = torch.nn.NLLLoss()  # Suitable for all tasks as model outputs log_softmax
 
     targets = data.y
     mask = getattr(data, 'train_mask', torch.ones(data.num_nodes, dtype=torch.bool, device=device))
@@ -52,15 +55,12 @@ def _train_ngram_model(model: ProtNgramGCN, data: Data, optimizer: torch.optim.O
         optimizer.zero_grad()
         log_probs, _ = model(data=data)
 
-        # Ensure targets are on the same device as log_probs and are long type
-        # Also, ensure log_probs[mask] and targets[mask] are not empty
         if log_probs[mask].size(0) == 0:
-            if epoch == 1: # Print warning only once
-                 print(f"Warning: Mask resulted in 0 training samples for loss calculation in epoch {epoch}. Skipping loss computation for this epoch.")
-            continue # Skip if no samples to train on
+            if epoch == 1:
+                print(f"Warning: Mask resulted in 0 training samples for loss calculation in epoch {epoch}. Skipping loss computation for this epoch.")
+            continue
 
         primary_loss = criterion(log_probs[mask], targets[mask].to(log_probs.device).long())
-
 
         l2_reg_term = torch.tensor(0., device=device)
         if l2_lambda > 0:
@@ -103,7 +103,7 @@ def _pool_single_protein(protein_data: Tuple[str, str], n_val: int, ngram_map: D
 def _generate_community_labels(graph: DirectedNgramGraphForGCN, random_state: int) -> Tuple[torch.Tensor, int]:
     """Generates node labels using the Louvain community detection algorithm."""
     import networkx as nx
-    import community as community_louvain # Ensure 'python-louvain' is installed
+    import community as community_louvain
 
     graph_n_value_str = f"n={graph.n_value if hasattr(graph, 'n_value') else 'Unknown'}"
     print(f"Generating 'community' labels for graph {graph_n_value_str}...")
@@ -129,7 +129,7 @@ def _generate_community_labels(graph: DirectedNgramGraphForGCN, random_state: in
     unique_labels_from_partition = sorted(list(set(labels_list)))
 
     if not unique_labels_from_partition or (len(unique_labels_from_partition) == 1 and unique_labels_from_partition[0] == -1):
-        print(f"Warning: Louvain partition for {graph_n_value_str} resulted in no valid communities or only unassigned nodes. Assigning all nodes to a single community (0).")
+        print(f"Warning: Louvain partition for {graph_n_value_str} resulted in no valid communities. Assigning all to community 0.")
         labels = torch.zeros(graph.number_of_nodes, dtype=torch.long)
         num_classes = 1
     else:
@@ -145,126 +145,149 @@ def _generate_community_labels(graph: DirectedNgramGraphForGCN, random_state: in
 def _generate_next_node_labels(graph: DirectedNgramGraphForGCN) -> Tuple[torch.Tensor, int]:
     """
     Generates labels for a 'next node' prediction task.
-    For each node, the target is chosen from its successors based on the highest transition probability.
-    If multiple successors share the highest probability, one is chosen randomly from that group.
-    If a node has no successors, its target is itself (self-loop).
-    The number of classes is the total number of nodes in the graph.
+    Target is chosen from successors based on highest transition probability.
+    If ties, randomly choose from those. If no successors, target is self.
     """
     num_nodes = graph.number_of_nodes
     graph_n_value_str = f"n={graph.n_value if hasattr(graph, 'n_value') else 'Unknown'}"
-    print(f"Generating 'next_node' labels for graph {graph_n_value_str} with {num_nodes} nodes (prioritizing highest probability)...")
+    print(f"Generating 'next_node' labels for graph {graph_n_value_str} (prioritizing highest probability)...")
 
     if num_nodes == 0:
-        print(f"Warning: Graph for {graph_n_value_str} has no nodes. Assigning 0 labels, 1 class for 'next_node' task.")
+        print(f"Warning: Graph for {graph_n_value_str} has no nodes. Assigning 0 labels, 1 class.")
         return torch.empty(0, dtype=torch.long), 1
 
-    adj_out = graph.A_out_w  # SciPy CSR matrix (outgoing edges with weights)
+    adj_out = graph.A_out_w
     labels_list = [-1] * num_nodes
-
     nodes_with_no_successors = 0
     nodes_with_ties_in_max_prob = 0
 
     for i in range(num_nodes):
         row_slice = adj_out[i]
-        successors = row_slice.indices  # Indices of successor nodes
-        weights = row_slice.data  # Transition probabilities (weights) to these successors
+        successors = row_slice.indices
+        weights = row_slice.data
 
         if len(successors) > 0:
             max_weight = np.max(weights)
-            # Find all successors that have this maximum weight
-            highest_prob_successors = [
-                succ for succ, weight in zip(successors, weights) if weight == max_weight
-            ]
-
+            highest_prob_successors = [s for s, w in zip(successors, weights) if w == max_weight]
             if len(highest_prob_successors) > 1:
                 nodes_with_ties_in_max_prob += 1
-
-            # Randomly choose from the successors with the highest probability
             labels_list[i] = random.choice(highest_prob_successors)
         else:
-            # If no outgoing edges, predict self-loop as target
             labels_list[i] = i
             nodes_with_no_successors += 1
 
     if nodes_with_no_successors > 0:
-        print(f"  {nodes_with_no_successors}/{num_nodes} nodes in graph {graph_n_value_str} had no outgoing edges; assigned self-loop as target.")
+        print(f"  {nodes_with_no_successors}/{num_nodes} nodes had no outgoing edges; assigned self-loop target.")
     if nodes_with_ties_in_max_prob > 0:
-        print(f"  {nodes_with_ties_in_max_prob}/{num_nodes - nodes_with_no_successors} nodes with successors had ties for the highest transition probability.")
+        # Calculate nodes with successors correctly for the denominator
+        nodes_with_successors_count = num_nodes - nodes_with_no_successors
+        if nodes_with_successors_count > 0:  # Avoid division by zero
+            print(f"  {nodes_with_ties_in_max_prob}/{nodes_with_successors_count} nodes with successors had ties for highest transition probability.")
+        elif nodes_with_ties_in_max_prob > 0:  # Should not happen if no successors
+            print(f"  {nodes_with_ties_in_max_prob} nodes reported ties but no nodes had successors. Check logic.")
 
     final_labels = torch.tensor(labels_list, dtype=torch.long)
-    # For 'next_node' prediction, each node can be a target, so num_classes is num_nodes.
     num_output_classes = num_nodes
     print(f"Finished 'next_node' label generation for {graph_n_value_str}. Task output classes: {num_output_classes}.")
     return final_labels, num_output_classes
 
 
-def _generate_sequence_validity_labels(graph: DirectedNgramGraphForGCN, num_walks_k: int, walk_length_l: int) -> Tuple[torch.Tensor, int]:
+def _generate_closest_amino_acid_labels(graph: DirectedNgramGraphForGCN, k_hops: int) -> Tuple[torch.Tensor, int]:
     """
-    Generates labels for a 'sequence validity' prediction task.
-    For each node, K random walks of length L are generated. K-1 are corrupted.
-    The model predicts which of the K walks is the uncorrupted one.
-    The number of classes is K.
+    Generates labels for a 'closest amino acid predictor' task.
+    For each node, a random single amino acid is sampled. The task is to predict
+    the number of hops (0 to k_hops) to the first node (along directed paths)
+    whose associated n-gram sequence contains this amino acid.
+    - Label 0: Amino acid is in the current node's own n-gram sequence, OR not found within k_hops.
+    - Label h (1 to k_hops): Amino acid is first found in a node at that many directed hops away.
+    The number of classes is k_hops + 1.
     """
     num_nodes = graph.number_of_nodes
-    adj_out = graph.A_out_w # For random walks using outgoing edges
+    adj_out = graph.A_out_w  # Directed outgoing edges
+
+    # CRITICAL: Assumes graph object has 'node_sequences' attribute.
+    # This list should contain the n-gram string for each node index.
+    # e.g., graph.node_sequences[i] = "PEA" if node i is the 3-gram "PEA".
+    if not hasattr(graph, 'node_sequences'):
+        # Attempt to derive from idx_to_node if available (common in graph objects)
+        if hasattr(graph, 'idx_to_node') and isinstance(graph.idx_to_node, (dict, list)):
+            if isinstance(graph.idx_to_node, dict):  # Assuming keys are 0 to num_nodes-1
+                if num_nodes > 0 and not all(i in graph.idx_to_node for i in range(num_nodes)):
+                    raise AttributeError("Graph 'idx_to_node' (dict) is missing indices.")
+                graph.node_sequences = [graph.idx_to_node[i] for i in range(num_nodes)]
+            elif isinstance(graph.idx_to_node, list):
+                if len(graph.idx_to_node) != num_nodes:
+                    raise AttributeError(f"Graph 'idx_to_node' (list) length {len(graph.idx_to_node)} "
+                                         f"mismatches num_nodes {num_nodes}.")
+                graph.node_sequences = graph.idx_to_node
+            print("Derived 'node_sequences' from 'graph.idx_to_node'.")
+        else:
+            raise AttributeError("Graph object must have a 'node_sequences' attribute (List[str]) "
+                                 "or a usable 'idx_to_node' (List or Dict[int,str]) "
+                                 "mapping node_idx to its n-gram string.")
+    node_sequences = graph.node_sequences
+
     graph_n_value_str = f"n={graph.n_value if hasattr(graph, 'n_value') else 'Unknown'}"
-    print(f"Generating 'sequence_validity' labels for graph {graph_n_value_str} with {num_nodes} nodes (K={num_walks_k}, L={walk_length_l})...")
+    print(f"Generating 'closest_amino_acid' labels for graph {graph_n_value_str} with {num_nodes} nodes (k_hops={k_hops})...")
 
     if num_nodes == 0:
-        print(f"Warning: Graph for {graph_n_value_str} has no nodes. Assigning 0 labels, K={num_walks_k} classes for 'sequence_validity' task.")
-        return torch.empty(0, dtype=torch.long), num_walks_k
+        print(f"Warning: Graph for {graph_n_value_str} has no nodes. Assigning 0 labels, {k_hops + 1} classes.")
+        return torch.empty(0, dtype=torch.long), k_hops + 1
 
-    if num_walks_k <= 1:
-        raise ValueError("GCN_SEQ_VALIDITY_NUM_WALKS_K must be greater than 1 for corruption.")
+    if k_hops < 0:
+        raise ValueError("k_hops must be non-negative.")
+    if not AMINO_ACID_ALPHABET:
+        raise ValueError("AMINO_ACID_ALPHABET is empty or not defined.")
 
-    labels_for_nodes = torch.full((num_nodes,), -1, dtype=torch.long) # Index of the correct walk (0 to K-1)
+    labels_for_nodes = torch.full((num_nodes,), 0, dtype=torch.long)  # Default label is 0
 
-    for start_node_idx in tqdm(range(num_nodes), desc=f"Generating walks for n={graph.n_value}"):
-        generated_walks = []
-        for _ in range(num_walks_k):
-            current_walk = [start_node_idx]
-            current_node = start_node_idx
-            for _ in range(walk_length_l - 1):
-                successors = adj_out[current_node].indices
-                if len(successors) == 0:
-                    break # Walk ends early
-                next_node = random.choice(successors)
-                current_walk.append(next_node)
-                current_node = next_node
-            generated_walks.append(current_walk)
+    for start_node_idx in tqdm(range(num_nodes), desc=f"Generating closest AA labels for n={graph.n_value}"):
+        target_aa = random.choice(AMINO_ACID_ALPHABET)
+        current_label_for_start_node = 0  # Default: 0 (found in self or not found within k_hops)
 
-        # The task is to identify the correct walk from K candidates.
-        # The label for 'start_node_idx' will be the index of the uncorrupted walk.
-        # The actual walks and their corruptions are conceptual for label generation;
-        # the model itself doesn't directly process these K sequences as input features
-        # in its GCN layers. It learns a representation for start_node_idx, and the
-        # decoder predicts which of K "slots" is the correct one.
+        # Check self (hop 0)
+        if target_aa in node_sequences[start_node_idx]:
+            # current_label_for_start_node is already 0.
+            labels_for_nodes[start_node_idx] = 0
+            continue  # Move to the next start_node_idx
 
-        correct_walk_index = random.randint(0, num_walks_k - 1)
-        labels_for_nodes[start_node_idx] = correct_walk_index
+        # If not in self and k_hops > 0, perform BFS
+        if k_hops > 0:
+            found_at_hop_level = -1  # Flag to indicate if AA was found and at what level
 
-        # (Optional: The corruption logic itself isn't strictly needed for label generation
-        # if the model doesn't see the corrupted walks, but it's good for understanding the task setup)
-        # Example of how one might conceptualize the K choices:
-        # candidate_sequences_for_node = []
-        # for i, walk_to_process in enumerate(generated_walks):
-        #     if i == correct_walk_index:
-        #         candidate_sequences_for_node.append(walk_to_process) # Uncorrupted
-        #     else:
-        #         corrupted_w = list(walk_to_process) # Make a copy
-        #         if len(corrupted_w) > 1: # Ensure there's something to corrupt
-        #             idx_to_corrupt = random.randint(1, len(corrupted_w) - 1) # Don't corrupt start node
-        #             original_node = corrupted_w[idx_to_corrupt]
-        #             # Replace with a random node that is not the original node
-        #             possible_replacements = [n for n in range(num_nodes) if n != original_node]
-        #             if possible_replacements:
-        #                 corrupted_w[idx_to_corrupt] = random.choice(possible_replacements)
-        #             # else: it's a 2-node graph, corruption is tricky, or single node graph.
-        #         candidate_sequences_for_node.append(corrupted_w)
-        # Here, candidate_sequences_for_node[correct_walk_index] would be the true one.
+            # nodes_to_expand_for_next_hop stores nodes whose children will form the *next* hop level
+            nodes_to_expand_for_next_hop = collections.deque([start_node_idx])
+            visited_in_bfs_traversal = {start_node_idx}  # Tracks all nodes visited in this BFS
 
-    num_output_classes = num_walks_k
-    print(f"Finished 'sequence_validity' label generation for {graph_n_value_str}. Task output classes: {num_output_classes}.")
+            for hop_iterator in range(1, k_hops + 1):  # hop_iterator is the current hop distance being checked (1 to k_hops)
+                nodes_found_at_this_hop_iterator = []  # Stores nodes exactly at hop_iterator distance
+
+                num_parent_nodes_to_expand = len(nodes_to_expand_for_next_hop)
+                if num_parent_nodes_to_expand == 0:  # No more reachable nodes
+                    break
+
+                for _ in range(num_parent_nodes_to_expand):
+                    parent_node = nodes_to_expand_for_next_hop.popleft()
+                    for neighbor_node in adj_out[parent_node].indices:  # Directed successors
+                        if neighbor_node not in visited_in_bfs_traversal:
+                            visited_in_bfs_traversal.add(neighbor_node)
+                            nodes_found_at_this_hop_iterator.append(neighbor_node)
+                            nodes_to_expand_for_next_hop.append(neighbor_node)  # For the *next* hop's expansion
+
+                # Check sequences of all nodes found at the current hop_iterator
+                for node_idx_at_hop_iter in nodes_found_at_this_hop_iterator:
+                    if target_aa in node_sequences[node_idx_at_hop_iter]:
+                        current_label_for_start_node = hop_iterator
+                        found_at_hop_level = hop_iterator
+                        break  # Found AA at this hop level, this is the label
+
+                if found_at_hop_level != -1:  # If found, break from iterating further hops
+                    break
+
+        labels_for_nodes[start_node_idx] = current_label_for_start_node
+
+    num_output_classes = k_hops + 1  # Classes 0, 1, ..., k_hops
+    print(f"Finished 'closest_amino_acid' label generation for {graph_n_value_str}. Task output classes: {num_output_classes}.")
     return labels_for_nodes, num_output_classes
 
 
@@ -297,7 +320,7 @@ def run_gcn_training(config: Config):
                 if not all(hasattr(graph_obj, attr) for attr in required_attrs):
                     print(f"ERROR: Graph object for n={n_val} is missing one or more required attributes.")
                     continue
-                graph_obj.n_value = n_val
+                graph_obj.n_value = n_val  # For logging
         except FileNotFoundError:
             print(f"ERROR: Graph object not found at {graph_path}. Please run the graph_builder first.")
             continue
@@ -332,51 +355,42 @@ def run_gcn_training(config: Config):
                 if prev_idx is not None and prev_idx < len(prev_embeds):
                     x[idx] = torch.from_numpy(prev_embeds[prev_idx])
 
-        labels, num_classes = None, None # Initialize
+        labels, num_classes = None, None
         if current_task_type == "community":
             labels, num_classes = _generate_community_labels(graph_obj, config.RANDOM_STATE)
         elif current_task_type == "next_node":
             labels, num_classes = _generate_next_node_labels(graph_obj)
-        elif current_task_type == "sequence_validity":
-            labels, num_classes = _generate_sequence_validity_labels(
-                graph_obj,
-                config.GCN_SEQ_VALIDITY_NUM_WALKS_K,
-                config.GCN_SEQ_VALIDITY_WALK_LENGTH_L
-            )
+        elif current_task_type == "closest_aa":  # New task type
+            # Ensure GCN_CLOSEST_AA_K_HOPS is in your Config class
+            k_hops_for_task = getattr(config, 'GCN_CLOSEST_AA_K_HOPS', 3)  # Default to 3 if not set
+            labels, num_classes = _generate_closest_amino_acid_labels(graph_obj, k_hops_for_task)
         else:
-            raise ValueError(f"Unsupported GCN_TASK_TYPE '{current_task_type}' for n-gram level {n_val}. Supported types: 'community', 'next_node', 'sequence_validity'.")
+            raise ValueError(f"Unsupported GCN_TASK_TYPE '{current_task_type}' for n-gram level {n_val}. "
+                             f"Supported types: 'community', 'next_node', 'closest_aa'.")
 
         if graph_obj.number_of_nodes > 0 and (labels is None or labels.numel() == 0):
-             print(f"Warning: No labels generated for n={n_val} with task '{current_task_type}' despite having {graph_obj.number_of_nodes} nodes. Model training might fail.")
-             if num_classes is None or num_classes == 0: num_classes = 1
-             if labels is None or labels.numel() == 0 and graph_obj.number_of_nodes > 0:
-                 labels = torch.zeros(graph_obj.number_of_nodes, dtype=torch.long)
+            print(f"Warning: No labels generated for n={n_val} with task '{current_task_type}'. Model training might fail.")
+            if num_classes is None or num_classes == 0: num_classes = 1
+            if labels is None or labels.numel() == 0 and graph_obj.number_of_nodes > 0:
+                labels = torch.zeros(graph_obj.number_of_nodes, dtype=torch.long)  # Dummy labels
 
         edge_index_in, edge_weight_in = from_scipy_sparse_matrix(graph_obj.A_in_w)
         edge_index_out, edge_weight_out = from_scipy_sparse_matrix(graph_obj.A_out_w)
-        data = Data(x=x, y=labels,
-                    edge_index_in=edge_index_in, edge_weight_in=edge_weight_in.float(),
-                    edge_index_out=edge_index_out, edge_weight_out=edge_weight_out.float())
+        data = Data(x=x, y=labels, edge_index_in=edge_index_in, edge_weight_in=edge_weight_in.float(), edge_index_out=edge_index_out, edge_weight_out=edge_weight_out.float())
 
         full_layer_dims = [num_initial_features] + config.GCN_HIDDEN_LAYER_DIMS
-        print(f"Instantiating ProtNgramGCN for n={n_val} (task: {current_task_type}) with layer dimensions: {full_layer_dims}, output classes: {num_classes}")
+        print(f"Instantiating ProtNgramGCN for n={n_val} (task: {current_task_type}) "
+              f"with layer dimensions: {full_layer_dims}, output classes: {num_classes}")
 
-        model = ProtNgramGCN(
-            layer_dims=full_layer_dims,
-            num_graph_nodes=graph_obj.number_of_nodes,
-            task_num_output_classes=num_classes,
-            n_gram_len=n_val,
-            one_gram_dim=(config.GCN_1GRAM_INIT_DIM if n_val == 1 and config.GCN_1GRAM_INIT_DIM > 0 and config.GCN_MAX_PE_LEN > 0 else 0),
-            max_pe_len=config.GCN_MAX_PE_LEN,
-            dropout=config.GCN_DROPOUT_RATE,
-            use_vector_coeffs=config.GCN_USE_VECTOR_COEFFS
-        )
+        model = ProtNgramGCN(layer_dims=full_layer_dims, num_graph_nodes=graph_obj.number_of_nodes, task_num_output_classes=num_classes, n_gram_len=n_val,
+            one_gram_dim=(config.GCN_1GRAM_INIT_DIM if n_val == 1 and config.GCN_1GRAM_INIT_DIM > 0 and config.GCN_MAX_PE_LEN > 0 else 0), max_pe_len=config.GCN_MAX_PE_LEN, dropout=config.GCN_DROPOUT_RATE,
+            use_vector_coeffs=config.GCN_USE_VECTOR_COEFFS)
 
         current_optimizer_weight_decay = config.GCN_WEIGHT_DECAY
         if l2_lambda_val > 0:
             print(f"Explicit L2 regularization (lambda={l2_lambda_val}) will be added to the loss.")
             if config.GCN_WEIGHT_DECAY > 0:
-                print(f"Optimizer's original weight_decay was {config.GCN_WEIGHT_DECAY}, setting to 0.0 to avoid double L2 penalty.")
+                print(f"Optimizer's original weight_decay was {config.GCN_WEIGHT_DECAY}, setting to 0.0.")
             current_optimizer_weight_decay = 0.0
 
         optimizer = optim.Adam(model.parameters(), lr=config.GCN_LR, weight_decay=current_optimizer_weight_decay)
@@ -385,7 +399,7 @@ def run_gcn_training(config: Config):
 
         current_level_embeddings = _extract_node_embeddings(model, data, device)
         if current_level_embeddings.size == 0 and graph_obj.number_of_nodes > 0:
-            print(f"Warning: Extracted embeddings for n={n_val} are empty, but graph had nodes. Using zero placeholder.")
+            print(f"Warning: Extracted embeddings for n={n_val} are empty. Using zero placeholder.")
             level_embeddings[n_val] = np.zeros((graph_obj.number_of_nodes, full_layer_dims[-1]))
         else:
             level_embeddings[n_val] = current_level_embeddings
@@ -398,7 +412,7 @@ def run_gcn_training(config: Config):
     print("\n--- Step 3: Pooling N-gram Embeddings to Protein Level ---")
     final_n_val = config.GCN_NGRAM_MAX_N
     if final_n_val not in level_embeddings or level_embeddings[final_n_val].size == 0:
-        print(f"ERROR: Final n-gram level (n={final_n_val}) embeddings are missing or empty. Cannot proceed with pooling.")
+        print(f"ERROR: Final n-gram level (n={final_n_val}) embeddings are missing or empty. Cannot pool.")
         return
 
     final_ngram_embeds = level_embeddings[final_n_val]
@@ -415,16 +429,16 @@ def run_gcn_training(config: Config):
                 pooled_embeddings[final_key] = vec
 
     if not pooled_embeddings:
-        print("Warning: No protein embeddings were generated after pooling. Check n-gram mappings and sequences.")
+        print("Warning: No protein embeddings were generated after pooling.")
 
     print("\n--- Step 4: Saving Generated Embeddings ---")
     output_h5_path = os.path.join(config.GCN_EMBEDDINGS_DIR, f"gcn_n{final_n_val}_embeddings.h5")
     with h5py.File(output_h5_path, 'w') as hf:
         for key, vector in tqdm(pooled_embeddings.items(), desc="Writing H5 File"):
-            if vector is not None and vector.size > 0 :
-                 hf.create_dataset(key, data=vector)
+            if vector is not None and vector.size > 0:
+                hf.create_dataset(key, data=vector)
             else:
-                 print(f"Warning: Skipping empty/None vector for key {key} during H5 save.")
+                print(f"Warning: Skipping empty/None vector for key {key} during H5 save.")
     print(f"\nSUCCESS: Primary embeddings saved to: {output_h5_path}")
 
     if config.APPLY_PCA_TO_GCN and pooled_embeddings:
@@ -441,7 +455,7 @@ def run_gcn_training(config: Config):
                     for key, vector in tqdm(pca_embeds.items(), desc="Writing PCA H5 File"):
                         hf.create_dataset(key, data=vector)
                 print(f"SUCCESS: PCA-reduced embeddings saved to: {pca_h5_path}")
-            elif pooled_embeddings :
+            elif pooled_embeddings:
                 print("Warning: PCA was requested but resulted in no embeddings. Check PCA input or parameters.")
 
     print("\n### PIPELINE STEP 2 FINISHED ###")
