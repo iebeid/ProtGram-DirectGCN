@@ -1,3 +1,10 @@
+# ==============================================================================
+# MODULE: unit_tests.py
+# PURPOSE: Unit and smoke tests
+# VERSION: 1.0
+# AUTHOR: Islam Ebeid
+# ==============================================================================
+
 import os  # Added for path joining in test_reporter
 import sys
 
@@ -22,25 +29,25 @@ def test_pytorch_gpu():
     """
     Checks the status of PyTorch's CUDA availability and prints diagnostic information.
     """
-    # print("--- PyTorch GPU Diagnostic ---")
-    # print(f"Python Version: {sys.version}")
-    # print(f"PyTorch Version: {torch.__version__}")
+    print("--- PyTorch GPU Diagnostic ---")
+    print(f"Python Version: {sys.version}")
+    print(f"PyTorch Version: {torch.__version__}")
 
-    # # The main check for CUDA availability
-    # is_available = torch.cuda.is_available()
-    # print(f"\nIs CUDA available? -> {is_available}")
-    #
-    # if not is_available:
-    #     print("\n[Error] PyTorch cannot find a CUDA-enabled GPU.")
-    #     print("This may be due to a driver issue or an incorrect PyTorch installation.")
-    # else:
-    #     print("\n[Success] PyTorch has detected a CUDA-enabled GPU.")
-    #     # Print details about the CUDA and GPU setup
-    #     print(f"CUDA Version PyTorch was built with: {torch.version.cuda}")
-    #     device_count = torch.cuda.device_count()
-    #     print(f"Number of GPUs found: {device_count}")
-    #     for i in range(device_count):
-    #         print(f"  - GPU {i}: {torch.cuda.get_device_name(i)}")
+    # The main check for CUDA availability
+    is_available = torch.cuda.is_available()
+    print(f"\nIs CUDA available? -> {is_available}")
+
+    if not is_available:
+        print("\n[Error] PyTorch cannot find a CUDA-enabled GPU.")
+        print("This may be due to a driver issue or an incorrect PyTorch installation.")
+    else:
+        print("\n[Success] PyTorch has detected a CUDA-enabled GPU.")
+        # Print details about the CUDA and GPU setup
+        print(f"CUDA Version PyTorch was built with: {torch.version.cuda}")
+        device_count = torch.cuda.device_count()
+        print(f"Number of GPUs found: {device_count}")
+        for i in range(device_count):
+            print(f"  - GPU {i}: {torch.cuda.get_device_name(i)}")
 
     # 1. Check if the GPU is available (we know it is, but this is best practice)
     if torch.cuda.is_available():
@@ -69,45 +76,7 @@ def test_pytorch_gpu():
 
     print("\n--- End of Diagnostic ---")
 
-# def test_pytorch_gpu():
-#     """
-#     Checks for GPU availability in PyTorch and performs a test operation.
-#     """
-#     print(f"--- PyTorch GPU Test ---")
-#     print(f"PyTorch Version: {torch.__version__}")
-#     print(f"Python Version: {sys.version}")
-#
-#     is_cuda_available = torch.cuda.is_available()
-#     if is_cuda_available:
-#         gpu_count = torch.cuda.device_count()
-#         current_device_id = torch.cuda.current_device()
-#         current_device_name = torch.cuda.get_device_name(current_device_id)
-#
-#         print(f"\n✅ GPU(s) found! Total devices: {gpu_count}")
-#         print(f"  - Current Device ID: {current_device_id}")
-#         print(f"  - Current Device Name: {current_device_name}")
-#
-#         try:
-#             device = torch.device("cuda:0")
-#             print(f"\n--- Performing a test matrix multiplication on {device} ---")
-#             a = torch.tensor([[1.0, 2.0], [3.0, 4.0]], device=device)
-#             b = torch.tensor([[5.0, 6.0], [7.0, 8.0]], device=device)
-#             c = torch.matmul(a, b)
-#             print("Matrix A on GPU:\n", a)
-#             print("Matrix B on GPU:\n", b)
-#             print("Result of A * B on GPU:\n", c.cpu().numpy())
-#             print("\n🎉 GPU is set up correctly and operational!")
-#         except Exception as e:
-#             print(f"\n❌ An error occurred while trying to use the GPU: {e}")
-#             print("   Please check your CUDA installation and driver compatibility.")
-#     else:
-#         print("\n❌ No CUDA-enabled GPU detected by PyTorch.")
-#         print("   PyTorch will run on the CPU. If you have a GPU, please check:")
-#         print("   1. NVIDIA drivers are correctly installed.")
-#         print("   2. You have installed a PyTorch version with CUDA support.")
-#         print("      (e.g., 'pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121')")
-#         print("   3. Your installed CUDA Toolkit version is compatible with your PyTorch build.")
-#     print("\n--- PyTorch GPU Test Complete ---")
+
 
 
 def test_tensorflow_gpu():
@@ -373,15 +342,15 @@ def test_mlp_model_build():  # Renamed for clarity
 if __name__ == "__main__":
     print("Starting All Unit Tests / Smoke Tests...\n")
     # Environment Checks
-    # test_tensorflow_gpu()
+    test_tensorflow_gpu()
     test_pytorch_gpu()
 
-    # # Utility Tests
-    # test_reporter()
-    # test_data_utilities()  # This test has parts that might fail without real files or further mocking
-    #
-    # # Model Build Tests
-    # test_mlp_model_build()
+    # Utility Tests
+    test_reporter()
+    test_data_utilities()  # This test has parts that might fail without real files or further mocking
+
+    # Model Build Tests
+    test_mlp_model_build()
 
     # Pipeline Run Tests (Integration/Smoke Tests)
     # These can be time-consuming and require proper configuration (e.g., dummy data paths)

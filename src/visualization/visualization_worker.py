@@ -1,3 +1,10 @@
+# ==============================================================================
+# MODULE: visualization_worker.py
+# PURPOSE: The thread spinner for loading embedding files.
+# VERSION: 1.0
+# AUTHOR: Islam Ebeid
+# ==============================================================================
+
 import os
 import h5py
 import matplotlib.pyplot as plt
@@ -9,7 +16,7 @@ from tqdm.auto import tqdm
 from typing import Optional, Union, List
 
 # Import PyQt6 components for the worker
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal
 
 # --- Default Configuration (can be overridden by GUI in the future) ---
 TSNE_PERPLEXITY = 30
