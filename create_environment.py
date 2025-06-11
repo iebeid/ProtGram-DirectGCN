@@ -65,17 +65,17 @@ if __name__ == "__main__":
     torch_version = "2.3.1"
     cuda_version_for_pytorch = "cu121"
 
-    base_conda_packages = [f"python={python_version}", "pip"]
+    # PyQt is now included here for more stable installation
+    base_conda_packages = [f"python={python_version}", "pip", "pyqt"]
     if platform.system() == "Linux":
         base_conda_packages.append("gxx_linux-64")
 
     # These are the specialized dependencies that live at the PyG URL
     pyg_dependencies = ["torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv"]
 
-    # This is the corrected list of packages for the final installation step
-    other_pip_packages = ["torch-geometric",  # Corrected package name
-        "tensorflow[and-cuda]", "tqdm", "dask", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx", "gensim", "python-louvain", "transformers",
-        "torch-geometric-signed-directed"]
+    # PyQt has been removed from this pip list
+    other_pip_packages = ["torch-geometric", "tensorflow[and-cuda]", "tqdm", "dask", "h5py", "matplotlib", "pandas", "pyarrow", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx", "gensim",
+        "python-louvain", "transformers", "torch-geometric-signed-directed"]
 
     print_header(f"Final Robust GPU Environment Setup for '{env_name}'")
 

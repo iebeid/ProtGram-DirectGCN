@@ -82,7 +82,7 @@ class DirectGCNLayer(MessagePassing):
         return edge_weight.view(-1, 1) * x_j if edge_weight is not None else x_j
 
 
-class ProtNgramGCN(nn.Module):
+class ProtGramDirectGCN(nn.Module):
     """
     The main GCN architecture, with a DYNAMIC number of GCN and residual
     layers.

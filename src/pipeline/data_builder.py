@@ -19,7 +19,7 @@ from src.config import Config
 from src.utils.data_utils import DataUtils, DataLoader  # Corrected from data_utils to data_loader
 
 
-class GraphBuilderPipeline:
+class GraphBuilder:
     """
     Orchestrates the n-gram graph building process using Dask for parallel processing.
     """
@@ -104,7 +104,7 @@ class GraphBuilderPipeline:
 
         print(f"  Pass 2 (n={n}) Complete. Raw edge file created.")
 
-    def run_pipeline(self):
+    def run(self):
         """Main function to orchestrate the graph building process."""
         DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs")
 
@@ -122,7 +122,7 @@ class GraphBuilderPipeline:
         with LocalCluster(n_workers=effective_num_workers, threads_per_worker=1, silence_logs='error') as cluster, Client(cluster) as client:
             print(f"Dask dashboard link: {client.dashboard_link}")
             # Pass class static method to Dask
-            tasks = [client.submit(GraphBuilderPipeline._create_intermediate_files,
+            tasks = [client.submit(GraphBuilder._create_intermediate_files,
                                    n, self.temp_dir, self.protein_sequence_file, self.chunk_size)
                      for n in n_values]
             for future in tqdm(tasks, desc="Dask Workers Progress"):

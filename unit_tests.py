@@ -201,6 +201,14 @@ def test_transformer_model():
     transformer_pipeline.run_pipeline()
 
 
+def test_gnn_benchmarker():
+    from src.config import Config
+    from src.benchmarks.gnn_benchmarker import GNNBenchmarker
+    config_instance = Config()
+    benchmarker = GNNBenchmarker(config_instance)
+    benchmarker.run()
+
+
 if __name__ == "__main__":
     test_tensorflow_gpu()
     test_pytorch_gpu()
