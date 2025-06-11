@@ -26,21 +26,21 @@ def test_pytorch_gpu():
     print(f"Python Version: {sys.version}")
     print(f"PyTorch Version: {torch.__version__}")
 
-    # The main check for CUDA availability
-    is_available = torch.cuda.is_available()
-    print(f"\nIs CUDA available? -> {is_available}")
-
-    if not is_available:
-        print("\n[Error] PyTorch cannot find a CUDA-enabled GPU.")
-        print("This may be due to a driver issue or an incorrect PyTorch installation.")
-    else:
-        print("\n[Success] PyTorch has detected a CUDA-enabled GPU.")
-        # Print details about the CUDA and GPU setup
-        print(f"CUDA Version PyTorch was built with: {torch.version.cuda}")
-        device_count = torch.cuda.device_count()
-        print(f"Number of GPUs found: {device_count}")
-        for i in range(device_count):
-            print(f"  - GPU {i}: {torch.cuda.get_device_name(i)}")
+    # # The main check for CUDA availability
+    # is_available = torch.cuda.is_available()
+    # print(f"\nIs CUDA available? -> {is_available}")
+    #
+    # if not is_available:
+    #     print("\n[Error] PyTorch cannot find a CUDA-enabled GPU.")
+    #     print("This may be due to a driver issue or an incorrect PyTorch installation.")
+    # else:
+    #     print("\n[Success] PyTorch has detected a CUDA-enabled GPU.")
+    #     # Print details about the CUDA and GPU setup
+    #     print(f"CUDA Version PyTorch was built with: {torch.version.cuda}")
+    #     device_count = torch.cuda.device_count()
+    #     print(f"Number of GPUs found: {device_count}")
+    #     for i in range(device_count):
+    #         print(f"  - GPU {i}: {torch.cuda.get_device_name(i)}")
 
     # 1. Check if the GPU is available (we know it is, but this is best practice)
     if torch.cuda.is_available():
