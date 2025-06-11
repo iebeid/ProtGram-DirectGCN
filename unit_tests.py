@@ -42,6 +42,14 @@ def test_pytorch_gpu():
         for i in range(device_count):
             print(f"  - GPU {i}: {torch.cuda.get_device_name(i)}")
 
+    # 1. Check if the GPU is available (we know it is, but this is best practice)
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        print("GPU is available! Using the GPU.")
+    else:
+        device = torch.device("cpu")
+        print("GPU not available, using the CPU.")
+
     # 2. Create a tensor on the CPU by default
     cpu_tensor = torch.randn(3, 3)
     print("\nTensor on CPU:")
