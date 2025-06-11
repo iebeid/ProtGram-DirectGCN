@@ -69,12 +69,10 @@ if __name__ == "__main__":
     if platform.system() == "Linux":
         base_conda_packages.append("gxx_linux-64")
 
-    # **MODIFICATION**: All PyG-related packages are now in one list.
-    pyg_related_packages = ["torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv", "pytorch-geometric", "torch-geometric-signed-directed"]
+    pyg_dependencies = ["torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv"]
 
-    # Standard packages that are safe to install separately.
-    other_pip_packages = ["tensorflow[and-cuda]", "tqdm", "dask", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx", "gensim", "python-louvain",
-        "transformers"]
+    other_pip_packages = ["pytorch-geometric", "tensorflow[and-cuda]", "tqdm", "dask", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx",
+        "gensim", "python-louvain", "transformers", "torch-geometric-signed-directed"]
 
     print_header(f"Final Robust GPU Environment Setup for '{env_name}'")
 
@@ -95,13 +93,13 @@ if __name__ == "__main__":
     run_command([pip_exe, "install", "--no-cache-dir", f"torch=={torch_version}", "torchvision", "torchaudio", "--index-url", f"https://download.pytorch.org/whl/{cuda_version_for_pytorch}"])
     print("--- PyTorch installed successfully. ---")
 
-    # --- Step 3: Install all PyTorch Geometric related packages together ---
-    print_step("STEP 3: Installing all PyTorch Geometric packages...")
+    # --- Step 3: Install the PyG dependencies from their special URL ---
+    print_step("STEP 3: Installing PyTorch Geometric dependencies...")
     pyg_url = f"https://data.pyg.org/whl/torch-{torch_version}+{cuda_version_for_pytorch}.html"
-    run_command([pip_exe, "install", "--no-cache-dir"] + pyg_related_packages + ["-f", pyg_url])
-    print("--- All PyG packages installed successfully. ---")
+    run_command([pip_exe, "install", "--no-cache-dir"] + pyg_dependencies + ["-f", pyg_url])
+    print("--- PyG dependencies installed successfully. ---")
 
-    # --- Step 4: Install TensorFlow and all remaining packages ---
+    # --- Step 4: Install TensorFlow and all other packages from the default PyPI ---
     print_step("STEP 4: Installing TensorFlow and all remaining packages...")
     run_command([pip_exe, "install", "--no-cache-dir"] + other_pip_packages)
     print("--- All remaining packages installed successfully. ---")
