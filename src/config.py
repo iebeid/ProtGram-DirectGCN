@@ -47,7 +47,7 @@ class Config:
 
         # --- 2. GCN PIPELINE PARAMETERS ---
 
-        # --- Graph Building (pipeline/graph_builder.py) ---
+        # --- Graph Building (pipeline/data_builder.py) ---
         self.GCN_NGRAM_MAX_N = 3
         self.DASK_CHUNK_SIZE = 2000000
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 2) if os.cpu_count() else 1
@@ -74,6 +74,7 @@ class Config:
         self.GCN_DROPOUT_RATE = 0.5  # Renamed from GCN_DROPOUT for consistency with trainer
         self.GCN_WEIGHT_DECAY = 1e-4
         self.GCN_L2_REG_LAMBDA = 0.0001  # For explicit L2 in loss
+        self.GCN_PROPAGATION_EPSILON = 1e-9
 
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {1: "community", 2: "next_node", 3: "closest_aa"  # Updated from sequence_validity
             # Add other levels as needed
@@ -108,7 +109,7 @@ class Config:
         self.TRANSFORMER_POOLING_STRATEGY = 'mean'
         self.APPLY_PCA_TO_TRANSFORMER = True
 
-        # --- 5. EVALUATION PARAMETERS (pipeline/ppi_evaluator.py) ---
+        # --- 5. EVALUATION PARAMETERS (pipeline/ppi_main.py) ---
         self.PLOT_TRAINING_HISTORY = True
         self.EARLY_STOPPING_PATIENCE = 10
 

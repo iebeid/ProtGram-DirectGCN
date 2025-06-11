@@ -1,6 +1,8 @@
 import torch
 import tensorflow as tf
 import sys
+from src.utils.results_utils import EvaluationReporter
+import numpy as np
 
 
 def test_pytorch_gpu():
@@ -57,6 +59,7 @@ def test_pytorch_gpu():
 
     print("\n--- Test Complete ---")
 
+
 def test_tensorflow_gpu():
     """
     Checks for GPU availability in TensorFlow and performs a test operation.
@@ -105,6 +108,100 @@ def test_tensorflow_gpu():
     print("\n--- Test Complete ---")
 
 
+def test_reporter():
+    # Dummy data for demonstration
+    sample_k_vals = [10, 20]
+    reporter = EvaluationReporter(base_output_dir="./evaluation_output_example", k_vals_table=sample_k_vals)
+
+    # Dummy history for one model
+    history1 = {'loss': [0.5, 0.4, 0.3], 'val_loss': [0.55, 0.42, 0.33], 'accuracy': [0.7, 0.8, 0.9], 'val_accuracy': [0.68, 0.78, 0.88]}
+    reporter.plot_training_history(history1, "Model_A_Fold1")
+
+    # Dummy results list for other plots/summary
+    results_data = [
+        {'embedding_name': 'Model_A', 'test_auc_sklearn': 0.92, 'test_f1_sklearn': 0.85, 'test_precision_sklearn': 0.88, 'test_recall_sklearn': 0.82, 'test_hits_at_10': 50, 'test_ndcg_at_10': 0.75, 'test_hits_at_20': 80,
+         'test_ndcg_at_20': 0.78, 'test_auc_sklearn_std': 0.01, 'test_f1_sklearn_std': 0.02, 'roc_data_representative': (np.array([0, 0.1, 1]), np.array([0, 0.8, 1]), []), 'fold_auc_scores': [0.91, 0.93],
+         'fold_f1_scores': [0.84, 0.86]},
+        {'embedding_name': 'Model_B', 'test_auc_sklearn': 0.88, 'test_f1_sklearn': 0.80, 'test_precision_sklearn': 0.82, 'test_recall_sklearn': 0.78, 'test_hits_at_10': 40, 'test_ndcg_at_10': 0.65, 'test_hits_at_20': 70,
+         'test_ndcg_at_20': 0.68, 'test_auc_sklearn_std': 0.015, 'test_f1_sklearn_std': 0.022, 'roc_data_representative': (np.array([0, 0.2, 1]), np.array([0, 0.7, 1]), []), 'fold_auc_scores': [0.87, 0.89],
+         'fold_f1_scores': [0.79, 0.81]}]
+    reporter.plot_roc_curves(results_data)
+    reporter.plot_comparison_charts(results_data)
+    reporter.write_summary_file(results_data, main_emb_name='Model_A', test_metric='test_auc_sklearn', alpha=0.05)
+
+    print("Example reporting complete. Check './evaluation_output_example' directory.")
+
+def test_data_loaders():
+    from src.utils.data_utils import H5EmbeddingLoader, InteractionLoader, FastaParser, DataUtils
+
+    # Example: Loading H5 embeddings
+    with H5EmbeddingLoader("path/to/embeddings.h5") as loader:
+        if "protein_X" in loader:
+            embedding = loader["protein_X"]
+            # print(f"All keys: {loader.get_keys()}")
+
+    # Example: Loading interaction pairs
+    positive_pairs = InteractionLoader.load_interaction_pairs("path/to/positive.csv", label=1, sample_n=1000)
+    ids = InteractionLoader.get_required_ids_from_files(["path/to/positive.csv", "path/to/negative.csv"])
+
+    # Example: Streaming interaction pairs
+    for batch in InteractionLoader.stream_interaction_pairs("path/to/interactions.tsv", label=1, batch_size=128):
+        # process batch
+        pass
+
+    # Example: Parsing a FASTA file
+    for prot_id, sequence in FastaParser.parse_sequences("path/to/sequences.fasta"):
+        # process sequence
+        pass
+
+    # Example: Using DataUtils
+    DataUtils.print_header("Starting Analysis")
+    my_data = {"a": 1}
+    DataUtils.save_object(my_data, "output/my_data.pkl")
+    loaded_data = DataUtils.load_object("output/my_data.pkl")
+    DataUtils.check_h5_embeddings_integrity("path/to/some_embeddings.h5")
+
+
+    from src.utils.data_utils import FastaParser
+    from src.config import Config  # Your Config class
+
+    config_instance = Config()  # Initialize your configuration
+
+    # Create an instance of FastaParser with the configuration
+    parser_mapper = FastaParser(config=config_instance)
+
+    # Generate ID maps
+    id_map_dictionary = parser_mapper.generate_id_maps()
+
+    # If you also need to parse sequences using the same instance (though parse_sequences is static)
+    # for prot_id, sequence in parser_mapper.parse_sequences(config_instance.GCN_INPUT_FASTA_PATH):
+    #     # ... process ...
+
+def test_word2vec_model():
+    from src.config import Config
+    from src.pipeline.word2vec_embedder import Word2VecEmbedderPipeline
+
+    config_instance = Config()
+    # Need to ensure DataUtils is accessible if used as below, or import it.
+    # For simplicity, if DataUtils is part of DataLoader, you might not call it directly here
+    # or ensure DataLoader is instantiated if DataUtils methods are not static.
+    # However, DataUtils.print_header is static.
+    from src.utils.data_utils import DataUtils # Assuming DataUtils is directly importable or part of DataLoader
+
+    word2vec_pipeline = Word2VecEmbedderPipeline(config_instance)
+    word2vec_pipeline.run_pipeline()
+
+def test_transformer_model():
+    from src.config import Config
+    from src.utils.data_utils import DataUtils # Ensure DataUtils is imported
+    from src.pipeline.transformer_embedder import TransformerEmbedderPipeline
+
+    config_instance = Config()
+    transformer_pipeline = TransformerEmbedderPipeline(config_instance)
+    transformer_pipeline.run_pipeline()
+
+
 if __name__ == "__main__":
     test_tensorflow_gpu()
     test_pytorch_gpu()
+    test_reporter()

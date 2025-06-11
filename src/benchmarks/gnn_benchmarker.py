@@ -11,10 +11,10 @@ from torch_geometric.datasets import PPI
 from torch_geometric.loader import DataLoader
 
 # Assuming these are correctly located in your project structure
-from src.models.prot_ngram_gcn import ProtNgramGCN
+from src.models.protgram_directgcn import ProtNgramGCN
 from src.models.gnn_zoo import *
 from src.config import Config
-from src.utils.file_handler import print_header, save_pandas_dataframe_to_csv
+from src.utils.data_utils import DataUtils
 
 
 # ==============================================================================
@@ -77,7 +77,7 @@ def train_and_evaluate(model, train_loader, val_loader, test_loader, optimizer, 
 
 def run_benchmarker(config: Config):
     """Runs the GNN benchmarking pipeline."""
-    print_header("PIPELINE: GNN BENCHMARKER")
+    DataUtils.print_header("PIPELINE: GNN BENCHMARKER")
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
@@ -103,7 +103,7 @@ def run_benchmarker(config: Config):
 
         # =================================================================================
         # ✨ FIXED: ProtNgramGCN instantiation now correctly uses parameters from the
-        # Config object, mirroring the logic in prot_ngram_gcn_trainer.py.
+        # Config object, mirroring the logic in protgram_directgcn_embedder.py.
         # =================================================================================
         if model_name == "ProtNgramGCN":
             # Ensure ProtNgramGCN specific parameters are correctly handled if they differ
@@ -132,5 +132,5 @@ def run_benchmarker(config: Config):
 
     # Save overall results
     results_df = pd.DataFrame(results)
-    save_pandas_dataframe_to_csv(results_df, config.REPORTS_DIR, "gnn_benchmark_summary.csv")
-    print_header("GNN Benchmarking FINISHED")
+    DataUtils.save_dataframe_to_csv(results_df, config.REPORTS_DIR, "gnn_benchmark_summary.csv")
+    DataUtils.print_header("GNN Benchmarking FINISHED")

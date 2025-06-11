@@ -1,7 +1,8 @@
+# G:/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction/Code/ProtDiGCN/src/models/protgram_directgcn.py
 # ==============================================================================
-# MODULE: models/prot_ngram_gcn.py
+# MODULE: models/protgram_directgcn.py
 # PURPOSE: Contains the PyTorch class definitions for the custom GCN model.
-# VERSION: 7.0 (Corrected Layer-Internal Architecture)
+# VERSION: 7.1 (Using EmbeddingProcessor for L2 normalization)
 # ==============================================================================
 
 import torch
@@ -11,6 +12,8 @@ import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing
 from typing import Optional, List
 
+# Assuming EmbeddingProcessor is in src.utils.math_helper
+from src.utils.models_utils import EmbeddingProcessor
 
 
 class DirectGCNLayer(MessagePassing):
@@ -29,9 +32,7 @@ class DirectGCNLayer(MessagePassing):
         self.bias_main_out = nn.Parameter(torch.Tensor(out_channels))
 
         # --- Shared Path (Skip/W_all) Weights ---
-        # Renamed lin_skip to lin_shared for clarity
         self.lin_shared = nn.Linear(in_channels, out_channels, bias=False)
-        # Separate biases for the shared path, as per the reference code
         self.bias_shared_in = nn.Parameter(torch.Tensor(out_channels))
         self.bias_shared_out = nn.Parameter(torch.Tensor(out_channels))
 
@@ -63,27 +64,17 @@ class DirectGCNLayer(MessagePassing):
 
     def forward(self, x, edge_index_in, edge_weight_in, edge_index_out, edge_weight_out):
         """Forward pass implementing the full ProtDiGCN layer logic."""
-
-        # --- Incoming Path ---
-        # 1. Main incoming component (A_in * (H * W_in))
         h_main_in = self.propagate(edge_index_in, x=self.lin_main_in(x), edge_weight=edge_weight_in)
-        # 2. Shared incoming component (A_in * (H * W_all))
         h_shared_in = self.propagate(edge_index_in, x=self.lin_shared(x), edge_weight=edge_weight_in)
-        # 3. Combine with biases: (A_in*H*W_in + b_in) + (A_in*H*W_all + b_all_in)
         ic_combined = (h_main_in + self.bias_main_in) + (h_shared_in + self.bias_shared_in)
 
-        # --- Outgoing Path ---
-        # 1. Main outgoing component (A_out * (H * W_out))
         h_main_out = self.propagate(edge_index_out, x=self.lin_main_out(x), edge_weight=edge_weight_out)
-        # 2. Shared outgoing component (A_out * (H * W_all))
         h_shared_out = self.propagate(edge_index_out, x=self.lin_shared(x), edge_weight=edge_weight_out)
-        # 3. Combine with biases: (A_out*H*W_out + b_out) + (A_out*H*W_all + b_all_out)
         oc_combined = (h_main_out + self.bias_main_out) + (h_shared_out + self.bias_shared_out)
 
         c_in = self.C_in_vec if self.use_vector_coeffs else self.C_in
         c_out = self.C_out_vec if self.use_vector_coeffs else self.C_out
 
-        # Final adaptive combination of the two directional paths
         return c_in * ic_combined + c_out * oc_combined
 
     def message(self, x_j: torch.Tensor, edge_weight: Optional[torch.Tensor]) -> torch.Tensor:
@@ -94,7 +85,7 @@ class DirectGCNLayer(MessagePassing):
 class ProtNgramGCN(nn.Module):
     """
     The main GCN architecture, with a DYNAMIC number of GCN and residual
-    layers. This class structure is UNCHANGED from the previous version.
+    layers.
     """
 
     def __init__(self, layer_dims: List[int], num_graph_nodes: int, task_num_output_classes: int, n_gram_len: int, one_gram_dim: int, max_pe_len: int, dropout: float, use_vector_coeffs: bool):
@@ -102,7 +93,7 @@ class ProtNgramGCN(nn.Module):
         self.n_gram_len = n_gram_len
         self.one_gram_dim = one_gram_dim
         self.dropout = dropout
-        self.l2_eps = 1e-12
+        self.l2_eps = 1e-12  # Epsilon for L2 normalization, can be passed to EmbeddingProcessor
 
         self.pe_layer = nn.Embedding(max_pe_len, one_gram_dim) if one_gram_dim > 0 and max_pe_len > 0 else None
 
@@ -121,20 +112,37 @@ class ProtNgramGCN(nn.Module):
     def _apply_pe(self, x: torch.Tensor) -> torch.Tensor:
         if self.pe_layer is None or self.n_gram_len == 0 or self.one_gram_dim == 0: return x
         x_pe = x.clone()
-        x_reshaped = x_pe.view(-1, self.n_gram_len, self.one_gram_dim)
-        pos_to_enc = min(self.n_gram_len, self.pe_layer.num_embeddings)
-        if pos_to_enc > 0:
-            pos_indices = torch.arange(0, pos_to_enc, device=x.device, dtype=torch.long)
-            pe = self.pe_layer(pos_indices)
-            x_reshaped[:, :pos_to_enc, :] += pe.unsqueeze(0)
-        return x_reshaped.view(-1, self.n_gram_len * self.one_gram_dim)
+        # Ensure x_pe has enough elements for reshaping if one_gram_dim is 0 but n_gram_len > 0
+        if self.one_gram_dim == 0 and self.n_gram_len > 0 and x_pe.shape[1] < self.n_gram_len:
+            # This case should ideally be prevented by config or init logic
+            # If x is just node_features and not n-gram structured, PE might not be applicable this way
+            return x  # Or raise error
+
+        # Proceed if one_gram_dim > 0
+        if self.one_gram_dim > 0:
+            expected_dim = self.n_gram_len * self.one_gram_dim
+            if x_pe.shape[1] != expected_dim:
+                # This might indicate x was not pre-structured as n-grams * one_gram_dim
+                # For PE to work as intended, x should represent n_gram_len vectors of one_gram_dim
+                # If x is just a flat feature vector not matching this, PE logic needs rethink or x needs pre-processing
+                # print(f"Warning: PE layer expects input dim {expected_dim}, got {x_pe.shape[1]}. PE might be misapplied or skipped.")
+                return x  # Skip PE if dimensions don't match expected structure
+
+            x_reshaped = x_pe.view(-1, self.n_gram_len, self.one_gram_dim)
+            pos_to_enc = min(self.n_gram_len, self.pe_layer.num_embeddings)
+            if pos_to_enc > 0:
+                pos_indices = torch.arange(0, pos_to_enc, device=x.device, dtype=torch.long)
+                pe = self.pe_layer(pos_indices)
+                x_reshaped[:, :pos_to_enc, :] += pe.unsqueeze(0)  # Add PE to the one_gram_dim vectors
+            return x_reshaped.view(-1, expected_dim)
+        return x  # Return original x if one_gram_dim is 0
 
     def forward(self, data=None, x=None, edge_index=None, **kwargs):
         if data is not None:
             x, ei_in, ew_in, ei_out, ew_out = data.x, data.edge_index_in, data.edge_weight_in, data.edge_index_out, data.edge_weight_out
-        elif x is not None and edge_index is not None:
+        elif x is not None and edge_index is not None:  # Simplified case for benchmarking
             ei_in, ew_in = edge_index, kwargs.get('edge_weight', None)
-            ei_out, ew_out = edge_index, kwargs.get('edge_weight', None)
+            ei_out, ew_out = edge_index, kwargs.get('edge_weight', None)  # Assume same for simplicity
         else:
             raise ValueError("ProtNgramGCN forward pass requires either a 'data' object or 'x' and 'edge_index' arguments.")
 
@@ -148,7 +156,7 @@ class ProtNgramGCN(nn.Module):
         final_embed_for_task = h
         task_logits = self.decoder_fc(final_embed_for_task)
 
-        norm = torch.norm(final_embed_for_task, p=2, dim=1, keepdim=True)
-        final_normalized_embeddings = final_embed_for_task / (norm + self.l2_eps)
+        # Use EmbeddingProcessor for L2 normalization
+        final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
 
         return F.log_softmax(task_logits, dim=-1), final_normalized_embeddings

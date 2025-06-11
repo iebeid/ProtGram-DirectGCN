@@ -21,10 +21,10 @@ import mlflow
 
 # Import from our new project structure
 from src.config import Config
-from src.utils.file_handler import check_h5_embeddings
-from src.utils.data_loader import stream_interaction_pairs, H5EmbeddingLoader, get_required_ids_from_files
-from src.utils.graph_processor import EdgeFeatureProcessor
-from src.utils.reporter import plot_training_history, plot_roc_curves, plot_comparison_charts, write_summary_file
+from src.utils.data_utils import DataUtils, DataLoader, GroundTruthLoader
+from src.utils.graph_utils import NgramGraph, DirectedNgramGraphForGCN
+from src.utils.results_utils import EvaluationReporter
+from src.utils.models_utils import EmbeddingLoader, EmbeddingProcessor
 from src.models.mlp import build_mlp_model
 
 
@@ -73,9 +73,9 @@ def _run_cv_workflow(embedding_name: str, all_pairs: List[Tuple[str, str, int]],
         val_pairs = [all_pairs[i] for i in val_idx]
 
         print("Creating features for training set...")
-        X_train, y_train = EdgeFeatureProcessor.create_edge_embeddings(train_pairs, protein_embeddings, method=config.EVAL_EDGE_EMBEDDING_METHOD)
+        X_train, y_train = DataLoader.create_edge_embeddings(train_pairs, protein_embeddings, method=config.EVAL_EDGE_EMBEDDING_METHOD)
         print("Creating features for validation set...")
-        X_val, y_val = EdgeFeatureProcessor.create_edge_embeddings(val_pairs, protein_embeddings, method=config.EVAL_EDGE_EMBEDDING_METHOD)
+        X_val, y_val = EmbeddingProcessor.create_edge_embeddings(val_pairs, protein_embeddings, method=config.EVAL_EDGE_EMBEDDING_METHOD)
 
         if X_train is None or X_val is None:
             print(f"Skipping fold {fold_num + 1} due to feature creation failure.")
@@ -147,11 +147,11 @@ def run_evaluation(config: Config, use_dummy_data: bool = False, parent_run_id: 
     # We collect the pairs into a list to be able to use StratifiedKFold, which needs all labels at once.
     # This is still far more memory-efficient than creating the full feature matrix.
     all_pairs = []
-    positive_stream = stream_interaction_pairs(pos_fp, 1, batch_size=config.EVAL_BATCH_SIZE, random_state=config.RANDOM_STATE)
+    positive_stream = GroundTruthLoader.stream_interaction_pairs(pos_fp, 1, batch_size=config.EVAL_BATCH_SIZE, random_state=config.RANDOM_STATE)
     for batch in positive_stream:
         all_pairs.extend(batch)
 
-    negative_stream = stream_interaction_pairs(neg_fp, 0, batch_size=config.EVAL_BATCH_SIZE, sample_n=config.SAMPLE_NEGATIVE_PAIRS, random_state=config.RANDOM_STATE)
+    negative_stream = GroundTruthLoader.stream_interaction_pairs(neg_fp, 0, batch_size=config.EVAL_BATCH_SIZE, sample_n=config.SAMPLE_NEGATIVE_PAIRS, random_state=config.RANDOM_STATE)
     for batch in negative_stream:
         all_pairs.extend(batch)
 
@@ -161,7 +161,7 @@ def run_evaluation(config: Config, use_dummy_data: bool = False, parent_run_id: 
 
     random.shuffle(all_pairs)
 
-    required_ids = get_required_ids_from_files([pos_fp, neg_fp])
+    required_ids = GroundTruthLoader.get_required_ids_from_files([pos_fp, neg_fp])
     print(f"Found {len(required_ids)} unique protein IDs that need embeddings.")
 
     all_cv_results = []
@@ -175,31 +175,10 @@ def run_evaluation(config: Config, use_dummy_data: bool = False, parent_run_id: 
                                    "epochs": config.EVAL_EPOCHS, "batch_size": config.EVAL_BATCH_SIZE, "learning_rate": config.EVAL_LEARNING_RATE, })
 
             if config.PERFORM_H5_INTEGRITY_CHECK:
-                check_h5_embeddings(emb_config['path'])
-
-            # protein_embeddings = load_h5_embeddings_selectively(emb_config['path'], required_ids)
-            # if not protein_embeddings:
-            #     print(f"Skipping {emb_config['name']}: No relevant embeddings loaded.")
-            #     continue
-            #
-            # results = _run_cv_workflow(emb_config['name'], all_pairs, protein_embeddings, config)
-            # all_cv_results.append(results)
-            #
-            # if config.USE_MLFLOW:
-            #     metrics_to_log = {k: v for k, v in results.items() if isinstance(v, (int, float, np.number))}
-            #     mlflow.log_metrics(metrics_to_log)
-            #
-            # if config.PLOT_TRAINING_HISTORY and results.get('history_dict_fold1'):
-            #     history_plot_path = plot_training_history(results['history_dict_fold1'], results['embedding_name'], plots_dir)
-            #     if config.USE_MLFLOW and history_plot_path:
-            #         mlflow.log_artifact(history_plot_path, "plots")
-            #
-            # del protein_embeddings;
-            # gc.collect()
+                DataUtils.check_h5_embeddings_integrity(emb_config['path'])
 
             try:
-                # Use the H5EmbeddingLoader as a context manager
-                with H5EmbeddingLoader(emb_config['path']) as protein_embeddings:
+                with EmbeddingLoader(emb_config['path']) as protein_embeddings:
                     results = _run_cv_workflow(emb_config['name'], all_pairs, protein_embeddings, config)
                     all_cv_results.append(results)
 
@@ -208,7 +187,7 @@ def run_evaluation(config: Config, use_dummy_data: bool = False, parent_run_id: 
                         mlflow.log_metrics(metrics_to_log)
 
                     if config.PLOT_TRAINING_HISTORY and results.get('history_dict_fold1'):
-                        history_plot_path = plot_training_history(results['history_dict_fold1'], results['embedding_name'], plots_dir)
+                        history_plot_path = EvaluationReporter.plot_training_history(results['history_dict_fold1'], results['embedding_name'], plots_dir)
                         if config.USE_MLFLOW and history_plot_path:
                             mlflow.log_artifact(history_plot_path, "plots")
 
@@ -222,9 +201,9 @@ def run_evaluation(config: Config, use_dummy_data: bool = False, parent_run_id: 
     if all_cv_results:
         with mlflow.start_run(run_id=parent_run_id):
             print("\n" + "=" * 25 + " FINAL AGGREGATE RESULTS " + "=" * 25)
-            summary_path = write_summary_file(all_cv_results, output_dir, config.EVAL_MAIN_EMBEDDING_FOR_STATS, 'test_auc_sklearn', config.EVAL_STATISTICAL_TEST_ALPHA, config.EVAL_K_VALUES_FOR_TABLE)
-            roc_plot_path = plot_roc_curves(all_cv_results, plots_dir)
-            comparison_chart_path = plot_comparison_charts(all_cv_results, config.EVAL_K_VALUES_FOR_TABLE, plots_dir)
+            summary_path = EvaluationReporter.write_summary_file(all_cv_results, output_dir, config.EVAL_MAIN_EMBEDDING_FOR_STATS, 'test_auc_sklearn', config.EVAL_STATISTICAL_TEST_ALPHA, config.EVAL_K_VALUES_FOR_TABLE)
+            roc_plot_path = EvaluationReporter.plot_roc_curves(all_cv_results, plots_dir)
+            comparison_chart_path = EvaluationReporter.plot_comparison_charts(all_cv_results, config.EVAL_K_VALUES_FOR_TABLE, plots_dir)
 
             if config.USE_MLFLOW:
                 if summary_path: mlflow.log_artifact(summary_path, "summary")

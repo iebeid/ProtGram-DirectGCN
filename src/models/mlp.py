@@ -26,8 +26,8 @@ def build_mlp_model(input_shape: int, mlp_params: Dict[str, Any], learning_rate:
         tf.keras.Model: The compiled Keras model.
     """
     model = Sequential([InputLayer(input_shape=(input_shape,)), Dense(mlp_params['dense1_units'], activation='relu', kernel_regularizer=l2(mlp_params['l2_reg'])), Dropout(mlp_params['dropout1_rate']),
-        Dense(mlp_params['dense2_units'], activation='relu', kernel_regularizer=l2(mlp_params['l2_reg'])), Dropout(mlp_params['dropout2_rate']), Dense(1, activation='sigmoid')])
+                        Dense(mlp_params['dense2_units'], activation='relu', kernel_regularizer=l2(mlp_params['l2_reg'])), Dropout(mlp_params['dropout2_rate']), Dense(1, activation='sigmoid')])
 
     model.compile(optimizer=Adam(learning_rate=learning_rate), loss='binary_crossentropy',
-        metrics=['accuracy', tf.keras.metrics.AUC(name='auc'), tf.keras.metrics.Precision(name='precision'), tf.keras.metrics.Recall(name='recall')])
+                  metrics=['accuracy', tf.keras.metrics.AUC(name='auc'), tf.keras.metrics.Precision(name='precision'), tf.keras.metrics.Recall(name='recall')])
     return model

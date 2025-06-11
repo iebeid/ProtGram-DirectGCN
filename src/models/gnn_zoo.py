@@ -12,7 +12,6 @@ from torch_geometric.nn import GCNConv, GATConv, SAGEConv, WLConv, ChebConv, Sig
 from torch.nn import Sequential, Linear, ReLU  # Needed for GINConv's MLP
 
 
-
 class BaseGNN(nn.Module):
     """A base class for all GNNs to ensure they have an embedding_output attribute."""
 

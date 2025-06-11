@@ -21,11 +21,9 @@ def print_step(message):
 def run_command(command_list, check=True):
     """
     Runs a command, streams its output in real-time, and checks for errors.
-    Uses subprocess.run for robustness.
     """
     print(f"    Running Command: {' '.join(command_list)}")
     try:
-        # Popen is used here specifically to stream output in real-time
         process = subprocess.Popen(command_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True)
         for line in iter(process.stdout.readline, ''):
             print(f"      {line}", end='')
@@ -71,51 +69,43 @@ if __name__ == "__main__":
     if platform.system() == "Linux":
         base_conda_packages.append("gxx_linux-64")
 
-    pyg_dependencies = ["torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv"]
-    other_pip_packages = ["pytorch-geometric", "tensorflow[and-cuda]", "tqdm", "dask", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx",
-        "gensim", "python-louvain", "transformers", "torch-geometric-signed-directed"]
+    # **MODIFICATION**: All PyG-related packages are now in one list.
+    pyg_related_packages = ["torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv", "pytorch-geometric", "torch-geometric-signed-directed"]
 
-    print_header(f"Starting Environment Setup for '{env_name}'")
+    # Standard packages that are safe to install separately.
+    other_pip_packages = ["tensorflow[and-cuda]", "tqdm", "dask", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx", "gensim", "python-louvain",
+        "transformers"]
+
+    print_header(f"Final Robust GPU Environment Setup for '{env_name}'")
 
     conda_base_path = get_conda_base_path()
     env_path = os.path.join(conda_base_path, 'envs', env_name)
+    pip_exe = os.path.join(env_path, 'bin', 'pip')
 
     # --- Step 1: Create the minimal Conda environment ---
-    print_step("STEP 1: Creating minimal Conda environment with Python & Compilers...")
+    print_step("STEP 1: Creating minimal Conda environment...")
     if os.path.exists(env_path):
         print(f"    Environment '{env_name}' already exists. Skipping creation.")
     else:
         run_command(["conda", "create", "--name", env_name, "-y", "-c", "conda-forge"] + base_conda_packages)
     print("--- Minimal environment is ready. ---")
 
-    # --- Get the absolute path to the new environment's pip ---
-    pip_exe = os.path.join(env_path, 'bin', 'pip')
-    if not os.path.exists(pip_exe):
-        print(f"*** FATAL ERROR: Cannot find pip executable at '{pip_exe}'. The environment was not created correctly. ***")
-        sys.exit(1)
-
     # --- Step 2: Install PyTorch ---
-    print_step("STEP 2: Installing PyTorch for CUDA 12.1...")
+    print_step("STEP 2: Installing PyTorch...")
     run_command([pip_exe, "install", "--no-cache-dir", f"torch=={torch_version}", "torchvision", "torchaudio", "--index-url", f"https://download.pytorch.org/whl/{cuda_version_for_pytorch}"])
     print("--- PyTorch installed successfully. ---")
 
-    # --- Step 3: Install PyTorch Geometric dependencies ---
-    print_step("STEP 3: Installing PyTorch Geometric dependencies...")
-    run_command([pip_exe, "install", "--no-cache-dir"] + pyg_dependencies + ["-f", f"https://data.pyg.org/whl/torch-{torch_version}+{cuda_version_for_pytorch}.html"])
-    print("--- PyG dependencies installed successfully. ---")
+    # --- Step 3: Install all PyTorch Geometric related packages together ---
+    print_step("STEP 3: Installing all PyTorch Geometric packages...")
+    pyg_url = f"https://data.pyg.org/whl/torch-{torch_version}+{cuda_version_for_pytorch}.html"
+    run_command([pip_exe, "install", "--no-cache-dir"] + pyg_related_packages + ["-f", pyg_url])
+    print("--- All PyG packages installed successfully. ---")
 
-    # --- Step 4: Install TensorFlow and remaining packages ---
+    # --- Step 4: Install TensorFlow and all remaining packages ---
     print_step("STEP 4: Installing TensorFlow and all remaining packages...")
     run_command([pip_exe, "install", "--no-cache-dir"] + other_pip_packages)
     print("--- All remaining packages installed successfully. ---")
 
-    # --- Step 5: Final Verification ---
-    print_step("STEP 5: Verifying core libraries...")
-    print("    Checking PyTorch...")
-    run_command([os.path.join(env_path, 'bin', 'python'), "-c", "import torch; print(f'PyTorch version: {torch.__version__}'); print('GPU available:', torch.cuda.is_available())"])
-    print("    Checking TensorFlow...")
-    run_command([os.path.join(env_path, 'bin', 'python'), "-c", "import tensorflow as tf; print(f'TensorFlow version: {tf.__version__}'); print('GPU available:', len(tf.config.list_physical_devices('GPU')) > 0)"])
-
-    print_header(f"✅✅✅ Environment '{env_name}' created and verified! ✅✅✅")
+    print_header(f"✅✅✅ Environment '{env_name}' created successfully! ✅✅✅")
     print("To activate and use your new environment, run:\n")
     print(f"    conda activate {env_name}\n")
