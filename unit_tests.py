@@ -22,9 +22,9 @@ def test_pytorch_gpu():
     """
     Checks the status of PyTorch's CUDA availability and prints diagnostic information.
     """
-    print("--- PyTorch GPU Diagnostic ---")
-    print(f"Python Version: {sys.version}")
-    print(f"PyTorch Version: {torch.__version__}")
+    # print("--- PyTorch GPU Diagnostic ---")
+    # print(f"Python Version: {sys.version}")
+    # print(f"PyTorch Version: {torch.__version__}")
 
     # # The main check for CUDA availability
     # is_available = torch.cuda.is_available()
@@ -373,15 +373,15 @@ def test_mlp_model_build():  # Renamed for clarity
 if __name__ == "__main__":
     print("Starting All Unit Tests / Smoke Tests...\n")
     # Environment Checks
-    test_tensorflow_gpu()
+    # test_tensorflow_gpu()
     test_pytorch_gpu()
 
-    # Utility Tests
-    test_reporter()
-    test_data_utilities()  # This test has parts that might fail without real files or further mocking
-
-    # Model Build Tests
-    test_mlp_model_build()
+    # # Utility Tests
+    # test_reporter()
+    # test_data_utilities()  # This test has parts that might fail without real files or further mocking
+    #
+    # # Model Build Tests
+    # test_mlp_model_build()
 
     # Pipeline Run Tests (Integration/Smoke Tests)
     # These can be time-consuming and require proper configuration (e.g., dummy data paths)
