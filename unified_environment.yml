@@ -2,25 +2,24 @@
 name: ml-unified-env
 
 channels:
+  - nvidia # Added nvidia channel with the highest priority for CUDA libraries
   - pytorch
   - conda-forge
   - defaults
 
 dependencies:
   # --- Core Frameworks and CUDA ---
-  # Let Conda handle the installation of the big frameworks and the CUDA toolkit
   - python=3.11
   - pytorch
   - torchvision
   - torchaudio
-  - tensorflow-gpu  # This is the conda package for GPU-enabled TensorFlow
-  - pytorch-cuda=12.1 # Pin the CUDA version for consistency
+  - tensorflow-gpu
+  - pytorch-cuda=12.1
 
   # --- Other Core Libraries from Conda ---
-  # Install as much as possible with Conda for maximum stability
   - pip
   - pyqt
-  - gxx_linux-64  # For Linux, same as before
+  - gxx_linux-64
   - scikit-learn
   - pandas
   - matplotlib
@@ -34,7 +33,6 @@ dependencies:
   - transformers
 
   # --- Pip-specific packages ---
-  # For packages not on Conda or that have special requirements
   - pip:
     - python-louvain
     - torch-geometric-signed-directed
