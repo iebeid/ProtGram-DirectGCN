@@ -72,9 +72,10 @@ if __name__ == "__main__":
     # These are the specialized dependencies that live at the PyG URL
     pyg_dependencies = ["torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv"]
 
-    # These are all the standard packages that live on PyPI
-    other_pip_packages = ["pytorch-geometric", "tensorflow[and-cuda]", "tqdm", "dask", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx",
-        "gensim", "python-louvain", "transformers", "torch-geometric-signed-directed"]
+    # This is the corrected list of packages for the final installation step
+    other_pip_packages = ["torch-geometric",  # Corrected package name
+        "tensorflow[and-cuda]", "tqdm", "dask", "h5py", "matplotlib", "pandas", "pyarrow", "pyqt", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx", "gensim", "python-louvain", "transformers",
+        "torch-geometric-signed-directed"]
 
     print_header(f"Final Robust GPU Environment Setup for '{env_name}'")
 

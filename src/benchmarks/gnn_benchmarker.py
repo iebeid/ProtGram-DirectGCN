@@ -2,6 +2,7 @@
 # MODULE: gnn_benchmarker.py
 # PURPOSE: To benchmark various GNN models on standard datasets.
 # VERSION: 2.3 (Added GINConv)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
