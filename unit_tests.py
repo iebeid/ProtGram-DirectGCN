@@ -42,6 +42,23 @@ def test_pytorch_gpu():
         for i in range(device_count):
             print(f"  - GPU {i}: {torch.cuda.get_device_name(i)}")
 
+    # 2. Create a tensor on the CPU by default
+    cpu_tensor = torch.randn(3, 3)
+    print("\nTensor on CPU:")
+    print(cpu_tensor)
+    print(f"Device: {cpu_tensor.device}")
+
+    # 3. Move the tensor to the GPU using .to(device)
+    gpu_tensor = cpu_tensor.to(device)
+    print("\nTensor on GPU:")
+    print(gpu_tensor)
+    print(f"Device: {gpu_tensor.device}")  # This will now say 'cuda:0'
+
+    # Now any operations on gpu_tensor will happen on the GPU
+    gpu_result = gpu_tensor * gpu_tensor
+    print("\nResult of computation on GPU:")
+    print(gpu_result)
+
     print("\n--- End of Diagnostic ---")
 
 # def test_pytorch_gpu():
