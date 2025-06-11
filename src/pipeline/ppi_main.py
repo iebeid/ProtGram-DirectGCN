@@ -1,8 +1,9 @@
 # ==============================================================================
-# MODULE: pipeline/ppi_main.py (formerly 5_evaluator.py)
+# MODULE: pipeline/ppi_main.py
 # PURPOSE: Contains the complete workflow for evaluating one or more sets of
 #          protein embeddings on a link prediction task.
 # VERSION: 3.0 (Refactored into PPIPipeline class)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import gc

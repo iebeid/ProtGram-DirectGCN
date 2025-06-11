@@ -3,6 +3,7 @@
 # PURPOSE: Contains PyTorch Geometric implementations of standard GNN
 #          architectures for benchmarking purposes.
 # VERSION: 2.0 (Adds MoNet)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import torch

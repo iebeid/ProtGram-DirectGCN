@@ -1,8 +1,15 @@
+# ==============================================================================
+# MODULE: visualization_main.py
+# PURPOSE: Main pipeline for drag and drop embedding visualization.
+# VERSION: 1.0
+# AUTHOR: Islam Ebeid
+# ==============================================================================
+
 import sys
 import os
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QMessageBox, QComboBox, QFrame)
-from PyQt6.QtCore import Qt, QThread
-from PyQt6.QtGui import QFont
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QMessageBox, QComboBox, QFrame)
+from PyQt5.QtCore import Qt, QThread
+from PyQt5.QtGui import QFont
 
 # Matplotlib imports for embedding the plot in PyQt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas

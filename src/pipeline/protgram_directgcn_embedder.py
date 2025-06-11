@@ -1,4 +1,3 @@
-# G:/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction/Code/ProtDiGCN/src/pipeline/protgram_directgcn_embedder.py
 # ==============================================================================
 # MODULE: pipeline/2_gcn_trainer.py
 # PURPOSE: Trains the ProtNgramGCN model, saves embeddings, and optionally
@@ -36,17 +35,11 @@ AMINO_ACID_ALPHABET = list("ACDEFGHIKLMNPQRSTVWY")
 
 
 class ProtGramDirectGCNEmbedder:
-    # ... ( __init__ and other methods like _train_ngram_model, _generate_..._labels remain largely the same) ...
     def __init__(self, config: Config):
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.id_map: Dict[str, str] = {}
         self.gcn_propagation_epsilon = getattr(config, 'GCN_PROPAGATION_EPSILON', 1e-9)
-
-    # ... _train_ngram_model, _generate_community_labels, etc. ...
-    # Ensure these methods are correctly defined as in your previous version.
-    # For brevity, I'm omitting them here if they don't directly change due to this specific request.
-    # The key change is in run_pipeline where the Data object is created.
 
     def _train_model(self, model: ProtGramDirectGCN, data: Data, optimizer: torch.optim.Optimizer, epochs: int, l2_lambda: float = 0.0):
         model.train()

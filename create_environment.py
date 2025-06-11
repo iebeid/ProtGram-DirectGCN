@@ -1,3 +1,10 @@
+# ==============================================================================
+# MODULE: create_environment.py
+# PURPOSE: Centralized unified machine learning python environment builder for both pytorch and tensorflow.
+# VERSION: 1.0
+# AUTHOR: Islam Ebeid
+# ==============================================================================
+
 import subprocess
 import sys
 import os
@@ -8,9 +15,7 @@ import argparse
 def print_header(title):
     """Prints a formatted header."""
     border = "=" * (len(title) + 6)
-    print(f"\n{border}")
-    print(f"|| {title} ||")
-    print(f"{border}")
+    print(f"\n{border}\n|| {title} ||\n{border}")
 
 
 def print_step(message):
@@ -24,6 +29,7 @@ def run_command(command_list, check=True):
     """
     print(f"    Running Command: {' '.join(command_list)}")
     try:
+        # The 'creation' part can be long, so we stream the output
         process = subprocess.Popen(command_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True)
         for line in iter(process.stdout.readline, ''):
             print(f"      {line}", end='')
@@ -33,7 +39,7 @@ def run_command(command_list, check=True):
             raise subprocess.CalledProcessError(return_code, command_list)
         return True
     except FileNotFoundError as e:
-        print(f"\n*** ERROR: Command not found: '{e.filename}'. Is Conda in your system's PATH? ***")
+        print(f"\n*** ERROR: Command '{e.filename}' not found. Is Conda in your system's PATH? ***")
         sys.exit(1)
     except subprocess.CalledProcessError as e:
         print(f"\n*** ERROR: Command failed with exit code {e.returncode}. See output above. ***")
@@ -43,75 +49,63 @@ def run_command(command_list, check=True):
         sys.exit(1)
 
 
-def get_conda_base_path():
-    """Finds the base directory of the Conda installation."""
-    print_step("Locating Conda installation...")
-    try:
-        return subprocess.check_output(['conda', 'info', '--base'], text=True).strip()
-    except Exception:
-        print("\n*** ERROR: Could not find Conda. Please ensure Conda is installed and its 'bin' directory is in your system's PATH. ***")
+# --- Main Execution Block ---
+if __name__ == "__main__":
+    # Check for the required environment file first
+    if not os.path.exists("unified_environment.yml"):
+        print("\n*** ERROR: `unified_environment.yml` not found in the current directory. ***")
+        print("Please create it before running this script.")
         sys.exit(1)
 
-
-# Main execution block
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Create a robust, self-contained Conda environment for ProtDiGCN.", formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument("env_name", type=str, help="The name for the new Conda environment.")
+    parser = argparse.ArgumentParser(description="Create a robust, unified ML Conda environment from a YAML file.")
+    parser.add_argument("env_name", type=str, help="The name for the new Conda environment (e.g., 'ml-unified-env').")
     args = parser.parse_args()
     env_name = args.env_name
 
-    # --- Configuration ---
-    python_version = "3.11"
-    torch_version = "2.3.1"
-    cuda_version_for_pytorch = "cu121"
+    print_header(f"Unified ML Environment Setup for '{env_name}'")
 
-    # PyQt is now included here for more stable installation
-    base_conda_packages = [f"python={python_version}", "pip", "pyqt"]
-    if platform.system() == "Linux":
-        base_conda_packages.append("gxx_linux-64")
+    # --- Step 1: Remove Old Environment if it Exists ---
+    print_step("STEP 1: Removing old environment if it exists to ensure a clean slate...")
+    # We use `run_command` but with check=False so it doesn't fail if the env doesn't exist
+    run_command(["conda", "env", "remove", "--name", env_name], check=False)
+    print("--- Old environment removed (if present). ---")
 
-    # These are the specialized dependencies that live at the PyG URL
-    pyg_dependencies = ["torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv"]
+    # --- Step 2: Create New Environment from YAML File ---
+    print_step(f"STEP 2: Creating Conda environment '{env_name}' from file...")
+    run_command(["conda", "env", "create", "-f", "unified_environment.yml", "--name", env_name])
+    print("--- Main environment created successfully. ---")
 
-    # PyQt has been removed from this pip list
-    other_pip_packages = ["torch-geometric", "tensorflow[and-cuda]", "tqdm", "dask", "h5py", "matplotlib", "pandas", "pyarrow", "requests", "scikit-learn", "seaborn", "mlflow", "biopython", "networkx", "gensim",
-        "python-louvain", "transformers", "torch-geometric-signed-directed"]
+    # --- Step 3: Install PyG Dependencies inside the New Environment ---
+    print_step("STEP 3: Installing PyTorch Geometric dependencies...")
 
-    print_header(f"Final Robust GPU Environment Setup for '{env_name}'")
+    # This is the key: we build the full path to the new environment's executables
+    # This avoids the need for shell-specific `conda activate` commands
+    conda_base = subprocess.check_output(['conda', 'info', '--base'], text=True).strip()
+    env_path = os.path.join(conda_base, 'envs', env_name)
 
-    conda_base_path = get_conda_base_path()
-    env_path = os.path.join(conda_base_path, 'envs', env_name)
-    pip_exe = os.path.join(env_path, 'bin', 'pip')
+    if platform.system() == "Windows":
+        python_exe = os.path.join(env_path, "python.exe")
+        pip_exe = os.path.join(env_path, "Scripts", "pip.exe")
+    else:  # Linux or macOS
+        python_exe = os.path.join(env_path, "bin", "python")
+        pip_exe = os.path.join(env_path, "bin", "pip")
 
-    # --- Step 1: Create the minimal Conda environment ---
-    print_step("STEP 1: Creating minimal Conda environment...")
-    if os.path.exists(env_path):
-        print(f"    Environment '{env_name}' already exists. Skipping creation.")
-    else:
-        run_command(["conda", "create", "--name", env_name, "-y", "-c", "conda-forge"] + base_conda_packages)
-    print("--- Minimal environment is ready. ---")
+    # Programmatically get the exact PyTorch version from the new environment
+    pytorch_version_str = subprocess.check_output([python_exe, "-c", "import torch; print(torch.__version__)"], text=True).strip()
+    pytorch_version = pytorch_version_str.split('+')[0]
 
-    # --- Step 2: Install PyTorch ---
-    print_step("STEP 2: Installing PyTorch...")
-    run_command([pip_exe, "install", "--no-cache-dir", f"torch=={torch_version}", "torchvision", "torchaudio", "--index-url", f"https://download.pytorch.org/whl/{cuda_version_for_pytorch}"])
-    print("--- PyTorch installed successfully. ---")
+    # We know the CUDA version from our YAML file
+    cuda_version = "cu121"
+    pyg_url = f"https://data.pyg.org/whl/torch-{pytorch_version}+{cuda_version}.html"
 
-    # --- Step 3: Install PyG dependencies from the special URL ---
-    print_step("STEP 3: Installing PyTorch Geometric dependencies from special source...")
-    pyg_url = f"https://data.pyg.org/whl/torch-{torch_version}+{cuda_version_for_pytorch}.html"
-    run_command([pip_exe, "install", "--no-cache-dir", "-f", pyg_url] + pyg_dependencies)
+    print(f"    Installing PyG for PyTorch {pytorch_version} and CUDA {cuda_version}")
+
+    pyg_deps = ["torch-scatter", "torch-sparse", "torch-cluster", "torch-spline-conv", "torch-geometric"]
+
+    run_command([pip_exe, "install", "--no-cache-dir", "-f", pyg_url] + pyg_deps)
     print("--- PyG dependencies installed successfully. ---")
 
-    # --- Step 4: Install all remaining packages from the standard PyPI ---
-    print_step("STEP 4: Installing TensorFlow, PyG, and all remaining packages...")
-    run_command([pip_exe, "install", "--no-cache-dir"] + other_pip_packages)
-    print("--- All remaining packages installed successfully. ---")
-
-    # --- Step 5: Verify and Reinstall Correct PyTorch Version ---
-    print_step("STEP 5: Verifying and enforcing correct PyTorch version...")
-    run_command([pip_exe, "install", "--no-cache-dir", "--upgrade", f"torch=={torch_version}", "torchvision", "torchaudio", "--index-url", f"https://download.pytorch.org/whl/{cuda_version_for_pytorch}"])
-    print("--- PyTorch version successfully enforced. ---")
-
-    print_header(f"✅✅✅ Environment '{env_name}' created successfully! ✅✅✅")
+    # --- Finalization ---
+    print_header(f"✅✅✅ Unified Environment '{env_name}' created successfully! ✅✅✅")
     print("To activate and use your new environment, run:\n")
     print(f"    conda activate {env_name}\n")

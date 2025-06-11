@@ -1,8 +1,8 @@
-# G:/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction/Code/ProtDiGCN/src/models/protgram_directgcn.py
 # ==============================================================================
 # MODULE: models/protgram_directgcn.py
 # PURPOSE: Contains the PyTorch class definitions for the custom GCN model.
 # VERSION: 7.1 (Using EmbeddingProcessor for L2 normalization)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 from typing import Optional, List

@@ -1,8 +1,8 @@
-# G:/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction/Code/ProtDiGCN/src/config.py
 # ==============================================================================
 # MODULE: config.py
 # PURPOSE: Centralized configuration for the entire PPI pipeline.
 # VERSION: 1.2 (Added missing GCN parameters)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os

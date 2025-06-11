@@ -1,9 +1,9 @@
-# G:/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction/Code/ProtDiGCN/src/pipeline/transformer_embedder.py
 # ==============================================================================
 # MODULE: pipeline/transformer_embedder.py
 # PURPOSE: Generates per-protein embeddings using pre-trained Transformer
 #          models from Hugging Face.
 # VERSION: 3.0 (Refactored into TransformerEmbedderPipeline class)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import gc

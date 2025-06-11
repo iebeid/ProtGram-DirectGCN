@@ -1,8 +1,8 @@
-# G:/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction/Code/ProtDiGCN/src/utils/graph_utils.py
 # ==============================================================================
 # MODULE: utils/graph_utils.py
 # PURPOSE: Contains robust classes for n-gram graph representation.
 # VERSION: 5.5 (Implemented specific propagation matrix preprocessing)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 from typing import List, Dict, Tuple, Any

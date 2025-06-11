@@ -1,9 +1,9 @@
-# G:/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction/Code/ProtDiGCN/src/pipeline/word2vec_embedder.py
 # ==============================================================================
 # MODULE: pipeline/word2vec_embedder.py
 # PURPOSE: Trains a Word2Vec model on protein sequences and generates
 #          pooled per-protein embeddings.
 # VERSION: 3.0 (Refactored into Word2VecEmbedderPipeline class, _FastaCorpus moved)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import glob

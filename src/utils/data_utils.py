@@ -1,9 +1,9 @@
-# G:/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction/Code/ProtDiGCN/src/utils/data_utils.py
 # ==============================================================================
 # MODULE: utils/data_utils.py
 # PURPOSE: Contains all data loading utilities for the PPI pipeline,
 #          including FASTA parsing, ID mapping, and interaction data loading.
 # VERSION: 2.2 (Integrated _FastaCorpus into DataLoader)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
@@ -224,10 +224,6 @@ class DataLoader:
                 for _, sequence in DataLoader.parse_sequences(f_path):
                     if sequence:  # Ensure sequence is not empty
                         yield list(sequence)
-
-    # --- ID Mapping Methods (adapted from ProteinIDMapper) ---
-    # These methods remain the same as in the previous version where ProteinIDMapper was consolidated here.
-    # For brevity, I'm not repeating them all, but they should be present here.
 
     def _extract_candidate_ids_from_fasta_for_mapping(self) -> Set[str]:
         if not self.fasta_path_for_mapping:

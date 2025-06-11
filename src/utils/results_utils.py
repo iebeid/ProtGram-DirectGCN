@@ -3,12 +3,13 @@
 # PURPOSE: Contains all functions for plotting results and writing summary
 #          files for the PPI evaluation pipeline.
 # VERSION: 2.0 (Refactored into EvaluationReporter class)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
-import math
 from pathlib import Path  # Import Path
 from typing import List, Dict, Any, Optional
 
+import math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd

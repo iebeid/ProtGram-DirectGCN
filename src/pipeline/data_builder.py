@@ -2,6 +2,7 @@
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
 # VERSION: 4.0 (Refactored into GraphBuilderPipeline class)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os

@@ -3,6 +3,7 @@
 # PURPOSE: Contains the definition for the Multi-Layer Perceptron (MLP) used
 #          for link prediction in the evaluation pipeline.
 # VERSION: 2.0 (Refactored into MLPModelBuilder class)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 from typing import Dict, Any
@@ -70,7 +71,3 @@ class MLP:
             ]
         )
         return model
-
-# Example of how to use the new class (replaces the old function call):
-# mlp_builder = MLPModelBuilder(input_shape=X_train.shape[1], mlp_params=mlp_params, learning_rate=config.EVAL_LEARNING_RATE)
-# model = mlp_builder.build()
