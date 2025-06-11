@@ -8,8 +8,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, GATConv, SAGEConv, WLConv, ChebConv, SignedConv, RGCNConv, GINConv
 from torch.nn import Sequential, Linear, ReLU  # Needed for GINConv's MLP
+from torch_geometric.nn import GCNConv, GATConv, SAGEConv, WLConv, ChebConv, SignedConv, RGCNConv, GINConv
 
 
 class BaseGNN(nn.Module):
@@ -156,30 +156,3 @@ class RGCN(BaseGNN):
         x = F.relu(x)
         x = self.conv2(x, edge_index, edge_type=edge_type)
         return x
-
-
-# --- Model Factory ---
-def get_gnn_model_from_zoo(model_name: str, num_features: int, num_classes: int) -> BaseGNN:
-    """
-    A simple factory to get standard GNN models from PyG.
-    This replaces the need for a separate gnn_zoo.py file for this script.
-    """
-    model_name_upper = model_name.upper()
-    if model_name_upper == 'GCN':
-        return GCN(in_channels=num_features, hidden_channels=256, out_channels=num_classes)
-    elif model_name_upper == 'GAT':
-        return GAT(in_channels=num_features, hidden_channels=256, out_channels=num_classes, heads=4)
-    elif model_name_upper == 'GRAPHSAGE':
-        return GraphSAGE(in_channels=num_features, hidden_channels=256, out_channels=num_classes)
-    elif model_name_upper == 'WLGCN':
-        return WLGCN(in_channels=num_features, hidden_channels=256, out_channels=num_classes)
-    elif model_name_upper == 'CHEBNET':
-        return ChebNet(in_channels=num_features, hidden_channels=256, out_channels=num_classes, K=3)
-    elif model_name_upper == 'SIGNEDNET':
-        return SignedNet(in_channels=num_features, hidden_channels=256, out_channels=num_classes)
-    elif model_name_upper == 'RGCN_SR':  # SR for Single Relation
-        return RGCN(in_channels=num_features, hidden_channels=256, out_channels=num_classes, num_relations=1)
-    elif model_name_upper == 'GIN':
-        return GIN(in_channels=num_features, hidden_channels=256, out_channels=num_classes)
-    else:
-        raise ValueError(f"Model '{model_name}' not supported in the local GNN Zoo.")

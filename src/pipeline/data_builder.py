@@ -6,17 +6,17 @@
 
 import os
 import shutil
-import pickle
+
+import dask.dataframe as dd
 import pandas as pd
 import pyarrow
-import dask.dataframe as dd
 from dask.distributed import Client, LocalCluster
 from tqdm import tqdm
 
-# Assuming these are correctly located in your project structure
-from src.utils.graph_utils import DirectedNgramGraphForGCN  # Corrected from graph_utils to graph
 from src.config import Config
-from src.utils.data_utils import DataUtils, DataLoader  # Corrected from data_utils to data_loader
+from src.utils.data_utils import DataUtils  # Corrected from data_utils to data_loader
+# Assuming these are correctly located in your project structure
+from src.utils.graph_utils import DirectedNgramGraph  # Corrected from graph_utils to graph
 
 
 class GraphBuilder:
@@ -122,9 +122,7 @@ class GraphBuilder:
         with LocalCluster(n_workers=effective_num_workers, threads_per_worker=1, silence_logs='error') as cluster, Client(cluster) as client:
             print(f"Dask dashboard link: {client.dashboard_link}")
             # Pass class static method to Dask
-            tasks = [client.submit(GraphBuilder._create_intermediate_files,
-                                   n, self.temp_dir, self.protein_sequence_file, self.chunk_size)
-                     for n in n_values]
+            tasks = [client.submit(GraphBuilder._create_intermediate_files, n, self.temp_dir, self.protein_sequence_file, self.chunk_size) for n in n_values]
             for future in tqdm(tasks, desc="Dask Workers Progress"):
                 future.result()  # Wait for each Dask task to complete
 
@@ -172,9 +170,7 @@ class GraphBuilder:
 
             print(f"Instantiating DirectedNgramGraph object for n={n}...")
             # Pass epsilon from self.config (via self.gcn_propagation_epsilon)
-            graph_object = DirectedNgramGraphForGCN(nodes=idx_to_node,
-                                                    edges=weighted_edge_list_tuples,
-                                                    epsilon_propagation=self.gcn_propagation_epsilon)
+            graph_object = DirectedNgramGraph(nodes=idx_to_node, edges=weighted_edge_list_tuples, epsilon_propagation=self.gcn_propagation_epsilon)
 
             output_path = os.path.join(self.output_dir, f'ngram_graph_n{n}.pkl')
             DataUtils.save_object(graph_object, output_path)

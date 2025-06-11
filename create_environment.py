@@ -107,6 +107,11 @@ if __name__ == "__main__":
     run_command([pip_exe, "install", "--no-cache-dir"] + other_pip_packages)
     print("--- All remaining packages installed successfully. ---")
 
+    # --- Step 5: Verify and Reinstall Correct PyTorch Version ---
+    print_step("STEP 5: Verifying and enforcing correct PyTorch version...")
+    run_command([pip_exe, "install", "--no-cache-dir", "--upgrade", f"torch=={torch_version}", "torchvision", "torchaudio", "--index-url", f"https://download.pytorch.org/whl/{cuda_version_for_pytorch}"])
+    print("--- PyTorch version successfully enforced. ---")
+
     print_header(f"✅✅✅ Environment '{env_name}' created successfully! ✅✅✅")
     print("To activate and use your new environment, run:\n")
     print(f"    conda activate {env_name}\n")

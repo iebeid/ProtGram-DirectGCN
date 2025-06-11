@@ -5,17 +5,17 @@
 # VERSION: 5.5 (Implemented specific propagation matrix preprocessing)
 # ==============================================================================
 
-import numpy as np
+from typing import List, Dict, Tuple, Any
+
 import networkx as nx
-from typing import List, Optional, Dict, Tuple, Any
-from scipy.sparse import csr_matrix  # For converting to sparse if needed by PyG utils
+import numpy as np
 
 
 # Assuming Config is accessible for epsilon, or pass epsilon as an argument
 # For simplicity here, we'll assume epsilon is a known small constant or passed if not from global config.
 # In a full pipeline, it would come from the Config object.
 
-class NgramGraph:
+class Graph:
     """A base class for representing n-gram graphs with nodes and edges."""
 
     def __init__(self, nodes: Dict[str, Any], edges: List[Tuple]):
@@ -70,7 +70,7 @@ class NgramGraph:
             print(f"WARNING: Could not perform NetworkX integrity check during NgramGraph init. Error: {e}")
 
 
-class DirectedNgramGraphForGCN(NgramGraph):
+class DirectedNgramGraph(Graph):
     """
     A specialized graph object for the ProtDiGCN model. It stores:
     - Raw weighted adjacency matrices (A_out_w, A_in_w).

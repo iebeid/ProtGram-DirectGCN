@@ -6,24 +6,25 @@
 # VERSION: 3.0 (Refactored into Word2VecEmbedderPipeline class, _FastaCorpus moved)
 # ==============================================================================
 
-import os
 import glob
+import os
+
 import h5py
 import numpy as np
 from gensim.models import Word2Vec
 from tqdm import tqdm
-from typing import List, Iterator # Iterator might not be directly used here anymore
 
 # Import from our new project structure
 from src.config import Config
-from src.utils.data_utils import DataLoader # Changed from fast_fasta_parser
+from src.utils.data_utils import DataLoader  # Changed from fast_fasta_parser
 from src.utils.models_utils import EmbeddingProcessor
 
 
-class Word2VecEmbedderPipeline:
+class Word2VecEmbedder:
     """
     Orchestrates the Word2Vec model training and embedding generation pipeline.
     """
+
     def __init__(self, config: Config):
         """
         Initializes the Word2Vec embedding pipeline.
@@ -33,11 +34,11 @@ class Word2VecEmbedderPipeline:
         """
         self.config = config
 
-    def run_pipeline(self):
+    def run(self):
         """
         The main entry point for the Word2Vec embedding generation step.
         """
-        DataUtils = DataLoader.DataUtils # Access DataUtils via DataLoader if preferred, or import directly
+        DataUtils = DataLoader.DataUtils  # Access DataUtils via DataLoader if preferred, or import directly
         DataUtils.print_header("PIPELINE STEP: Training Word2Vec and Generating Embeddings")
 
         os.makedirs(self.config.WORD2VEC_EMBEDDINGS_DIR, exist_ok=True)
@@ -88,10 +89,10 @@ class Word2VecEmbedderPipeline:
                     # though pool_residue_embeddings with embedding_dim_if_empty should prevent this.
                     if pooled_vec.size > 0:
                         pooled_embeddings[protein_id] = pooled_vec
-                    else: # Fallback if pooling somehow results in an empty vector despite dim_if_empty
+                    else:  # Fallback if pooling somehow results in an empty vector despite dim_if_empty
                         pooled_embeddings[protein_id] = np.zeros(embedding_dim, dtype=np.float32)
 
-                else: # Should ideally not be reached if sequence is non-empty
+                else:  # Should ideally not be reached if sequence is non-empty
                     pooled_embeddings[protein_id] = np.zeros(embedding_dim, dtype=np.float32)
 
         print(f"Generated {len(pooled_embeddings)} pooled protein embeddings.")
@@ -126,5 +127,3 @@ class Word2VecEmbedderPipeline:
                 print("Word2Vec PCA: PCA application did not return embeddings.")
 
         DataUtils.print_header("Word2Vec PIPELINE STEP FINISHED")
-
-

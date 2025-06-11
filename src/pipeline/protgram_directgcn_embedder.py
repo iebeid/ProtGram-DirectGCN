@@ -6,38 +6,36 @@
 # VERSION: 3.3 (Using preprocessed propagation matrices mathcal_A)
 # ==============================================================================
 
-import os
+import collections
 import gc
+import os
 import pickle
 import random
-import collections
-import numpy as np
+from functools import partial
+from multiprocessing import Pool
+from typing import Dict, Tuple
+
 import h5py
+import numpy as np
 import torch
 import torch.optim as optim
+from scipy.sparse import csr_matrix  # If we want to convert mathcal_A to scipy sparse first
 from torch_geometric.data import Data
 # from torch_geometric.utils import from_scipy_sparse_matrix # We might not need this if passing dense and converting
 from torch_geometric.utils import dense_to_sparse  # For converting dense mathcal_A to sparse
-from scipy.sparse import csr_matrix  # If we want to convert mathcal_A to scipy sparse first
-
 from tqdm import tqdm
-from typing import Dict, Optional, Tuple, List
-from functools import partial
-from multiprocessing import Pool
 
 # Import from our project structure
 from src.config import Config
-from src.utils.graph_utils import DirectedNgramGraphForGCN
-from src.utils.data_utils import DataUtils, DataLoader, GroundTruthLoader
-from src.utils.graph_utils import NgramGraph, DirectedNgramGraphForGCN
-from src.utils.results_utils import EvaluationReporter
-from src.utils.models_utils import EmbeddingLoader, EmbeddingProcessor
-from src.models.protgram_directgcn import ProtNgramGCN
+from src.models.protgram_directgcn import ProtGramDirectGCN
+from src.utils.data_utils import DataLoader
+from src.utils.graph_utils import DirectedNgramGraph
+from src.utils.models_utils import EmbeddingProcessor
 
 AMINO_ACID_ALPHABET = list("ACDEFGHIKLMNPQRSTVWY")
 
 
-class ProtNgramGCNTrainerPipeline:
+class ProtGramDirectGCNEmbedder:
     # ... ( __init__ and other methods like _train_ngram_model, _generate_..._labels remain largely the same) ...
     def __init__(self, config: Config):
         self.config = config
@@ -50,7 +48,7 @@ class ProtNgramGCNTrainerPipeline:
     # For brevity, I'm omitting them here if they don't directly change due to this specific request.
     # The key change is in run_pipeline where the Data object is created.
 
-    def _train_ngram_model(self, model: ProtNgramGCN, data: Data, optimizer: torch.optim.Optimizer, epochs: int, l2_lambda: float = 0.0):
+    def _train_model(self, model: ProtGramDirectGCN, data: Data, optimizer: torch.optim.Optimizer, epochs: int, l2_lambda: float = 0.0):
         model.train()
         model.to(self.device)
         data = data.to(self.device)
@@ -81,7 +79,7 @@ class ProtNgramGCNTrainerPipeline:
                 print(f"  Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * l2_reg_term).item():.4f}")
         print("Model training finished.")
 
-    def _generate_community_labels(self, graph: DirectedNgramGraphForGCN) -> Tuple[torch.Tensor, int]:
+    def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
         import networkx as nx
         import community as community_louvain
         graph_n_value_str = f"n={graph.n_value if hasattr(graph, 'n_value') else 'Unknown'}"
@@ -115,7 +113,7 @@ class ProtNgramGCNTrainerPipeline:
         print(f"Detected {num_classes} communities for {graph_n_value_str} using Louvain algorithm.")
         return labels, num_classes
 
-    def _generate_next_node_labels(self, graph: DirectedNgramGraphForGCN) -> Tuple[torch.Tensor, int]:
+    def _generate_next_node_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
         num_nodes = graph.number_of_nodes
         graph_n_value_str = f"n={graph.n_value if hasattr(graph, 'n_value') else 'Unknown'}"
         print(f"Generating 'next_node' labels for graph {graph_n_value_str} (using A_out_w)...")
@@ -136,7 +134,7 @@ class ProtNgramGCNTrainerPipeline:
         print(f"Finished 'next_node' label generation. Task output classes: {num_nodes}.")
         return final_labels, num_nodes
 
-    def _generate_closest_amino_acid_labels(self, graph: DirectedNgramGraphForGCN, k_hops: int) -> Tuple[torch.Tensor, int]:
+    def _generate_closest_amino_acid_labels(self, graph: DirectedNgramGraph, k_hops: int) -> Tuple[torch.Tensor, int]:
         num_nodes = graph.number_of_nodes
         # For BFS, we typically use unweighted connections.
         # We can use the binary out-adjacency matrix or derive from A_out_w.
@@ -190,7 +188,7 @@ class ProtNgramGCNTrainerPipeline:
         print(f"Finished 'closest_amino_acid' label generation. Task output classes: {num_output_classes}.")
         return labels_for_nodes, num_output_classes
 
-    def run_pipeline(self):
+    def run(self):
         print("\n" + "=" * 80)
         print("### PIPELINE STEP 2: Training GCN Model and Generating Embeddings ###")
         print("=" * 80)
@@ -223,10 +221,10 @@ class ProtNgramGCNTrainerPipeline:
                     loaded_data = pickle.load(f)
                     if isinstance(loaded_data, tuple) and len(loaded_data) == 2:  # Assuming (nodes, edges)
                         nodes_data, edges_data = loaded_data
-                        graph_obj = DirectedNgramGraphForGCN(nodes_data, edges_data, epsilon_propagation=self.gcn_propagation_epsilon)
+                        graph_obj = DirectedNgramGraph(nodes_data, edges_data, epsilon_propagation=self.gcn_propagation_epsilon)
                     elif hasattr(loaded_data, 'nodes_map') and hasattr(loaded_data, 'original_edges'):  # If it's an old graph object
-                        graph_obj = DirectedNgramGraphForGCN(loaded_data.nodes_map, loaded_data.original_edges, epsilon_propagation=self.gcn_propagation_epsilon)
-                    elif isinstance(loaded_data, DirectedNgramGraphForGCN):  # If it's already the new type (less likely if re-running)
+                        graph_obj = DirectedNgramGraph(loaded_data.nodes_map, loaded_data.original_edges, epsilon_propagation=self.gcn_propagation_epsilon)
+                    elif isinstance(loaded_data, DirectedNgramGraph):  # If it's already the new type (less likely if re-running)
                         graph_obj = loaded_data
                         graph_obj.epsilon_propagation = self.gcn_propagation_epsilon  # Ensure epsilon is set
                         # Re-create propagation matrices if epsilon changed or they weren't saved
@@ -301,7 +299,7 @@ class ProtNgramGCNTrainerPipeline:
                         edge_weight_out=edge_weight_out.float().to(self.device))
 
             full_layer_dims = [num_initial_features] + self.config.GCN_HIDDEN_LAYER_DIMS
-            model = ProtNgramGCN(  # Assuming ProtNgramGCN uses the edge_weights as is
+            model = ProtGramDirectGCN(  # Assuming ProtNgramGCN uses the edge_weights as is
                 layer_dims=full_layer_dims, num_graph_nodes=graph_obj.number_of_nodes, task_num_output_classes=num_classes, n_gram_len=n_val,
                 one_gram_dim=(self.config.GCN_1GRAM_INIT_DIM if n_val == 1 and self.config.GCN_1GRAM_INIT_DIM > 0 and self.config.GCN_MAX_PE_LEN > 0 else 0), max_pe_len=self.config.GCN_MAX_PE_LEN,
                 dropout=self.config.GCN_DROPOUT_RATE, use_vector_coeffs=getattr(self.config, 'GCN_USE_VECTOR_COEFFS', True)  # Add default if not in config
@@ -313,7 +311,7 @@ class ProtNgramGCNTrainerPipeline:
                 current_optimizer_weight_decay = 0.0
             optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=current_optimizer_weight_decay)
 
-            self._train_ngram_model(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, l2_lambda_val)
+            self._train_model(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, l2_lambda_val)
             current_level_embeddings = EmbeddingProcessor.extract_gcn_node_embeddings(model, data, self.device)
             level_embeddings[n_val] = current_level_embeddings
 

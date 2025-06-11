@@ -6,28 +6,23 @@
 # VERSION: 3.0 (Refactored into TransformerEmbedderPipeline class)
 # ==============================================================================
 
-import os
 import gc
 import glob
+import os
 from typing import List, Dict
 
-import numpy as np
 import h5py
 import tensorflow as tf
-from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
 from tqdm.auto import tqdm
+from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
 
 # Import from our new project structure
 from src.config import Config
-from src.utils.graph_utils import DirectedNgramGraphForGCN
-from src.utils.data_utils import DataUtils, DataLoader, GroundTruthLoader
-from src.utils.graph_utils import NgramGraph, DirectedNgramGraphForGCN
-from src.utils.results_utils import EvaluationReporter
-from src.utils.models_utils import EmbeddingLoader, EmbeddingProcessor
-from src.models.protgram_directgcn import ProtNgramGCN
+from src.utils.data_utils import DataUtils, DataLoader
+from src.utils.models_utils import EmbeddingProcessor
 
 
-class TransformerEmbedderPipeline:
+class TransformerEmbedder:
     """
     Orchestrates the generation of protein embeddings using pre-trained
     Transformer models.
@@ -85,7 +80,7 @@ class TransformerEmbedderPipeline:
             tokenizer_class = T5Tokenizer if is_t5 else AutoTokenizer
             tokenizer = tokenizer_class.from_pretrained(hf_id)
             model = TFAutoModel.from_pretrained(hf_id, from_pt=True)  # Assuming PyTorch checkpoints if TF not available
-            inference_func = TransformerEmbedderPipeline._get_model_inference_function(model, is_t5, False)  # XLA can be a config option
+            inference_func = TransformerEmbedder._get_model_inference_function(model, is_t5, False)  # XLA can be a config option
 
             if hasattr(model.config, 'hidden_size'):
                 embedding_dim_from_model = model.config.hidden_size
@@ -192,7 +187,7 @@ class TransformerEmbedderPipeline:
                 tf.keras.backend.clear_session()
             print(f"--- Finished: {model_name} ---")
 
-    def run_pipeline(self):
+    def run(self):
         """
         The main entry point for the Transformer embedding generation pipeline step.
         """

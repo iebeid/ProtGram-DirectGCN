@@ -5,12 +5,12 @@
 # VERSION: 7.1 (Using EmbeddingProcessor for L2 normalization)
 # ==============================================================================
 
+from typing import Optional, List
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from torch_geometric.nn import MessagePassing
-from typing import Optional, List
 
 # Assuming EmbeddingProcessor is in src.utils.math_helper
 from src.utils.models_utils import EmbeddingProcessor

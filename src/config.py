@@ -1,7 +1,8 @@
+# G:/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction/Code/ProtDiGCN/src/config.py
 # ==============================================================================
 # MODULE: config.py
 # PURPOSE: Centralized configuration for the entire PPI pipeline.
-# VERSION: 1.1 (Reviewed and updated for consistency and new task)
+# VERSION: 1.2 (Added missing GCN parameters)
 # ==============================================================================
 
 import os
@@ -25,19 +26,15 @@ class Config:
         self.CLEANUP_DUMMY_DATA = True
 
         # --- PATH CONFIGURATION ---
-        # Assuming 'ProtDiGCN' is the project root and 'src' is its direct child.
-        # If config.py is in ProtDiGCN/src/config.py, then .parent.parent is ProtDiGCN
         self.PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-        self.BASE_DATA_DIR = self.PROJECT_ROOT / "Data"  # Removed trailing slash for Path object
+        self.BASE_DATA_DIR = self.PROJECT_ROOT / "Data"
         self.BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
-        self.BASE_OUTPUT_DIR = self.BASE_DATA_DIR / "pipeline_output"  # Consistent Path usage
+        self.BASE_OUTPUT_DIR = self.BASE_DATA_DIR / "pipeline_output"
 
-        # Input data paths
         self.GCN_INPUT_FASTA_PATH = self.BASE_DATA_DIR / "sequences/uniprot_sequences_sample.fasta"
         self.INTERACTIONS_POSITIVE_PATH = self.BASE_DATA_DIR / 'ground_truth/positive_interactions.csv'
         self.INTERACTIONS_NEGATIVE_PATH = self.BASE_DATA_DIR / 'ground_truth/negative_interactions.csv'
 
-        # Output directories for each pipeline stage (using Path objects for consistency)
         self.GRAPH_OBJECTS_DIR = self.BASE_OUTPUT_DIR / "1_graph_objects"
         self.GCN_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_gcn_embeddings"
         self.WORD2VEC_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_word2vec_embeddings"
@@ -46,51 +43,39 @@ class Config:
         self.BENCHMARKING_RESULTS_DIR = self.BASE_OUTPUT_DIR / "4_benchmarking_results"
 
         # --- 2. GCN PIPELINE PARAMETERS ---
-
-        # --- Graph Building (pipeline/data_builder.py) ---
         self.GCN_NGRAM_MAX_N = 3
         self.DASK_CHUNK_SIZE = 2000000
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 2) if os.cpu_count() else 1
+        self.GCN_HIDDEN_LAYER_DIMS = [128, 128, 64]
 
-        # Defines a 3-layer GCN (num_initial_features -> 128 -> 128 -> 64)
-        self.GCN_HIDDEN_LAYER_DIMS = [128, 128, 64]  # Moved to instance attribute
-
-        # --- Model Training (pipeline/2_gcn_trainer.py) ---
-        # ID Mapping
-        self.ID_MAPPING_MODE = 'regex'  # Options: 'none', 'regex', 'api'
+        self.ID_MAPPING_MODE = 'regex'
         self.ID_MAPPING_OUTPUT_FILE = self.BASE_OUTPUT_DIR / "mappings/gcn_id_mapping.tsv"
         self.API_MAPPING_FROM_DB = "UniRef50"
         self.API_MAPPING_TO_DB = "UniProtKB"
 
-        # GCN Model Hyperparameters
         self.GCN_1GRAM_INIT_DIM = 64
-        # Note: GCN_HIDDEN_DIM_1 and GCN_HIDDEN_DIM_2 might be redundant if
-        # GCN_HIDDEN_LAYER_DIMS is the primary source for ProtNgramGCN.
-        # Kept for now if used by other simpler models (e.g., in benchmarking).
         self.GCN_HIDDEN_DIM_1 = 128
         self.GCN_HIDDEN_DIM_2 = 64
         self.GCN_EPOCHS_PER_LEVEL = 500
         self.GCN_LR = 0.001
-        self.GCN_DROPOUT_RATE = 0.5  # Renamed from GCN_DROPOUT for consistency with trainer
+        self.GCN_DROPOUT_RATE = 0.5
         self.GCN_WEIGHT_DECAY = 1e-4
-        self.GCN_L2_REG_LAMBDA = 0.0001  # For explicit L2 in loss
+        self.GCN_L2_REG_LAMBDA = 0.0001
         self.GCN_PROPAGATION_EPSILON = 1e-9
+        self.GCN_MAX_PE_LEN = 512  # ADDED: Max length for positional encoding (example value)
+        self.GCN_USE_VECTOR_COEFFS = True # ADDED: Explicitly define for clarity
 
-        self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {1: "community", 2: "next_node", 3: "closest_aa"  # Updated from sequence_validity
-            # Add other levels as needed
+        self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
+            1: "community", 2: "next_node", 3: "closest_aa"
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
+        self.GCN_CLOSEST_AA_K_HOPS: int = 3
 
-        # Parameters for Closest Amino Acid Task (replaces Sequence Validity params)
-        self.GCN_CLOSEST_AA_K_HOPS: int = 3  # Max hops to search for the AA
-
-        # Pooling & PCA
         self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 8) if os.cpu_count() else 1
         self.APPLY_PCA_TO_GCN = True
         self.PCA_TARGET_DIMENSION = 64
 
-        # --- 3. WORD2VEC PIPELINE PARAMETERS (pipeline/word2vec_embedder.py) ---
-        # Assumes W2V works on the same FASTA file as GCN, or its containing directory
+        # --- 3. WORD2VEC PIPELINE PARAMETERS ---
         self.W2V_INPUT_FASTA_DIR = Path(self.GCN_INPUT_FASTA_PATH).parent
         self.W2V_VECTOR_SIZE = 100
         self.W2V_WINDOW = 5
@@ -100,26 +85,28 @@ class Config:
         self.W2V_POOLING_STRATEGY = 'mean'
         self.APPLY_PCA_TO_W2V = True
 
-        # --- 4. TRANSFORMER PIPELINE PARAMETERS (pipeline/transformer_embedder.py) ---
-        # Assumes Transformer works on the same FASTA file as GCN, or its containing directory
+        # --- 4. TRANSFORMER PIPELINE PARAMETERS ---
         self.TRANSFORMER_INPUT_FASTA_DIR = Path(self.GCN_INPUT_FASTA_PATH).parent
-        self.TRANSFORMER_MODELS_TO_RUN = [{"name": "ProtBERT", "hf_id": "Rostlab/prot_bert", "is_t5": False, "batch_size_multiplier": 1}]
+        self.TRANSFORMER_MODELS_TO_RUN = [
+            {"name": "ProtBERT", "hf_id": "Rostlab/prot_bert", "is_t5": False, "batch_size_multiplier": 1}
+        ]
         self.TRANSFORMER_MAX_LENGTH = 1024
         self.TRANSFORMER_BASE_BATCH_SIZE = 16
         self.TRANSFORMER_POOLING_STRATEGY = 'mean'
         self.APPLY_PCA_TO_TRANSFORMER = True
 
-        # --- 5. EVALUATION PARAMETERS (pipeline/ppi_main.py) ---
+        # --- 5. EVALUATION PARAMETERS ---
         self.PLOT_TRAINING_HISTORY = True
         self.EARLY_STOPPING_PATIENCE = 10
-
         self.PERFORM_H5_INTEGRITY_CHECK = True
         self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 500000
         self.TF_DATASET_STRATEGY = 'from_tensor_slices'
-
-        self.LP_EMBEDDING_FILES_TO_EVALUATE = [{"name": "ProtT5-UniProt", "path": self.BASE_DATA_DIR / "models/per-protein.h5"},  # Assuming this path structure
-            {"name": "ProtNgramGCN-n3-PCA64", "path": self.GCN_EMBEDDINGS_DIR / "gcn_n3_embeddings_pca64.h5"}, {"name": "ProtBERT-Mean-PCA64", "path": self.TRANSFORMER_EMBEDDINGS_DIR / "ProtBERT_mean_pca64.h5"},
-            {"name": "Word2Vec-Mean-PCA64", "path": self.WORD2VEC_EMBEDDINGS_DIR / "word2vec_dim100_mean_pca64.h5"}]
+        self.LP_EMBEDDING_FILES_TO_EVALUATE = [
+            {"name": "ProtT5-UniProt", "path": self.BASE_DATA_DIR / "models/per-protein.h5"},
+            {"name": "ProtNgramGCN-n3-PCA64", "path": self.GCN_EMBEDDINGS_DIR / "gcn_n3_embeddings_pca64.h5"},
+            {"name": "ProtBERT-Mean-PCA64", "path": self.TRANSFORMER_EMBEDDINGS_DIR / "ProtBERT_mean_pca64.h5"},
+            {"name": "Word2Vec-Mean-PCA64", "path": self.WORD2VEC_EMBEDDINGS_DIR / "word2vec_dim100_mean_pca64.h5"}
+        ]
 
         # --- 6. MLFLOW & EXPERIMENT TRACKING ---
         self.USE_MLFLOW = True
@@ -142,5 +129,5 @@ class Config:
 
         # Evaluation Reporting
         self.EVAL_K_VALUES_FOR_TABLE = [50, 100]
-        self.EVAL_MAIN_EMBEDDING_FOR_STATS = "ProtT5-UniProt"  # Updated to match an entry in LP_EMBEDDING_FILES_TO_EVALUATE
+        self.EVAL_MAIN_EMBEDDING_FOR_STATS = "ProtT5-UniProt"
         self.EVAL_STATISTICAL_TEST_ALPHA = 0.05

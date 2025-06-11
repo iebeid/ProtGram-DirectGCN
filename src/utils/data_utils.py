@@ -7,17 +7,18 @@
 # ==============================================================================
 
 import os
-import h5py
 import pickle
 import random
 import re  # For DataLoader ID mapping
 import time  # For DataLoader ID mapping
+from typing import List, Optional, Dict, Set, Tuple, Iterator
+
+import h5py
 import numpy as np
 import pandas as pd
 import requests  # For DataLoader ID mapping
-from tqdm.auto import tqdm
-from typing import List, Optional, Dict, Set, Tuple, Iterator
 from Bio import SeqIO  # For DataLoader ID mapping
+from tqdm.auto import tqdm
 
 # Assuming your Config class is in src.config
 # This import is for type hinting and accessing config values.

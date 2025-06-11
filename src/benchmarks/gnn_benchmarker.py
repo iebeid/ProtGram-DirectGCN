@@ -6,17 +6,16 @@
 # ==============================================================================
 
 import os
+
 import pandas as pd
-import torch
-import torch.nn.functional as F
 from sklearn.metrics import f1_score
 from torch_geometric.datasets import PPI
 from torch_geometric.loader import DataLoader as PyGDataLoader  # Aliased to avoid conflict
 
+from src.config import Config
+from src.models.gnn_zoo import *
 # Assuming these are correctly located in your project structure
 from src.models.protgram_directgcn import ProtGramDirectGCN
-from src.models.gnn_zoo import *
-from src.config import Config
 from src.utils.data_utils import DataUtils
 
 

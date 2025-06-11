@@ -7,19 +7,20 @@
 # ==============================================================================
 
 import os  # Added for EmbeddingLoader
+from typing import Dict, Optional, List, Tuple, Set  # Added Set for EmbeddingLoader
+
 import h5py  # Added for EmbeddingLoader
 import numpy as np
 import torch
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-from tqdm.auto import tqdm
-from typing import Dict, Optional, List, Tuple, Any, Set  # Added Set for EmbeddingLoader
-
 # PyTorch Geometric import needed for extract_gcn_node_embeddings
 from torch_geometric.data import Data
+from tqdm.auto import tqdm
+
 # Model import needed for extract_gcn_node_embeddings
 # This creates a dependency from this utility to a specific model.
-from src.models.protgram_directgcn import ProtNgramGCN
+from src.models.protgram_directgcn import ProtGramDirectGCN
 
 
 # Forward declaration for type hinting if Word2Vec is not directly imported here
@@ -182,7 +183,7 @@ class EmbeddingProcessor:
 
     @staticmethod
     def get_word2vec_residue_embeddings(sequence: str, w2v_model: 'Word2Vec',  # Using string literal for Word2Vec type hint
-            embedding_dim: int) -> Optional[np.ndarray]:
+                                        embedding_dim: int) -> Optional[np.ndarray]:
         """
         Retrieves Word2Vec vectors for each valid residue in a sequence.
         """
@@ -232,9 +233,9 @@ class EmbeddingProcessor:
         return original_id, None
 
     @staticmethod
-    def extract_gcn_node_embeddings(model: ProtNgramGCN,  # Specific model type
-            data: Data,  # PyG Data object
-            device: torch.device) -> np.ndarray:
+    def extract_gcn_node_embeddings(model: ProtGramDirectGCN,  # Specific model type
+                                    data: Data,  # PyG Data object
+                                    device: torch.device) -> np.ndarray:
         """
         Extracts the final node embeddings from a trained ProtNgramGCN model.
         """
