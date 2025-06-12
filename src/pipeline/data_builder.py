@@ -5,17 +5,18 @@
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
+import logging
 import os
 import shutil
 
-import dask.dataframe as dd
+import dask.bag as db
 import pandas as pd
 import pyarrow
 from dask.distributed import Client, LocalCluster
 from tqdm import tqdm
 
 from src.config import Config
-from src.utils.data_utils import DataUtils  # Corrected from data_utils to data_loader
+from src.utils.data_utils import DataUtils, DataLoader  # Corrected from data_utils to data_loader
 # Assuming these are correctly located in your project structure
 from src.utils.graph_utils import DirectedNgramGraph  # Corrected from graph_utils to graph
 
@@ -55,24 +56,47 @@ class GraphBuilder:
 
         print(f"  Pass 1 (n={n}): Discovering unique n-grams with Dask...")
         # Ensure protein_sequence_file is a string for dd.read_csv
-        df = dd.read_csv(str(protein_sequence_file), header=None, names=['sequence'], blocksize=chunk_size, sample=1000000)
+        # df = dd.read_csv(str(protein_sequence_file), header=None, names=['sequence'], blocksize=chunk_size, sample=1000000)
 
-        def get_ngrams(sequence):
-            if not isinstance(sequence, str):
-                return []
-            return [sequence[i:i + n] for i in range(len(sequence) - n + 1)]
+        # def get_ngrams(sequence):
+        #     if not isinstance(sequence, str):
+        #         return []
+        #     return [sequence[i:i + n] for i in range(len(sequence) - n + 1)]
+        #
+        # all_ngrams = df['sequence'].dropna().map_partitions(lambda s: s.apply(get_ngrams), meta=(None, 'object')).explode().unique()
+        # unique_ngrams_df = all_ngrams.to_frame(name='ngram').compute()
 
-        all_ngrams = df['sequence'].dropna().map_partitions(lambda s: s.apply(get_ngrams), meta=(None, 'object')).explode().unique()
-        unique_ngrams_df = all_ngrams.to_frame(name='ngram').compute()
+        # if unique_ngrams_df.empty:
+        #     print(f"⚠️ Warning: No n-grams of size n={n} were generated. This may be expected for small proteins or large n.")
+        #     print(f"An empty map file will be created at: {output_ngram_map_file}")
+        #     empty_df = pd.DataFrame({'id': pd.Series(dtype='int'), 'ngram': pd.Series(dtype='str')})
+        #     empty_df.to_parquet(output_ngram_map_file)
+        #     open(output_edge_file, 'w').close()
+        #     print(f"  Pass 1 & 2 (n={n}) Complete. Empty intermediate files created.")
+        #     return
 
-        if unique_ngrams_df.empty:
-            print(f"⚠️ Warning: No n-grams of size n={n} were generated. This may be expected for small proteins or large n.")
+        sequences = [seq for _, seq in DataLoader.parse_sequences(str(protein_sequence_file))]
+        if not sequences:
+            print(f"⚠️ Warning: No sequences found in {protein_sequence_file} for n={n}.")
             print(f"An empty map file will be created at: {output_ngram_map_file}")
             empty_df = pd.DataFrame({'id': pd.Series(dtype='int'), 'ngram': pd.Series(dtype='str')})
             empty_df.to_parquet(output_ngram_map_file)
             open(output_edge_file, 'w').close()
             print(f"  Pass 1 & 2 (n={n}) Complete. Empty intermediate files created.")
             return
+
+        # Create a Dask Bag from the list of sequences
+        # You might want to choose npartitions based on self.num_workers or data size
+        seq_bag = db.from_sequence(sequences, npartitions=max(1, len(sequences) // 100))  # Adjust partitioning
+
+        def get_ngrams_from_seq(sequence_text):  # Renamed to avoid conflict
+            if not isinstance(sequence_text, str):
+                return []
+            return [sequence_text[i:i + n] for i in range(len(sequence_text) - n + 1)]
+
+        # Map, flatten (like explode), and get unique n-grams
+        unique_ngrams_series = seq_bag.map(get_ngrams_from_seq).flatten().distinct().compute()
+        unique_ngrams_df = pd.DataFrame(unique_ngrams_series, columns=['ngram'])
 
         unique_ngrams_df = unique_ngrams_df.sort_values('ngram').reset_index(drop=True)
         unique_ngrams_df['id'] = unique_ngrams_df.index
@@ -97,7 +121,7 @@ class GraphBuilder:
             return edges
 
         with open(output_edge_file, 'w') as f:
-            for partition in tqdm(df.partitions, desc=f"Processing Partitions (n={n})"):
+            for partition in tqdm(seq_bag.partitions, desc=f"Processing Partitions (n={n})"):
                 computed_part = partition.compute()
                 for _, r in computed_part.iterrows():  # Renamed 'row' to 'r'
                     edges = row_to_edges(r)
@@ -119,13 +143,14 @@ class GraphBuilder:
         print(f"\n>>> Phase 1: Creating intermediate files with {self.num_workers} workers...")
         # Ensure self.num_workers is at least 1
         effective_num_workers = max(1, self.num_workers)
-
-        with LocalCluster(n_workers=effective_num_workers, threads_per_worker=1, silence_logs='error') as cluster, Client(cluster) as client:
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        with LocalCluster(n_workers=effective_num_workers, threads_per_worker=1, silence_logs=logging.ERROR) as cluster, Client(cluster) as client:
             print(f"Dask dashboard link: {client.dashboard_link}")
             # Pass class static method to Dask
             tasks = [client.submit(GraphBuilder._create_intermediate_files, n, self.temp_dir, self.protein_sequence_file, self.chunk_size) for n in n_values]
             for future in tqdm(tasks, desc="Dask Workers Progress"):
                 future.result()  # Wait for each Dask task to complete
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
         print("\n>>> Phase 2: Building and saving final graph objects...")
         for n in n_values:

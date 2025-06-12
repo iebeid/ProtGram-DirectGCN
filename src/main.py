@@ -43,44 +43,44 @@ def main():
         benchmarker = GNNBenchmarker(config)
         benchmarker.run()
 
-    # 3. Run the N-gram GCN Pipeline to generate embeddings (Optional)
-    if config.RUN_GCN_PIPELINE:
-        # Step 3a: Build the n-gram graphs
-        graph_builder = GraphBuilder(config)
-        graph_builder.run()
-        # Step 3b: Train the GCN model to produce embeddings
-        gcn_embedder = ProtGramDirectGCNEmbedder(config)  # Assuming this class and its .run() method
-        gcn_embedder.run()
-
-    # 4. Run the Word2Vec Embedding Pipeline (Optional)
-    if config.RUN_WORD2VEC_PIPELINE:
-        word2vec_embedder = Word2VecEmbedder(config)  # Assuming this class and its .run() method
-        word2vec_embedder.run()
-
-    # 5. Run the Transformer Embedding Pipeline (Optional)
-    if config.RUN_TRANSFORMER_PIPELINE:
-        transformer_embedder = TransformerEmbedder(config)
-        transformer_embedder.run()
-
-    # --- Set experiment for the main evaluation ---
-    if config.USE_MLFLOW:
-        mlflow.set_experiment(config.MLFLOW_EXPERIMENT_NAME)
-
-    # 6. Run the Evaluation Pipeline
-    # This step evaluates the embeddings created by the steps above.
-    ppi_evaluator = PPIPipeline(config)
-
-    if config.RUN_DUMMY_TEST:
-        # Tag dummy runs in MLflow to easily filter them
-        with mlflow.start_run(run_name="Dummy_Run_Parent") as parent_run:
-            mlflow.set_tag("run_type", "dummy_test")
-            ppi_evaluator.run(use_dummy_data=True, parent_run_id=parent_run.info.run_id)
-
-    # Always run the main evaluation on the user-configured files
-    print("\nNote: The main evaluation will now run on the files specified in your config's LP_EMBEDDING_FILES_TO_EVALUATE list.")
-    with mlflow.start_run(run_name="Production_Run_Parent") as parent_run:
-        mlflow.set_tag("run_type", "production_eval")
-        ppi_evaluator.run(use_dummy_data=False, parent_run_id=parent_run.info.run_id)
+    # # 3. Run the N-gram GCN Pipeline to generate embeddings (Optional)
+    # if config.RUN_GCN_PIPELINE:
+    #     # Step 3a: Build the n-gram graphs
+    #     graph_builder = GraphBuilder(config)
+    #     graph_builder.run()
+    #     # Step 3b: Train the GCN model to produce embeddings
+    #     gcn_embedder = ProtGramDirectGCNEmbedder(config)  # Assuming this class and its .run() method
+    #     gcn_embedder.run()
+    #
+    # # 4. Run the Word2Vec Embedding Pipeline (Optional)
+    # if config.RUN_WORD2VEC_PIPELINE:
+    #     word2vec_embedder = Word2VecEmbedder(config)  # Assuming this class and its .run() method
+    #     word2vec_embedder.run()
+    #
+    # # 5. Run the Transformer Embedding Pipeline (Optional)
+    # if config.RUN_TRANSFORMER_PIPELINE:
+    #     transformer_embedder = TransformerEmbedder(config)
+    #     transformer_embedder.run()
+    #
+    # # --- Set experiment for the main evaluation ---
+    # if config.USE_MLFLOW:
+    #     mlflow.set_experiment(config.MLFLOW_EXPERIMENT_NAME)
+    #
+    # # 6. Run the Evaluation Pipeline
+    # # This step evaluates the embeddings created by the steps above.
+    # ppi_evaluator = PPIPipeline(config)
+    #
+    # if config.RUN_DUMMY_TEST:
+    #     # Tag dummy runs in MLflow to easily filter them
+    #     with mlflow.start_run(run_name="Dummy_Run_Parent") as parent_run:
+    #         mlflow.set_tag("run_type", "dummy_test")
+    #         ppi_evaluator.run(use_dummy_data=True, parent_run_id=parent_run.info.run_id)
+    #
+    # # Always run the main evaluation on the user-configured files
+    # print("\nNote: The main evaluation will now run on the files specified in your config's LP_EMBEDDING_FILES_TO_EVALUATE list.")
+    # with mlflow.start_run(run_name="Production_Run_Parent") as parent_run:
+    #     mlflow.set_tag("run_type", "production_eval")
+    #     ppi_evaluator.run(use_dummy_data=False, parent_run_id=parent_run.info.run_id)
 
     print("\n======================================================")
     print(f"### Full Orchestration Finished in {time.time() - script_start_time:.2f} seconds. ###")
