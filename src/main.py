@@ -9,9 +9,9 @@ import time
 
 import mlflow  # Import mlflow
 
-from src.benchmarks.gnn_benchmarker import GNNBenchmarker
+from benchmarks.gnn_benchmarker import GNNBenchmarker
 # Import the configuration
-from src.config import Config
+from config import Config
 # Import the refactored pipeline classes
 from src.pipeline.data_builder import GraphBuilder
 from src.pipeline.ppi_main import PPIPipeline
