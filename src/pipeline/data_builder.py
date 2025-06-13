@@ -1,13 +1,14 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 4.0 (Refactored into GraphBuilderPipeline class)
+# VERSION: 4.1 (Enhanced logging, Dask Bag for FASTA, CUDA_VISIBLE_DEVICES for workers)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import logging
 import os
 import shutil
+import time
 
 import dask.bag as db
 import pandas as pd
@@ -16,196 +17,207 @@ from dask.distributed import Client, LocalCluster
 from tqdm import tqdm
 
 from src.config import Config
-from src.utils.data_utils import DataUtils, DataLoader  # Corrected from data_utils to data_loader
-# Assuming these are correctly located in your project structure
-from src.utils.graph_utils import DirectedNgramGraph  # Corrected from graph_utils to graph
+from src.utils.data_utils import DataUtils, DataLoader
+from src.utils.graph_utils import DirectedNgramGraph
 
 
 class GraphBuilder:
-    """
-    Orchestrates the n-gram graph building process using Dask for parallel processing.
-    """
-
     def __init__(self, config: Config):
-        """
-        Initializes the GraphBuilderPipeline.
-
-        Args:
-            config (Config): The configuration object for the pipeline.
-        """
         self.config = config
-        self.protein_sequence_file = str(config.GCN_INPUT_FASTA_PATH)  # Ensure path is string
+        self.protein_sequence_file = str(config.GCN_INPUT_FASTA_PATH)
         self.output_dir = str(config.GRAPH_OBJECTS_DIR)
         self.n_max = config.GCN_NGRAM_MAX_N
         self.num_workers = config.GRAPH_BUILDER_WORKERS if config.GRAPH_BUILDER_WORKERS is not None else 1
-        self.chunk_size = config.DASK_CHUNK_SIZE
         self.temp_dir = os.path.join(str(config.BASE_OUTPUT_DIR), "temp_graph_builder")
-        # Epsilon for graph object, ensure it's in config or provide a default
         self.gcn_propagation_epsilon = getattr(config, 'GCN_PROPAGATION_EPSILON', 1e-9)
+        print(f"GraphBuilder initialized: n_max={self.n_max}, num_workers={self.num_workers}, output_dir='{self.output_dir}'")
+        DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
+
 
     @staticmethod
-    def _create_intermediate_files(n, temp_dir, protein_sequence_file, chunk_size):
-        """
-        Creates intermediate node and edge files using Dask for parallel processing.
-        This method is static as it's intended to be submitted to Dask workers.
-        """
-        print(f"[Worker n={n}]: Starting intermediate file construction.")
+    def _create_intermediate_files(n_value, temp_dir, protein_sequence_file_path, num_dask_partitions):
+        process_start_time = time.time()
+        print(f"[Worker n={n_value}, PID={os.getpid()}]: Starting intermediate file construction for n-gram size {n_value}.")
+        output_ngram_map_file = os.path.join(temp_dir, f'ngram_map_n{n_value}.parquet')
+        output_edge_file = os.path.join(temp_dir, f'edge_list_n{n_value}.txt')
 
-        output_ngram_map_file = os.path.join(temp_dir, f'ngram_map_n{n}.parquet')
-        output_edge_file = os.path.join(temp_dir, f'edge_list_n{n}.txt')
+        print(f"  [Worker n={n_value}] Pass 1: Discovering unique n-grams from '{os.path.basename(protein_sequence_file_path)}'...")
 
-        print(f"  Pass 1 (n={n}): Discovering unique n-grams with Dask...")
-        # Ensure protein_sequence_file is a string for dd.read_csv
-        # df = dd.read_csv(str(protein_sequence_file), header=None, names=['sequence'], blocksize=chunk_size, sample=1000000)
-
-        # def get_ngrams(sequence):
-        #     if not isinstance(sequence, str):
-        #         return []
-        #     return [sequence[i:i + n] for i in range(len(sequence) - n + 1)]
-        #
-        # all_ngrams = df['sequence'].dropna().map_partitions(lambda s: s.apply(get_ngrams), meta=(None, 'object')).explode().unique()
-        # unique_ngrams_df = all_ngrams.to_frame(name='ngram').compute()
-
-        # if unique_ngrams_df.empty:
-        #     print(f"⚠️ Warning: No n-grams of size n={n} were generated. This may be expected for small proteins or large n.")
-        #     print(f"An empty map file will be created at: {output_ngram_map_file}")
-        #     empty_df = pd.DataFrame({'id': pd.Series(dtype='int'), 'ngram': pd.Series(dtype='str')})
-        #     empty_df.to_parquet(output_ngram_map_file)
-        #     open(output_edge_file, 'w').close()
-        #     print(f"  Pass 1 & 2 (n={n}) Complete. Empty intermediate files created.")
-        #     return
-
-        sequences = [seq for _, seq in DataLoader.parse_sequences(str(protein_sequence_file))]
+        sequences = list(DataLoader.parse_sequences(str(protein_sequence_file_path)))
         if not sequences:
-            print(f"⚠️ Warning: No sequences found in {protein_sequence_file} for n={n}.")
-            print(f"An empty map file will be created at: {output_ngram_map_file}")
-            empty_df = pd.DataFrame({'id': pd.Series(dtype='int'), 'ngram': pd.Series(dtype='str')})
-            empty_df.to_parquet(output_ngram_map_file)
+            print(f"  [Worker n={n_value}] ⚠️ Warning: No sequences found in {os.path.basename(protein_sequence_file_path)} for n={n_value}.")
+            pd.DataFrame({'id': pd.Series(dtype='int'), 'ngram': pd.Series(dtype='str')}).to_parquet(output_ngram_map_file)
             open(output_edge_file, 'w').close()
-            print(f"  Pass 1 & 2 (n={n}) Complete. Empty intermediate files created.")
+            print(f"  [Worker n={n_value}] Pass 1 & 2 Complete for n={n_value}. Empty intermediate files created.")
             return
 
-        # Create a Dask Bag from the list of sequences
-        # You might want to choose npartitions based on self.num_workers or data size
-        seq_bag = db.from_sequence(sequences, npartitions=max(1, len(sequences) // 100))  # Adjust partitioning
+        seq_bag = db.from_sequence(sequences, npartitions=num_dask_partitions)
 
-        def get_ngrams_from_seq(sequence_text):  # Renamed to avoid conflict
-            if not isinstance(sequence_text, str):
+        def get_ngrams_from_seq_tuple(seq_tuple):
+            _, sequence_text = seq_tuple
+            if not isinstance(sequence_text, str) or len(sequence_text) < n_value:
                 return []
-            return [sequence_text[i:i + n] for i in range(len(sequence_text) - n + 1)]
+            return [sequence_text[i:i + n_value] for i in range(len(sequence_text) - n_value + 1)]
 
-        # Map, flatten (like explode), and get unique n-grams
-        unique_ngrams_series = seq_bag.map(get_ngrams_from_seq).flatten().distinct().compute()
-        unique_ngrams_df = pd.DataFrame(unique_ngrams_series, columns=['ngram'])
+        unique_ngrams_series = seq_bag.map(get_ngrams_from_seq_tuple).flatten().distinct().compute()
+
+        if not unique_ngrams_series:
+            print(f"  [Worker n={n_value}] ⚠️ Warning: No n-grams of size n={n_value} were generated.")
+            unique_ngrams_df = pd.DataFrame({'ngram': pd.Series(dtype='str')})
+        else:
+            unique_ngrams_df = pd.DataFrame(unique_ngrams_series, columns=['ngram'])
 
         unique_ngrams_df = unique_ngrams_df.sort_values('ngram').reset_index(drop=True)
         unique_ngrams_df['id'] = unique_ngrams_df.index
         unique_ngrams_df[['id', 'ngram']].to_parquet(output_ngram_map_file)
-        print(f"  Pass 1 (n={n}) Complete. Unique n-gram map saved.")
+        print(f"  [Worker n={n_value}] Pass 1 Complete for n={n_value}. {len(unique_ngrams_df)} unique n-grams saved to map file.")
 
-        print(f"  Pass 2 (n={n}): Generating raw edge list...")
+        if unique_ngrams_df.empty:
+            open(output_edge_file, 'w').close()
+            print(f"  [Worker n={n_value}] No n-grams for n={n_value}, skipping edge generation.")
+            print(f"[Worker n={n_value}] Finished n={n_value} in {time.time() - process_start_time:.2f}s.")
+            return
+
+        print(f"  [Worker n={n_value}] Pass 2: Generating raw edge list for n={n_value}...")
         ngram_to_id_map = pd.read_parquet(output_ngram_map_file).set_index('ngram')['id'].to_dict()
 
-        def row_to_edges(row_data):  # Renamed 'row' to 'row_data' to avoid conflict
-            sequence = row_data['sequence']
-            if not isinstance(sequence, str) or len(sequence) < n + 1:
+        def sequence_to_edges_str_list(seq_tuple):
+            _, sequence = seq_tuple
+            if not isinstance(sequence, str) or len(sequence) < n_value + 1:
                 return []
-            edges = []
-            for i in range(len(sequence) - n):
-                source_ngram = sequence[i:i + n]
-                target_ngram = sequence[i + 1:i + 1 + n]
+            edges_str = []
+            for i in range(len(sequence) - n_value):
+                source_ngram = sequence[i:i + n_value]
+                target_ngram = sequence[i + 1:i + 1 + n_value]
                 source_id = ngram_to_id_map.get(source_ngram)
                 target_id = ngram_to_id_map.get(target_ngram)
                 if source_id is not None and target_id is not None:
-                    edges.append(f"{source_id} {target_id}\n")
-            return edges
+                    edges_str.append(f"{source_id} {target_id}\n")
+            return edges_str
 
-        with open(output_edge_file, 'w') as f:
-            for partition in tqdm(seq_bag.partitions, desc=f"Processing Partitions (n={n})"):
-                computed_part = partition.compute()
-                for _, r in computed_part.iterrows():  # Renamed 'row' to 'r'
-                    edges = row_to_edges(r)
-                    f.writelines(edges)
+        edge_lists_bag = seq_bag.map(sequence_to_edges_str_list).flatten()
+        temp_edge_parts_dir = os.path.join(temp_dir, f"edge_parts_n{n_value}")
+        if os.path.exists(temp_edge_parts_dir): shutil.rmtree(temp_edge_parts_dir)
 
-        print(f"  Pass 2 (n={n}) Complete. Raw edge file created.")
+        edge_lists_bag.to_textfiles(os.path.join(temp_edge_parts_dir, 'part-*.txt'))
+
+        with open(output_edge_file, 'w') as outfile:
+            part_files = sorted([f for f in os.listdir(temp_edge_parts_dir) if f.startswith('part-') and f.endswith('.txt')])
+            for fname in part_files:
+                with open(os.path.join(temp_edge_parts_dir, fname), 'r') as infile:
+                    shutil.copyfileobj(infile, outfile)
+        shutil.rmtree(temp_edge_parts_dir)
+
+        print(f"  [Worker n={n_value}] Pass 2 Complete for n={n_value}. Raw edge file created at {output_edge_file}.")
+        print(f"[Worker n={n_value}] Finished intermediate file construction for n={n_value} in {time.time() - process_start_time:.2f}s.")
+
 
     def run(self):
-        """Main function to orchestrate the graph building process."""
+        overall_start_time = time.time()
         DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs")
 
         if os.path.exists(self.temp_dir):
+            print(f"Cleaning up existing temporary directory: {self.temp_dir}")
             shutil.rmtree(self.temp_dir)
         os.makedirs(self.temp_dir, exist_ok=True)
         os.makedirs(self.output_dir, exist_ok=True)
+        print(f"Temporary files will be stored in: {self.temp_dir}")
+        print(f"Final graph objects will be saved to: {self.output_dir}")
 
         n_values = range(1, self.n_max + 1)
 
-        print(f"\n>>> Phase 1: Creating intermediate files with {self.num_workers} workers...")
-        # Ensure self.num_workers is at least 1
+        DataUtils.print_header(f"Phase 1: Creating intermediate files with {self.num_workers} Dask workers")
+        phase1_start_time = time.time()
         effective_num_workers = max(1, self.num_workers)
-        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-        with LocalCluster(n_workers=effective_num_workers, threads_per_worker=1, silence_logs=logging.ERROR) as cluster, Client(cluster) as client:
-            print(f"Dask dashboard link: {client.dashboard_link}")
-            # Pass class static method to Dask
-            tasks = [client.submit(GraphBuilder._create_intermediate_files, n, self.temp_dir, self.protein_sequence_file, self.chunk_size) for n in n_values]
-            for future in tqdm(tasks, desc="Dask Workers Progress"):
-                future.result()  # Wait for each Dask task to complete
-        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-        print("\n>>> Phase 2: Building and saving final graph objects...")
+        try:
+            num_sequences = sum(1 for _ in DataLoader.parse_sequences(self.protein_sequence_file))
+            sequences_per_partition_target = 500
+            num_dask_partitions = max(1, min(effective_num_workers * 4, (num_sequences + sequences_per_partition_target - 1) // sequences_per_partition_target))
+            print(f"  Estimated {num_sequences} sequences. Using {num_dask_partitions} Dask Bag partitions.")
+        except FileNotFoundError:
+            print(f"ERROR: FASTA file not found at {self.protein_sequence_file}. Cannot proceed with graph building.")
+            return
+
+        original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask workers to avoid GPU contention.")
+
+        with LocalCluster(n_workers=effective_num_workers, threads_per_worker=1, silence_logs=logging.ERROR) as cluster, Client(cluster) as client:
+            print(f"  Dask LocalCluster started with {effective_num_workers} workers.")
+            print(f"  Dask dashboard link: {client.dashboard_link}")
+
+            tasks = [client.submit(GraphBuilder._create_intermediate_files, n, self.temp_dir, self.protein_sequence_file, num_dask_partitions) for n in n_values]
+
+            for future in tqdm(tasks, desc="Dask Workers Progress (Phase 1)"):
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"ERROR in Dask worker during Phase 1: {e}")
+
+        if original_cuda_visible_devices is None:
+            if "CUDA_VISIBLE_DEVICES" in os.environ: del os.environ["CUDA_VISIBLE_DEVICES"]
+        else:
+            os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
+        print("  Restored original CUDA_VISIBLE_DEVICES setting.")
+        print(f"<<< Phase 1 finished in {time.time() - phase1_start_time:.2f}s.")
+
+        DataUtils.print_header("Phase 2: Building and saving final graph objects")
+        phase2_start_time = time.time()
         for n in n_values:
-            print(f"\n--- Processing n = {n} ---")
+            print(f"\n--- Processing n = {n} for final graph object ---")
             ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
             edge_file = os.path.join(self.temp_dir, f'edge_list_n{n}.txt')
+
+            if not os.path.exists(ngram_map_file) or not os.path.exists(edge_file):
+                print(f"  Warning: Intermediate files for n={n} not found. Skipping graph generation for this n-gram size.")
+                continue
 
             try:
                 nodes_df = pd.read_parquet(ngram_map_file)
             except pyarrow.lib.ArrowInvalid as e:
-                print(f"❌ Error: Could not read the Parquet file for n={n} at: {ngram_map_file}")
-                print(f"   ArrowInvalid Error Details: {e}")
-                print("   This file might be corrupted or empty in an invalid format. Skipping this n-gram size.")
-                continue
-            except FileNotFoundError:
-                print(f"❌ Error: Parquet file not found for n={n} at: {ngram_map_file}. Skipping this n-gram size.")
+                print(f"  ❌ Error: Could not read Parquet file for n={n} at: {ngram_map_file}. Details: {e}. Skipping.")
                 continue
 
             if nodes_df.empty:
-                print(f"ℹ️ Info: The n-gram map for n={n} is empty. No graph will be generated. Skipping.")
+                print(f"  ℹ️ Info: The n-gram map for n={n} is empty. No graph will be generated. Skipping.")
                 continue
-
+            print(f"  Loaded {len(nodes_df)} n-grams for n={n} from map file.")
             idx_to_node = nodes_df.set_index('id')['ngram'].to_dict()
 
             try:
                 edge_df = pd.read_csv(edge_file, sep=' ', header=None, names=['source', 'target'], dtype=int)
+                print(f"  Loaded {len(edge_df)} raw edges for n={n} from edge list file.")
             except pd.errors.EmptyDataError:
-                print(f"ℹ️ Info: Edge file for n={n} is empty or contains no valid edges. Creating graph with no edges.")
-                edge_df = pd.DataFrame(columns=['source', 'target'])  # Ensure edge_df is an empty DataFrame
+                print(f"  ℹ️ Info: Edge file for n={n} is empty. Creating graph with no edges.")
+                edge_df = pd.DataFrame(columns=['source', 'target'])
             except FileNotFoundError:
-                print(f"❌ Error: Edge file not found for n={n} at: {edge_file}. Assuming no edges.")
+                print(f"  ❌ Error: Edge file not found for n={n} at: {edge_file}. Assuming no edges.")
                 edge_df = pd.DataFrame(columns=['source', 'target'])
 
             if edge_df.empty:
-                print(f"ℹ️ Info: No edges found for n={n}. Creating a graph with nodes but no edges.")
-                # Ensure weighted_edge_list is a list of tuples for DirectedNgramGraphForGCN
+                print(f"  ℹ️ Info: No edges found for n={n}. Creating a graph with nodes but no edges.")
                 weighted_edge_list_tuples = []
             else:
                 weighted_edge_df = edge_df.groupby(['source', 'target']).size().reset_index(name='weight')
-                print(f"Aggregated {len(edge_df)} raw transitions into {len(weighted_edge_df)} unique weighted edges.")
-                # Convert DataFrame to list of tuples: (source_idx, target_idx, weight)
+                print(f"  Aggregated {len(edge_df)} raw transitions into {len(weighted_edge_df)} unique weighted edges for n={n}.")
                 weighted_edge_list_tuples = [tuple(x) for x in weighted_edge_df[['source', 'target', 'weight']].to_numpy()]
 
-            print(f"Instantiating DirectedNgramGraph object for n={n}...")
-            # Pass epsilon from self.config (via self.gcn_propagation_epsilon)
+            print(f"  Instantiating DirectedNgramGraph object for n={n}...")
             graph_object = DirectedNgramGraph(nodes=idx_to_node, edges=weighted_edge_list_tuples, epsilon_propagation=self.gcn_propagation_epsilon)
-
+            graph_object.n_value = n
             output_path = os.path.join(self.output_dir, f'ngram_graph_n{n}.pkl')
             DataUtils.save_object(graph_object, output_path)
-            print(f"Graph for n={n} saved to {output_path}")
+            print(f"  Graph for n={n} saved to {output_path}")
+        print(f"<<< Phase 2 finished in {time.time() - phase2_start_time:.2f}s.")
 
-        print("\n>>> Phase 3: Cleaning up temporary files...")
-        if os.path.exists(self.temp_dir):  # Check if temp_dir exists before trying to remove
+        DataUtils.print_header("Phase 3: Cleaning up temporary files")
+        phase3_start_time = time.time()
+        if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
-            print("Cleanup complete.")
+            print(f"  Temporary directory {self.temp_dir} cleaned up.")
         else:
-            print("Temporary directory not found, no cleanup needed or already cleaned.")
-        DataUtils.print_header("N-gram Graph Building FINISHED")
+            print("  Temporary directory not found, no cleanup needed.")
+        print(f"<<< Phase 3 finished in {time.time() - phase3_start_time:.2f}s.")
+
+        DataUtils.print_header(f"N-gram Graph Building FINISHED in {time.time() - overall_start_time:.2f}s")

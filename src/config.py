@@ -1,12 +1,12 @@
 # ==============================================================================
 # MODULE: config.py
 # PURPOSE: Centralized configuration for the entire PPI pipeline.
-# VERSION: 1.2 (Added missing GCN parameters)
+# VERSION: 1.4 (Added GNN benchmark embedding/PCA/undirected flags, split ratios)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from pathlib import Path
 
 
@@ -14,15 +14,14 @@ class Config:
     def __init__(self):
         # --- 1. GENERAL & ORCHESTRATION SETTINGS ---
         self.RANDOM_STATE = 42
-        self.DEBUG_VERBOSE = True
+        self.DEBUG_VERBOSE = True # Set to False for less verbose training logs
 
         # --- Workflow Control Flags ---
-        # Master switches to run each part of the pipeline.
-        self.RUN_GCN_PIPELINE = True
-        self.RUN_WORD2VEC_PIPELINE = True
-        self.RUN_TRANSFORMER_PIPELINE = True
+        self.RUN_GCN_PIPELINE = False
+        self.RUN_WORD2VEC_PIPELINE = False
+        self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = True
-        self.RUN_DUMMY_TEST = True  # Run a quick test of the evaluation pipeline
+        self.RUN_DUMMY_TEST = True
         self.CLEANUP_DUMMY_DATA = True
 
         # --- PATH CONFIGURATION ---
@@ -41,8 +40,22 @@ class Config:
         self.TRANSFORMER_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_transformer_embeddings"
         self.EVALUATION_RESULTS_DIR = self.BASE_OUTPUT_DIR / "3_evaluation_results"
         self.BENCHMARKING_RESULTS_DIR = self.BASE_OUTPUT_DIR / "4_benchmarking_results"
+        self.BENCHMARK_EMBEDDINGS_DIR = self.BENCHMARKING_RESULTS_DIR / "embeddings" # For GNN benchmark embeddings
 
-        # --- 2. GCN PIPELINE PARAMETERS ---
+        # --- GNN BENCHMARKING PARAMETERS ---
+        self.BENCHMARK_NODE_CLASSIFICATION_DATASETS = [
+            "KarateClub", "Cora", "CiteSeer", "PubMed",
+            "Cornell", "Texas", "Wisconsin", "PPI",
+        ]
+        self.BENCHMARK_SAVE_EMBEDDINGS = True # Save embeddings from GNN benchmark models
+        self.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS = True # Apply PCA to saved benchmark embeddings
+        self.BENCHMARK_PCA_TARGET_DIM = 64 # Target dim for PCA on benchmark embeddings
+        self.BENCHMARK_TEST_ON_UNDIRECTED = True # Also test on undirected versions of graphs
+        # Ratios for RandomNodeSplit if dataset has no predefined masks. Sum should be <= 1.0
+        self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8} # Example for small datasets like Karate
+
+
+        # --- 2. GCN PIPELINE PARAMETERS (Your custom GCN) ---
         self.GCN_NGRAM_MAX_N = 3
         self.DASK_CHUNK_SIZE = 2000000
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 2) if os.cpu_count() else 1
@@ -56,14 +69,14 @@ class Config:
         self.GCN_1GRAM_INIT_DIM = 64
         self.GCN_HIDDEN_DIM_1 = 128
         self.GCN_HIDDEN_DIM_2 = 64
-        self.GCN_EPOCHS_PER_LEVEL = 500
+        self.GCN_EPOCHS_PER_LEVEL = 10
         self.GCN_LR = 0.001
         self.GCN_DROPOUT_RATE = 0.5
         self.GCN_WEIGHT_DECAY = 1e-4
         self.GCN_L2_REG_LAMBDA = 0.0001
         self.GCN_PROPAGATION_EPSILON = 1e-9
-        self.GCN_MAX_PE_LEN = 512  # ADDED: Max length for positional encoding (example value)
-        self.GCN_USE_VECTOR_COEFFS = True # ADDED: Explicitly define for clarity
+        self.GCN_MAX_PE_LEN = 512
+        self.GCN_USE_VECTOR_COEFFS = True
 
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
             1: "community", 2: "next_node", 3: "closest_aa"
@@ -72,8 +85,8 @@ class Config:
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
 
         self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 8) if os.cpu_count() else 1
-        self.APPLY_PCA_TO_GCN = True
-        self.PCA_TARGET_DIMENSION = 64
+        self.APPLY_PCA_TO_GCN = True # PCA for your main GCN pipeline embeddings
+        self.PCA_TARGET_DIMENSION = 64 # PCA target for your main GCN pipeline embeddings
 
         # --- 3. WORD2VEC PIPELINE PARAMETERS ---
         self.W2V_INPUT_FASTA_DIR = Path(self.GCN_INPUT_FASTA_PATH).parent
@@ -95,7 +108,7 @@ class Config:
         self.TRANSFORMER_POOLING_STRATEGY = 'mean'
         self.APPLY_PCA_TO_TRANSFORMER = True
 
-        # --- 5. EVALUATION PARAMETERS ---
+        # --- 5. EVALUATION PARAMETERS (for ppi_main.py and GNN Benchmarker) ---
         self.PLOT_TRAINING_HISTORY = True
         self.EARLY_STOPPING_PATIENCE = 10
         self.PERFORM_H5_INTEGRITY_CHECK = True
@@ -125,7 +138,7 @@ class Config:
         self.EVAL_MLP_L2_REG = 0.001
         self.EVAL_BATCH_SIZE = 64
         self.EVAL_EPOCHS = 10
-        self.EVAL_LEARNING_RATE = 1e-3
+        self.EVAL_LEARNING_RATE = 0.01
 
         # Evaluation Reporting
         self.EVAL_K_VALUES_FOR_TABLE = [50, 100]

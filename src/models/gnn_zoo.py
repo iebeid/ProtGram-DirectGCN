@@ -2,158 +2,254 @@
 # MODULE: models/gnn_zoo.py
 # PURPOSE: Contains PyTorch Geometric implementations of standard GNN
 #          architectures for benchmarking purposes.
-# VERSION: 2.0 (Adds MoNet)
+# VERSION: 2.2 (Minor adjustments for consistency)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn import Sequential, Linear, ReLU  # Needed for GINConv's MLP
-from torch_geometric.nn import GCNConv, GATConv, SAGEConv, WLConv, ChebConv, SignedConv, RGCNConv, GINConv
+from torch.nn import Sequential, Linear, ReLU
+from torch_geometric.nn import GCNConv, GATConv, SAGEConv, ChebConv, SignedConv, RGCNConv, GINConv
+from torch_geometric.data import Data
 
 
 class BaseGNN(nn.Module):
-    """A base class for all GNNs to ensure they have an embedding_output attribute."""
-
     def __init__(self):
         super().__init__()
         self.embedding_output = None
 
+    def get_embeddings(self, data: Data) -> Optional[torch.Tensor]:
+        """
+        A standardized way to get embeddings after a forward pass.
+        Assumes the forward pass stores embeddings in self.embedding_output.
+        """
+        # Ensure forward pass has occurred and stored embeddings
+        if self.embedding_output is None:
+            print(f"Warning: embedding_output is None for {self.__class__.__name__}. Call forward pass first.")
+            # Optionally, could run a forward pass here if data is available and it's safe
+            # self.forward(data) # This might have side effects or require specific mode (eval)
+        return self.embedding_output
 
-# --- Basic PyG Model Implementations for the Zoo ---
+
 class GCN(BaseGNN):
-    def __init__(self, in_channels, hidden_channels, out_channels):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers=2, dropout_rate=0.5):
         super().__init__()
-        self.conv1 = GCNConv(in_channels, hidden_channels)
-        self.conv2 = GCNConv(hidden_channels, out_channels)
+        self.convs = nn.ModuleList()
+        self.dropout_rate = dropout_rate
+        if num_layers <= 0: raise ValueError("num_layers must be positive")
 
-    def forward(self, data):
-        x, edge_index = data.x, data.edge_index
-        x = self.conv1(x, edge_index)
-        x = F.relu(x)
-        x = self.conv2(x, edge_index)
+        current_dim = in_channels
+        for i in range(num_layers - 1):
+            self.convs.append(GCNConv(current_dim, hidden_channels))
+            current_dim = hidden_channels
+        self.convs.append(GCNConv(current_dim, out_channels))
+
+    def forward(self, data: Data) -> torch.Tensor:
+        x, edge_index, edge_weight = data.x, data.edge_index, getattr(data, 'edge_attr', None)
+        for i, conv in enumerate(self.convs):
+            x = conv(x, edge_index, edge_weight=edge_weight)
+            if i < len(self.convs) - 1:
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        self.embedding_output = x
         return x
 
 
 class GAT(BaseGNN):
-    def __init__(self, in_channels, hidden_channels, out_channels, heads=1):
+    def __init__(self, in_channels, hidden_channels, out_channels, heads=8, num_layers=2, dropout_rate=0.6):
         super().__init__()
-        self.gat1 = GATConv(in_channels, hidden_channels, heads=heads)
-        self.gat2 = GATConv(hidden_channels * heads, out_channels, heads=1)
+        self.convs = nn.ModuleList()
+        self.dropout_rate = dropout_rate # GATConv has its own dropout
+        if num_layers <= 0: raise ValueError("num_layers must be positive")
 
-    def forward(self, data):
-        x, edge_index = data.x, data.edge_index
-        x = self.gat1(x, edge_index)
-        x = F.elu(x)
-        x = self.gat2(x, edge_index)
+        if num_layers == 1:
+            self.convs.append(GATConv(in_channels, out_channels, heads=heads, concat=False, dropout=dropout_rate))
+        else:
+            self.convs.append(GATConv(in_channels, hidden_channels, heads=heads, dropout=dropout_rate))
+            for _ in range(num_layers - 2):
+                self.convs.append(GATConv(hidden_channels * heads, hidden_channels, heads=heads, dropout=dropout_rate))
+            self.convs.append(GATConv(hidden_channels * heads, out_channels, heads=1, concat=False, dropout=dropout_rate))
+
+    def forward(self, data: Data) -> torch.Tensor:
+        x, edge_index, edge_weight = data.x, data.edge_index, getattr(data, 'edge_attr', None)
+        # GATConv can take edge_attr for weighted attention, if edge_dim matches.
+        # For simplicity, if edge_weight is 1D, it might be used. If multi-dim, GATConv might error or ignore.
+        # PyG GATConv v2 handles edge_attr more explicitly.
+        for i, conv in enumerate(self.convs):
+            x = conv(x, edge_index, edge_attr=edge_weight if conv.edge_dim is not None else None)
+            if i < len(self.convs) - 1:
+                x = F.elu(x)
+                # Dropout is typically part of GATConv itself
+        self.embedding_output = x
         return x
 
 
 class GraphSAGE(BaseGNN):
-    def __init__(self, in_channels, hidden_channels, out_channels):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers=2, dropout_rate=0.5):
         super().__init__()
-        self.sage1 = SAGEConv(in_channels, hidden_channels)
-        self.sage2 = SAGEConv(hidden_channels, out_channels)
+        self.convs = nn.ModuleList()
+        self.dropout_rate = dropout_rate
+        if num_layers <= 0: raise ValueError("num_layers must be positive")
 
-    def forward(self, data):
-        x, edge_index = data.x, data.edge_index
-        x = self.sage1(x, edge_index)
-        x = F.relu(x)
-        x = self.sage2(x, edge_index)
+        current_dim = in_channels
+        for i in range(num_layers - 1):
+            self.convs.append(SAGEConv(current_dim, hidden_channels))
+            current_dim = hidden_channels
+        self.convs.append(SAGEConv(current_dim, out_channels))
+
+    def forward(self, data: Data) -> torch.Tensor:
+        x, edge_index = data.x, data.edge_index # SAGEConv doesn't typically use edge_weight in its basic form
+        for i, conv in enumerate(self.convs):
+            x = conv(x, edge_index)
+            if i < len(self.convs) - 1:
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        self.embedding_output = x
         return x
 
 
-# --- New Model Implementations ---
-class WLGCN(BaseGNN):
-    """WLConv as a feature transformation layer followed by GCN layers."""
-
-    def __init__(self, in_channels, hidden_channels, out_channels):
+class TongDiGCN(BaseGNN):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers=2, dropout_rate=0.5):
         super().__init__()
-        self.wl = WLConv()  # Parameter-free Weisfeiler-Lehman feature updater
-        self.conv1 = GCNConv(in_channels, hidden_channels)  # Assumes WLConv preserves feature dim
-        self.conv2 = GCNConv(hidden_channels, out_channels)
+        self.gcn_forward = GCN(in_channels, hidden_channels, hidden_channels, num_layers, dropout_rate)
+        self.gcn_backward = GCN(in_channels, hidden_channels, hidden_channels, num_layers, dropout_rate)
+        self.final_linear = nn.Linear(hidden_channels * 2, out_channels)
+        self.dropout_rate = dropout_rate
 
-    def forward(self, data):
+    def forward(self, data: Data) -> torch.Tensor:
         x, edge_index = data.x, data.edge_index
-        x = self.wl(x, edge_index)  # Update features using WL algorithm
-        x = self.conv1(x, edge_index)
-        x = F.relu(x)
-        x = self.conv2(x, edge_index)
-        return x
+
+        # Forward pass
+        x_fwd = self.gcn_forward(data)
+
+        # Backward pass (reverse edges)
+        edge_index_bwd = edge_index[[1, 0], :]
+        # Create a new Data object for the backward pass, copying relevant attributes
+        data_bwd = Data(x=x, edge_index=edge_index_bwd)
+        if hasattr(data, 'edge_attr') and data.edge_attr is not None:
+            data_bwd.edge_attr = data.edge_attr # Assuming edge_attr is symmetric or handled by GCN
+        # Copy other necessary attributes if your GCN model uses them
+        # for attr_name in ['batch', 'ptr', 'num_nodes']: # Example attributes
+        #     if hasattr(data, attr_name):
+        #         setattr(data_bwd, attr_name, getattr(data, attr_name))
+
+        x_bwd = self.gcn_backward(data_bwd)
+
+        x_combined = torch.cat([x_fwd, x_bwd], dim=-1)
+        x_combined = F.dropout(x_combined, p=self.dropout_rate, training=self.training)
+        out = self.final_linear(x_combined)
+        self.embedding_output = x_combined
+        return out
 
 
 class ChebNet(BaseGNN):
-    """GNN with Chebyshev Spectral Graph Convolutions."""
-
-    def __init__(self, in_channels, hidden_channels, out_channels, K=3):
+    def __init__(self, in_channels, hidden_channels, out_channels, K=3, num_layers=2, dropout_rate=0.5):
         super().__init__()
-        self.conv1 = ChebConv(in_channels, hidden_channels, K=K)
-        self.conv2 = ChebConv(hidden_channels, out_channels, K=K)
+        self.convs = nn.ModuleList()
+        self.dropout_rate = dropout_rate
+        if num_layers <= 0: raise ValueError("num_layers must be positive")
 
-    def forward(self, data):
-        x, edge_index = data.x, data.edge_index
-        x = self.conv1(x, edge_index)
-        x = F.relu(x)
-        x = self.conv2(x, edge_index)
+        current_dim = in_channels
+        for i in range(num_layers - 1):
+            self.convs.append(ChebConv(current_dim, hidden_channels, K=K))
+            current_dim = hidden_channels
+        self.convs.append(ChebConv(current_dim, out_channels, K=K))
+
+    def forward(self, data: Data) -> torch.Tensor:
+        x, edge_index, edge_weight = data.x, data.edge_index, getattr(data, 'edge_attr', None)
+        for i, conv in enumerate(self.convs):
+            x = conv(x, edge_index, edge_weight=edge_weight) # ChebConv can use edge_weight
+            if i < len(self.convs) - 1:
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        self.embedding_output = x
         return x
 
 
-class SignedNet(BaseGNN):
-    """GNN with SignedConv layers, adapted for unsigned graphs."""
-
-    def __init__(self, in_channels, hidden_channels, out_channels):
+class SignedNet(BaseGNN): # Note: For unsigned graphs, neg_edge_index will be empty.
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers=2, dropout_rate=0.5):
         super().__init__()
-        # Using first_aggr=False for a more general SignedConv behavior
-        self.sconv1 = SignedConv(in_channels, hidden_channels, first_aggr=False)
-        self.sconv2 = SignedConv(hidden_channels, out_channels, first_aggr=False)
+        self.convs = nn.ModuleList()
+        self.dropout_rate = dropout_rate
+        if num_layers <= 0: raise ValueError("num_layers must be positive")
 
-    def forward(self, data):
+        current_dim = in_channels
+        for i in range(num_layers):
+            out_dim_conv = hidden_channels if i < num_layers - 1 else out_channels
+            # first_aggr is True only for the very first layer in a typical SignedGraphConv stack
+            is_first_layer_in_stack = (i == 0)
+            self.convs.append(SignedConv(current_dim, out_dim_conv, first_aggr=is_first_layer_in_stack))
+            current_dim = out_dim_conv * 2 if is_first_layer_in_stack else out_dim_conv # SignedConv doubles dim on first_aggr
+
+    def forward(self, data: Data) -> torch.Tensor:
         x, edge_index = data.x, data.edge_index
-        # Provide an empty tensor for negative edges as PPI is unsigned
-        neg_edge_index = torch.empty((2, 0), dtype=edge_index.dtype, device=edge_index.device)
+        neg_edge_index = torch.empty((2, 0), dtype=edge_index.dtype, device=edge_index.device) # For unsigned graphs
 
-        x = self.sconv1(x, pos_edge_index=edge_index, neg_edge_index=neg_edge_index)
-        x = F.relu(x)
-        x = self.sconv2(x, pos_edge_index=edge_index, neg_edge_index=neg_edge_index)
+        for i, conv in enumerate(self.convs):
+            x = conv(x, pos_edge_index=edge_index, neg_edge_index=neg_edge_index)
+            if i < len(self.convs) - 1:
+                x = F.relu(x) # Or F.tanh(x)
+                x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        self.embedding_output = x
         return x
 
 
 class GIN(BaseGNN):
-    """Graph Isomorphism Network (GIN) model."""
-
-    def __init__(self, in_channels, hidden_channels, out_channels):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers=2, dropout_rate=0.5):
         super().__init__()
-        # MLP for the first GIN layer
-        mlp1 = Sequential(Linear(in_channels, hidden_channels), ReLU(), Linear(hidden_channels, hidden_channels))
-        self.gin1 = GINConv(nn=mlp1, train_eps=True)  # train_eps makes epsilon a learnable parameter
+        self.convs = nn.ModuleList()
+        self.dropout_rate = dropout_rate
+        if num_layers <= 0: raise ValueError("num_layers must be positive")
 
-        # MLP for the second GIN layer
-        mlp2 = Sequential(Linear(hidden_channels, hidden_channels), ReLU(), Linear(hidden_channels, out_channels))
-        self.gin2 = GINConv(nn=mlp2, train_eps=True)
+        current_dim = in_channels
+        for i in range(num_layers):
+            final_out_dim_gin = hidden_channels if i < num_layers - 1 else out_channels
+            mlp = Sequential(
+                Linear(current_dim, hidden_channels),
+                ReLU(),
+                Linear(hidden_channels, final_out_dim_gin)
+            )
+            self.convs.append(GINConv(nn=mlp, train_eps=True))
+            current_dim = final_out_dim_gin
 
-    def forward(self, data):
-        x, edge_index = data.x, data.edge_index
-        x = self.gin1(x, edge_index)
-        x = F.relu(x)  # Apply activation after GINConv
-        x = self.gin2(x, edge_index)
+    def forward(self, data: Data) -> torch.Tensor:
+        x, edge_index = data.x, data.edge_index # GINConv doesn't typically use edge_weight
+        for i, conv in enumerate(self.convs):
+            x = conv(x, edge_index)
+            if i < len(self.convs) - 1:
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        self.embedding_output = x
         return x
 
 
 class RGCN(BaseGNN):
-    """Relational GCN assuming a single relation type for PPI data."""
-
-    def __init__(self, in_channels, hidden_channels, out_channels, num_relations=1):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_relations=1, num_layers=2, dropout_rate=0.5):
         super().__init__()
-        self.conv1 = RGCNConv(in_channels, hidden_channels, num_relations=num_relations)
-        self.conv2 = RGCNConv(hidden_channels, out_channels, num_relations=num_relations)
+        self.convs = nn.ModuleList()
+        self.dropout_rate = dropout_rate
+        self.num_relations = num_relations
+        if num_layers <= 0: raise ValueError("num_layers must be positive")
 
-    def forward(self, data):
+        current_dim = in_channels
+        for i in range(num_layers - 1):
+            self.convs.append(RGCNConv(current_dim, hidden_channels, num_relations=num_relations))
+            current_dim = hidden_channels
+        self.convs.append(RGCNConv(current_dim, out_channels, num_relations=num_relations))
+
+    def forward(self, data: Data) -> torch.Tensor:
         x, edge_index = data.x, data.edge_index
-        # Assume all edges belong to a single relation type (type 0)
-        edge_type = torch.zeros(edge_index.size(1), dtype=torch.long, device=edge_index.device)
+        edge_type = getattr(data, 'edge_type', None)
+        if edge_type is None:
+            edge_type = torch.zeros(edge_index.size(1), dtype=torch.long, device=edge_index.device)
+            if self.num_relations > 1:
+                print(f"Warning: RGCN using default edge_type (all zeros) but num_relations is {self.num_relations}")
 
-        x = self.conv1(x, edge_index, edge_type=edge_type)
-        x = F.relu(x)
-        x = self.conv2(x, edge_index, edge_type=edge_type)
+        for i, conv in enumerate(self.convs):
+            x = conv(x, edge_index, edge_type=edge_type)
+            if i < len(self.convs) - 1:
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        self.embedding_output = x
         return x
