@@ -63,7 +63,7 @@ class DirectGCNLayer(MessagePassing):
             nn.init.ones_(self.C_out)
 
     def forward(self, x, edge_index_in, edge_weight_in, edge_index_out, edge_weight_out):
-        """Forward pass implementing the full ProtDiGCN layer logic."""
+        """Forward pass implementing the full ProtGram-DirectGCN layer logic."""
         h_main_in = self.propagate(edge_index_in, x=self.lin_main_in(x), edge_weight=edge_weight_in)
         h_shared_in = self.propagate(edge_index_in, x=self.lin_shared(x), edge_weight=edge_weight_in)
         ic_combined = (h_main_in + self.bias_main_in) + (h_shared_in + self.bias_shared_in)

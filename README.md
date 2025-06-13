@@ -1,4 +1,7 @@
-# ProtDiGCN
+# ProtGram-DirectGCN
+
+Introduction
+
 
 Installation
 

@@ -72,7 +72,7 @@ class Graph:
 
 class DirectedNgramGraph(Graph):
     """
-    A specialized graph object for the ProtDiGCN model. It stores:
+    A specialized graph object for the ProtGram-DirectGCN model. It stores:
     - Raw weighted adjacency matrices (A_out_w, A_in_w).
     - Preprocessed propagation matrices (mathcal_A_out, mathcal_A_in) using symmetric/skew-symmetric decomposition.
     - Binary adjacency matrices (out_adjacency_matrix, in_adjacency_matrix).

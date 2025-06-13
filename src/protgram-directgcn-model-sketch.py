@@ -1,14 +1,22 @@
+from typing import Any, List, Dict, Tuple
+
+import numpy as np
+import pandas as pd
+
+import networkx as nx
 import tensorflow as tf
 
 # 1- DATA MODEL
 class Graph:
-    """A base class for representing n-gram graphs with nodes and edges."""
+    """A base class for representing a generic graph structure with nodes and edges."""
 
     def __init__(self, nodes: Dict[str, Any], edges: List[Tuple]):
-        self.nodes_map = nodes if nodes is not None else {}
+        self.nodes = nodes if nodes is not None else {}
+        self.node_sequences: List[str] = []
         self.original_edges = edges if edges is not None else []
         self.edges = list(self.original_edges)
-        self.node_sequences: List[str] = []
+        self.edges_weight_lookup: Dict[str, Any] = {}
+
 
         self._create_node_indices()
         self._index_edges()
@@ -17,7 +25,7 @@ class Graph:
     def _create_node_indices(self):
         self.node_to_idx = {}
         self.idx_to_node = {}
-        node_keys = set(self.nodes_map.keys())
+        node_keys = set(self.nodes.keys())
         if not node_keys and self.edges:
             for pair in self.original_edges:
                 node_keys.add(str(pair[0]))
@@ -37,6 +45,7 @@ class Graph:
         for es in self.edges:
             s_idx = self.node_to_idx.get(str(es[0]))
             t_idx = self.node_to_idx.get(str(es[1]))
+            self.edges_weight_lookup[str(s_idx) + "-" + str(t_idx)] = float(es[2])
             if s_idx is not None and t_idx is not None:
                 indexed_edge_list.append((s_idx, t_idx) + es[2:])
         self.edges = indexed_edge_list
@@ -53,12 +62,13 @@ class Graph:
                 graph_nx.add_nodes_from(range(self.number_of_nodes))
             graph_nx.add_edges_from(weightless_edges)
         except Exception as e:
-            print(f"WARNING: Could not perform NetworkX integrity check during NgramGraph init. Error: {e}")
+            print(f"WARNING: Could not perform NetworkX integrity check during Graph init. Error: {e}")
 
 
 class DirectedGraph(Graph):
     """
-    A specialized graph object for the ProtDiGCN model. It stores:
+    A specialized directed graph object for the ProtGram-DirectGCN model. It stores:
+    - Weighted in edges and out edges.
     - Raw weighted adjacency matrices (A_out_w, A_in_w).
     - Preprocessed propagation matrices (mathcal_A_out, mathcal_A_in) using symmetric/skew-symmetric decomposition.
     - Binary adjacency matrices (out_adjacency_matrix, in_adjacency_matrix).
@@ -80,11 +90,19 @@ class DirectedGraph(Graph):
             self.mathcal_A_out = np.array([], dtype=np.float32).reshape(0, 0)
             self.mathcal_A_in = np.array([], dtype=np.float32).reshape(0, 0)
 
+    def _create_in_out_edges(self):
+        column_names = ['source', 'target']
+        edges_df = pd.DataFrame(self.edges, columns=column_names)
+        result_dict = edges_df.groupby('source')['target'].apply(list).to_dict()
+
+
     def _create_raw_weighted_adj_matrices(self):
         self.A_out_w = np.zeros((self.number_of_nodes, self.number_of_nodes), dtype=np.float32)
         for s_idx, t_idx, w, *_ in self.edges:
             self.A_out_w[s_idx, t_idx] = w
-        self.A_in_w = self.A_out_w.T
+        self.A_in_w = np.zeros((self.number_of_nodes, self.number_of_nodes), dtype=np.float32)
+        for s_idx, t_idx, w, *_ in self.edges:
+            self.A_in_w[s_idx, t_idx] = w
 
     def _create_binary_adj_matrices(self):
         self.out_adjacency_matrix = np.zeros((self.number_of_nodes, self.number_of_nodes), dtype=np.float32)
