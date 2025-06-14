@@ -8,14 +8,13 @@
 echo "INFO: Attempting to start the SSH server..."
 
 # Use the 'service' command to start the SSH service with sudo.
-sudo service ssh start
+sudo service ssh start &> /dev/null
 
 # Check the status of the SSH service to confirm it's running.
-SSH_STATUS=$(sudo service ssh status)
-if [[ $SSH_STATUS == *"is running"* ]]; then
-  echo "SUCCESS: SSH server is running."
+if pgrep -x "sshd" &> /dev/null; then
+  echo "SUCCESS: SSH server process is running."
 else
-  echo "WARNING: SSH server may not have started correctly. Status: $SSH_STATUS"
+  echo "WARNING: SSH server does not appear to be running."
 fi
 
 echo "" # Add a blank line for readability
@@ -31,20 +30,23 @@ MOUNT_POINT="/mnt/g"
 echo "INFO: Ensuring mount point directory '$MOUNT_POINT' exists."
 sudo mkdir -p "$MOUNT_POINT"
 
-# Execute the specific mount command as requested.
-# Note: The correct filesystem type for WSL is 'drvfs'.
-echo "INFO: Executing mount command..."
-sudo mount -t drvfs G: "$MOUNT_POINT"
+# Before mounting, let's try to unmount it first to clear any broken states.
+echo "INFO: Attempting to unmount '$MOUNT_POINT' to ensure a clean state."
+sudo umount "$MOUNT_POINT" &> /dev/null
 
-# Verify if the mount was successful by checking the mount point.
+# Execute the specific mount command.
+# The '-o metadata' option helps with file permissions.
+echo "INFO: Executing mount command..."
+sudo mount -t drvfs G: "$MOUNT_POINT" -o metadata
+
+# Verify if the mount was successful.
 if mountpoint -q "$MOUNT_POINT"; then
-    echo "SUCCESS: The command seems to have completed successfully."
-    echo "INFO: G: drive is now mounted at $MOUNT_POINT."
+    echo "SUCCESS: The G: drive has been mounted to $MOUNT_POINT."
+    echo "INFO: Listing contents of /mnt/g:"
+    ls -l "$MOUNT_POINT"
 else
-    echo "ERROR: The mount command may have failed. Please check for any error messages above."
-    echo "TROUBLESHOOTING:"
-    echo "1. Ensure the G: drive is available in Windows."
-    echo "2. Run the script with 'bash -x ./your_script_name.sh' to debug."
+    echo "ERROR: The mount command failed. The drive is not mounted."
+    echo "INFO: Please check for any error messages above this line."
     exit 1
 fi
 
