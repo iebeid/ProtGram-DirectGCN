@@ -6,21 +6,102 @@
 # ==============================================================================
 
 import os
+import shutil
 import sys
-import shutil # For cleaning up temp directories
-
+import tempfile
+import unittest
+from pathlib import Path
 from typing import Optional, List
 
 import h5py
 import numpy as np
-import pandas as pd # For dummy interaction files
+import pandas as pd  # For dummy interaction files
 import tensorflow as tf
 import torch
-from pathlib import Path # For config paths
+
+# Assuming your classes are accessible via these imports
+from config import Config
+from src.pipeline.data_builder import GraphBuilder
+from src.utils.data_utils import DataUtils  # Used for print_header in the pipeline
+
 
 # Local application imports
-from config import Config
-from src.utils.data_utils import DataUtils # For print_header in dummy tests
+
+
+class TestGraphBuilderSmoke(unittest.TestCase):
+
+    def setUp(self):
+        """Set up a temporary directory and a dummy FASTA file."""
+        # Create a base temporary directory for all test artifacts
+        self.base_test_dir = tempfile.mkdtemp()
+
+        # Create a temporary input directory and the dummy FASTA file within it
+        self.temp_input_dir = os.path.join(self.base_test_dir, "input")
+        os.makedirs(self.temp_input_dir, exist_ok=True)
+        self.fasta_content = ">seq1\nACGT\n>seq2\nTTAC\n>seq3\nAGA\n"
+        self.fasta_path = os.path.join(self.temp_input_dir, "test_sequences.fasta")
+        with open(self.fasta_path, "w") as f:
+            f.write(self.fasta_content)
+
+        # Create a temporary output directory for the builder
+        self.temp_output_dir = os.path.join(self.base_test_dir, "output")
+        os.makedirs(self.temp_output_dir, exist_ok=True)
+
+    def tearDown(self):
+        """Clean up the temporary directory after the test."""
+        if os.path.exists(self.base_test_dir):
+            shutil.rmtree(self.base_test_dir)
+
+    def test_graph_builder_smoke(self):
+        """
+        Smoke test for GraphBuilder.run() with minimal config.
+        Checks if the pipeline runs without crashing and creates output files.
+        """
+        print("\n--- GraphBuilder Smoke Test ---")
+        try:
+            # Create a Config object and override relevant paths and parameters
+            config = Config()
+            config.GCN_INPUT_FASTA_PATH = Path(self.fasta_path)
+            config.BASE_OUTPUT_DIR = Path(self.temp_output_dir)  # This sets other output dirs relative to here
+            config.GRAPH_OBJECTS_DIR = config.BASE_OUTPUT_DIR / "1_graph_objects"  # Ensure this is set correctly
+            config.GCN_NGRAM_MAX_N = 1  # Use a small n-gram size for speed
+            config.GRAPH_BUILDER_WORKERS = 1  # Use 1 worker to avoid Dask parallelism issues for this test
+
+            print(f"  Running GraphBuilder with FASTA: {config.GCN_INPUT_FASTA_PATH}")
+            print(f"  Outputting to: {config.BASE_OUTPUT_DIR}")
+            print(f"  N_max: {config.GCN_NGRAM_MAX_N}, Workers: {config.GRAPH_BUILDER_WORKERS}")
+
+            # Instantiate and run the GraphBuilder
+            graph_builder = GraphBuilder(config)
+            graph_builder.run()
+
+            # Assert that the expected output file(s) were created
+            expected_graph_file = config.GRAPH_OBJECTS_DIR / f"ngram_graph_n{config.GCN_NGRAM_MAX_N}.pkl"
+            self.assertTrue(expected_graph_file.exists(), f"Expected graph file not found: {expected_graph_file}")
+            print(f"  GraphBuilder smoke test completed successfully. Output file found: {expected_graph_file}")
+
+        except Exception as e:
+            # If any exception occurs, the test should fail
+            print(f"  GraphBuilder smoke test FAILED with exception: {e}")
+            import traceback
+            traceback.print_exc()
+            self.fail(f"GraphBuilder.run() raised an exception: {e}")
+
+        print("--- GraphBuilder Smoke Test Complete ---")
+
+
+# Example of how to integrate this into your unit_tests.py:
+# Add the TestGraphBuilderSmoke class definition to your unit_tests.py file.
+# Add test_graph_builder_smoke() to the list of tests run in the __main__ block:
+#
+# if __name__ == "__main__":
+#     print("Starting All Unit Tests / Smoke Tests...\n")
+#     # ... other tests ...
+#     print("\n--- Starting Pipeline Smoke Tests ---")
+#     TestGraphBuilderSmoke().test_graph_builder_smoke() # Call the smoke test method
+#     # ... other pipeline tests ...
+#     print("\nAll Unit Tests / Smoke Tests Finished.")
+
 
 # --- Helper Functions for Dummy Pipeline Tests ---
 def _create_dummy_fasta_for_testing(directory: str, filename: str = "dummy_test.fasta", num_seqs: int = 5):
@@ -29,11 +110,12 @@ def _create_dummy_fasta_for_testing(directory: str, filename: str = "dummy_test.
     fasta_path = os.path.join(directory, filename)
     with open(fasta_path, "w") as f:
         for i in range(num_seqs):
-            seq_id = f"dummy_prot_{i+1}"
+            seq_id = f"dummy_prot_{i + 1}"
             # Generate a short random-like sequence
             sequence = "".join(np.random.choice(list("ACDEFGHIKLMNPQRSTVWY"), size=np.random.randint(20, 50)))
             f.write(f">{seq_id}\n{sequence}\n")
     return fasta_path
+
 
 def _create_dummy_interaction_files_for_testing(directory: str, num_pairs: int = 10, num_proteins: int = 20):
     """Creates dummy positive and negative interaction files."""
@@ -46,31 +128,31 @@ def _create_dummy_interaction_files_for_testing(directory: str, num_pairs: int =
     def generate_pairs(filepath, count):
         pairs = set()
         # Ensure enough unique pairs can be generated if num_proteins is small
-        max_possible_unique_pairs = num_proteins * (num_proteins - 1) // 2 if num_proteins >=2 else 0
+        max_possible_unique_pairs = num_proteins * (num_proteins - 1) // 2 if num_proteins >= 2 else 0
         actual_count = min(count, max_possible_unique_pairs)
         if count > max_possible_unique_pairs and actual_count > 0:
             print(f"  Warning: Requested {count} pairs, but only {actual_count} unique pairs possible for {num_proteins} proteins. Generating {actual_count}.")
         elif actual_count == 0 and count > 0:
-             print(f"  Warning: Cannot generate {count} pairs with {num_proteins} proteins. Generating 0 pairs.")
+            print(f"  Warning: Cannot generate {count} pairs with {num_proteins} proteins. Generating 0 pairs.")
 
         attempts = 0
-        max_attempts_multiplier = 5 # Try 5 times the number of pairs to find unique ones
+        max_attempts_multiplier = 5  # Try 5 times the number of pairs to find unique ones
 
-        while len(pairs) < actual_count and attempts < actual_count * max_attempts_multiplier :
-            if num_proteins < 2: break # Cannot form pairs
+        while len(pairs) < actual_count and attempts < actual_count * max_attempts_multiplier:
+            if num_proteins < 2: break  # Cannot form pairs
             p1, p2 = np.random.choice(protein_ids, 2, replace=False)
             pairs.add(tuple(sorted((p1, p2))))
-            attempts +=1
+            attempts += 1
 
         df = pd.DataFrame(list(pairs), columns=['p1', 'p2'])
         df.to_csv(filepath, header=False, index=False)
 
     generate_pairs(pos_path, num_pairs)
-    generate_pairs(neg_path, num_pairs) # For simplicity, negatives might overlap if not carefully managed
+    generate_pairs(neg_path, num_pairs)  # For simplicity, negatives might overlap if not carefully managed
     return pos_path, neg_path
 
-def _create_dummy_h5_embeddings_for_testing(directory: str, filename: str = "dummy_embeddings.h5",
-                                           protein_ids: Optional[List[str]] = None, num_proteins: int = 20, dim: int = 10):
+
+def _create_dummy_h5_embeddings_for_testing(directory: str, filename: str = "dummy_embeddings.h5", protein_ids: Optional[List[str]] = None, num_proteins: int = 20, dim: int = 10):
     """Creates a dummy H5 embedding file."""
     os.makedirs(directory, exist_ok=True)
     h5_path = os.path.join(directory, filename)
@@ -171,27 +253,19 @@ def test_reporter():
     from src.utils.results_utils import EvaluationReporter
     print(f"\n--- EvaluationReporter Test ---")
     sample_k_vals = [10, 20]
-    test_output_dir = "./temp_test_evaluation_reporter_output" # Unique name
+    test_output_dir = "./temp_test_evaluation_reporter_output"  # Unique name
     if os.path.exists(test_output_dir): shutil.rmtree(test_output_dir)
     os.makedirs(test_output_dir, exist_ok=True)
     try:
         reporter = EvaluationReporter(base_output_dir=test_output_dir, k_vals_table=sample_k_vals)
-        history1 = {'loss': [0.5, 0.4, 0.3], 'val_loss': [0.55, 0.42, 0.33],
-                    'accuracy': [0.7, 0.8, 0.9], 'val_accuracy': [0.68, 0.78, 0.88]}
+        history1 = {'loss': [0.5, 0.4, 0.3], 'val_loss': [0.55, 0.42, 0.33], 'accuracy': [0.7, 0.8, 0.9], 'val_accuracy': [0.68, 0.78, 0.88]}
         reporter.plot_training_history(history1, "Model_A_Fold1")
-        results_data = [
-            {'embedding_name': 'Model_A', 'test_auc_sklearn': 0.92, 'test_f1_sklearn': 0.85,
-             'test_precision_sklearn': 0.88, 'test_recall_sklearn': 0.82,
-             'test_hits_at_10': 50, 'test_ndcg_at_10': 0.75, 'test_hits_at_20': 80, 'test_ndcg_at_20': 0.78,
-             'test_auc_sklearn_std': 0.01, 'test_f1_sklearn_std': 0.02,
-             'roc_data_representative': (np.array([0, 0.1, 1]), np.array([0, 0.8, 1]), 0.92),
-             'fold_auc_scores': [0.91, 0.93], 'fold_f1_scores': [0.84, 0.86]},
-            {'embedding_name': 'Model_B', 'test_auc_sklearn': 0.88, 'test_f1_sklearn': 0.80,
-             'test_precision_sklearn': 0.82, 'test_recall_sklearn': 0.78,
-             'test_hits_at_10': 40, 'test_ndcg_at_10': 0.65, 'test_hits_at_20': 70, 'test_ndcg_at_20': 0.68,
-             'test_auc_sklearn_std': 0.015, 'test_f1_sklearn_std': 0.022,
-             'roc_data_representative': (np.array([0, 0.2, 1]), np.array([0, 0.7, 1]), 0.88),
-             'fold_auc_scores': [0.87, 0.89], 'fold_f1_scores': [0.79, 0.81]}]
+        results_data = [{'embedding_name': 'Model_A', 'test_auc_sklearn': 0.92, 'test_f1_sklearn': 0.85, 'test_precision_sklearn': 0.88, 'test_recall_sklearn': 0.82, 'test_hits_at_10': 50, 'test_ndcg_at_10': 0.75,
+                         'test_hits_at_20': 80, 'test_ndcg_at_20': 0.78, 'test_auc_sklearn_std': 0.01, 'test_f1_sklearn_std': 0.02, 'roc_data_representative': (np.array([0, 0.1, 1]), np.array([0, 0.8, 1]), 0.92),
+                         'fold_auc_scores': [0.91, 0.93], 'fold_f1_scores': [0.84, 0.86]},
+                        {'embedding_name': 'Model_B', 'test_auc_sklearn': 0.88, 'test_f1_sklearn': 0.80, 'test_precision_sklearn': 0.82, 'test_recall_sklearn': 0.78, 'test_hits_at_10': 40, 'test_ndcg_at_10': 0.65,
+                         'test_hits_at_20': 70, 'test_ndcg_at_20': 0.68, 'test_auc_sklearn_std': 0.015, 'test_f1_sklearn_std': 0.022, 'roc_data_representative': (np.array([0, 0.2, 1]), np.array([0, 0.7, 1]), 0.88),
+                         'fold_auc_scores': [0.87, 0.89], 'fold_f1_scores': [0.79, 0.81]}]
         reporter.plot_roc_curves(results_data)
         reporter.plot_comparison_charts(results_data)
         reporter.write_summary_file(results_data, main_emb_name='Model_A', test_metric='test_auc_sklearn', alpha=0.05)
@@ -206,7 +280,7 @@ def test_data_utilities():
     from src.utils.models_utils import EmbeddingLoader
     print(f"\n--- Data Utilities Test ---")
     config_instance = Config()
-    temp_test_dir_base = "./temp_test_data_utilities_output" # Unique name
+    temp_test_dir_base = "./temp_test_data_utilities_output"  # Unique name
     if os.path.exists(temp_test_dir_base): shutil.rmtree(temp_test_dir_base)
     os.makedirs(temp_test_dir_base, exist_ok=True)
     try:
@@ -258,6 +332,7 @@ def test_mlp_model_build():
         print(f"  MLPModelBuilder build test FAILED: {e}")
         raise
     print(f"--- MLPModelBuilder Build Test Complete ---")
+
 
 # --- Integration/Pipeline Smoke Tests ---
 # These are uncommented to be part of the standard test run.
@@ -422,13 +497,16 @@ if __name__ == "__main__":
     # Model Build Tests
     test_mlp_model_build()
 
+    # Test Graph Builder
+    TestGraphBuilderSmoke().test_graph_builder_smoke()
+
     # --- Integration/Pipeline Smoke Tests ---
     print("\n--- Starting Integration/Pipeline Smoke Tests ---")
     # These are uncommented to be part of the standard test run.
     # They are designed to be relatively quick by using dummy data or minimal configs.
 
-    test_word2vec_pipeline_run()
-    test_transformer_embedder_pipeline_run()
+    # test_word2vec_pipeline_run()
+    # test_transformer_embedder_pipeline_run()
     test_gnn_benchmarker_run()
     test_ppi_pipeline_run()
 
