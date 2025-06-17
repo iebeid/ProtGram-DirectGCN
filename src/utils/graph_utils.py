@@ -9,7 +9,6 @@ from typing import List, Dict, Tuple, Any, Optional
 
 import numpy as np
 import torch
-from scipy.sparse import csr_matrix # Only used for community detection if needed by external code
 from torch_geometric.utils import dense_to_sparse
 
 
@@ -55,16 +54,12 @@ class Graph:
         # Create a sorted list of unique integer indices to ensure consistent mapping
         # This also handles cases where some indices might only appear in edges
         # or only in the idx_to_node_map_from_constructor.
-        min_idx = 0
-        # If all_integer_indices is not empty, find the actual min and max
-        # This handles cases where indices might not start from 0 or be contiguous.
-        # For this specific pipeline, they are 0-indexed and contiguous from the parquet file.
-        # However, making it robust is better.
-        # For simplicity now, assuming 0-indexed and contiguous based on max observed.
+        # min_idx = 0 # Not strictly needed if we derive number_of_nodes from max_idx
         if all_integer_indices:
             max_idx = 0
             for idx in all_integer_indices:
                 if not isinstance(idx, int):
+                    # This check is crucial. If this error is raised, the input data types are wrong.
                     raise TypeError(f"Node and edge indices must be integers. Found: {idx} of type {type(idx)}")
                 if idx > max_idx:
                     max_idx = idx
@@ -79,12 +74,12 @@ class Graph:
         for i in range(self.number_of_nodes):
             node_name = self.idx_to_node_map_from_constructor.get(i)
             if node_name is None:
-                # This case should ideally not happen if idx_to_node_map_from_constructor is complete
-                # for all indices up to max_idx.
-                # If it happens, it means an edge referred to an index not in the provided nodes map.
-                # For now, we can assign a placeholder or raise an error.
-                # Placeholder:
-                node_name = f"__NODE_{i}__"
+                # This case means an edge referred to an index not in the provided nodes map,
+                # or the nodes map is not contiguous from 0 to max_idx.
+                # For this pipeline, idx_to_node_map_from_constructor should be complete.
+                # If it's truly missing, a placeholder or error is appropriate.
+                node_name = f"__NODE_{i}__"  # Placeholder
+                # Consider logging a warning if this happens unexpectedly.
                 # print(f"Warning: Node name for index {i} not found in provided nodes map. Using placeholder.")
             temp_idx_to_node_name[i] = str(node_name)  # Ensure node names are strings
 
@@ -93,10 +88,11 @@ class Graph:
 
         self.node_sequences = [self.idx_to_node[i] for i in range(self.number_of_nodes)]
 
-        # Edges are already indexed, so just copy them
+        # Edges are already indexed (as integers), so filter and copy them
         self.edges = []
         for edge_tuple in self.original_edges:
             s_idx, t_idx = edge_tuple[0], edge_tuple[1]
+            # Validate indices before adding the edge
             if not (isinstance(s_idx, int) and 0 <= s_idx < self.number_of_nodes):
                 # print(f"Warning: Source index {s_idx} out of bounds or not int. Skipping edge: {edge_tuple}")
                 continue
@@ -107,50 +103,17 @@ class Graph:
 
         self.number_of_edges = len(self.edges)
 
-    # def _create_node_indices(self):
-    #     self.node_to_idx: Dict[str, int] = {}
-    #     self.idx_to_node: Dict[int, str] = {}
-    #     node_keys_from_map = set(self.nodes_map.keys())
-    #
-    #     all_node_identifiers_in_edges = set()
-    #     if self.original_edges:
-    #         for edge_tuple in self.original_edges:
-    #             if len(edge_tuple) >= 2:
-    #                 all_node_identifiers_in_edges.add(str(edge_tuple[0]))
-    #                 all_node_identifiers_in_edges.add(str(edge_tuple[1]))
-    #     combined_node_keys = sorted(list(node_keys_from_map.union(all_node_identifiers_in_edges)))
-    #
-    #     for i, node_name_str in enumerate(combined_node_keys):
-    #         self.node_to_idx[node_name_str] = i
-    #         self.idx_to_node[i] = node_name_str
-    #     self.number_of_nodes = len(self.node_to_idx)
-    #
-    #     if self.number_of_nodes > 0:
-    #         self.node_sequences = [self.idx_to_node[i] for i in range(self.number_of_nodes)]
-    #     else:
-    #         self.node_sequences = []
-
-    # def _index_edges(self):
-    #     indexed_edge_list = []
-    #     for edge_tuple in self.original_edges:
-    #         if len(edge_tuple) >= 2:
-    #             s_orig, t_orig = str(edge_tuple[0]), str(edge_tuple[1])
-    #             s_idx = self.node_to_idx.get(s_orig)
-    #             t_idx = self.node_to_idx.get(t_orig)
-    #             if s_idx is not None and t_idx is not None:
-    #                 indexed_edge_list.append((s_idx, t_idx) + edge_tuple[2:])
-    #     self.edges = indexed_edge_list
-    #     self.number_of_edges = len(self.edges)
+    # The old _create_node_indices and _index_edges methods are intentionally removed
+    # as their logic is now integrated into _process_constructor_inputs.
 
 
 class DirectedNgramGraph(Graph):
     def __init__(self, nodes: Dict[int, Any], edges: List[Tuple], epsilon_propagation: float = 1e-9):
         # `nodes` is idx_to_node from data_builder, keys are int, values are str (n-grams)
         # `edges` is weighted_edge_list_tuples, (int, int, float)
-        super().__init__(nodes=nodes, edges=edges) # This will call the new _process_constructor_inputs
+        super().__init__(nodes=nodes, edges=edges)  # This will call the new _process_constructor_inputs
         self.epsilon_propagation = epsilon_propagation
-        self.n_value: Optional[int] = None # This will be set in data_builder.py
-
+        self.n_value: Optional[int] = None  # This will be set in data_builder.py
 
         self.A_out_w: torch.Tensor
         self.A_in_w: torch.Tensor
@@ -164,6 +127,7 @@ class DirectedNgramGraph(Graph):
             self._create_propagation_matrices_for_gcn()
             self._create_symmetrized_magnitudes_fai_fao()
         else:
+            # Initialize to empty tensors if no nodes
             self.A_out_w = torch.empty((0, 0), dtype=torch.float32)
             self.A_in_w = torch.empty((0, 0), dtype=torch.float32)
             self.mathcal_A_out = np.array([], dtype=np.float32).reshape(0, 0)
@@ -177,18 +141,20 @@ class DirectedNgramGraph(Graph):
             self.A_in_w = torch.empty((0, 0), dtype=torch.float32)
             return
         self.A_out_w = torch.zeros((self.number_of_nodes, self.number_of_nodes), dtype=torch.float32)
-        for s_idx, t_idx, weight, *_ in self.edges:
+        for s_idx, t_idx, weight, *_ in self.edges:  # Unpack, assuming weight is the third element
             if 0 <= s_idx < self.number_of_nodes and 0 <= t_idx < self.number_of_nodes:
                 self.A_out_w[s_idx, t_idx] = float(weight)
         self.A_in_w = self.A_out_w.t().contiguous()
 
     def _calculate_single_propagation_matrix_for_gcn(self, A_w_torch: torch.Tensor) -> np.ndarray:
-        if A_w_torch.shape[0] == 0:
+        if A_w_torch.shape[0] == 0:  # Handle empty matrix
             return np.array([], dtype=np.float32).reshape(0, 0)
+
         row_sum = A_w_torch.sum(dim=1)
         D_inv_diag_vals = torch.zeros_like(row_sum, dtype=torch.float32, device=A_w_torch.device)
         non_zero_degrees = row_sum != 0
         D_inv_diag_vals[non_zero_degrees] = 1.0 / row_sum[non_zero_degrees]
+
         A_n = D_inv_diag_vals.unsqueeze(1) * A_w_torch
         S = (A_n + A_n.t()) / 2.0
         K = (A_n - A_n.t()) / 2.0
@@ -207,7 +173,7 @@ class DirectedNgramGraph(Graph):
             self.fao = torch.empty((0, 0), dtype=torch.float32)
             return
 
-        dev = self.A_out_w.device
+        dev = self.A_out_w.device  # Use device of A_out_w
         identity = torch.eye(self.number_of_nodes, device=dev, dtype=torch.float32)
 
         # FAO Calculation
@@ -221,7 +187,7 @@ class DirectedNgramGraph(Graph):
         self.fao = torch.sqrt(our.pow(2) + oui.pow(2) + self.epsilon_propagation)
 
         # FAI Calculation
-        A_in_w_for_fai_calc = self.A_out_w.t().contiguous()
+        A_in_w_for_fai_calc = self.A_out_w.t().contiguous()  # Use A_out_w.t() for consistency
         A_in_w_sl = A_in_w_for_fai_calc + identity
         D_in_sl_d = A_in_w_sl.sum(dim=1)
         D_in_sl_inv_d = torch.zeros_like(D_in_sl_d, device=dev)
@@ -232,15 +198,19 @@ class DirectedNgramGraph(Graph):
         self.fai = torch.sqrt(ir.pow(2) + ii.pow(2) + self.epsilon_propagation)
 
     def get_fai_sparse(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        if not hasattr(self, 'fai') or self.fai is None:
-            if self.number_of_nodes > 0: self._create_symmetrized_magnitudes_fai_fao()
-            else: return torch.empty((2,0), dtype=torch.long), torch.empty(0, dtype=torch.float32)
-        if self.fai is None: raise ValueError("FAI could not be computed.")
+        if not hasattr(self, 'fai') or self.fai is None:  # Check if fai exists and is computed
+            if self.number_of_nodes > 0:
+                self._create_symmetrized_magnitudes_fai_fao()
+            else:
+                return torch.empty((2, 0), dtype=torch.long), torch.empty(0, dtype=torch.float32)
+        if self.fai is None: raise ValueError("FAI could not be computed or is None.")  # Should not happen if logic above is correct
         return dense_to_sparse(self.fai)
 
     def get_fao_sparse(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        if not hasattr(self, 'fao') or self.fao is None:
-            if self.number_of_nodes > 0: self._create_symmetrized_magnitudes_fai_fao()
-            else: return torch.empty((2,0), dtype=torch.long), torch.empty(0, dtype=torch.float32)
-        if self.fao is None: raise ValueError("FAO could not be computed.")
+        if not hasattr(self, 'fao') or self.fao is None:  # Check if fao exists and is computed
+            if self.number_of_nodes > 0:
+                self._create_symmetrized_magnitudes_fai_fao()
+            else:
+                return torch.empty((2, 0), dtype=torch.long), torch.empty(0, dtype=torch.float32)
+        if self.fao is None: raise ValueError("FAO could not be computed or is None.")  # Should not happen
         return dense_to_sparse(self.fao)
