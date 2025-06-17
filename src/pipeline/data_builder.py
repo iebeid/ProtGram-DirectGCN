@@ -201,29 +201,49 @@ class GraphBuilder:
             print(f"ERROR: FASTA file not found at {self.protein_sequence_file}. Cannot proceed with graph building.")
             return
 
+        # In src/pipeline/data_builder.py, inside GraphBuilder.run()
+
+        # ... (other code) ...
         original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
-        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Set for the main process before cluster starts
         print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask workers to avoid GPU contention.")
 
-        # --- Modify this line ---
-        # Add multiprocessing-method='spawn'
-        with LocalCluster(n_workers=effective_num_workers, threads_per_worker=1, silence_logs=logging.ERROR, multiprocessing_method='spawn') as cluster, Client(cluster) as client:
-            print(f"  Dask LocalCluster started with {effective_num_workers} workers using 'spawn' method.")  # Update print
-            print(f"  Dask dashboard link: {client.dashboard_link}")
+        try:
+            # Explicitly set multiprocessing_method to 'spawn'
+            with LocalCluster(
+                    n_workers=effective_num_workers,
+                    threads_per_worker=1,
+                    silence_logs=logging.ERROR,
+                    multiprocessing_method='spawn'  # <--- ADD THIS
+            ) as cluster, Client(cluster) as client:
+                print(f"  Dask LocalCluster started with {effective_num_workers} workers using 'spawn' method.")
+                print(f"  Dask dashboard link: {client.dashboard_link}")
 
-            tasks = [client.submit(GraphBuilder._create_intermediate_files, n, self.temp_dir, self.protein_sequence_file, num_dask_partitions) for n in n_values]
+                # The _create_intermediate_files method already sets CUDA_VISIBLE_DEVICES for the worker
+                tasks = [client.submit(GraphBuilder._create_intermediate_files, n, self.temp_dir, self.protein_sequence_file, num_dask_partitions) for n in n_values]
 
-            for future in tqdm(tasks, desc="Dask Workers Progress (Phase 1)"):
-                try:
-                    future.result()
-                except Exception as e:
-                    print(f"ERROR in Dask worker during Phase 1: {e}")
+                for future in tqdm(tasks, desc="Dask Workers Progress (Phase 1)"):
+                    try:
+                        future.result()  # Wait for task completion and retrieve result (or raise exception)
+                    except Exception as e:
+                        print(f"ERROR in Dask worker during Phase 1 for a task: {e}")
+                        # Optionally, log more details or decide if the whole process should stop
+                        # For now, it will just print and continue with other tasks if any
 
-        if original_cuda_visible_devices is None:
-            if "CUDA_VISIBLE_DEVICES" in os.environ: del os.environ["CUDA_VISIBLE_DEVICES"]
-        else:
-            os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
-        print("  Restored original CUDA_VISIBLE_DEVICES setting.")
+        except Exception as e_cluster:
+            print(f"ERROR setting up or running Dask LocalCluster: {e_cluster}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Restore CUDA_VISIBLE_DEVICES for the main process
+            if original_cuda_visible_devices is None:
+                if "CUDA_VISIBLE_DEVICES" in os.environ:
+                    del os.environ["CUDA_VISIBLE_DEVICES"]
+            else:
+                os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
+            print("  Restored original CUDA_VISIBLE_DEVICES setting for the main process.")
+        # ... (rest of the run method) ...
+
         print(f"<<< Phase 1 finished in {time.time() - phase1_start_time:.2f}s.")
 
         DataUtils.print_header("Phase 2: Building and saving final graph objects")
