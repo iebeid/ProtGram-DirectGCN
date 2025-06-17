@@ -9,7 +9,6 @@
 import collections
 import gc
 import os
-import pickle
 import random
 from functools import partial
 from multiprocessing import Pool
@@ -24,7 +23,7 @@ from torch_geometric.data import Data
 from torch_geometric.utils import dense_to_sparse
 from tqdm import tqdm
 
-from src.config import Config
+from config import Config
 from src.models.protgram_directgcn import ProtGramDirectGCN
 from src.utils.data_utils import DataLoader, DataUtils
 from src.utils.graph_utils import DirectedNgramGraph  # Ensure this is the updated version

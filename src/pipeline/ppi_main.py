@@ -22,7 +22,7 @@ from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_sco
 from sklearn.model_selection import StratifiedKFold
 from contextlib import nullcontext
 
-from src.config import Config
+from config import Config
 from src.models.mlp import MLP
 from src.utils.data_utils import DataUtils, GroundTruthLoader
 from src.utils.models_utils import EmbeddingLoader, EmbeddingProcessor
