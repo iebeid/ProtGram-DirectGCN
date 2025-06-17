@@ -448,35 +448,40 @@ class GNNBenchmarker:
                 "RGCN_SR": {"class": RGCN, "params": {"hidden_channels": 256, "num_relations": 1, "num_layers": 2, "dropout_rate": 0.5}},
                 "TongDiGCN": {"class": TongDiGCN, "params": {"hidden_channels": 128, "num_layers": 2, "dropout_rate": 0.5}},
             }
-            if dataset_name.lower() == 'ppi':  # Or any other condition where you want to run it
-                # Construct layer_dims: [input_feature_dim, hidden1, hidden2, ..., output_embedding_dim_before_decoder]
-                # The final task_num_output_classes is handled by the decoder in ProtGramDirectGCN
+            # In gnn_benchmarker.py, inside the run() method's loop, before calling run_on_dataset_variant
 
-                # Option 1: Define a fixed embedding dimension before the decoder
-                # output_embedding_dim = self.config.GCN_HIDDEN_DIM_2 # Or some other configured embedding size
-                # layer_dims_for_protgram = [num_features] + self.config.GCN_HIDDEN_LAYER_DIMS[:-1] + [output_embedding_dim]
+            # ... (model_zoo_cfg definition for other models) ...
 
-                # Option 2: If GCN_HIDDEN_LAYER_DIMS is meant to be [hidden1, hidden2, output_emb_dim]
+            if dataset_name.lower() == 'ppi':
+                # For PPI, num_features comes from the dataset, num_classes also.
+                # layer_dims should be [num_features, hidden1, ..., hiddenN, output_embedding_dim]
+                # task_num_output_classes is for the final decoder on top of these embeddings.
+
+                # Example: if GCN_HIDDEN_LAYER_DIMS is [128, 64] (meaning hidden1=128, output_emb=64)
+                # and num_classes for PPI is 121 (for the decoder)
                 if not self.config.GCN_HIDDEN_LAYER_DIMS:
-                    # Handle case where GCN_HIDDEN_LAYER_DIMS might be empty, use a sensible default
-                    layer_dims_for_protgram = [num_features, num_classes]  # Simplest: direct map if no hidden
+                    layer_dims_for_protgram = [num_features, num_classes]  # Or a sensible default embedding dim
                 else:
+                    # Assuming GCN_HIDDEN_LAYER_DIMS already defines the full stack including the output embedding dim
                     layer_dims_for_protgram = [num_features] + self.config.GCN_HIDDEN_LAYER_DIMS
 
                 model_zoo_cfg["ProtGramDirectGCN"] = {
                     "class": ProtGramDirectGCN,
                     "params": {
                         "layer_dims": layer_dims_for_protgram,
-                        "num_graph_nodes": None,  # For PPI, num_nodes varies per graph, DirectGCNLayer handles this if use_vector_coeffs=False or num_nodes=0
-                        "task_num_output_classes": num_classes,  # This is for the decoder
-                        "n_gram_len": self.config.GCN_NGRAM_MAX_N,  # This might be a placeholder for PPI
-                        "one_gram_dim": 0,  # Typically 0 for PPI node features
+                        "num_graph_nodes": None,  # PPI graphs have varying node counts
+                        "task_num_output_classes": num_classes,  # For the final decoder
+                        "n_gram_len": 0,  # Or a relevant value if features are n-gram based for PPI
+                        "one_gram_dim": 0,  # Typically 0 for PPI if features are not n-gram based
                         "max_pe_len": self.config.GCN_MAX_PE_LEN,
                         "dropout": self.config.GCN_DROPOUT_RATE,
-                        "use_vector_coeffs": False, # Be cautious with this for PPI
+                        "use_vector_coeffs": False,  # IMPORTANT for varying graph sizes in PPI
                         "l2_eps": self.config.GCN_PROPAGATION_EPSILON
                     }
                 }
+            # else: # For non-PPI datasets, ProtGramDirectGCN is skipped by a later check
+            #     if "ProtGramDirectGCN" in model_zoo_cfg:
+            #         del model_zoo_cfg["ProtGramDirectGCN"]
 
             results_orig = self.run_on_dataset_variant(dataset_name, model_zoo_cfg,
                                                        train_loader_orig, val_loader_orig, test_loader_orig,

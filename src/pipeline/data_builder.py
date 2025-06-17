@@ -58,9 +58,9 @@ class GraphBuilder:
             if not isinstance(sequence_text, str) or len(sequence_text) < n_value:
                 return []
             return [sequence_text[i:i + n_value] for i in range(len(sequence_text) - n_value + 1)]
-
+        print("Sequence mapping computation started")
         unique_ngrams_series = seq_bag.map(get_ngrams_from_seq_tuple).flatten().distinct().compute()
-
+        print("Sequence mapping computation ended")
         if not unique_ngrams_series:
             print(f"  [Worker n={n_value}] ⚠️ Warning: No n-grams of size n={n_value} were generated.")
             unique_ngrams_df = pd.DataFrame({'ngram': pd.Series(dtype='str')})
