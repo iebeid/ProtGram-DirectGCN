@@ -484,24 +484,38 @@ def test_ppi_pipeline_run():
     print("--- PPI Pipeline (Dummy Run) Smoke Test Complete ---")
 
 
+# In G:/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction/Code/ProtGram-DirectGCN/unit_tests.py
+
+# ... (all your test class and function definitions) ...
+
 if __name__ == "__main__":
     print("Starting All Unit Tests / Smoke Tests...\n")
-    # Environment Checks
+
+    # Environment Checks (standalone functions - keep these manual if you prefer)
     test_tensorflow_gpu()
     test_pytorch_gpu()
 
-    # Utility Tests
+    # Utility Tests (standalone functions - keep these manual if you prefer)
     test_reporter()
     test_data_utilities()
 
-    # Model Build Tests
+    # Model Build Tests (standalone function - keep this manual if you prefer)
     test_mlp_model_build()
 
-    # Test Graph Builder
-    TestGraphBuilderSmoke().test_graph_builder_smoke()
+    # Test Graph Builder (unittest.TestCase class)
+    # REMOVE the manual call that caused the AttributeError:
+    # TestGraphBuilderSmoke().test_graph_builder_smoke()
 
-    # --- Integration/Pipeline Smoke Tests ---
-    print("\n--- Starting Integration/Pipeline Smoke Tests ---")
+    print("\n--- Starting unittest.main() for TestCase classes ---")
+    # Use unittest.main() to discover and run tests within unittest.TestCase subclasses.
+    # This will correctly call setUp() before test_graph_builder_smoke().
+    # By default, unittest.main() will find and run ALL tests in ALL unittest.TestCase subclasses
+    # in this file. If you only want to run TestGraphBuilderSmoke, you can specify it:
+    # unittest.main(defaultTest='TestGraphBuilderSmoke', argv=['first-arg-is-ignored'], exit=False)
+    # Using argv and exit=False allows the script to continue after unittest.main() finishes.
+    unittest.main(argv=['first-arg-is-ignored'], exit=False)
+
+    print("\n--- Starting other Pipeline Smoke Tests (standalone functions - keep these manual if you prefer) ---")
     # These are uncommented to be part of the standard test run.
     # They are designed to be relatively quick by using dummy data or minimal configs.
 
