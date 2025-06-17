@@ -25,7 +25,8 @@ class Config:
         self.CLEANUP_DUMMY_DATA = True
 
         # --- PATH CONFIGURATION ---
-        self.PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+        # self.PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+        self.PROJECT_ROOT = "/mnt/g/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction"
         self.BASE_DATA_DIR = self.PROJECT_ROOT / "Data"
         self.BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.BASE_OUTPUT_DIR = self.BASE_DATA_DIR / "pipeline_output"
@@ -117,8 +118,8 @@ class Config:
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
             {"name": "ProtT5-UniProt", "path": self.BASE_DATA_DIR / "models/per-protein.h5"},
             {"name": "ProtNgramGCN-n3-PCA64", "path": self.GCN_EMBEDDINGS_DIR / "gcn_n3_embeddings_pca64.h5"},
-            {"name": "ProtBERT-Mean-PCA64", "path": self.TRANSFORMER_EMBEDDINGS_DIR / "ProtBERT_mean_pca64.h5"},
-            {"name": "Word2Vec-Mean-PCA64", "path": self.WORD2VEC_EMBEDDINGS_DIR / "word2vec_dim100_mean_pca64.h5"}
+            # {"name": "ProtBERT-Mean-PCA64", "path": self.TRANSFORMER_EMBEDDINGS_DIR / "ProtBERT_mean_pca64.h5"},
+            # {"name": "Word2Vec-Mean-PCA64", "path": self.WORD2VEC_EMBEDDINGS_DIR / "word2vec_dim100_mean_pca64.h5"}
         ]
 
         # --- 6. MLFLOW & EXPERIMENT TRACKING ---
