@@ -473,7 +473,8 @@ class GNNBenchmarker:
                         "one_gram_dim": 0,  # Typically 0 for PPI node features
                         "max_pe_len": self.config.GCN_MAX_PE_LEN,
                         "dropout": self.config.GCN_DROPOUT_RATE,
-                        "use_vector_coeffs": self.config.GCN_USE_VECTOR_COEFFS  # Be cautious with this for PPI
+                        "use_vector_coeffs": False, # Be cautious with this for PPI
+                        "l2_eps": self.config.GCN_PROPAGATION_EPSILON
                     }
                 }
 

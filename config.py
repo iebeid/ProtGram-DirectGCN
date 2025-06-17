@@ -17,10 +17,11 @@ class Config:
         self.DEBUG_VERBOSE = True # Set to False for less verbose training logs
 
         # --- Workflow Control Flags ---
-        self.RUN_GCN_PIPELINE = False
+        self.RUN_GCN_PIPELINE = True
         self.RUN_WORD2VEC_PIPELINE = False
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = True
+        self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_DUMMY_TEST = True
         self.CLEANUP_DUMMY_DATA = True
 
