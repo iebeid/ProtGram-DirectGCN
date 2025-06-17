@@ -52,8 +52,8 @@ def main():
     if config.RUN_GCN_PIPELINE:
         graph_builder = GraphBuilder(config)
         graph_builder.run()
-        gcn_embedder = ProtGramDirectGCNEmbedder(config)
-        gcn_embedder.run()
+        gcn_trainer = ProtGramDirectGCNTrainer(config)
+        gcn_trainer.run()
 
     if config.RUN_WORD2VEC_PIPELINE:
         word2vec_embedder = Word2VecEmbedder(config)
@@ -63,8 +63,17 @@ def main():
         transformer_embedder = TransformerEmbedder(config)
         transformer_embedder.run()
 
-    run_evaluation = any([config.RUN_GCN_PIPELINE, config.RUN_WORD2VEC_PIPELINE, config.RUN_TRANSFORMER_PIPELINE]) or \
-                     (not config.RUN_BENCHMARKING_PIPELINE and config.LP_EMBEDDING_FILES_TO_EVALUATE)
+    # run_evaluation = any([config.RUN_GCN_PIPELINE, config.RUN_WORD2VEC_PIPELINE, config.RUN_TRANSFORMER_PIPELINE]) or \
+    #                  (not config.RUN_BENCHMARKING_PIPELINE and config.LP_EMBEDDING_FILES_TO_EVALUATE)
+
+    # In main.py
+    embedding_pipelines_ran = any([
+        config.RUN_GCN_PIPELINE,
+        config.RUN_WORD2VEC_PIPELINE,
+        config.RUN_TRANSFORMER_PIPELINE
+    ])
+    # Run evaluation if any embedding pipeline ran OR if there are pre-computed files to evaluate
+    run_evaluation = embedding_pipelines_ran or bool(config.LP_EMBEDDING_FILES_TO_EVALUATE)
 
     if run_evaluation:
         if config.USE_MLFLOW:

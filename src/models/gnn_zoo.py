@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Sequential, Linear, ReLU
-from torch_geometric.nn import GCNConv, GATConv, SAGEConv, ChebConv, SignedConv, RGCNConv, GINConv
+from torch_geometric.nn import GCNConv, GATConv, SAGEConv, ChebConv, RGCNConv, GINConv
 from torch_geometric.data import Data
 
 
