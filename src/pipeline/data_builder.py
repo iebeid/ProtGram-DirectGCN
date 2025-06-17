@@ -16,7 +16,7 @@ import pyarrow
 from dask.distributed import Client, LocalCluster
 from tqdm import tqdm
 
-from src.config import Config
+from config import Config
 from src.utils.data_utils import DataUtils, DataLoader
 from src.utils.graph_utils import DirectedNgramGraph
 
