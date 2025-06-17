@@ -15,7 +15,7 @@ from gensim.models import Word2Vec
 from tqdm import tqdm
 
 # Import from our new project structure
-from src.config import Config
+from config import Config
 from src.utils.data_utils import DataLoader  # Changed from fast_fasta_parser
 from src.utils.models_utils import EmbeddingProcessor
 

@@ -5,7 +5,7 @@
 # VERSION: 2.2 (Minor adjustments for consistency)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
-
+from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

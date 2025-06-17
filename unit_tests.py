@@ -9,6 +9,8 @@ import os
 import sys
 import shutil # For cleaning up temp directories
 
+from typing import Optional, List
+
 import h5py
 import numpy as np
 import pandas as pd # For dummy interaction files
@@ -17,7 +19,7 @@ import torch
 from pathlib import Path # For config paths
 
 # Local application imports
-from src.config import Config
+from config import Config
 from src.utils.data_utils import DataUtils # For print_header in dummy tests
 
 # --- Helper Functions for Dummy Pipeline Tests ---
@@ -200,7 +202,7 @@ def test_reporter():
 
 
 def test_data_utilities():
-    from src.utils.data_utils import DataLoader, DataUtils
+    from src.utils.data_utils import DataLoader
     from src.utils.models_utils import EmbeddingLoader
     print(f"\n--- Data Utilities Test ---")
     config_instance = Config()

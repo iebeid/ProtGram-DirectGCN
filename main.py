@@ -6,12 +6,11 @@
 # ==============================================================================
 
 import time
-import os
 
 import mlflow
 
 from src.benchmarks.gnn_benchmarker import GNNBenchmarker
-from src.config import Config
+from config import Config
 from src.pipeline.data_builder import GraphBuilder
 from src.pipeline.ppi_main import PPIPipeline
 from src.pipeline.protgram_directgcn_embedder import ProtGramDirectGCNEmbedder
