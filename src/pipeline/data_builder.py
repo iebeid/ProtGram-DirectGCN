@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 4.1 (Enhanced logging, Dask Bag for FASTA, CUDA_VISIBLE_DEVICES for workers)
+# VERSION: 4.2 (Conditional Dask scheduler: synchronous for 1 worker, LocalCluster for >1)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -9,7 +9,10 @@ import logging
 import os
 import shutil
 import time
+from typing import List, Dict, Tuple, Any, Optional, Union
+from pathlib import Path  # Ensure Path is imported
 
+import dask  # Import dask for config setting
 import dask.bag as db
 import pandas as pd
 import pyarrow
@@ -20,19 +23,16 @@ from config import Config
 from src.utils.data_utils import DataUtils, DataLoader
 from src.utils.graph_utils import DirectedNgramGraph
 
-# --- Add this import guard ---
-# This helps delay TensorFlow import until it's actually needed,
-# potentially avoiding initialization in Dask workers if they don't need it.
-# However, if other libraries implicitly import TF, this might not be enough.
+# TensorFlow import guard (optional, but can help in some environments)
 _tf = None
+
+
 def get_tf():
     global _tf
     if _tf is None:
-        # print("Importing TensorFlow inside worker task...") # Debugging print
         import tensorflow as tf
         _tf = tf
     return _tf
-# --- End import guard ---
 
 
 class GraphBuilder:
@@ -47,56 +47,62 @@ class GraphBuilder:
         print(f"GraphBuilder initialized: n_max={self.n_max}, num_workers={self.num_workers}, output_dir='{self.output_dir}'")
         DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
 
-
     @staticmethod
-    def _create_intermediate_files(n_value, temp_dir, protein_sequence_file_path, num_dask_partitions):
-        # --- Add environment variable setting at the start of the worker task ---
-        # This ensures the worker process itself has this setting applied,
-        # regardless of what the main process did or how it was inherited.
+    def _create_intermediate_files(n_value: int, temp_dir: str,
+                                   protein_sequence_file_path_or_data: Union[str, Path, List[Tuple[str, str]]],
+                                   num_dask_partitions: int):
+        """
+        Creates intermediate ngram map and edge list files for a given n-gram size.
+        This function is designed to be run by Dask, either via LocalCluster or synchronously.
+        """
+        # Set CUDA_VISIBLE_DEVICES to -1 within the worker/task environment
+        # This is crucial if this function is called in a new process/thread by Dask.
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-        # print(f"[Worker n={n_value}, PID={os.getpid()}]: CUDA_VISIBLE_DEVICES set to -1.") # Debugging print
-        # --- End environment variable setting ---
+        # Optional: print to confirm, but can be noisy
+        # print(f"[Task n={n_value}, PID={os.getpid()}]: CUDA_VISIBLE_DEVICES set to '{os.environ.get('CUDA_VISIBLE_DEVICES')}'.")
 
         process_start_time = time.time()
-        print(f"[Worker n={n_value}, PID={os.getpid()}]: Starting intermediate file construction for n-gram size {n_value}.")
+        print(f"[Task n={n_value}, PID={os.getpid()}]: Starting intermediate file construction for n-gram size {n_value}.")
         output_ngram_map_file = os.path.join(temp_dir, f'ngram_map_n{n_value}.parquet')
         output_edge_file = os.path.join(temp_dir, f'edge_list_n{n_value}.txt')
 
-        print(f"  [Worker n={n_value}] Pass 1: Discovering unique n-grams from '{os.path.basename(protein_sequence_file_path)}'...")
+        sequences: List[Tuple[str, str]]
+        if isinstance(protein_sequence_file_path_or_data, (str, Path)):
+            print(f"  [Task n={n_value}] Pass 1: Discovering unique n-grams from '{os.path.basename(str(protein_sequence_file_path_or_data))}'...")
+            sequences = list(DataLoader.parse_sequences(str(protein_sequence_file_path_or_data)))
+        elif isinstance(protein_sequence_file_path_or_data, list):
+            sequences = protein_sequence_file_path_or_data
+            print(f"  [Task n={n_value}] Pass 1: Using provided sequence list ({len(sequences)} sequences)...")
+        else:
+            raise TypeError("protein_sequence_file_path_or_data must be a path or a list of sequences.")
 
-        # DataLoader.parse_sequences is a static method, safe to call.
-        # It doesn't seem to import TensorFlow.
-        sequences = list(DataLoader.parse_sequences(str(protein_sequence_file_path)))
         if not sequences:
-            print(f"  [Worker n={n_value}] ⚠️ Warning: No sequences found in {os.path.basename(protein_sequence_file_path)} for n={n_value}.")
+            print(f"  [Task n={n_value}] ⚠️ Warning: No sequences found for n={n_value}.")
             pd.DataFrame({'id': pd.Series(dtype='int'), 'ngram': pd.Series(dtype='str')}).to_parquet(output_ngram_map_file)
             open(output_edge_file, 'w').close()
-            print(f"  [Worker n={n_value}] Pass 1 & 2 Complete for n={n_value}. Empty intermediate files created.")
+            print(f"  [Task n={n_value}] Pass 1 & 2 Complete for n={n_value}. Empty intermediate files created.")
             return
 
-        # Dask Bag creation - this is where the issue might start
         seq_bag = db.from_sequence(sequences, npartitions=num_dask_partitions)
 
-        def get_ngrams_from_seq_tuple(seq_tuple):
+        def get_ngrams_from_seq_tuple(seq_tuple: Tuple[str, str]) -> List[str]:
             _, sequence_text = seq_tuple
             if not isinstance(sequence_text, str) or len(sequence_text) < n_value:
                 return []
             return [sequence_text[i:i + n_value] for i in range(len(sequence_text) - n_value + 1)]
 
-        # --- Add debugging prints around the first Dask compute ---
-        print(f"  [Worker n={n_value}] Before first Dask compute (map/flatten/distinct)...")
+        print(f"  [Task n={n_value}] Before first Dask compute (map/flatten/distinct)...")
         try:
             unique_ngrams_series = seq_bag.map(get_ngrams_from_seq_tuple).flatten().distinct().compute()
-            print(f"  [Worker n={n_value}] After first Dask compute. {len(unique_ngrams_series)} unique n-grams found.")
+            print(f"  [Task n={n_value}] After first Dask compute. {len(unique_ngrams_series)} unique n-grams found.")
         except Exception as e_dask_compute1:
-            print(f"  [Worker n={n_value}] ERROR during first Dask compute: {e_dask_compute1}")
+            print(f"  [Task n={n_value}] ERROR during first Dask compute: {e_dask_compute1}")
             import traceback
             traceback.print_exc()
-            # Re-raise or handle the error appropriately
-            raise e_dask_compute1 # Re-raise to make the test fail
+            raise e_dask_compute1
 
         if not unique_ngrams_series:
-            print(f"  [Worker n={n_value}] ⚠️ Warning: No n-grams of size n={n_value} were generated.")
+            print(f"  [Task n={n_value}] ⚠️ Warning: No n-grams of size n={n_value} were generated.")
             unique_ngrams_df = pd.DataFrame({'ngram': pd.Series(dtype='str')})
         else:
             unique_ngrams_df = pd.DataFrame(unique_ngrams_series, columns=['ngram'])
@@ -104,37 +110,32 @@ class GraphBuilder:
         unique_ngrams_df = unique_ngrams_df.sort_values('ngram').reset_index(drop=True)
         unique_ngrams_df['id'] = unique_ngrams_df.index
         unique_ngrams_df[['id', 'ngram']].to_parquet(output_ngram_map_file)
-        print(f"  [Worker n={n_value}] Pass 1 Complete for n={n_value}. {len(unique_ngrams_df)} unique n-grams saved to map file.")
+        print(f"  [Task n={n_value}] Pass 1 Complete for n={n_value}. {len(unique_ngrams_df)} unique n-grams saved to map file.")
 
         if unique_ngrams_df.empty:
             open(output_edge_file, 'w').close()
-            print(f"  [Worker n={n_value}] No n-grams for n={n_value}, skipping edge generation.")
-            print(f"[Worker n={n_value}] Finished n={n_value} in {time.time() - process_start_time:.2f}s.")
+            print(f"  [Task n={n_value}] No n-grams for n={n_value}, skipping edge generation.")
+            print(f"[Task n={n_value}] Finished n={n_value} in {time.time() - process_start_time:.2f}s.")
             return
 
-        print(f"  [Worker n={n_value}] Pass 2: Generating raw edge list for n={n_value}...")
-        # Read the map back - this uses Pandas/PyArrow, another potential source of C-level issues
+        print(f"  [Task n={n_value}] Pass 2: Generating raw edge list for n={n_value}...")
         try:
             ngram_to_id_map = pd.read_parquet(output_ngram_map_file).set_index('ngram')['id'].to_dict()
-            print(f"  [Worker n={n_value}] Ngram map loaded for edge generation.")
+            print(f"  [Task n={n_value}] Ngram map loaded for edge generation.")
         except Exception as e_read_parquet:
-             print(f"  [Worker n={n_value}] ERROR reading ngram map for edge generation: {e_read_parquet}")
-             import traceback
-             traceback.print_exc()
-             # Handle error - maybe create empty edge file and return?
-             open(output_edge_file, 'w').close()
-             print(f"[Worker n={n_value}] Finished n={n_value} with error in reading map.")
-             return
+            print(f"  [Task n={n_value}] ERROR reading ngram map for edge generation: {e_read_parquet}")
+            import traceback
+            traceback.print_exc()
+            open(output_edge_file, 'w').close()
+            print(f"[Task n={n_value}] Finished n={n_value} with error in reading map.")
+            return
 
-
-        def sequence_to_edges_str_list(seq_tuple):
+        def sequence_to_edges_str_list(seq_tuple: Tuple[str, str]) -> List[str]:
             _, sequence = seq_tuple
-            if not isinstance(sequence, str) or len(sequence) < n_value + 1:
+            if not isinstance(sequence, str) or len(sequence) < n_value + 1:  # Need at least n+1 chars for an edge
                 return []
             edges_str = []
-            # Accessing ngram_to_id_map from the outer scope - Dask handles this via pickling/serialization
-            # This is another area where complex objects or serialization issues can arise.
-            for i in range(len(sequence) - n_value):
+            for i in range(len(sequence) - n_value):  # Iterate up to the point where a full target n-gram can be formed
                 source_ngram = sequence[i:i + n_value]
                 target_ngram = sequence[i + 1:i + 1 + n_value]
                 source_id = ngram_to_id_map.get(source_ngram)
@@ -146,21 +147,19 @@ class GraphBuilder:
         edge_lists_bag = seq_bag.map(sequence_to_edges_str_list).flatten()
         temp_edge_parts_dir = os.path.join(temp_dir, f"edge_parts_n{n_value}")
         if os.path.exists(temp_edge_parts_dir): shutil.rmtree(temp_edge_parts_dir)
+        # os.makedirs(temp_edge_parts_dir) # to_textfiles creates it
 
-        # --- Add debugging prints around the second Dask compute (to_textfiles) ---
-        print(f"  [Worker n={n_value}] Before second Dask compute (to_textfiles)...")
+        print(f"  [Task n={n_value}] Before second Dask compute (to_textfiles)...")
         try:
             edge_lists_bag.to_textfiles(os.path.join(temp_edge_parts_dir, 'part-*.txt'))
-            print(f"  [Worker n={n_value}] After second Dask compute (to_textfiles).")
+            print(f"  [Task n={n_value}] After second Dask compute (to_textfiles).")
         except Exception as e_dask_compute2:
-            print(f"  [Worker n={n_value}] ERROR during second Dask compute (to_textfiles): {e_dask_compute2}")
+            print(f"  [Task n={n_value}] ERROR during second Dask compute (to_textfiles): {e_dask_compute2}")
             import traceback
             traceback.print_exc()
-            # Handle error - maybe leave temp files for inspection?
-            print(f"[Worker n={n_value}] Finished n={n_value} with error in to_textfiles.")
-            return # Stop processing this n_value
+            print(f"[Task n={n_value}] Finished n={n_value} with error in to_textfiles.")
+            return
 
-        # ... (rest of file concatenation and cleanup) ...
         with open(output_edge_file, 'w') as outfile:
             part_files = sorted([f for f in os.listdir(temp_edge_parts_dir) if f.startswith('part-') and f.endswith('.txt')])
             for fname in part_files:
@@ -168,11 +167,8 @@ class GraphBuilder:
                     shutil.copyfileobj(infile, outfile)
         shutil.rmtree(temp_edge_parts_dir)
 
-        print(f"  [Worker n={n_value}] Pass 2 Complete for n={n_value}. Raw edge file created at {output_edge_file}.")
-        print(f"[Worker n={n_value}] Finished intermediate file construction for n={n_value} in {time.time() - process_start_time:.2f}s.")
-
-    # ... (rest of GraphBuilder class) ...
-
+        print(f"  [Task n={n_value}] Pass 2 Complete for n={n_value}. Raw edge file created at {output_edge_file}.")
+        print(f"[Task n={n_value}] Finished intermediate file construction for n={n_value} in {time.time() - process_start_time:.2f}s.")
 
     def run(self):
         overall_start_time = time.time()
@@ -187,9 +183,6 @@ class GraphBuilder:
         print(f"Final graph objects will be saved to: {self.output_dir}")
 
         n_values = range(1, self.n_max + 1)
-
-        DataUtils.print_header(f"Phase 1: Creating intermediate files with {self.num_workers} Dask workers")
-        phase1_start_time = time.time()
         effective_num_workers = max(1, self.num_workers)
 
         try:
@@ -201,51 +194,69 @@ class GraphBuilder:
             print(f"ERROR: FASTA file not found at {self.protein_sequence_file}. Cannot proceed with graph building.")
             return
 
-        # In src/pipeline/data_builder.py, inside GraphBuilder.run()
+        DataUtils.print_header(f"Phase 1: Creating intermediate files...")
+        phase1_start_time = time.time()
 
-        # ... (other code) ...
+        # Set CUDA_VISIBLE_DEVICES for the main process before any Dask operations
         original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
-        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Set for the main process before cluster starts
-        print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask workers to avoid GPU contention.")
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations in main process.")
 
-        try:
-            # Explicitly set multiprocessing_method to 'spawn'
-            with LocalCluster(
-                    n_workers=effective_num_workers,
-                    threads_per_worker=1,
-                    silence_logs=logging.ERROR,
-                    multiprocessing_method='spawn'  # <--- ADD THIS
-            ) as cluster, Client(cluster) as client:
-                print(f"  Dask LocalCluster started with {effective_num_workers} workers using 'spawn' method.")
-                print(f"  Dask dashboard link: {client.dashboard_link}")
+        if effective_num_workers == 1:
+            print(f"  Running Phase 1 with Dask synchronous scheduler (num_workers=1).")
+            original_dask_scheduler = dask.config.get('scheduler')
+            dask.config.set(scheduler='synchronous')
+            try:
+                for n_val_loop in tqdm(n_values, desc="Processing N-gram levels (Synchronous)"):
+                    # _create_intermediate_files will also set CUDA_VISIBLE_DEVICES for its own context
+                    GraphBuilder._create_intermediate_files(
+                        n_val_loop,
+                        self.temp_dir,
+                        self.protein_sequence_file,
+                        num_dask_partitions
+                    )
+            except Exception as e_sync:
+                print(f"ERROR during synchronous Dask processing in Phase 1: {e_sync}")
+                import traceback
+                traceback.print_exc()
+            finally:
+                dask.config.set(scheduler=original_dask_scheduler)
+                print(f"  Restored Dask scheduler to: {original_dask_scheduler}")
+        else:  # effective_num_workers > 1
+            print(f"  Running Phase 1 with Dask LocalCluster ({effective_num_workers} workers, 'spawn' method).")
+            try:
+                # Ensure no other Dask schedulers are running on default ports
+                # The 'Port 8787 is already in use' warning is a strong indicator to check this.
+                with LocalCluster(
+                        n_workers=effective_num_workers,
+                        threads_per_worker=1,
+                        silence_logs=logging.ERROR,
+                        multiprocessing_method='spawn'  # Use 'spawn' for cleaner worker processes
+                ) as cluster, Client(cluster) as client:
+                    print(f"    Dask LocalCluster started. Dashboard: {client.dashboard_link}")
+                    tasks = [client.submit(GraphBuilder._create_intermediate_files, n, self.temp_dir, self.protein_sequence_file, num_dask_partitions) for n in n_values]
+                    for future in tqdm(tasks, desc="Dask Workers Progress (Phase 1)"):
+                        try:
+                            future.result()
+                        except Exception as e_task:
+                            print(f"ERROR in Dask worker task during Phase 1: {e_task}")
+                            # Consider how to handle task failures
+            except Exception as e_cluster:
+                print(f"ERROR setting up or running Dask LocalCluster: {e_cluster}")
+                import traceback
+                traceback.print_exc()
 
-                # The _create_intermediate_files method already sets CUDA_VISIBLE_DEVICES for the worker
-                tasks = [client.submit(GraphBuilder._create_intermediate_files, n, self.temp_dir, self.protein_sequence_file, num_dask_partitions) for n in n_values]
-
-                for future in tqdm(tasks, desc="Dask Workers Progress (Phase 1)"):
-                    try:
-                        future.result()  # Wait for task completion and retrieve result (or raise exception)
-                    except Exception as e:
-                        print(f"ERROR in Dask worker during Phase 1 for a task: {e}")
-                        # Optionally, log more details or decide if the whole process should stop
-                        # For now, it will just print and continue with other tasks if any
-
-        except Exception as e_cluster:
-            print(f"ERROR setting up or running Dask LocalCluster: {e_cluster}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            # Restore CUDA_VISIBLE_DEVICES for the main process
-            if original_cuda_visible_devices is None:
-                if "CUDA_VISIBLE_DEVICES" in os.environ:
-                    del os.environ["CUDA_VISIBLE_DEVICES"]
-            else:
-                os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
-            print("  Restored original CUDA_VISIBLE_DEVICES setting for the main process.")
-        # ... (rest of the run method) ...
+        # Restore CUDA_VISIBLE_DEVICES for the main process
+        if original_cuda_visible_devices is None:
+            if "CUDA_VISIBLE_DEVICES" in os.environ:
+                del os.environ["CUDA_VISIBLE_DEVICES"]
+        else:
+            os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
+        print("  Restored original CUDA_VISIBLE_DEVICES setting for the main process.")
 
         print(f"<<< Phase 1 finished in {time.time() - phase1_start_time:.2f}s.")
 
+        # --- Phase 2: Building and saving final graph objects ---
         DataUtils.print_header("Phase 2: Building and saving final graph objects")
         phase2_start_time = time.time()
         for n in n_values:
@@ -256,11 +267,13 @@ class GraphBuilder:
             if not os.path.exists(ngram_map_file) or not os.path.exists(edge_file):
                 print(f"  Warning: Intermediate files for n={n} not found. Skipping graph generation for this n-gram size.")
                 continue
-
             try:
                 nodes_df = pd.read_parquet(ngram_map_file)
-            except pyarrow.lib.ArrowInvalid as e:
+            except pyarrow.lib.ArrowInvalid as e:  # Catch specific pyarrow error
                 print(f"  ❌ Error: Could not read Parquet file for n={n} at: {ngram_map_file}. Details: {e}. Skipping.")
+                continue
+            except Exception as e_parquet:  # Catch other potential errors
+                print(f"  ❌ Error: General error reading Parquet file for n={n} at: {ngram_map_file}. Details: {e_parquet}. Skipping.")
                 continue
 
             if nodes_df.empty:
@@ -278,6 +291,9 @@ class GraphBuilder:
             except FileNotFoundError:
                 print(f"  ❌ Error: Edge file not found for n={n} at: {edge_file}. Assuming no edges.")
                 edge_df = pd.DataFrame(columns=['source', 'target'])
+            except Exception as e_csv:  # Catch other potential errors
+                print(f"  ❌ Error: General error reading edge CSV file for n={n} at: {edge_file}. Details: {e_csv}. Assuming no edges.")
+                edge_df = pd.DataFrame(columns=['source', 'target'])
 
             if edge_df.empty:
                 print(f"  ℹ️ Info: No edges found for n={n}. Creating a graph with nodes but no edges.")
@@ -289,12 +305,13 @@ class GraphBuilder:
 
             print(f"  Instantiating DirectedNgramGraph object for n={n}...")
             graph_object = DirectedNgramGraph(nodes=idx_to_node, edges=weighted_edge_list_tuples, epsilon_propagation=self.gcn_propagation_epsilon)
-            graph_object.n_value = n
+            graph_object.n_value = n  # Set the n_value attribute
             output_path = os.path.join(self.output_dir, f'ngram_graph_n{n}.pkl')
             DataUtils.save_object(graph_object, output_path)
             print(f"  Graph for n={n} saved to {output_path}")
         print(f"<<< Phase 2 finished in {time.time() - phase2_start_time:.2f}s.")
 
+        # --- Phase 3: Cleaning up temporary files ---
         DataUtils.print_header("Phase 3: Cleaning up temporary files")
         phase3_start_time = time.time()
         if os.path.exists(self.temp_dir):
