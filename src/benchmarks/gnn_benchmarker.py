@@ -11,7 +11,7 @@ from tqdm import tqdm
 from typing import Dict
 import pandas as pd
 from sklearn.metrics import f1_score, accuracy_score
-from torch_geometric.datasets import (PPI, KarateClub, Planetoid, HeterophilousGraphDataset)
+from torch_geometric.datasets import (PPI, KarateClub, Planetoid)
 from torch_geometric.loader import DataLoader as PyGDataLoader
 import torch_geometric.transforms as T
 from torch_geometric.utils import to_undirected  # For creating undirected versions
@@ -445,17 +445,37 @@ class GNNBenchmarker:
                 "GraphSAGE": {"class": GraphSAGE, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
                 "GIN": {"class": GIN, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
                 "ChebNet": {"class": ChebNet, "params": {"hidden_channels": 256, "K": 3, "num_layers": 2, "dropout_rate": 0.5}},
-                "SignedNet": {"class": SignedNet, "params": {"hidden_channels": 128, "num_layers": 2, "dropout_rate": 0.5}},
                 "RGCN_SR": {"class": RGCN, "params": {"hidden_channels": 256, "num_relations": 1, "num_layers": 2, "dropout_rate": 0.5}},
                 "TongDiGCN": {"class": TongDiGCN, "params": {"hidden_channels": 128, "num_layers": 2, "dropout_rate": 0.5}},
             }
-            if dataset_name.lower() == 'ppi':  # ProtGramDirectGCN might be suitable for PPI
-                model_zoo_cfg["ProtGramDirectGCN"] = {"class": ProtGramDirectGCN, "params": {
-                    "layer_dims": [num_features, self.config.GCN_HIDDEN_DIM_1, self.config.GCN_HIDDEN_DIM_2],
-                    "num_graph_nodes": None,  # Not fixed for PPI
-                    "task_num_output_classes": num_classes, "n_gram_len": 3, "one_gram_dim": 0, "max_pe_len": 512,
-                    "dropout": self.config.GCN_DROPOUT_RATE, "use_vector_coeffs": True
-                }}
+            if dataset_name.lower() == 'ppi':  # Or any other condition where you want to run it
+                # Construct layer_dims: [input_feature_dim, hidden1, hidden2, ..., output_embedding_dim_before_decoder]
+                # The final task_num_output_classes is handled by the decoder in ProtGramDirectGCN
+
+                # Option 1: Define a fixed embedding dimension before the decoder
+                # output_embedding_dim = self.config.GCN_HIDDEN_DIM_2 # Or some other configured embedding size
+                # layer_dims_for_protgram = [num_features] + self.config.GCN_HIDDEN_LAYER_DIMS[:-1] + [output_embedding_dim]
+
+                # Option 2: If GCN_HIDDEN_LAYER_DIMS is meant to be [hidden1, hidden2, output_emb_dim]
+                if not self.config.GCN_HIDDEN_LAYER_DIMS:
+                    # Handle case where GCN_HIDDEN_LAYER_DIMS might be empty, use a sensible default
+                    layer_dims_for_protgram = [num_features, num_classes]  # Simplest: direct map if no hidden
+                else:
+                    layer_dims_for_protgram = [num_features] + self.config.GCN_HIDDEN_LAYER_DIMS
+
+                model_zoo_cfg["ProtGramDirectGCN"] = {
+                    "class": ProtGramDirectGCN,
+                    "params": {
+                        "layer_dims": layer_dims_for_protgram,
+                        "num_graph_nodes": None,  # For PPI, num_nodes varies per graph, DirectGCNLayer handles this if use_vector_coeffs=False or num_nodes=0
+                        "task_num_output_classes": num_classes,  # This is for the decoder
+                        "n_gram_len": self.config.GCN_NGRAM_MAX_N,  # This might be a placeholder for PPI
+                        "one_gram_dim": 0,  # Typically 0 for PPI node features
+                        "max_pe_len": self.config.GCN_MAX_PE_LEN,
+                        "dropout": self.config.GCN_DROPOUT_RATE,
+                        "use_vector_coeffs": self.config.GCN_USE_VECTOR_COEFFS  # Be cautious with this for PPI
+                    }
+                }
 
             results_orig = self.run_on_dataset_variant(dataset_name, model_zoo_cfg,
                                                        train_loader_orig, val_loader_orig, test_loader_orig,
