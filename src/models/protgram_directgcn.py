@@ -1,162 +1,161 @@
 # ==============================================================================
-# MODULE: models/protgram_directgcn.py
-# PURPOSE: Contains the PyTorch class definitions for the custom GCN model.
-# VERSION: 7.1 (Using EmbeddingProcessor for L2 normalization)
+# MODULE: utils/graph_utils.py
+# PURPOSE: Contains robust classes for n-gram graph representation.
+# VERSION: 6.1 (Implement FAI/FAO with self-loops in A_w, mathcal_A self-loops after sqrt, remove binary adj)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
-from typing import Optional, List
+from typing import List, Dict, Tuple, Any, Optional
 
+import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch_geometric.nn import MessagePassing
-
-# Assuming EmbeddingProcessor is in src.utils.math_helper
-from src.utils.models_utils import EmbeddingProcessor
+from scipy.sparse import csr_matrix # Only used for community detection if needed by external code
+from torch_geometric.utils import dense_to_sparse
 
 
-class DirectGCNLayer(MessagePassing):
-    """
-    The custom directed GCN layer, with the corrected internal architecture
-    that explicitly separates main and shared pathways for each direction,
-    as described in the user's PDF and reference code.
-    """
+class Graph:
+    """A base class for representing n-gram graphs with nodes and edges."""
 
-    def __init__(self, in_channels: int, out_channels: int, num_nodes: int, use_vector_coeffs: bool = True):
-        super().__init__(aggr='add')
-        # --- Main Path Weights ---
-        self.lin_main_in = nn.Linear(in_channels, out_channels, bias=False)
-        self.lin_main_out = nn.Linear(in_channels, out_channels, bias=False)
-        self.bias_main_in = nn.Parameter(torch.Tensor(out_channels))
-        self.bias_main_out = nn.Parameter(torch.Tensor(out_channels))
+    def __init__(self, nodes: Dict[str, Any], edges: List[Tuple]):
+        self.nodes_map = nodes if nodes is not None else {}
+        self.original_edges = edges if edges is not None else []
+        self.edges = list(self.original_edges)  # This will be converted to indexed edges
+        self.node_sequences: List[str] = []  # Will store node names/sequences in order of index
 
-        # --- Shared Path (Skip/W_all) Weights ---
-        self.lin_shared = nn.Linear(in_channels, out_channels, bias=False)
-        self.bias_shared_in = nn.Parameter(torch.Tensor(out_channels))
-        self.bias_shared_out = nn.Parameter(torch.Tensor(out_channels))
+        self._create_node_indices()  # Populates node_to_idx, idx_to_node, number_of_nodes, node_sequences
+        self._index_edges()  # Converts self.edges to use integer indices
 
-        self.use_vector_coeffs = use_vector_coeffs
+    def _create_node_indices(self):
+        self.node_to_idx: Dict[str, int] = {}
+        self.idx_to_node: Dict[int, str] = {}
+        node_keys_from_map = set(self.nodes_map.keys())
 
-        # --- Adaptive Coefficients ---
-        if self.use_vector_coeffs:
-            self.C_in_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
-            self.C_out_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
+        all_node_identifiers_in_edges = set()
+        if self.original_edges:
+            for edge_tuple in self.original_edges:
+                if len(edge_tuple) >= 2:
+                    all_node_identifiers_in_edges.add(str(edge_tuple[0]))
+                    all_node_identifiers_in_edges.add(str(edge_tuple[1]))
+        combined_node_keys = sorted(list(node_keys_from_map.union(all_node_identifiers_in_edges)))
+
+        for i, node_name_str in enumerate(combined_node_keys):
+            self.node_to_idx[node_name_str] = i
+            self.idx_to_node[i] = node_name_str
+        self.number_of_nodes = len(self.node_to_idx)
+
+        if self.number_of_nodes > 0:
+            self.node_sequences = [self.idx_to_node[i] for i in range(self.number_of_nodes)]
         else:
-            self.C_in = nn.Parameter(torch.Tensor(1))
-            self.C_out = nn.Parameter(torch.Tensor(1))
+            self.node_sequences = []
 
-        self.reset_parameters()
+    def _index_edges(self):
+        indexed_edge_list = []
+        for edge_tuple in self.original_edges:
+            if len(edge_tuple) >= 2:
+                s_orig, t_orig = str(edge_tuple[0]), str(edge_tuple[1])
+                s_idx = self.node_to_idx.get(s_orig)
+                t_idx = self.node_to_idx.get(t_orig)
+                if s_idx is not None and t_idx is not None:
+                    indexed_edge_list.append((s_idx, t_idx) + edge_tuple[2:])
+        self.edges = indexed_edge_list
+        self.number_of_edges = len(self.edges)
 
-    def reset_parameters(self):
-        """Initializes all learnable parameters."""
-        for lin in [self.lin_main_in, self.lin_main_out, self.lin_shared]:
-            nn.init.xavier_uniform_(lin.weight)
-        for bias in [self.bias_main_in, self.bias_main_out, self.bias_shared_in, self.bias_shared_out]:
-            nn.init.zeros_(bias)
 
-        if self.use_vector_coeffs:
-            nn.init.ones_(self.C_in_vec)
-            nn.init.ones_(self.C_out_vec)
+class DirectedNgramGraph(Graph):
+    def __init__(self, nodes: Dict[str, Any], edges: List[Tuple], epsilon_propagation: float = 1e-9):
+        super().__init__(nodes=nodes, edges=edges)
+        self.epsilon_propagation = epsilon_propagation
+        self.n_value: Optional[int] = None
+
+        self.A_out_w: torch.Tensor
+        self.A_in_w: torch.Tensor
+        self.mathcal_A_out: np.ndarray
+        self.mathcal_A_in: np.ndarray
+        self.fai: torch.Tensor
+        self.fao: torch.Tensor
+
+        if self.number_of_nodes > 0:
+            self._create_raw_weighted_adj_matrices_torch()
+            self._create_propagation_matrices_for_gcn()
+            self._create_symmetrized_magnitudes_fai_fao()
         else:
-            nn.init.ones_(self.C_in)
-            nn.init.ones_(self.C_out)
+            self.A_out_w = torch.empty((0, 0), dtype=torch.float32)
+            self.A_in_w = torch.empty((0, 0), dtype=torch.float32)
+            self.mathcal_A_out = np.array([], dtype=np.float32).reshape(0, 0)
+            self.mathcal_A_in = np.array([], dtype=np.float32).reshape(0, 0)
+            self.fai = torch.empty((0, 0), dtype=torch.float32)
+            self.fao = torch.empty((0, 0), dtype=torch.float32)
 
-    def forward(self, x, edge_index_in, edge_weight_in, edge_index_out, edge_weight_out):
-        """Forward pass implementing the full ProtGram-DirectGCN layer logic."""
-        h_main_in = self.propagate(edge_index_in, x=self.lin_main_in(x), edge_weight=edge_weight_in)
-        h_shared_in = self.propagate(edge_index_in, x=self.lin_shared(x), edge_weight=edge_weight_in)
-        ic_combined = (h_main_in + self.bias_main_in) + (h_shared_in + self.bias_shared_in)
+    def _create_raw_weighted_adj_matrices_torch(self):
+        if self.number_of_nodes == 0:
+            self.A_out_w = torch.empty((0, 0), dtype=torch.float32)
+            self.A_in_w = torch.empty((0, 0), dtype=torch.float32)
+            return
+        self.A_out_w = torch.zeros((self.number_of_nodes, self.number_of_nodes), dtype=torch.float32)
+        for s_idx, t_idx, weight, *_ in self.edges:
+            if 0 <= s_idx < self.number_of_nodes and 0 <= t_idx < self.number_of_nodes:
+                self.A_out_w[s_idx, t_idx] = float(weight)
+        self.A_in_w = self.A_out_w.t().contiguous()
 
-        h_main_out = self.propagate(edge_index_out, x=self.lin_main_out(x), edge_weight=edge_weight_out)
-        h_shared_out = self.propagate(edge_index_out, x=self.lin_shared(x), edge_weight=edge_weight_out)
-        oc_combined = (h_main_out + self.bias_main_out) + (h_shared_out + self.bias_shared_out)
+    def _calculate_single_propagation_matrix_for_gcn(self, A_w_torch: torch.Tensor) -> np.ndarray:
+        if A_w_torch.shape[0] == 0:
+            return np.array([], dtype=np.float32).reshape(0, 0)
+        row_sum = A_w_torch.sum(dim=1)
+        D_inv_diag_vals = torch.zeros_like(row_sum, dtype=torch.float32, device=A_w_torch.device)
+        non_zero_degrees = row_sum != 0
+        D_inv_diag_vals[non_zero_degrees] = 1.0 / row_sum[non_zero_degrees]
+        A_n = D_inv_diag_vals.unsqueeze(1) * A_w_torch
+        S = (A_n + A_n.t()) / 2.0
+        K = (A_n - A_n.t()) / 2.0
+        mathcal_A_base = torch.sqrt(torch.square(S) + torch.square(K) + self.epsilon_propagation)
+        identity_matrix = torch.eye(self.number_of_nodes, dtype=torch.float32, device=A_w_torch.device)
+        mathcal_A_with_self_loops = mathcal_A_base + identity_matrix
+        return mathcal_A_with_self_loops.cpu().numpy()
 
-        c_in = self.C_in_vec if self.use_vector_coeffs else self.C_in
-        c_out = self.C_out_vec if self.use_vector_coeffs else self.C_out
+    def _create_propagation_matrices_for_gcn(self):
+        self.mathcal_A_out = self._calculate_single_propagation_matrix_for_gcn(self.A_out_w)
+        self.mathcal_A_in = self._calculate_single_propagation_matrix_for_gcn(self.A_in_w)
 
-        return c_in * ic_combined + c_out * oc_combined
+    def _create_symmetrized_magnitudes_fai_fao(self):
+        if self.number_of_nodes == 0:
+            self.fai = torch.empty((0, 0), dtype=torch.float32)
+            self.fao = torch.empty((0, 0), dtype=torch.float32)
+            return
 
-    def message(self, x_j: torch.Tensor, edge_weight: Optional[torch.Tensor]) -> torch.Tensor:
-        """The message function for PyG's message passing."""
-        return edge_weight.view(-1, 1) * x_j if edge_weight is not None else x_j
+        dev = self.A_out_w.device
+        identity = torch.eye(self.number_of_nodes, device=dev, dtype=torch.float32)
 
+        # FAO Calculation
+        A_out_w_sl = self.A_out_w + identity
+        D_out_sl_d = A_out_w_sl.sum(dim=1)
+        D_out_sl_inv_d = torch.zeros_like(D_out_sl_d, device=dev)
+        D_out_sl_inv_d[D_out_sl_d != 0] = 1.0 / D_out_sl_d[D_out_sl_d != 0]
+        A_out_n_sl = D_out_sl_inv_d.unsqueeze(1) * A_out_w_sl
+        our = (A_out_n_sl + A_out_n_sl.t()) / 2.0
+        oui = (A_out_n_sl - A_out_n_sl.t()) / 2.0
+        self.fao = torch.sqrt(our.pow(2) + oui.pow(2) + self.epsilon_propagation)
 
-class ProtGramDirectGCN(nn.Module):
-    """
-    The main GCN architecture, with a DYNAMIC number of GCN and residual
-    layers.
-    """
+        # FAI Calculation
+        A_in_w_for_fai_calc = self.A_out_w.t().contiguous()
+        A_in_w_sl = A_in_w_for_fai_calc + identity
+        D_in_sl_d = A_in_w_sl.sum(dim=1)
+        D_in_sl_inv_d = torch.zeros_like(D_in_sl_d, device=dev)
+        D_in_sl_inv_d[D_in_sl_d != 0] = 1.0 / D_in_sl_d[D_in_sl_d != 0]
+        A_in_n_sl = D_in_sl_inv_d.unsqueeze(1) * A_in_w_sl
+        ir = (A_in_n_sl + A_in_n_sl.t()) / 2.0
+        ii = (A_in_n_sl - A_in_n_sl.t()) / 2.0
+        self.fai = torch.sqrt(ir.pow(2) + ii.pow(2) + self.epsilon_propagation)
 
-    def __init__(self, layer_dims: List[int], num_graph_nodes: int, task_num_output_classes: int, n_gram_len: int, one_gram_dim: int, max_pe_len: int, dropout: float, use_vector_coeffs: bool):
-        super().__init__()
-        self.n_gram_len = n_gram_len
-        self.one_gram_dim = one_gram_dim
-        self.dropout = dropout
-        self.l2_eps = 1e-12  # Epsilon for L2 normalization, can be passed to EmbeddingProcessor
+    def get_fai_sparse(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        if not hasattr(self, 'fai') or self.fai is None:
+            if self.number_of_nodes > 0: self._create_symmetrized_magnitudes_fai_fao()
+            else: return torch.empty((2,0), dtype=torch.long), torch.empty(0, dtype=torch.float32)
+        if self.fai is None: raise ValueError("FAI could not be computed.")
+        return dense_to_sparse(self.fai)
 
-        self.pe_layer = nn.Embedding(max_pe_len, one_gram_dim) if one_gram_dim > 0 and max_pe_len > 0 else None
-
-        self.convs = nn.ModuleList()
-        self.res_projs = nn.ModuleList()
-
-        for i in range(len(layer_dims) - 1):
-            in_dim = layer_dims[i]
-            out_dim = layer_dims[i + 1]
-            self.convs.append(DirectGCNLayer(in_dim, out_dim, num_graph_nodes, use_vector_coeffs))
-            self.res_projs.append(nn.Linear(in_dim, out_dim) if in_dim != out_dim else nn.Identity())
-
-        final_embedding_dim = layer_dims[-1]
-        self.decoder_fc = nn.Linear(final_embedding_dim, task_num_output_classes)
-
-    def _apply_pe(self, x: torch.Tensor) -> torch.Tensor:
-        if self.pe_layer is None or self.n_gram_len == 0 or self.one_gram_dim == 0: return x
-        x_pe = x.clone()
-        # Ensure x_pe has enough elements for reshaping if one_gram_dim is 0 but n_gram_len > 0
-        if self.one_gram_dim == 0 and self.n_gram_len > 0 and x_pe.shape[1] < self.n_gram_len:
-            # This case should ideally be prevented by config or init logic
-            # If x is just node_features and not n-gram structured, PE might not be applicable this way
-            return x  # Or raise error
-
-        # Proceed if one_gram_dim > 0
-        if self.one_gram_dim > 0:
-            expected_dim = self.n_gram_len * self.one_gram_dim
-            if x_pe.shape[1] != expected_dim:
-                # This might indicate x was not pre-structured as n-grams * one_gram_dim
-                # For PE to work as intended, x should represent n_gram_len vectors of one_gram_dim
-                # If x is just a flat feature vector not matching this, PE logic needs rethink or x needs pre-processing
-                # print(f"Warning: PE layer expects input dim {expected_dim}, got {x_pe.shape[1]}. PE might be misapplied or skipped.")
-                return x  # Skip PE if dimensions don't match expected structure
-
-            x_reshaped = x_pe.view(-1, self.n_gram_len, self.one_gram_dim)
-            pos_to_enc = min(self.n_gram_len, self.pe_layer.num_embeddings)
-            if pos_to_enc > 0:
-                pos_indices = torch.arange(0, pos_to_enc, device=x.device, dtype=torch.long)
-                pe = self.pe_layer(pos_indices)
-                x_reshaped[:, :pos_to_enc, :] += pe.unsqueeze(0)  # Add PE to the one_gram_dim vectors
-            return x_reshaped.view(-1, expected_dim)
-        return x  # Return original x if one_gram_dim is 0
-
-    def forward(self, data=None, x=None, edge_index=None, **kwargs):
-        if data is not None:
-            x, ei_in, ew_in, ei_out, ew_out = data.x, data.edge_index_in, data.edge_weight_in, data.edge_index_out, data.edge_weight_out
-        elif x is not None and edge_index is not None:  # Simplified case for benchmarking
-            ei_in, ew_in = edge_index, kwargs.get('edge_weight', None)
-            ei_out, ew_out = edge_index, kwargs.get('edge_weight', None)  # Assume same for simplicity
-        else:
-            raise ValueError("ProtNgramGCN forward pass requires either a 'data' object or 'x' and 'edge_index' arguments.")
-
-        h = self._apply_pe(x)
-
-        for i in range(len(self.convs)):
-            h_res = h
-            h = F.tanh(self.convs[i](h, ei_in, ew_in, ei_out, ew_out) + self.res_projs[i](h_res))
-            h = F.dropout(h, p=self.dropout, training=self.training)
-
-        final_embed_for_task = h
-        task_logits = self.decoder_fc(final_embed_for_task)
-
-        # Use EmbeddingProcessor for L2 normalization
-        final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
-
-        return F.log_softmax(task_logits, dim=-1), final_normalized_embeddings
+    def get_fao_sparse(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        if not hasattr(self, 'fao') or self.fao is None:
+            if self.number_of_nodes > 0: self._create_symmetrized_magnitudes_fai_fao()
+            else: return torch.empty((2,0), dtype=torch.long), torch.empty(0, dtype=torch.float32)
+        if self.fao is None: raise ValueError("FAO could not be computed.")
+        return dense_to_sparse(self.fao)

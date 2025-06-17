@@ -11,8 +11,10 @@ import shutil # For cleaning up temp directories
 
 import h5py
 import numpy as np
+import pandas as pd # For dummy interaction files
 import tensorflow as tf
 import torch
+from pathlib import Path # For config paths
 
 # Local application imports
 from src.config import Config
@@ -41,9 +43,23 @@ def _create_dummy_interaction_files_for_testing(directory: str, num_pairs: int =
 
     def generate_pairs(filepath, count):
         pairs = set()
-        while len(pairs) < count:
+        # Ensure enough unique pairs can be generated if num_proteins is small
+        max_possible_unique_pairs = num_proteins * (num_proteins - 1) // 2 if num_proteins >=2 else 0
+        actual_count = min(count, max_possible_unique_pairs)
+        if count > max_possible_unique_pairs and actual_count > 0:
+            print(f"  Warning: Requested {count} pairs, but only {actual_count} unique pairs possible for {num_proteins} proteins. Generating {actual_count}.")
+        elif actual_count == 0 and count > 0:
+             print(f"  Warning: Cannot generate {count} pairs with {num_proteins} proteins. Generating 0 pairs.")
+
+        attempts = 0
+        max_attempts_multiplier = 5 # Try 5 times the number of pairs to find unique ones
+
+        while len(pairs) < actual_count and attempts < actual_count * max_attempts_multiplier :
+            if num_proteins < 2: break # Cannot form pairs
             p1, p2 = np.random.choice(protein_ids, 2, replace=False)
             pairs.add(tuple(sorted((p1, p2))))
+            attempts +=1
+
         df = pd.DataFrame(list(pairs), columns=['p1', 'p2'])
         df.to_csv(filepath, header=False, index=False)
 
@@ -65,7 +81,6 @@ def _create_dummy_h5_embeddings_for_testing(directory: str, filename: str = "dum
 
 
 # --- Standard Unit/Smoke Tests ---
-
 def test_pytorch_gpu():
     """
     Checks the status of PyTorch's CUDA availability and prints diagnostic information,
@@ -243,20 +258,27 @@ def test_mlp_model_build():
     print(f"--- MLPModelBuilder Build Test Complete ---")
 
 # --- Integration/Pipeline Smoke Tests ---
-# These tests are more involved and might take longer.
-# They are valuable for checking if major pipeline components run end-to-end.
+# These are uncommented to be part of the standard test run.
+# They are designed to be relatively quick by using dummy data or minimal configs.
 
 def test_word2vec_pipeline_run():
     DataUtils.print_header("Word2Vec Pipeline Smoke Test")
     from src.pipeline.word2vec_embedder import Word2VecEmbedder
     config = Config()
-    # Setup dummy FASTA for this test
     dummy_fasta_dir = "./temp_test_w2v_fasta_input"
+    if os.path.exists(dummy_fasta_dir): shutil.rmtree(dummy_fasta_dir)
     _create_dummy_fasta_for_testing(dummy_fasta_dir, "w2v_test.fasta")
+
     original_fasta_dir = config.W2V_INPUT_FASTA_DIR
-    config.W2V_INPUT_FASTA_DIR = dummy_fasta_dir # Override
-    config.APPLY_PCA_TO_W2V = False # Faster test
+    config.W2V_INPUT_FASTA_DIR = Path(dummy_fasta_dir)
+    config.APPLY_PCA_TO_W2V = False
     config.W2V_EPOCHS = 1
+
+    test_w2v_output_dir = Path(config.BASE_OUTPUT_DIR) / "test_w2v_embeddings"
+    if os.path.exists(test_w2v_output_dir): shutil.rmtree(test_w2v_output_dir)
+    original_w2v_output_dir = config.WORD2VEC_EMBEDDINGS_DIR
+    config.WORD2VEC_EMBEDDINGS_DIR = test_w2v_output_dir
+
     try:
         embedder = Word2VecEmbedder(config)
         embedder.run()
@@ -265,13 +287,10 @@ def test_word2vec_pipeline_run():
         print(f"  Word2VecEmbedder smoke test FAILED: {e}")
         raise
     finally:
-        config.W2V_INPUT_FASTA_DIR = original_fasta_dir # Restore
+        config.W2V_INPUT_FASTA_DIR = original_fasta_dir
+        config.WORD2VEC_EMBEDDINGS_DIR = original_w2v_output_dir
         if os.path.exists(dummy_fasta_dir): shutil.rmtree(dummy_fasta_dir)
-        # Clean up output files created by the embedder if necessary
-        if os.path.exists(config.WORD2VEC_EMBEDDINGS_DIR):
-            for f in os.listdir(config.WORD2VEC_EMBEDDINGS_DIR):
-                if "w2v_test" in f or "dummy" in f: # Be more specific if needed
-                    os.remove(os.path.join(config.WORD2VEC_EMBEDDINGS_DIR, f))
+        if os.path.exists(test_w2v_output_dir): shutil.rmtree(test_w2v_output_dir)
     print("--- Word2Vec Pipeline Smoke Test Complete ---")
 
 
@@ -280,16 +299,20 @@ def test_transformer_embedder_pipeline_run():
     from src.pipeline.transformer_embedder import TransformerEmbedder
     config = Config()
     dummy_fasta_dir = "./temp_test_transformer_fasta_input"
-    _create_dummy_fasta_for_testing(dummy_fasta_dir, "transformer_test.fasta", num_seqs=2) # Small number for speed
-    original_fasta_dir = config.TRANSFORMER_INPUT_FASTA_DIR
-    config.TRANSFORMER_INPUT_FASTA_DIR = dummy_fasta_dir
-    config.APPLY_PCA_TO_TRANSFORMER = False
-    config.TRANSFORMER_BASE_BATCH_SIZE = 1 # Small batch for test
-    original_models_to_run = config.TRANSFORMER_MODELS_TO_RUN
-    # Use a very small, fast model if available, or just run ProtBERT for 1-2 seqs
-    # For now, we'll use the configured ProtBERT but it might be slow.
-    # config.TRANSFORMER_MODELS_TO_RUN = [{"name": "DummyTransformer", "hf_id": "prajjwal1/bert-tiny", "is_t5": False, "batch_size_multiplier": 1}]
+    if os.path.exists(dummy_fasta_dir): shutil.rmtree(dummy_fasta_dir)
+    _create_dummy_fasta_for_testing(dummy_fasta_dir, "transformer_test.fasta", num_seqs=2)
 
+    original_fasta_dir = config.TRANSFORMER_INPUT_FASTA_DIR
+    config.TRANSFORMER_INPUT_FASTA_DIR = Path(dummy_fasta_dir)
+    config.APPLY_PCA_TO_TRANSFORMER = False
+    config.TRANSFORMER_BASE_BATCH_SIZE = 1
+    original_models_to_run = config.TRANSFORMER_MODELS_TO_RUN
+    # config.TRANSFORMER_MODELS_TO_RUN = [{"name": "DummyFastTransformer", "hf_id": "prajjwal1/bert-tiny", "is_t5": False, "batch_size_multiplier": 1}]
+
+    test_transformer_output_dir = Path(config.BASE_OUTPUT_DIR) / "test_transformer_embeddings"
+    if os.path.exists(test_transformer_output_dir): shutil.rmtree(test_transformer_output_dir)
+    original_transformer_output_dir = config.TRANSFORMER_EMBEDDINGS_DIR
+    config.TRANSFORMER_EMBEDDINGS_DIR = test_transformer_output_dir
 
     try:
         embedder = TransformerEmbedder(config)
@@ -301,11 +324,9 @@ def test_transformer_embedder_pipeline_run():
     finally:
         config.TRANSFORMER_INPUT_FASTA_DIR = original_fasta_dir
         config.TRANSFORMER_MODELS_TO_RUN = original_models_to_run
+        config.TRANSFORMER_EMBEDDINGS_DIR = original_transformer_output_dir
         if os.path.exists(dummy_fasta_dir): shutil.rmtree(dummy_fasta_dir)
-        if os.path.exists(config.TRANSFORMER_EMBEDDINGS_DIR):
-             for f in os.listdir(config.TRANSFORMER_EMBEDDINGS_DIR):
-                if "transformer_test" in f or "DummyTransformer" in f:
-                    os.remove(os.path.join(config.TRANSFORMER_EMBEDDINGS_DIR, f))
+        if os.path.exists(test_transformer_output_dir): shutil.rmtree(test_transformer_output_dir)
     print("--- Transformer Embedder Pipeline Smoke Test Complete ---")
 
 
@@ -313,12 +334,21 @@ def test_gnn_benchmarker_run():
     DataUtils.print_header("GNN Benchmarker Smoke Test")
     from src.benchmarks.gnn_benchmarker import GNNBenchmarker
     config = Config()
-    # Override datasets to run only KarateClub for a quick test
     original_datasets = config.BENCHMARK_NODE_CLASSIFICATION_DATASETS
     config.BENCHMARK_NODE_CLASSIFICATION_DATASETS = ["KarateClub"]
-    config.EVAL_EPOCHS = 2 # Very few epochs for test
-    config.BENCHMARK_SAVE_EMBEDDINGS = False # Don't save for quick test
+    original_epochs = config.EVAL_EPOCHS
+    config.EVAL_EPOCHS = 1
+    config.BENCHMARK_SAVE_EMBEDDINGS = False
     config.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS = False
+
+    test_benchmark_output_dir = Path(config.BASE_OUTPUT_DIR) / "test_gnn_benchmark_results"
+    if os.path.exists(test_benchmark_output_dir): shutil.rmtree(test_benchmark_output_dir)
+    original_benchmark_output_dir = config.BENCHMARKING_RESULTS_DIR
+    config.BENCHMARKING_RESULTS_DIR = test_benchmark_output_dir
+
+    pyg_dataset_root = Path(config.BASE_DATA_DIR) / "standard_datasets_pyg"
+    karate_specific_path = pyg_dataset_root / "KarateClub"
+
     try:
         benchmarker = GNNBenchmarker(config)
         benchmarker.run()
@@ -327,15 +357,11 @@ def test_gnn_benchmarker_run():
         print(f"  GNNBenchmarker smoke test FAILED: {e}")
         raise
     finally:
-        config.BENCHMARK_NODE_CLASSIFICATION_DATASETS = original_datasets # Restore
-        # Clean up benchmark results for KarateClub if needed
-        karate_summary = os.path.join(config.BENCHMARKING_RESULTS_DIR, "benchmark_summary_KarateClub.csv")
-        if os.path.exists(karate_summary): os.remove(karate_summary)
-        karate_dir = os.path.join(config.BENCHMARKING_RESULTS_DIR, "KarateClub")
-        if os.path.exists(karate_dir): shutil.rmtree(karate_dir)
-        # Clean downloaded dataset if it's in a known temp location (PyG usually handles this well)
-        pyg_dataset_path = os.path.join(config.BASE_DATA_DIR, "standard_datasets_pyg", "KarateClub")
-        if os.path.exists(pyg_dataset_path): shutil.rmtree(pyg_dataset_path)
+        config.BENCHMARK_NODE_CLASSIFICATION_DATASETS = original_datasets
+        config.EVAL_EPOCHS = original_epochs
+        config.BENCHMARKING_RESULTS_DIR = original_benchmark_output_dir
+        if os.path.exists(test_benchmark_output_dir): shutil.rmtree(test_benchmark_output_dir)
+        if os.path.exists(karate_specific_path): shutil.rmtree(karate_specific_path)
 
     print("--- GNN Benchmarker Smoke Test Complete ---")
 
@@ -345,23 +371,39 @@ def test_ppi_pipeline_run():
     from src.pipeline.ppi_main import PPIPipeline
     config = Config()
     original_dummy_flag = config.RUN_DUMMY_TEST
-    config.RUN_DUMMY_TEST = True # Force dummy for this test
-    config.EVAL_EPOCHS = 1 # Minimal epochs for dummy
-    config.EVAL_N_FOLDS = 1 # Minimal folds
+    config.RUN_DUMMY_TEST = True
+    original_epochs = config.EVAL_EPOCHS
+    config.EVAL_EPOCHS = 1
+    original_folds = config.EVAL_N_FOLDS
+    config.EVAL_N_FOLDS = 1
+
+    test_ppi_output_dir = Path(config.BASE_OUTPUT_DIR) / "test_ppi_eval_results"
+    # dummy_data_base_dir_for_test = Path(config.BASE_OUTPUT_DIR) / "test_ppi_dummy_data_storage" # Not used directly by test
+
+    if os.path.exists(test_ppi_output_dir): shutil.rmtree(test_ppi_output_dir)
+    # if os.path.exists(dummy_data_base_dir_for_test): shutil.rmtree(dummy_data_base_dir_for_test)
+
+    original_eval_results_dir = config.EVALUATION_RESULTS_DIR
+    config.EVALUATION_RESULTS_DIR = test_ppi_output_dir
+
     try:
         evaluator = PPIPipeline(config)
-        evaluator.run(use_dummy_data=True) # Explicitly use dummy data
-        print("  PPIPipeline (dummy run) smoke test ran successfully (check dummy_run_output).")
+        evaluator.run(use_dummy_data=True)
+        print("  PPIPipeline (dummy run) smoke test ran successfully (check output files).")
     except Exception as e:
         print(f"  PPIPipeline (dummy run) smoke test FAILED: {e}")
         raise
     finally:
-        config.RUN_DUMMY_TEST = original_dummy_flag # Restore
-        if config.CLEANUP_DUMMY_DATA:
-            dummy_output = os.path.join(config.EVALUATION_RESULTS_DIR, "dummy_run_output")
-            if os.path.exists(dummy_output): shutil.rmtree(dummy_output)
-            dummy_data_temp = os.path.join(config.BASE_OUTPUT_DIR, "dummy_data_temp")
-            if os.path.exists(dummy_data_temp): shutil.rmtree(dummy_data_temp)
+        config.RUN_DUMMY_TEST = original_dummy_flag
+        config.EVAL_EPOCHS = original_epochs
+        config.EVAL_N_FOLDS = original_folds
+        config.EVALUATION_RESULTS_DIR = original_eval_results_dir
+
+        if os.path.exists(test_ppi_output_dir): shutil.rmtree(test_ppi_output_dir)
+        dummy_data_created_path = Path(config.BASE_OUTPUT_DIR) / "dummy_data_temp"
+        if os.path.exists(dummy_data_created_path) and config.CLEANUP_DUMMY_DATA:
+            shutil.rmtree(dummy_data_created_path)
+
     print("--- PPI Pipeline (Dummy Run) Smoke Test Complete ---")
 
 
@@ -379,11 +421,9 @@ if __name__ == "__main__":
     test_mlp_model_build()
 
     # --- Integration/Pipeline Smoke Tests ---
+    print("\n--- Starting Integration/Pipeline Smoke Tests ---")
     # These are uncommented to be part of the standard test run.
     # They are designed to be relatively quick by using dummy data or minimal configs.
-    print("\n--- Starting Integration/Pipeline Smoke Tests ---")
-    # Note: These tests might create temporary files/directories.
-    # Ensure cleanup logic within each test function is robust.
 
     test_word2vec_pipeline_run()
     test_transformer_embedder_pipeline_run()
