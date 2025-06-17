@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 4.2 (Conditional Dask scheduler: synchronous for 1 worker, LocalCluster for >1)
+# VERSION: 4.3 (Robustly get original Dask scheduler, minor type hint fix)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -9,10 +9,10 @@ import logging
 import os
 import shutil
 import time
-from typing import List, Dict, Tuple, Any, Optional, Union
-from pathlib import Path  # Ensure Path is imported
+from typing import List, Dict, Tuple, Any, Optional, Union # Ensure Union is imported
+from pathlib import Path
 
-import dask  # Import dask for config setting
+import dask
 import dask.bag as db
 import pandas as pd
 import pyarrow
@@ -55,10 +55,7 @@ class GraphBuilder:
         Creates intermediate ngram map and edge list files for a given n-gram size.
         This function is designed to be run by Dask, either via LocalCluster or synchronously.
         """
-        # Set CUDA_VISIBLE_DEVICES to -1 within the worker/task environment
-        # This is crucial if this function is called in a new process/thread by Dask.
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-        # Optional: print to confirm, but can be noisy
         # print(f"[Task n={n_value}, PID={os.getpid()}]: CUDA_VISIBLE_DEVICES set to '{os.environ.get('CUDA_VISIBLE_DEVICES')}'.")
 
         process_start_time = time.time()
@@ -147,7 +144,6 @@ class GraphBuilder:
         edge_lists_bag = seq_bag.map(sequence_to_edges_str_list).flatten()
         temp_edge_parts_dir = os.path.join(temp_dir, f"edge_parts_n{n_value}")
         if os.path.exists(temp_edge_parts_dir): shutil.rmtree(temp_edge_parts_dir)
-        # os.makedirs(temp_edge_parts_dir) # to_textfiles creates it
 
         print(f"  [Task n={n_value}] Before second Dask compute (to_textfiles)...")
         try:
@@ -197,18 +193,18 @@ class GraphBuilder:
         DataUtils.print_header(f"Phase 1: Creating intermediate files...")
         phase1_start_time = time.time()
 
-        # Set CUDA_VISIBLE_DEVICES for the main process before any Dask operations
         original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
         print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations in main process.")
 
         if effective_num_workers == 1:
             print(f"  Running Phase 1 with Dask synchronous scheduler (num_workers=1).")
-            original_dask_scheduler = dask.config.get('scheduler')
+            # Get the original scheduler, providing a default if not set.
+            # Dask's default for bags/arrays without a client is often 'threads' or 'synchronous'.
+            original_dask_scheduler = dask.config.get('scheduler', 'threads') # <-- MODIFIED HERE
             dask.config.set(scheduler='synchronous')
             try:
                 for n_val_loop in tqdm(n_values, desc="Processing N-gram levels (Synchronous)"):
-                    # _create_intermediate_files will also set CUDA_VISIBLE_DEVICES for its own context
                     GraphBuilder._create_intermediate_files(
                         n_val_loop,
                         self.temp_dir,
@@ -225,13 +221,11 @@ class GraphBuilder:
         else:  # effective_num_workers > 1
             print(f"  Running Phase 1 with Dask LocalCluster ({effective_num_workers} workers, 'spawn' method).")
             try:
-                # Ensure no other Dask schedulers are running on default ports
-                # The 'Port 8787 is already in use' warning is a strong indicator to check this.
                 with LocalCluster(
                         n_workers=effective_num_workers,
                         threads_per_worker=1,
                         silence_logs=logging.ERROR,
-                        multiprocessing_method='spawn'  # Use 'spawn' for cleaner worker processes
+                        multiprocessing_method='spawn'
                 ) as cluster, Client(cluster) as client:
                     print(f"    Dask LocalCluster started. Dashboard: {client.dashboard_link}")
                     tasks = [client.submit(GraphBuilder._create_intermediate_files, n, self.temp_dir, self.protein_sequence_file, num_dask_partitions) for n in n_values]
@@ -240,7 +234,6 @@ class GraphBuilder:
                             future.result()
                         except Exception as e_task:
                             print(f"ERROR in Dask worker task during Phase 1: {e_task}")
-                            # Consider how to handle task failures
             except Exception as e_cluster:
                 print(f"ERROR setting up or running Dask LocalCluster: {e_cluster}")
                 import traceback

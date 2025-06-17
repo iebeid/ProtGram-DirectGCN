@@ -450,9 +450,9 @@ def test_ppi_pipeline_run():
     original_dummy_flag = config.RUN_DUMMY_TEST
     config.RUN_DUMMY_TEST = True
     original_epochs = config.EVAL_EPOCHS
-    config.EVAL_EPOCHS = 1
+    config.EVAL_EPOCHS = 1 # Keep epochs at 1 for speed
     original_folds = config.EVAL_N_FOLDS
-    config.EVAL_N_FOLDS = 1
+    config.EVAL_N_FOLDS = 2
 
     test_ppi_output_dir = Path(config.BASE_OUTPUT_DIR) / "test_ppi_eval_results"
     # dummy_data_base_dir_for_test = Path(config.BASE_OUTPUT_DIR) / "test_ppi_dummy_data_storage" # Not used directly by test
