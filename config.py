@@ -26,7 +26,7 @@ class Config:
 
         # --- PATH CONFIGURATION ---
         # self.PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-        self.PROJECT_ROOT = "/mnt/g/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction"
+        self.PROJECT_ROOT = Path("/mnt/g/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction").resolve()
         self.BASE_DATA_DIR = self.PROJECT_ROOT / "Data"
         self.BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.BASE_OUTPUT_DIR = self.BASE_DATA_DIR / "pipeline_output"
