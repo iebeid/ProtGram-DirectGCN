@@ -68,8 +68,19 @@ class GNNBenchmarker:
                 dataset_obj = KarateClub(transform=None)  # Apply transforms after loading
             elif name.lower() in ['cora', 'citeseer', 'pubmed']:
                 dataset_obj = Planetoid(root=root_path, name=name, transform=None)
+            # In src/benchmarks/gnn_benchmarker.py, within _get_dataset method
+
+            # ... other elif blocks ...
             elif name.lower() in ['cornell', 'texas', 'wisconsin']:
-                dataset_obj = HeterophilousGraphDataset(root=root_path, name=name, transform=None)
+                from torch_geometric.datasets import WebKB  # Import WebKB
+                try:
+                    # WebKB stores data in root_path/name
+                    dataset_obj = WebKB(root=root_path, name=name, transform=None)
+                except Exception as e:
+                    print(f"Warning: Could not load {name} using WebKB loader: {e}")
+                    return None, None, None, None
+            # ...
+
             else:
                 print(f"ERROR: Dataset '{name}' loader not implemented in _get_dataset.")
                 return None, None, None, None

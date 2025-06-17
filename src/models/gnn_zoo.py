@@ -167,29 +167,42 @@ class ChebNet(BaseGNN):
         return x
 
 
-class SignedNet(BaseGNN): # Note: For unsigned graphs, neg_edge_index will be empty.
+# In src/models/gnn_zoo.py
+class SignedNet(BaseGNN):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers=2, dropout_rate=0.5):
         super().__init__()
         self.convs = nn.ModuleList()
+        self.bns = nn.ModuleList()  # Batch norms can help
         self.dropout_rate = dropout_rate
         if num_layers <= 0: raise ValueError("num_layers must be positive")
 
         current_dim = in_channels
         for i in range(num_layers):
-            out_dim_conv = hidden_channels if i < num_layers - 1 else out_channels
-            # first_aggr is True only for the very first layer in a typical SignedGraphConv stack
-            is_first_layer_in_stack = (i == 0)
-            self.convs.append(SignedConv(current_dim, out_dim_conv, first_aggr=is_first_layer_in_stack))
-            current_dim = out_dim_conv * 2 if is_first_layer_in_stack else out_dim_conv # SignedConv doubles dim on first_aggr
+            is_first_layer = (i == 0)
+            # The output dimension of this specific SignedConv layer
+            layer_out_channels = hidden_channels if i < num_layers - 1 else out_channels
+
+            self.convs.append(SignedConv(current_dim, layer_out_channels, first_aggr=is_first_layer))
+
+            # Determine the input dimension for the *next* layer
+            if is_first_layer:
+                current_dim = layer_out_channels * 2  # Output of first_aggr=True is 2 * its out_channels
+            else:
+                current_dim = layer_out_channels  # Output of first_aggr=False is its out_channels
+
+            if i < num_layers - 1:  # Add batch norm for intermediate layers
+                self.bns.append(nn.BatchNorm1d(current_dim))
 
     def forward(self, data: Data) -> torch.Tensor:
         x, edge_index = data.x, data.edge_index
-        neg_edge_index = torch.empty((2, 0), dtype=edge_index.dtype, device=edge_index.device) # For unsigned graphs
+        # For unsigned graphs, create an empty neg_edge_index
+        neg_edge_index = torch.empty((2, 0), dtype=edge_index.dtype, device=edge_index.device)
 
         for i, conv in enumerate(self.convs):
             x = conv(x, pos_edge_index=edge_index, neg_edge_index=neg_edge_index)
             if i < len(self.convs) - 1:
-                x = F.relu(x) # Or F.tanh(x)
+                x = self.bns[i](x)  # Apply batch norm
+                x = F.relu(x)  # Or F.tanh(x)
                 x = F.dropout(x, p=self.dropout_rate, training=self.training)
         self.embedding_output = x
         return x
