@@ -1,6 +1,6 @@
-# src/pipeline/protgram_directgcn_embedder.py
+# src/pipeline/protgram_directgcn_trainer.py
 # ==============================================================================
-# MODULE: pipeline/protgram_directgcn_embedder.py
+# MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
 # VERSION: 3.5 (Pass FAI/FAO sparse components in Data object) - No changes from previous version needed for this round
@@ -32,7 +32,7 @@ from src.utils.models_utils import EmbeddingProcessor
 AMINO_ACID_ALPHABET = list("ACDEFGHIKLMNPQRSTVWY")
 
 
-class ProtGramDirectGCNEmbedder:
+class ProtGramDirectGCNTrainer:
     def __init__(self, config: Config):
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
