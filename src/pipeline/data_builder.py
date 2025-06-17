@@ -9,8 +9,8 @@ import logging
 import os
 import shutil
 import time
-from typing import List, Dict, Tuple, Any, Optional, Union # Ensure Union is imported
 from pathlib import Path
+from typing import List, Tuple, Union  # Ensure Union is imported
 
 import dask
 import dask.bag as db
@@ -48,9 +48,7 @@ class GraphBuilder:
         DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
 
     @staticmethod
-    def _create_intermediate_files(n_value: int, temp_dir: str,
-                                   protein_sequence_file_path_or_data: Union[str, Path, List[Tuple[str, str]]],
-                                   num_dask_partitions: int):
+    def _create_intermediate_files(n_value: int, temp_dir: str, protein_sequence_file_path_or_data: Union[str, Path, List[Tuple[str, str]]], num_dask_partitions: int):
         """
         Creates intermediate ngram map and edge list files for a given n-gram size.
         This function is designed to be run by Dask, either via LocalCluster or synchronously.
@@ -201,16 +199,11 @@ class GraphBuilder:
             print(f"  Running Phase 1 with Dask synchronous scheduler (num_workers=1).")
             # Get the original scheduler, providing a default if not set.
             # Dask's default for bags/arrays without a client is often 'threads' or 'synchronous'.
-            original_dask_scheduler = dask.config.get('scheduler', 'threads') # <-- MODIFIED HERE
+            original_dask_scheduler = dask.config.get('scheduler', 'threads')  # <-- MODIFIED HERE
             dask.config.set(scheduler='synchronous')
             try:
                 for n_val_loop in tqdm(n_values, desc="Processing N-gram levels (Synchronous)"):
-                    GraphBuilder._create_intermediate_files(
-                        n_val_loop,
-                        self.temp_dir,
-                        self.protein_sequence_file,
-                        num_dask_partitions
-                    )
+                    GraphBuilder._create_intermediate_files(n_val_loop, self.temp_dir, self.protein_sequence_file, num_dask_partitions)
             except Exception as e_sync:
                 print(f"ERROR during synchronous Dask processing in Phase 1: {e_sync}")
                 import traceback
@@ -221,12 +214,7 @@ class GraphBuilder:
         else:  # effective_num_workers > 1
             print(f"  Running Phase 1 with Dask LocalCluster ({effective_num_workers} workers, 'spawn' method).")
             try:
-                with LocalCluster(
-                        n_workers=effective_num_workers,
-                        threads_per_worker=1,
-                        silence_logs=logging.ERROR,
-                        multiprocessing_method='spawn'
-                ) as cluster, Client(cluster) as client:
+                with LocalCluster(n_workers=effective_num_workers, threads_per_worker=1, silence_logs=logging.ERROR, multiprocessing_method='spawn') as cluster, Client(cluster) as client:
                     print(f"    Dask LocalCluster started. Dashboard: {client.dashboard_link}")
                     tasks = [client.submit(GraphBuilder._create_intermediate_files, n, self.temp_dir, self.protein_sequence_file, num_dask_partitions) for n in n_values]
                     for future in tqdm(tasks, desc="Dask Workers Progress (Phase 1)"):
