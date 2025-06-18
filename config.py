@@ -92,7 +92,7 @@ class Config:
         self.PCA_TARGET_DIMENSION = 64 # PCA target for your main GCN pipeline embeddings
 
         # --- 3. WORD2VEC PIPELINE PARAMETERS ---
-        self.W2V_INPUT_FASTA_DIR = Path(self.GCN_INPUT_FASTA_PATH).parent
+        self.W2V_INPUT_FASTA_DIR = self.GCN_INPUT_FASTA_PATH
         self.W2V_VECTOR_SIZE = 100
         self.W2V_WINDOW = 5
         self.W2V_MIN_COUNT = 1

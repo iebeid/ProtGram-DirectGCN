@@ -7,7 +7,7 @@
 # ==============================================================================
 
 import os
-from typing import Dict, Optional, List, Tuple, Set, Union, TYPE_CHECKING, Iterator  # Added Iterator
+from typing import Dict, Optional, List, Tuple, Set, Union, TYPE_CHECKING, Iterator
 
 import h5py
 import numpy as np

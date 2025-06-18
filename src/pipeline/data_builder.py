@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 5.0 (Forced synchronous fallback for GraphBuilder due to persistent multiprocessing errors)
+# VERSION: 5.1 (Added graph statistics in Phase 2, forced synchronous fallback)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -12,16 +12,16 @@ import time
 from functools import partial
 from typing import List, Tuple, Dict, Iterator
 
-import dask.bag as db  # dask.bag is still used for the synchronous path for consistency
+import dask.bag as db
 import pandas as pd
 import pyarrow
 import pyarrow.parquet as pq
+import networkx as nx
+import community as community_louvain # For Louvain community detection
 
 from config import Config
 from src.utils.data_utils import DataUtils, DataLoader
 from src.utils.graph_utils import DirectedNgramGraph
-
-# from tqdm import tqdm # tqdm is not used in this version's output
 
 # TensorFlow import guard
 _tf = None
@@ -104,7 +104,7 @@ class GraphBuilder:
         # --- FALLBACK IMPLEMENTATION ---
         # Force synchronous operation if configured for more than 1 worker,
         # due to persistent multiprocessing errors.
-        effective_num_workers = 1
+        # effective_num_workers = 1 # This variable is not used anymore in the synchronous path
         if self.num_workers_config > 1:
             print("\n" + "=" * 80)
             print("WARNING: GraphBuilder is configured for parallel processing "
@@ -115,7 +115,6 @@ class GraphBuilder:
             print("         To re-attempt parallel graph building, you'll need to resolve the underlying")
             print("         environment or library conflicts related to multiprocessing.")
             print("=" * 80 + "\n")
-
         # --- END FALLBACK ---
 
         def get_preprocessed_sequence_stream() -> Iterator[Tuple[Tuple[str, str], bool]]:
@@ -125,7 +124,6 @@ class GraphBuilder:
                 if first_sequence:
                     first_sequence = False
 
-        # Materialize the generator to a list for db.from_sequence.
         try:
             sequence_stream_list = list(get_preprocessed_sequence_stream())
             if not sequence_stream_list:
@@ -135,16 +133,11 @@ class GraphBuilder:
             print(f"ERROR: FASTA file not found at {self.protein_sequence_file}")
             return
 
-        # For the synchronous path, npartitions can be 1 or a small number.
-        # Dask Bag's single-threaded scheduler will process it sequentially anyway.
         num_partitions_for_synchronous_bag = 1
         raw_sequence_bag_with_flag = db.from_sequence(sequence_stream_list, npartitions=num_partitions_for_synchronous_bag)
         preprocessed_sequence_bag = raw_sequence_bag_with_flag.starmap(_preprocess_sequence_tuple_for_bag)
 
         original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
-        # No need to set CUDA_VISIBLE_DEVICES to -1 here if all Dask is single-threaded
-        # But keeping it for consistency if any part of Dask's single-threaded scheduler
-        # might still be sensitive.
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
         print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations (even if synchronous).")
 
@@ -155,7 +148,6 @@ class GraphBuilder:
             output_ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n_val_loop}.parquet')
             output_edge_file = os.path.join(self.temp_dir, f'edge_list_n{n_val_loop}.txt')
 
-            # --- Step 1: Generate N-grams (Dask Bag - single-threaded) then Find Unique and Save (Sequential) ---
             print(f"  [n={n_val_loop}] Generating all n-grams (including duplicates) using Dask Bag (single-threaded)...")
             sys.stdout.flush()
 
@@ -164,7 +156,6 @@ class GraphBuilder:
 
             all_ngrams_list_with_duplicates = []
             try:
-                # Always use single-threaded scheduler due to fallback
                 print("    Computing all n-grams (with duplicates) synchronously...")
                 all_ngrams_list_with_duplicates = all_ngrams_bag_flattened.compute(scheduler='single-threaded')
                 print(f"    Computed {len(all_ngrams_list_with_duplicates)} n-grams (including duplicates).")
@@ -172,9 +163,8 @@ class GraphBuilder:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for all n-grams: {e_compute_ngrams}")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
-                continue  # Skip to next n-gram level
+                continue
 
-            # Sequential part: find unique, sort, create DataFrame, save
             print(f"    Finding unique n-grams and saving map sequentially...")
             if not all_ngrams_list_with_duplicates:
                 print(f"  [n={n_val_loop}] No n-grams generated. Creating empty map file.")
@@ -211,7 +201,6 @@ class GraphBuilder:
                 print(f"  [n={n_val_loop}] ERROR reading back ngram map: {e_read_map}. Skipping edge generation.")
                 continue
 
-            # --- Step 2: Generate Edge Strings (Dask Bag - single-threaded) then Save (Sequential) ---
             print(f"  [n={n_val_loop}] Generating all edge strings using Dask Bag (single-threaded)...")
             sys.stdout.flush()
 
@@ -220,7 +209,6 @@ class GraphBuilder:
 
             all_edges_str_list = []
             try:
-                # Always use single-threaded scheduler
                 print("    Computing all edge strings synchronously...")
                 all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler='single-threaded')
                 print(f"    Computed {len(all_edges_str_list)} edge strings.")
@@ -230,7 +218,6 @@ class GraphBuilder:
                 traceback.print_exc(file=sys.stderr)
                 continue
 
-            # Sequential part: write edge strings to file
             print(f"    Saving edge list sequentially...")
             try:
                 with open(output_edge_file, 'w') as outfile:
@@ -248,7 +235,6 @@ class GraphBuilder:
             os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
         print("  Restored original CUDA_VISIBLE_DEVICES setting for the main process.")
 
-        # --- Phase 2: Building and saving final graph objects (remains the same) ---
         DataUtils.print_header("Phase 2: Building and saving final graph objects")
         phase2_start_time = time.time()
         for n in n_values:
@@ -303,9 +289,83 @@ class GraphBuilder:
             output_path = os.path.join(self.output_dir, f'ngram_graph_n{n}.pkl')
             DataUtils.save_object(graph_object, output_path)
             print(f"  Graph for n={n} saved to {output_path}")
+
+            # --- Calculate and Print Graph Statistics ---
+            print(f"    --- Graph Statistics for n={n} ---")
+            num_nodes = graph_object.number_of_nodes
+            num_edges = graph_object.number_of_edges  # Number of unique (source, target) pairs with weights
+
+            print(f"      Nodes: {num_nodes}")
+            print(f"      Edges (unique weighted): {num_edges}")
+
+            if num_nodes > 1:
+                # Density: E / (N * (N-1)) for directed graph without self-loops
+                # If self-loops are possible and counted in num_edges, density is E / (N*N)
+                # Assuming num_edges does not count self-loops unless explicitly added.
+                # For this calculation, we assume no self-loops are part of the "possible" edges.
+                possible_edges_no_self_loops = num_nodes * (num_nodes - 1)
+                density = num_edges / possible_edges_no_self_loops if possible_edges_no_self_loops > 0 else 0
+                print(f"      Density (E / N(N-1)): {density:.4f}")
+            else:
+                print("      Density: N/A (graph has <= 1 node)")
+
+            is_complete = False
+            if num_nodes > 1:
+                if num_edges == num_nodes * (num_nodes - 1):
+                    is_complete = True
+            elif num_nodes == 1 and num_edges == 0: # A single node graph
+                is_complete = True # Or False, depending on definition. Let's say True.
+            print(f"      Is Complete (all N*(N-1) directed edges present): {is_complete}")
+
+            if num_nodes > 0:
+                G_nx = nx.DiGraph()
+                G_nx.add_nodes_from(range(num_nodes))
+                # graph_object.edges are (s_idx, t_idx, weight)
+                # nx.add_weighted_edges_from expects list of (u, v, weight_dict) or (u,v,w)
+                edges_for_nx = [(u, v, {'weight': w}) for u, v, w in graph_object.edges]
+                G_nx.add_edges_from(edges_for_nx) # Use add_edges_from for (u,v,dict)
+
+                num_wcc = nx.number_weakly_connected_components(G_nx)
+                print(f"      Weakly Connected Components: {num_wcc}")
+
+                if num_edges > 0: # SCC and Louvain require edges
+                    num_scc = nx.number_strongly_connected_components(G_nx)
+                    print(f"      Strongly Connected Components: {num_scc}")
+
+                    # Louvain communities (on undirected version for typical community structure)
+                    G_undirected_nx = G_nx.to_undirected()
+                    if G_undirected_nx.number_of_edges() > 0:
+                        partition = community_louvain.best_partition(G_undirected_nx, random_state=self.config.RANDOM_STATE)
+                        num_communities = len(set(partition.values()))
+                        print(f"      Louvain Communities (on undirected graph): {num_communities}")
+                    else:
+                        print("      Louvain Communities: N/A (no edges in undirected version)")
+                else:
+                    print("      Strongly Connected Components: N/A (no edges)")
+                    print("      Louvain Communities: N/A (no edges)")
+
+                # Average Degree (unweighted, based on unique directed edges)
+                avg_in_degree = num_edges / num_nodes if num_nodes > 0 else 0.0
+                avg_out_degree = num_edges / num_nodes if num_nodes > 0 else 0.0 # For DiGraph, sum(in_degree) == sum(out_degree) == num_edges
+                print(f"      Average In-Degree: {avg_in_degree:.2f}")
+                print(f"      Average Out-Degree: {avg_out_degree:.2f}")
+
+                # Average Degree Centrality (normalized by N-1)
+                if num_nodes > 1:
+                    in_degree_centrality = nx.in_degree_centrality(G_nx)
+                    avg_in_degree_centrality = sum(in_degree_centrality.values()) / num_nodes
+                    print(f"      Avg. In-Degree Centrality (normalized): {avg_in_degree_centrality:.4f}")
+
+                    out_degree_centrality = nx.out_degree_centrality(G_nx)
+                    avg_out_degree_centrality = sum(out_degree_centrality.values()) / num_nodes
+                    print(f"      Avg. Out-Degree Centrality (normalized): {avg_out_degree_centrality:.4f}")
+                else:
+                    print("      Avg. Degree Centrality: N/A (graph has <= 1 node)")
+            print(f"    --- End of Graph Statistics for n={n} ---\n")
+            # --- End of Statistics Calculation ---
+
         print(f"<<< Phase 2 finished in {time.time() - phase2_start_time:.2f}s.")
 
-        # --- Phase 3: Cleaning up temporary files ---
         DataUtils.print_header("Phase 3: Cleaning up temporary files")
         phase3_start_time = time.time()
         if os.path.exists(self.temp_dir):
