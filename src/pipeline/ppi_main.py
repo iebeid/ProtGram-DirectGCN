@@ -2,7 +2,7 @@
 # MODULE: pipeline/ppi_main.py
 # PURPOSE: Contains the complete workflow for evaluating one or more sets of
 #          protein embeddings on a link prediction task.
-# VERSION: 3.1 (Enhanced logging)
+# VERSION: 3.2 (Corrected EvaluationReporter usage)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -11,8 +11,9 @@ import os
 import random
 import shutil
 import time
+from contextlib import nullcontext
 from typing import List, Optional, Dict, Any, Tuple
-from tqdm import tqdm
+
 import h5py
 import mlflow
 import numpy as np
@@ -20,7 +21,7 @@ import pandas as pd
 import tensorflow as tf
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score, roc_curve
 from sklearn.model_selection import StratifiedKFold
-from contextlib import nullcontext
+from tqdm import tqdm
 
 from config import Config
 from src.models.mlp import MLP
@@ -34,7 +35,6 @@ class PPIPipeline:
         self.config = config
         print("PPIPipeline initialized.")
         DataUtils.print_header("PPI Evaluation Pipeline Initialized")
-
 
     @staticmethod
     def _create_dummy_data(base_dir: str, num_proteins: int, embedding_dim: int, num_pos: int, num_neg: int) -> Tuple[str, str, List[Dict[str, Any]]]:
@@ -117,7 +117,8 @@ class PPIPipeline:
             print(f"    Starting model training for {self.config.EVAL_EPOCHS} epochs...")
             history = model.fit(train_ds, epochs=self.config.EVAL_EPOCHS, validation_data=val_ds,
                                 verbose=1 if self.config.DEBUG_VERBOSE else 0,
-                                callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=self.config.EARLY_STOPPING_PATIENCE, restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else [])
+                                callbacks=[
+                                    tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=self.config.EARLY_STOPPING_PATIENCE, restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else [])
             if fold_num == 0: aggregated_results['history_dict_fold1'] = history.history
             print(f"    Model training finished for fold {fold_num + 1}.")
 
@@ -137,7 +138,14 @@ class PPIPipeline:
                     aggregated_results['roc_data_representative'] = (fpr, tpr, current_metrics['auc_sklearn'])
             else:
                 current_metrics['auc_sklearn'] = 0.5
-                if fold_num == 0: aggregated_results['roc_data_representative'] = (np.array([0,1]), np.array([0,1]), 0.5)
+                if fold_num == 0: aggregated_results['roc_data_representative'] = (np.array([0, 1]), np.array([0, 1]), 0.5)
+
+            # Add Hits@k and NDCG@k metrics if needed for PPI
+            # These typically require ranking predictions for a set of candidates per protein
+            # This dummy run doesn't generate candidates, so we'll add placeholder metrics
+            for k in self.config.EVAL_K_VALUES_FOR_TABLE:
+                current_metrics[f'hits_at_{k}'] = 0.0  # Placeholder
+                current_metrics[f'ndcg_at_{k}'] = 0.0  # Placeholder
 
             fold_metrics_list.append(current_metrics)
             print(f"    Fold {fold_num + 1} Metrics: {current_metrics}")
@@ -147,16 +155,23 @@ class PPIPipeline:
             print(f"    Fold {fold_num + 1} completed in {time.time() - fold_start_time:.2f}s.")
 
         if fold_metrics_list:
-            for key in fold_metrics_list[0].keys():
-                mean_val = np.nanmean([fm.get(key, np.nan) for fm in fold_metrics_list])
-                aggregated_results[f'test_{key}'] = mean_val
+            # Calculate mean and std dev across folds
+            metrics_keys = fold_metrics_list[0].keys() if fold_metrics_list else []
+            for key in metrics_keys:
+                values = [fm.get(key, np.nan) for fm in fold_metrics_list]
+                aggregated_results[f'test_{key}'] = np.nanmean(values)
+                # Calculate std dev only if there's more than one fold
+                if self.config.EVAL_N_FOLDS > 1:
+                    aggregated_results[f'test_{key}_std'] = np.nanstd(values)
+                else:
+                    aggregated_results[f'test_{key}_std'] = 0.0  # Std dev is 0 for 1 fold
 
-            f1_scores_all_folds = [fm.get('f1_sklearn', np.nan) for fm in fold_metrics_list]
-            auc_scores_all_folds = [fm.get('auc_sklearn', np.nan) for fm in fold_metrics_list]
-            aggregated_results['test_f1_sklearn_std'] = np.nanstd(f1_scores_all_folds)
-            aggregated_results['test_auc_sklearn_std'] = np.nanstd(auc_scores_all_folds)
-            aggregated_results['fold_f1_scores'] = f1_scores_all_folds
-            aggregated_results['fold_auc_scores'] = auc_scores_all_folds
+            # Store fold scores explicitly for statistical tests later
+            aggregated_results['fold_f1_scores'] = [fm.get('f1_sklearn', np.nan) for fm in fold_metrics_list]
+            aggregated_results['fold_auc_scores'] = [fm.get('auc_sklearn', np.nan) for fm in fold_metrics_list]
+            for k in self.config.EVAL_K_VALUES_FOR_TABLE:
+                aggregated_results[f'fold_hits_at_{k}_scores'] = [fm.get(f'hits_at_{k}', np.nan) for fm in fold_metrics_list]
+                aggregated_results[f'fold_ndcg_at_{k}_scores'] = [fm.get(f'ndcg_at_{k}', np.nan) for fm in fold_metrics_list]
 
         print(f"CV workflow for {embedding_name} finished in {time.time() - cv_start_time:.2f}s.")
         if self.config.DEBUG_VERBOSE: print(f"  Aggregated results for {embedding_name}: {aggregated_results}")
@@ -182,20 +197,24 @@ class PPIPipeline:
                 print("Warning: 'LP_EMBEDDING_FILES_TO_EVALUATE' is empty in config. No evaluation will run.")
                 return
 
+        # Create output directories
         plots_dir = os.path.join(output_dir, "plots")
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs(plots_dir, exist_ok=True)
         print(f"Output will be saved to: {output_dir}")
 
+        # Instantiate the EvaluationReporter *once* for this run
+        reporter = EvaluationReporter(base_output_dir=output_dir, k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE)
+
         DataUtils.print_header("Loading Interaction Pairs")
         load_pairs_start_time = time.time()
         all_pairs: List[Tuple[str, str, int]] = []
-        positive_stream = GroundTruthLoader.stream_interaction_pairs(pos_fp, 1, batch_size=self.config.EVAL_BATCH_SIZE*10, random_state=self.config.RANDOM_STATE)
+        positive_stream = GroundTruthLoader.stream_interaction_pairs(pos_fp, 1, batch_size=self.config.EVAL_BATCH_SIZE * 10, random_state=self.config.RANDOM_STATE)
         for batch in positive_stream: all_pairs.extend(batch)
         print(f"  Loaded {len(all_pairs)} positive pairs.")
 
         current_pos_count = len(all_pairs)
-        negative_stream = GroundTruthLoader.stream_interaction_pairs(neg_fp, 0, batch_size=self.config.EVAL_BATCH_SIZE*10, sample_n=self.config.SAMPLE_NEGATIVE_PAIRS, random_state=self.config.RANDOM_STATE)
+        negative_stream = GroundTruthLoader.stream_interaction_pairs(neg_fp, 0, batch_size=self.config.EVAL_BATCH_SIZE * 10, sample_n=self.config.SAMPLE_NEGATIVE_PAIRS, random_state=self.config.RANDOM_STATE)
         for batch in negative_stream: all_pairs.extend(batch)
         print(f"  Loaded {len(all_pairs) - current_pos_count} negative pairs.")
 
@@ -245,7 +264,7 @@ class PPIPipeline:
                             if p1 in protein_embeddings_loader and p2 in protein_embeddings_loader:
                                 filtered_pairs.append((p1, p2, label))
                             else:
-                                missing_ids_count+=1
+                                missing_ids_count += 1
                         print(f"  Pair filtering complete in {time.time() - filtering_start_time:.2f}s.")
                         print(f"  Filtered pairs: {len(filtered_pairs)} (Removed {missing_ids_count} pairs due to missing embeddings).")
 
@@ -272,8 +291,9 @@ class PPIPipeline:
                             mlflow.log_metrics(metrics_to_log)
                             if results.get('notes'): mlflow.log_param("notes", results['notes'])
 
+                        # Call instance method, passing only history and model name
                         if self.config.PLOT_TRAINING_HISTORY and results and results.get('history_dict_fold1'):
-                            history_plot_path = EvaluationReporter.plot_training_history(results['history_dict_fold1'], results['embedding_name'], plots_dir)
+                            history_plot_path = reporter.plot_training_history(results['history_dict_fold1'], results['embedding_name'])  # MODIFIED CALL
                             if mlflow_active and run and history_plot_path and os.path.exists(history_plot_path):
                                 mlflow.log_artifact(history_plot_path, "plots")
 
@@ -293,16 +313,19 @@ class PPIPipeline:
 
         if all_cv_results_list:
             DataUtils.print_header("FINAL AGGREGATE RESULTS & REPORTING")
-            summary_run_context = mlflow.start_run(run_id=parent_run_id, experiment_id=mlflow.get_experiment_by_name(self.config.MLFLOW_EXPERIMENT_NAME).experiment_id if parent_run_id and self.config.USE_MLFLOW else None,
+            summary_run_context = mlflow.start_run(run_id=parent_run_id,
+                                                   experiment_id=mlflow.get_experiment_by_name(self.config.MLFLOW_EXPERIMENT_NAME).experiment_id if parent_run_id and self.config.USE_MLFLOW else None,
                                                    run_name="Evaluation_Summary_Report", nested=bool(parent_run_id)) if self.config.USE_MLFLOW else nullcontext()
 
             with summary_run_context as summary_run:
-                summary_path = EvaluationReporter.write_summary_file(
-                    all_cv_results_list, output_dir, self.config.EVAL_MAIN_EMBEDDING_FOR_STATS,
-                    'test_auc_sklearn', self.config.EVAL_STATISTICAL_TEST_ALPHA, self.config.EVAL_K_VALUES_FOR_TABLE
+                # Call instance method, passing results list and config values
+                summary_path = reporter.write_summary_file(  # MODIFIED CALL
+                    all_cv_results_list, self.config.EVAL_MAIN_EMBEDDING_FOR_STATS,
+                    'test_auc_sklearn', self.config.EVAL_STATISTICAL_TEST_ALPHA
                 )
-                roc_plot_path = EvaluationReporter.plot_roc_curves(all_cv_results_list, plots_dir)
-                comparison_chart_path = EvaluationReporter.plot_comparison_charts(all_cv_results_list, self.config.EVAL_K_VALUES_FOR_TABLE, plots_dir)
+                # Call instance methods for other plots
+                roc_plot_path = reporter.plot_roc_curves(all_cv_results_list)  # MODIFIED CALL
+                comparison_chart_path = reporter.plot_comparison_charts(all_cv_results_list)  # MODIFIED CALL
 
                 if self.config.USE_MLFLOW and summary_run:
                     print("Logging summary artifacts to MLflow...")
@@ -314,7 +337,7 @@ class PPIPipeline:
                         mlflow.log_metric(f"summary_{self.config.EVAL_MAIN_EMBEDDING_FOR_STATS}_auc", main_emb_results.get('test_auc_sklearn', 0))
                         mlflow.log_metric(f"summary_{self.config.EVAL_MAIN_EMBEDDING_FOR_STATS}_f1", main_emb_results.get('test_f1_sklearn', 0))
                 if self.config.USE_MLFLOW and summary_run and parent_run_id:
-                     mlflow.end_run()
+                    mlflow.end_run()
         else:
             print("\nNo CV results generated from any embedding configurations.")
 
