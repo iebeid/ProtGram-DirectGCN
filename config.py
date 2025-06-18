@@ -97,7 +97,8 @@ class Config:
         self.W2V_WINDOW = 5
         self.W2V_MIN_COUNT = 1
         self.W2V_EPOCHS = 5
-        self.W2V_WORKERS = max(1, os.cpu_count() - 2) if os.cpu_count() else 1
+        # self.W2V_WORKERS = max(1, os.cpu_count() - 2) if os.cpu_count() else 1
+        self.W2V_WORKERS = 1
         self.W2V_POOLING_STRATEGY = 'mean'
         self.APPLY_PCA_TO_W2V = True
 
