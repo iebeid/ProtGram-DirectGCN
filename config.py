@@ -21,7 +21,7 @@ class Config:
         self.RUN_WORD2VEC_PIPELINE = False
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = False
-        self.RUN_MAIN_PPI_EVALUATION = True
+        self.RUN_MAIN_PPI_EVALUATION = False
         self.RUN_DUMMY_TEST = True
         self.CLEANUP_DUMMY_DATA = True
 
