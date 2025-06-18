@@ -457,12 +457,17 @@ class GNNBenchmarker:
                 # layer_dims should be [num_features, hidden1, ..., hiddenN, output_embedding_dim]
                 # task_num_output_classes is for the final decoder on top of these embeddings.
 
-                # Example: if GCN_HIDDEN_LAYER_DIMS is [128, 64] (meaning hidden1=128, output_emb=64)
-                # and num_classes for PPI is 121 (for the decoder)
                 if not self.config.GCN_HIDDEN_LAYER_DIMS:
-                    layer_dims_for_protgram = [num_features, num_classes]  # Or a sensible default embedding dim
+                    # If no hidden dims, maybe just input -> output_embedding_dim (e.g., 64)
+                    # This case needs careful thought: what's the desired output embedding size?
+                    # Let's assume GCN_HIDDEN_LAYER_DIMS always includes the final embedding dim.
+                    print("Warning: GCN_HIDDEN_LAYER_DIMS is empty. ProtGramDirectGCN for PPI might not be configured correctly.")
+                    # Fallback to a simple structure if GCN_HIDDEN_LAYER_DIMS is empty
+                    # This might not be ideal, depends on what ProtGramDirectGCN expects.
+                    # For now, let's assume GCN_HIDDEN_LAYER_DIMS is correctly populated.
+                    # If GCN_HIDDEN_LAYER_DIMS is [128, 64], then layer_dims = [num_features, 128, 64]
+                    layer_dims_for_protgram = [num_features] + self.config.GCN_HIDDEN_LAYER_DIMS
                 else:
-                    # Assuming GCN_HIDDEN_LAYER_DIMS already defines the full stack including the output embedding dim
                     layer_dims_for_protgram = [num_features] + self.config.GCN_HIDDEN_LAYER_DIMS
 
                 model_zoo_cfg["ProtGramDirectGCN"] = {
@@ -473,7 +478,7 @@ class GNNBenchmarker:
                         "task_num_output_classes": num_classes,  # For the final decoder
                         "n_gram_len": 0,  # Or a relevant value if features are n-gram based for PPI
                         "one_gram_dim": 0,  # Typically 0 for PPI if features are not n-gram based
-                        "max_pe_len": self.config.GCN_MAX_PE_LEN,
+                        "max_pe_len": 0,
                         "dropout": self.config.GCN_DROPOUT_RATE,
                         "use_vector_coeffs": False,  # IMPORTANT for varying graph sizes in PPI
                         "l2_eps": self.config.GCN_PROPAGATION_EPSILON

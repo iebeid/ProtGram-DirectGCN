@@ -21,7 +21,7 @@ class Config:
         self.RUN_WORD2VEC_PIPELINE = False
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = True
-        self.RUN_MAIN_PPI_EVALUATION = True
+        self.RUN_MAIN_PPI_EVALUATION = False
         self.RUN_DUMMY_TEST = True
         self.CLEANUP_DUMMY_DATA = True
 
@@ -113,7 +113,7 @@ class Config:
         self.PLOT_TRAINING_HISTORY = True
         self.EARLY_STOPPING_PATIENCE = 10
         self.PERFORM_H5_INTEGRITY_CHECK = True
-        self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 500000
+        self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 10000
         self.TF_DATASET_STRATEGY = 'from_tensor_slices'
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
             {"name": "ProtT5-UniProt", "path": self.BASE_DATA_DIR / "models/per-protein.h5"},
