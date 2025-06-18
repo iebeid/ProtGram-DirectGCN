@@ -1,7 +1,8 @@
+# src/models/protgram_directgcn.py
 # ==============================================================================
 # MODULE: models/protgram_directgcn.py
 # PURPOSE: Contains the PyTorch class definitions for the custom GCN model.
-# VERSION: 7.4 (Corrected residual connection logic in forward pass)
+# VERSION: 7.5 (Ensured _apply_pe is out-of-place to fix autograd error)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -124,14 +125,9 @@ class ProtGramDirectGCN(nn.Module):
         self.dropout = dropout
         self.l2_eps = l2_eps
 
-        # Positional Embedding Layer
-        # PE is applied if pe_layer is not None (configured by one_gram_dim and max_pe_len)
         self.pe_layer = None
         if one_gram_dim > 0 and max_pe_len > 0:
             self.pe_layer = nn.Embedding(max_pe_len, one_gram_dim)
-            # print(f"ProtGramDirectGCN: Initialized PE layer with max_pe_len={max_pe_len}, one_gram_dim={one_gram_dim}")
-        # else:
-        # print("ProtGramDirectGCN: PE layer not initialized (one_gram_dim or max_pe_len is zero).")
 
         self.convs = nn.ModuleList()
         self.res_projs = nn.ModuleList()
@@ -142,15 +138,10 @@ class ProtGramDirectGCN(nn.Module):
         for i in range(len(layer_dims) - 1):
             in_dim = layer_dims[i]
             out_dim = layer_dims[i + 1]
-            # num_graph_nodes is required by DirectGCNLayer if use_vector_coeffs=True
-            # For PPI, num_graph_nodes might vary per graph. This needs careful handling if use_vector_coeffs=True for PPI.
-            # For now, assuming num_graph_nodes is fixed for the model instance.
-            # If num_graph_nodes is None (e.g. for PPI), use_vector_coeffs should ideally be False or handled differently.
-            current_num_nodes_for_layer = num_graph_nodes if num_graph_nodes is not None else 0  # Placeholder if None
+            current_num_nodes_for_layer = num_graph_nodes if num_graph_nodes is not None else 0
 
             effective_use_vector_coeffs = use_vector_coeffs
             if use_vector_coeffs and current_num_nodes_for_layer <= 0:
-                # print(f"Warning: ProtGramDirectGCN Layer {i}: use_vector_coeffs is True but num_graph_nodes ({current_num_nodes_for_layer}) is invalid. Defaulting to scalar coeffs for this layer.")
                 effective_use_vector_coeffs = False
 
             self.convs.append(DirectGCNLayer(in_dim, out_dim, current_num_nodes_for_layer, effective_use_vector_coeffs))
@@ -160,60 +151,60 @@ class ProtGramDirectGCN(nn.Module):
         self.decoder_fc = nn.Linear(final_embedding_dim, task_num_output_classes)
 
     def _apply_pe(self, x: torch.Tensor) -> torch.Tensor:
-        """Applies positional embeddings if pe_layer is configured."""
-        if self.pe_layer is None:  # This is the primary configuration check
-            return x
+        """Applies positional embeddings if pe_layer is configured. Ensures out-of-place modification."""
+        if self.pe_layer is None:
+            return x  # Return original x if no PE
 
-        # The following logic assumes x is structured as (N, n_gram_len * one_gram_dim)
-        # and that self.one_gram_dim and self.n_gram_len are set appropriately for this structure.
         if self.n_gram_len > 0 and self.one_gram_dim > 0:
             expected_dim = self.n_gram_len * self.one_gram_dim
             if x.shape[1] == expected_dim:
-                x_reshaped = x.view(-1, self.n_gram_len, self.one_gram_dim)
+                # Clone x to ensure any modifications are on a new tensor,
+                # leaving the original input x untouched.
+                x_with_pe = x.clone()
+
+                # Reshape the clone for PE application
+                x_reshaped = x_with_pe.view(-1, self.n_gram_len, self.one_gram_dim)
+
                 pos_to_enc = min(self.n_gram_len, self.pe_layer.num_embeddings)
                 if pos_to_enc > 0:
                     pos_indices = torch.arange(0, pos_to_enc, device=x.device, dtype=torch.long)
-                    pe = self.pe_layer(pos_indices)
-                    x_reshaped[:, :pos_to_enc, :] += pe.unsqueeze(0)
+                    pe_values = self.pe_layer(pos_indices)  # Shape: (pos_to_enc, one_gram_dim)
+
+                    # Perform the addition on the slice of the reshaped clone.
+                    # This modifies x_reshaped (and thus x_with_pe) but not the original x.
+                    x_reshaped[:, :pos_to_enc, :] = x_reshaped[:, :pos_to_enc, :] + pe_values.unsqueeze(0)
+
+                # Return the view of the modified clone
                 return x_reshaped.view(-1, expected_dim)
-            # else:
-            # print(f"ProtGramDirectGCN PE: Input dim {x.shape[1]} does not match expected n_gram_len*one_gram_dim ({expected_dim}). Skipping PE application.")
-            # return x # Skip if dimensions don't match the expected structure for this PE type
-        return x  # Skip if n_gram_len or one_gram_dim is not set for PE
+                # else:
+            # If dimensions don't match, return original x (no PE applied)
+            return x
+
+            # If PE conditions (n_gram_len, one_gram_dim) not met, return original x
+        return x
 
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
-        # The model expects the Data object to contain all necessary edge information
         x = data.x
-        # These are expected to be derived from mathcal_A_in and mathcal_A_out
         ei_in, ew_in = data.edge_index_in, data.edge_weight_in
         ei_out, ew_out = data.edge_index_out, data.edge_weight_out
 
-        # Note: fai/fao components are now in `data` but not used by this model's layers yet.
-        # fai_ei, fai_ew = data.fai_edge_index, data.fai_edge_weight
-        # fao_ei, fao_ew = data.fao_edge_index, data.fao_edge_weight
-
-        h = self._apply_pe(x)  # Initial input to the first layer
+        h = self._apply_pe(x)
 
         for i in range(len(self.convs)):
-            h_res = h  # Store input for the residual connection
+            h_res = h
 
-            gcn_layer = self.convs[i]  # Get the GCN layer instance
-            res_layer = self.res_projs[i]  # Get the residual projection layer instance
+            gcn_layer = self.convs[i]
+            res_layer = self.res_projs[i]
 
-            # Apply the layers to the input tensor (h_res)
             gcn_output = gcn_layer(h_res, ei_in, ew_in, ei_out, ew_out)
             residual_output = res_layer(h_res)
 
-            # Add the outputs of the GCN and residual layers
             h = gcn_output + residual_output
-
-            # Apply activation and dropout *after* the residual addition
             h = F.tanh(h)
             h = F.dropout(h, p=self.dropout, training=self.training)
 
         final_embed_for_task = h
         task_logits = self.decoder_fc(final_embed_for_task)
-
         final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
 
         return F.log_softmax(task_logits, dim=-1), final_normalized_embeddings
