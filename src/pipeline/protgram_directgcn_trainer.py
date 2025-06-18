@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 3.6 (Hierarchical feature initialization by pooling (n-1)-gram prefix/suffix embeddings)
+# VERSION: 3.7 (Corrected L2 regularization accumulation in _train_model)
 # ==============================================================================
 
 import collections
@@ -68,11 +68,20 @@ class ProtGramDirectGCNTrainer:
                 continue
 
             primary_loss = criterion(log_probs[mask], targets[mask].to(log_probs.device).long())
-            l2_reg_term = torch.tensor(0., device=self.device)
+
+            # --- MODIFIED L2 Regularization Calculation ---
+            final_l2_reg_term = torch.tensor(0., device=self.device)
             if l2_lambda > 0:
+                param_sq_norms = []
                 for param in model.parameters():
-                    l2_reg_term += torch.norm(param, p=2).pow(2)
-            loss = primary_loss + l2_lambda * l2_reg_term
+                    if param.requires_grad:  # Only regularize parameters that require gradients
+                        param_sq_norms.append(torch.norm(param, p=2).pow(2))
+
+                if param_sq_norms:  # If there are any parameters to regularize
+                    final_l2_reg_term = torch.stack(param_sq_norms).sum()
+            # --- END MODIFIED L2 Regularization Calculation ---
+
+            loss = primary_loss + l2_lambda * final_l2_reg_term  # Use the summed term
 
             if loss.requires_grad:
                 loss.backward()
@@ -82,7 +91,8 @@ class ProtGramDirectGCNTrainer:
 
             if epoch % (max(1, epochs // 10)) == 0 or epoch == epochs:
                 if self.config.DEBUG_VERBOSE:
-                    print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * l2_reg_term).item():.4f}")
+                    # Use final_l2_reg_term for logging the L2 component's contribution
+                    print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * final_l2_reg_term).item():.4f}")
         # print("  Model training finished.")
 
     def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
