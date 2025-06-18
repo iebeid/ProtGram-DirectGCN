@@ -112,6 +112,10 @@ class DirectedNgramGraph(Graph):
         # `nodes` is idx_to_node from data_builder, keys are int, values are str (n-grams)
         # `edges` is weighted_edge_list_tuples, (int, int, float)
         super().__init__(nodes=nodes, edges=edges)  # This will call the new _process_constructor_inputs
+        print(f"  [DEBUG DirectedNgramGraph] Initialized with {len(self.original_edges)} original_edges.")
+        print(f"  [DEBUG DirectedNgramGraph] After super().__init__, self.edges has {len(self.edges)} edges.")
+        print(f"  [DEBUG DirectedNgramGraph] self.number_of_edges is {self.number_of_edges}")
+
         self.epsilon_propagation = epsilon_propagation
         self.n_value: Optional[int] = None  # This will be set in data_builder.py
 
@@ -141,6 +145,8 @@ class DirectedNgramGraph(Graph):
             self.A_in_w = torch.empty((0, 0), dtype=torch.float32)
             return
         self.A_out_w = torch.zeros((self.number_of_nodes, self.number_of_nodes), dtype=torch.float32)
+        print(f"  [DEBUG _create_raw_weighted_adj_matrices_torch] Processing {len(self.edges)} edges for A_out_w.")
+
         for s_idx, t_idx, weight, *_ in self.edges:  # Unpack, assuming weight is the third element
             if 0 <= s_idx < self.number_of_nodes and 0 <= t_idx < self.number_of_nodes:
                 self.A_out_w[s_idx, t_idx] = float(weight)

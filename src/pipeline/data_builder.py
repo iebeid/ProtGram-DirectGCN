@@ -280,6 +280,11 @@ class GraphBuilder:
                 weighted_edge_list_tuples = []
             else:
                 weighted_edge_df = edge_df.groupby(['source', 'target']).size().reset_index(name='weight')
+                print(f"  [DEBUG] Weighted edge_df for n={n}:")
+                print(weighted_edge_df.head())
+                print(f"  [DEBUG] Number of unique edges in weighted_edge_df: {len(weighted_edge_df)}")
+                print(f"  [DEBUG] weighted_edge_list_tuples (sample): {weighted_edge_list_tuples[:5] if weighted_edge_list_tuples else 'Empty'}")
+
                 print(f"  Aggregated {len(edge_df)} raw transitions into {len(weighted_edge_df)} unique weighted edges for n={n}.")
                 weighted_edge_list_tuples = [tuple(x) for x in weighted_edge_df[['source', 'target', 'weight']].to_numpy()]
 
