@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: models/protgram_directgcn.py
 # PURPOSE: Contains the PyTorch class definitions for the custom GCN model.
-# VERSION: 7.3 (Shared component non-propagated, PE logic confirmed)
+# VERSION: 7.4 (Corrected residual connection logic in forward pass)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -10,8 +10,8 @@ from typing import Optional, List, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import MessagePassing
 from torch_geometric.data import Data
+from torch_geometric.nn import MessagePassing
 
 from src.utils.models_utils import EmbeddingProcessor
 
@@ -44,7 +44,7 @@ class DirectGCNLayer(MessagePassing):
         if self.use_vector_coeffs:
             if self.num_nodes <= 0:  # Fallback if num_nodes is not valid for vector coeffs
                 # print(f"Warning: num_nodes is {self.num_nodes} for DirectGCNLayer, but use_vector_coeffs is True. Defaulting to scalar C_in/C_out.")
-                self.use_vector_coeffs = False # Override
+                self.use_vector_coeffs = False  # Override
                 self.C_in = nn.Parameter(torch.Tensor(1))
                 self.C_out = nn.Parameter(torch.Tensor(1))
             else:
@@ -63,7 +63,7 @@ class DirectGCNLayer(MessagePassing):
         for bias in [self.bias_main_in, self.bias_main_out, self.bias_shared_in, self.bias_shared_out]:
             nn.init.zeros_(bias)
 
-        if self.use_vector_coeffs: # This check is now safe due to __init__ fallback
+        if self.use_vector_coeffs:  # This check is now safe due to __init__ fallback
             nn.init.ones_(self.C_in_vec)
             nn.init.ones_(self.C_out_vec)
         else:
@@ -91,7 +91,7 @@ class DirectGCNLayer(MessagePassing):
         h_main_out_propagated = self.propagate(edge_index_out, x=h_main_out_transformed, edge_weight=edge_weight_out)
 
         # Shared component for outgoing (NOT propagated, direct linear transformation)
-        h_shared_for_out = self.lin_shared(x) # Re-use lin_shared(x)
+        h_shared_for_out = self.lin_shared(x)  # Re-use lin_shared(x)
 
         oc_combined = (h_main_out_propagated + self.bias_main_out) + (h_shared_for_out + self.bias_shared_out)
 
@@ -113,13 +113,14 @@ class ProtGramDirectGCN(nn.Module):
     The main GCN architecture, with a DYNAMIC number of GCN and residual
     layers.
     """
-    def __init__(self, layer_dims: List[int], num_graph_nodes: Optional[int], # num_graph_nodes can be None for PPI
+
+    def __init__(self, layer_dims: List[int], num_graph_nodes: Optional[int],  # num_graph_nodes can be None for PPI
                  task_num_output_classes: int, n_gram_len: int,
                  one_gram_dim: int, max_pe_len: int, dropout: float,
                  use_vector_coeffs: bool, l2_eps: float = 1e-12):
         super().__init__()
         self.n_gram_len = n_gram_len
-        self.one_gram_dim = one_gram_dim # Used by _apply_pe
+        self.one_gram_dim = one_gram_dim  # Used by _apply_pe
         self.dropout = dropout
         self.l2_eps = l2_eps
 
@@ -130,7 +131,7 @@ class ProtGramDirectGCN(nn.Module):
             self.pe_layer = nn.Embedding(max_pe_len, one_gram_dim)
             # print(f"ProtGramDirectGCN: Initialized PE layer with max_pe_len={max_pe_len}, one_gram_dim={one_gram_dim}")
         # else:
-            # print("ProtGramDirectGCN: PE layer not initialized (one_gram_dim or max_pe_len is zero).")
+        # print("ProtGramDirectGCN: PE layer not initialized (one_gram_dim or max_pe_len is zero).")
 
         self.convs = nn.ModuleList()
         self.res_projs = nn.ModuleList()
@@ -145,7 +146,7 @@ class ProtGramDirectGCN(nn.Module):
             # For PPI, num_graph_nodes might vary per graph. This needs careful handling if use_vector_coeffs=True for PPI.
             # For now, assuming num_graph_nodes is fixed for the model instance.
             # If num_graph_nodes is None (e.g. for PPI), use_vector_coeffs should ideally be False or handled differently.
-            current_num_nodes_for_layer = num_graph_nodes if num_graph_nodes is not None else 0 # Placeholder if None
+            current_num_nodes_for_layer = num_graph_nodes if num_graph_nodes is not None else 0  # Placeholder if None
 
             effective_use_vector_coeffs = use_vector_coeffs
             if use_vector_coeffs and current_num_nodes_for_layer <= 0:
@@ -160,7 +161,7 @@ class ProtGramDirectGCN(nn.Module):
 
     def _apply_pe(self, x: torch.Tensor) -> torch.Tensor:
         """Applies positional embeddings if pe_layer is configured."""
-        if self.pe_layer is None: # This is the primary configuration check
+        if self.pe_layer is None:  # This is the primary configuration check
             return x
 
         # The following logic assumes x is structured as (N, n_gram_len * one_gram_dim)
@@ -176,9 +177,9 @@ class ProtGramDirectGCN(nn.Module):
                     x_reshaped[:, :pos_to_enc, :] += pe.unsqueeze(0)
                 return x_reshaped.view(-1, expected_dim)
             # else:
-                # print(f"ProtGramDirectGCN PE: Input dim {x.shape[1]} does not match expected n_gram_len*one_gram_dim ({expected_dim}). Skipping PE application.")
-                # return x # Skip if dimensions don't match the expected structure for this PE type
-        return x # Skip if n_gram_len or one_gram_dim is not set for PE
+            # print(f"ProtGramDirectGCN PE: Input dim {x.shape[1]} does not match expected n_gram_len*one_gram_dim ({expected_dim}). Skipping PE application.")
+            # return x # Skip if dimensions don't match the expected structure for this PE type
+        return x  # Skip if n_gram_len or one_gram_dim is not set for PE
 
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
         # The model expects the Data object to contain all necessary edge information
@@ -191,14 +192,23 @@ class ProtGramDirectGCN(nn.Module):
         # fai_ei, fai_ew = data.fai_edge_index, data.fai_edge_weight
         # fao_ei, fao_ew = data.fao_edge_index, data.fao_edge_weight
 
-        h = self._apply_pe(x)
+        h = self._apply_pe(x)  # Initial input to the first layer
 
         for i in range(len(self.convs)):
-            h_res = h
-            # Pass the appropriate edge indices and weights to the layer
-            gcn_out = self.convs[i]
-            res_out = self.res_projs[i]
-            h = F.tanh(gcn_out + res_out)
+            h_res = h  # Store input for the residual connection
+
+            gcn_layer = self.convs[i]  # Get the GCN layer instance
+            res_layer = self.res_projs[i]  # Get the residual projection layer instance
+
+            # Apply the layers to the input tensor (h_res)
+            gcn_output = gcn_layer(h_res, ei_in, ew_in, ei_out, ew_out)
+            residual_output = res_layer(h_res)
+
+            # Add the outputs of the GCN and residual layers
+            h = gcn_output + residual_output
+
+            # Apply activation and dropout *after* the residual addition
+            h = F.tanh(h)
             h = F.dropout(h, p=self.dropout, training=self.training)
 
         final_embed_for_task = h
