@@ -1,30 +1,29 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 4.6 (Replaced LocalCluster with dask.delayed for parallelism)
+# VERSION: 4.7 (Chunked FASTA processing with dask.delayed to reduce memory)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
-import logging  # Keep for LocalCluster if ever re-enabled, though not used in this version's parallel path
 import os
 import shutil
-import sys  # For sys.stdout.flush()
+import sys
 import time
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 import dask
-import dask.bag as db
+# import dask.bag as db # Not used by _process_sequence_chunk
 import pandas as pd
 import pyarrow  # For type hinting and direct use
 import pyarrow.parquet as pq  # For direct Parquet I/O
-from dask.distributed import Client, LocalCluster  # Keep imports for synchronous path or future use
+# from dask.distributed import Client, LocalCluster # Keep for sync path
 from tqdm import tqdm
 
 from config import Config
-from src.utils.data_utils import DataUtils, DataLoader
+from src.utils.data_utils import DataUtils, DataLoader  # DataLoader.parse_sequences
 from src.utils.graph_utils import DirectedNgramGraph
 
-# TensorFlow import guard (optional, but can help in some environments)
+# TensorFlow import guard
 _tf = None
 
 
@@ -36,6 +35,40 @@ def get_tf():
     return _tf
 
 
+# Helper function to parse a specific chunk of sequences from a FASTA file
+def _parse_fasta_chunk(fasta_filepath: str, chunk_id: int, sequences_per_chunk: int) -> List[Tuple[str, str]]:
+    """
+    Parses a specific chunk of sequences from a FASTA file.
+    A simple way to define chunks is by sequence count.
+    """
+    sequences_in_chunk = []
+    start_index = chunk_id * sequences_per_chunk
+    end_index = start_index + sequences_per_chunk
+
+    current_index = 0
+    for seq_id, seq_text in DataLoader.parse_sequences(fasta_filepath):
+        if current_index >= end_index:
+            break
+        if current_index >= start_index:
+            sequences_in_chunk.append((seq_id, seq_text))
+        current_index += 1
+    return sequences_in_chunk
+
+
+def _preprocess_sequences_in_chunk(sequences: List[Tuple[str, str]], is_first_chunk_overall: bool) -> List[Tuple[str, str]]:
+    """Adds space tokens to sequences within a chunk."""
+    processed_sequences = []
+    for i, (pid, seq_text) in enumerate(sequences):
+        modified_seq_text = str(seq_text)
+        # The "first sequence in the file" space addition needs careful handling with chunking.
+        # If chunk_id == 0 and i == 0, it's the very first sequence.
+        if is_first_chunk_overall and i == 0:
+            modified_seq_text = " " + modified_seq_text
+        modified_seq_text = modified_seq_text + " "
+        processed_sequences.append((pid, modified_seq_text))
+    return processed_sequences
+
+
 class GraphBuilder:
     def __init__(self, config: Config):
         self.config = config
@@ -45,150 +78,62 @@ class GraphBuilder:
         self.num_workers = config.GRAPH_BUILDER_WORKERS if config.GRAPH_BUILDER_WORKERS is not None else 1
         self.temp_dir = os.path.join(str(config.BASE_OUTPUT_DIR), "temp_graph_builder")
         self.gcn_propagation_epsilon = getattr(config, 'GCN_PROPAGATION_EPSILON', 1e-9)
+        # Define a reasonable number of sequences per chunk for Dask tasks
+        self.sequences_per_dask_chunk = getattr(config, 'SEQUENCES_PER_DASK_CHUNK', 500)
+
         print(f"GraphBuilder initialized: n_max={self.n_max}, num_workers={self.num_workers}, output_dir='{self.output_dir}'")
         DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
 
     @staticmethod
-    def _create_intermediate_files(n_value: int, temp_dir: str, protein_sequence_data: List[Tuple[str, str]], num_inner_dask_partitions: int = 1):
+    def _process_sequence_chunk_for_n_level(
+            fasta_filepath: str,
+            n_value: int,
+            chunk_id: int,  # To identify the chunk
+            sequences_per_chunk: int,  # How many sequences this chunk should process
+            is_first_chunk_overall: bool  # True if this is chunk_id 0 of the entire dataset
+    ) -> Tuple[List[str], List[Tuple[str, str]]]:
         """
-        Creates intermediate ngram map and edge list files for a given n-gram size.
-        Receives pre-processed sequence data.
-        This function is designed to be run by Dask, either via LocalCluster or synchronously.
+        Processes a single chunk of sequences for a given n-gram level.
+        Returns:
+            - List of unique n-gram strings found in this chunk.
+            - List of (source_ngram_str, target_ngram_str) edge tuples from this chunk.
         """
-        # This will be set in each worker process spawned by dask.compute(scheduler='processes')
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        # print(f"[ChunkTask n={n_value}, chunk={chunk_id}, PID={os.getpid()}]: Starting processing.", flush=True)
 
-        process_start_time = time.time()
-        # Using flush=True for prints within Dask tasks can be helpful for debugging
-        print(f"[Task n={n_value}, PID={os.getpid()}]: Starting intermediate file construction for n-gram size {n_value}.", flush=True)
-        output_ngram_map_file = os.path.join(temp_dir, f'ngram_map_n{n_value}.parquet')
-        output_edge_file = os.path.join(temp_dir, f'edge_list_n{n_value}.txt')
+        # 1. Parse only the sequences for this chunk
+        sequences_this_chunk_raw = _parse_fasta_chunk(fasta_filepath, chunk_id, sequences_per_chunk)
+        if not sequences_this_chunk_raw:
+            # print(f"[ChunkTask n={n_value}, chunk={chunk_id}, PID={os.getpid()}]: No sequences in this chunk.", flush=True)
+            return [], []
 
-        sequences = protein_sequence_data
+        # 2. Preprocess (add space tokens)
+        sequences_this_chunk_processed = _preprocess_sequences_in_chunk(sequences_this_chunk_raw, is_first_chunk_overall)
 
-        if not sequences:
-            print(f"  [Task n={n_value}] ⚠️ Warning: No sequences provided for n={n_value}.", flush=True)
-            pd.DataFrame({'id': pd.Series(dtype='int'), 'ngram': pd.Series(dtype='str')}).to_parquet(output_ngram_map_file)
-            open(output_edge_file, 'w').close()
-            print(f"  [Task n={n_value}] Pass 1 & 2 Complete for n={n_value}. Empty intermediate files created.", flush=True)
-            return
+        # 3. Generate n-grams for this chunk
+        chunk_ngrams: List[str] = []
+        for _, seq_text in sequences_this_chunk_processed:
+            if len(seq_text) >= n_value:
+                for i in range(len(seq_text) - n_value + 1):
+                    chunk_ngrams.append(seq_text[i:i + n_value])
 
-        seq_bag = db.from_sequence(sequences, npartitions=num_inner_dask_partitions)
+        unique_chunk_ngrams = sorted(list(set(chunk_ngrams)))
 
-        def get_ngrams_from_seq_tuple(seq_tuple: Tuple[str, str]) -> List[str]:
-            _, sequence_text = seq_tuple
-            if not isinstance(sequence_text, str) or len(sequence_text) < n_value:
-                return []
-            return [sequence_text[i:i + n_value] for i in range(len(sequence_text) - n_value + 1)]
+        # 4. Generate edges (as n-gram strings) for this chunk
+        chunk_edges_str_pairs: List[Tuple[str, str]] = []
+        for _, seq_text in sequences_this_chunk_processed:
+            if len(seq_text) >= n_value + 1:
+                for i in range(len(seq_text) - n_value):
+                    source_ngram = seq_text[i:i + n_value]
+                    target_ngram = seq_text[i + 1:i + 1 + n_value]
+                    chunk_edges_str_pairs.append((source_ngram, target_ngram))
 
-        print(f"  [Task n={n_value}] Before first Dask compute (map/flatten/distinct)...", flush=True)
-        try:
-            # This compute() will use the default Dask scheduler for bags (often threads or synchronous)
-            # when run inside a worker process from the outer dask.compute(scheduler='processes').
-            unique_ngrams_series = seq_bag.map(get_ngrams_from_seq_tuple).flatten().distinct().compute()
-            print(f"  [Task n={n_value}] After first Dask compute. {len(unique_ngrams_series)} unique n-grams found.", flush=True)
-        except Exception as e_dask_compute1:
-            print(f"  [Task n={n_value}] ERROR during first Dask compute: {e_dask_compute1}", flush=True)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-            sys.stderr.flush()
-            raise e_dask_compute1
-
-        if not unique_ngrams_series:
-            print(f"  [Task n={n_value}] ⚠️ Warning: No n-grams of size n={n_value} were generated.", flush=True)
-            unique_ngrams_df = pd.DataFrame({'ngram': pd.Series(dtype='str')})
-        else:
-            unique_ngrams_df = pd.DataFrame(unique_ngrams_series, columns=['ngram'])
-
-        unique_ngrams_df = unique_ngrams_df.sort_values('ngram').reset_index(drop=True)
-        unique_ngrams_df['id'] = unique_ngrams_df.index
-
-        try:
-            table_to_write = pyarrow.Table.from_pandas(unique_ngrams_df[['id', 'ngram']], preserve_index=False)
-            pq.write_table(table_to_write, output_ngram_map_file)
-            del table_to_write
-            print(f"  [Task n={n_value}] Pass 1 Complete for n={n_value}. {len(unique_ngrams_df)} unique n-grams saved to map file using pyarrow.", flush=True)
-        except Exception as e_parquet_write:
-            print(f"  [Task n={n_value}] ERROR writing Parquet file with pyarrow: {e_parquet_write}", flush=True)
-            open(output_edge_file, 'w').close()
-            return
-
-        time.sleep(0.2)
-        if os.path.exists(output_ngram_map_file):
-            file_size = os.path.getsize(output_ngram_map_file)
-            if file_size < 8 and file_size > 0:
-                print(f"  [Task n={n_value}] WARNING: Parquet file {os.path.basename(output_ngram_map_file)} is very small ({file_size} bytes). This might indicate an issue.", flush=True)
-        else:
-            print(f"  [Task n={n_value}] CRITICAL: {os.path.basename(output_ngram_map_file)} does NOT exist after write and sleep.", flush=True)
-            open(output_edge_file, 'w').close()
-            return
-
-        if unique_ngrams_df.empty:
-            open(output_edge_file, 'w').close()
-            print(f"  [Task n={n_value}] No n-grams for n={n_value}, skipping edge generation.", flush=True)
-            print(f"[Task n={n_value}] Finished n={n_value} in {time.time() - process_start_time:.2f}s.", flush=True)
-            return
-
-        print(f"  [Task n={n_value}] Pass 2: Generating raw edge list for n={n_value}...", flush=True)
-        try:
-            table_read = pq.read_table(output_ngram_map_file, columns=['ngram', 'id'])
-            df_read = table_read.to_pandas()
-            ngram_to_id_map = df_read.set_index('ngram')['id'].to_dict()
-            del table_read, df_read
-            print(f"  [Task n={n_value}] Ngram map loaded for edge generation using pyarrow.", flush=True)
-        except Exception as e_read_parquet:
-            print(f"  [Task n={n_value}] ERROR reading ngram map for edge generation: {e_read_parquet}", flush=True)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-            sys.stderr.flush()
-            open(output_edge_file, 'w').close()
-            print(f"[Task n={n_value}] Finished n={n_value} with error in reading map.", flush=True)
-            return
-
-        def sequence_to_edges_str_list(seq_tuple: Tuple[str, str]) -> List[str]:
-            _, sequence = seq_tuple
-            if not isinstance(sequence, str) or len(sequence) < n_value + 1:
-                return []
-            edges_str = []
-            for i in range(len(sequence) - n_value):
-                source_ngram = sequence[i:i + n_value]
-                target_ngram = sequence[i + 1:i + 1 + n_value]
-                source_id = ngram_to_id_map.get(source_ngram)
-                target_id = ngram_to_id_map.get(target_ngram)
-                if source_id is not None and target_id is not None:
-                    edges_str.append(f"{source_id} {target_id}\n")
-            return edges_str
-
-        edge_lists_bag = seq_bag.map(sequence_to_edges_str_list).flatten()
-        temp_edge_parts_dir = os.path.join(temp_dir, f"edge_parts_n{n_value}")
-        if os.path.exists(temp_edge_parts_dir): shutil.rmtree(temp_edge_parts_dir)
-
-        print(f"  [Task n={n_value}] Before second Dask compute (to_textfiles)...", flush=True)
-        try:
-            edge_lists_bag.to_textfiles(os.path.join(temp_edge_parts_dir, 'part-*.txt'))
-            print(f"  [Task n={n_value}] After second Dask compute (to_textfiles).", flush=True)
-        except Exception as e_dask_compute2:
-            print(f"  [Task n={n_value}] ERROR during second Dask compute (to_textfiles): {e_dask_compute2}", flush=True)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-            sys.stderr.flush()
-            print(f"[Task n={n_value}] Finished n={n_value} with error in to_textfiles.", flush=True)
-            return
-
-        with open(output_edge_file, 'w') as outfile:
-            part_files = sorted([f for f in os.listdir(temp_edge_parts_dir) if f.startswith('part-') and f.endswith('.txt')])
-            for fname in part_files:
-                with open(os.path.join(temp_edge_parts_dir, fname), 'r') as infile:
-                    shutil.copyfileobj(infile, outfile)
-        shutil.rmtree(temp_edge_parts_dir)
-
-        print(f"  [Task n={n_value}] Pass 2 Complete for n={n_value}. Raw edge file created at {output_edge_file}.", flush=True)
-        print(f"[Task n={n_value}] Finished intermediate file construction for n={n_value} in {time.time() - process_start_time:.2f}s.", flush=True)
-        return f"Completed n={n_value}"  # Return a simple success indicator
+        # print(f"[ChunkTask n={n_value}, chunk={chunk_id}, PID={os.getpid()}]: Found {len(unique_chunk_ngrams)} unique ngrams, {len(chunk_edges_str_pairs)} edges.", flush=True)
+        return unique_chunk_ngrams, chunk_edges_str_pairs
 
     def run(self):
         overall_start_time = time.time()
-        DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs")
+        DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs (Chunked Processing)")
 
         if os.path.exists(self.temp_dir):
             print(f"Cleaning up existing temporary directory: {self.temp_dir}")
@@ -201,98 +146,163 @@ class GraphBuilder:
         n_values = range(1, self.n_max + 1)
         effective_num_workers = max(1, self.num_workers)
 
-        all_sequences_data_processed: List[Tuple[str, str]] = []
+        # Determine total number of sequences for chunking without loading all into memory
+        total_sequences = 0
         try:
-            print(f"  Loading and preprocessing all sequences from: {self.protein_sequence_file}")
-            raw_sequences_from_file = list(DataLoader.parse_sequences(self.protein_sequence_file))
-            if raw_sequences_from_file:
-                print(f"  Preprocessing {len(raw_sequences_from_file)} sequences to add start/end space tokens...")
-                for i, (pid, seq_text) in enumerate(raw_sequences_from_file):
-                    modified_seq_text = str(seq_text)
-                    if i == 0:
-                        modified_seq_text = " " + modified_seq_text
-                    modified_seq_text = modified_seq_text + " "
-                    all_sequences_data_processed.append((pid, modified_seq_text))
-                if all_sequences_data_processed:
-                    print(f"  Sequence preprocessing complete. Example of first processed sequence ('{all_sequences_data_processed[0][0]}'): '{all_sequences_data_processed[0][1][:30]}...'")
-            num_sequences = len(all_sequences_data_processed)
-            if not all_sequences_data_processed:
-                print("ERROR: No sequences loaded or after preprocessing from FASTA file. Cannot proceed.")
+            for _ in DataLoader.parse_sequences(self.protein_sequence_file):
+                total_sequences += 1
+            if total_sequences == 0:
+                print("ERROR: No sequences found in the FASTA file. Cannot proceed.")
                 return
-            print(f"  Loaded and preprocessed {num_sequences} sequences.")
+            print(f"  Total sequences in FASTA file: {total_sequences}")
         except FileNotFoundError:
             print(f"ERROR: FASTA file not found at {self.protein_sequence_file}. Cannot proceed.")
             return
-        except Exception as e_load_preprocess:
-            print(f"ERROR: Could not load or preprocess sequences from {self.protein_sequence_file}: {e_load_preprocess}")
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-            return
 
-        DataUtils.print_header(f"Phase 1: Creating intermediate files...")
+        num_chunks = (total_sequences + self.sequences_per_dask_chunk - 1) // self.sequences_per_dask_chunk
+        print(f"  Dividing into {num_chunks} chunks of approx {self.sequences_per_dask_chunk} sequences each.")
+
+        DataUtils.print_header(f"Phase 1: Processing Chunks and N-gram Levels via Dask.delayed")
         phase1_start_time = time.time()
         original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
-        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # For the main process
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
         print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations in main process.")
 
-        if effective_num_workers == 1:
-            print(f"  Running Phase 1 with Dask synchronous scheduler (num_workers=1).")
-            original_dask_scheduler = dask.config.get('scheduler', 'threads')
-            dask.config.set(scheduler='synchronous')
+        all_delayed_tasks = []
+        # Keep track of (n_value, chunk_id) for each task to map results later
+        task_metadata = []
+
+        for n_val_loop in n_values:
+            for chunk_idx in range(num_chunks):
+                is_first_overall = (chunk_idx == 0)  # Only the very first chunk of the file gets the initial space
+                task = dask.delayed(GraphBuilder._process_sequence_chunk_for_n_level)(
+                    self.protein_sequence_file,
+                    n_val_loop,
+                    chunk_idx,
+                    self.sequences_per_dask_chunk,
+                    is_first_overall
+                )
+                all_delayed_tasks.append(task)
+                task_metadata.append({'n_value': n_val_loop, 'chunk_id': chunk_idx})
+
+        results_from_chunks_raw = []
+        if all_delayed_tasks:
+            print(f"  Submitting {len(all_delayed_tasks)} delayed chunk processing tasks...")
+            sys.stdout.flush()
             try:
-                for n_val_loop in tqdm(n_values, desc="Processing N-gram levels (Synchronous)"):
-                    GraphBuilder._create_intermediate_files(n_val_loop, self.temp_dir, all_sequences_data_processed, 1)
-            except Exception as e_sync:
-                print(f"ERROR during synchronous Dask processing in Phase 1: {e_sync}")
+                if effective_num_workers == 1:
+                    print("  Running chunk processing synchronously (1 worker).")
+                    # Use a simple loop for synchronous execution to mimic dask.compute with single worker
+                    # This helps in debugging the _process_sequence_chunk_for_n_level function itself
+                    # results_from_chunks_raw = [task.compute(scheduler='single-threaded') for task in tqdm(all_delayed_tasks, desc="Processing Chunks (Sync)")]
+
+                    # For true synchronous, call directly without dask.delayed wrapper
+                    # This part is tricky if we want to use the same `all_delayed_tasks` list.
+                    # Let's stick to dask.compute for consistency, even for 1 worker.
+                    results_from_chunks_raw = dask.compute(*all_delayed_tasks, scheduler='single-threaded')
+
+                else:
+                    print(f"  Running chunk processing with 'processes' scheduler ({effective_num_workers} workers).")
+                    results_from_chunks_raw = dask.compute(*all_delayed_tasks, scheduler='processes', num_workers=effective_num_workers)
+
+                print(f"  All {len(results_from_chunks_raw)} chunk processing tasks completed.")
+            except Exception as e_delayed_chunks:
+                print(f"ERROR during dask.delayed chunk processing: {e_delayed_chunks}")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
-            finally:
-                dask.config.set(scheduler=original_dask_scheduler)
-                print(f"  Restored Dask scheduler to: {original_dask_scheduler}")
-        else:  # effective_num_workers > 1
-            print(f"  Running Phase 1 with dask.delayed and 'processes' scheduler ({effective_num_workers} workers).")
-            delayed_tasks = []
-            for n_val_loop in n_values:
-                task = dask.delayed(GraphBuilder._create_intermediate_files)(
-                    n_val_loop,
-                    self.temp_dir,
-                    all_sequences_data_processed,  # Pass the pre-loaded & pre-processed data
-                    1  # num_inner_dask_partitions for the bag inside the task
-                )
-                delayed_tasks.append(task)
+                # Clean up and exit if chunk processing fails
+                if original_cuda_visible_devices is None:
+                    if "CUDA_VISIBLE_DEVICES" in os.environ: del os.environ["CUDA_VISIBLE_DEVICES"]
+                else:
+                    os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
+                return
+        else:
+            print("  No chunk processing tasks to submit.")
 
-            if delayed_tasks:
-                print(f"  Submitting {len(delayed_tasks)} delayed tasks for n-gram levels...")
-                sys.stdout.flush()
-                try:
-                    # Using 'processes' scheduler. Dask will manage a process pool.
-                    # The num_workers here controls the size of that pool.
-                    with tqdm(total=len(delayed_tasks), desc="Dask.delayed Progress (Phase 1)") as pbar:
-                        results = dask.compute(*delayed_tasks, scheduler='processes', num_workers=effective_num_workers,
-                                               # Callback to update tqdm (optional, might not work perfectly with all Dask versions/schedulers for progress)
-                                               # Dask's own progress bar might be better if available/configured
-                                               # For now, we rely on the print statements from within the tasks
-                                               )
-                        # The results will be a tuple of return values from _create_intermediate_files
-                        # We can iterate through it to check for errors if tasks returned error indicators
-                        for i, res_item in enumerate(results):
-                            pbar.update(1)
-                            # print(f"Task for n={n_values[i]} completed with result: {res_item}") # If tasks return something useful
-                    print(f"  All {len(results)} dask.delayed tasks completed.")
-                except Exception as e_delayed:
-                    print(f"ERROR during dask.delayed processing in Phase 1: {e_delayed}")
-                    import traceback
-                    traceback.print_exc(file=sys.stderr)
-            else:
-                print("  No delayed tasks to submit.")
-
+        # Restore CUDA_VISIBLE_DEVICES
         if original_cuda_visible_devices is None:
             if "CUDA_VISIBLE_DEVICES" in os.environ: del os.environ["CUDA_VISIBLE_DEVICES"]
         else:
             os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
         print("  Restored original CUDA_VISIBLE_DEVICES setting for the main process.")
-        print(f"<<< Phase 1 finished in {time.time() - phase1_start_time:.2f}s.")
+        print(f"<<< Phase 1 (Chunk Processing) finished in {time.time() - phase1_start_time:.2f}s.")
 
+        # --- Phase 1.5: Aggregate results from chunks and create final intermediate files ---
+        DataUtils.print_header("Phase 1.5: Aggregating Chunk Results & Creating Intermediate Files")
+        aggregation_start_time = time.time()
+
+        # Reorganize results: results_by_n_level[n_value] = [(unique_ngrams_chunk0, edges_chunk0), ...]
+        results_by_n_level: Dict[int, List[Tuple[List[str], List[Tuple[str, str]]]]] = {n: [] for n in n_values}
+        for i, raw_res_tuple in enumerate(results_from_chunks_raw):
+            meta = task_metadata[i]
+            # Ensure raw_res_tuple is indeed a tuple of two lists
+            if isinstance(raw_res_tuple, tuple) and len(raw_res_tuple) == 2 and \
+                    isinstance(raw_res_tuple[0], list) and isinstance(raw_res_tuple[1], list):
+                results_by_n_level[meta['n_value']].append(raw_res_tuple)
+            else:
+                print(f"Warning: Unexpected result format for n={meta['n_value']}, chunk={meta['chunk_id']}. Result: {type(raw_res_tuple)}. Skipping this chunk's result.")
+
+        for n_val_loop in tqdm(n_values, desc="Aggregating and Saving by N-gram Level"):
+            output_ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n_val_loop}.parquet')
+            output_edge_file = os.path.join(self.temp_dir, f'edge_list_n{n_val_loop}.txt')
+
+            if not results_by_n_level.get(n_val_loop):
+                print(f"  No chunk results found for n={n_val_loop}. Creating empty intermediate files.")
+                pd.DataFrame({'id': pd.Series(dtype='int'), 'ngram': pd.Series(dtype='str')}).to_parquet(output_ngram_map_file)
+                open(output_edge_file, 'w').close()
+                continue
+
+            # 1. Aggregate unique n-grams
+            all_unique_ngrams_for_n_level = set()
+            for unique_ngrams_chunk, _ in results_by_n_level[n_val_loop]:
+                all_unique_ngrams_for_n_level.update(unique_ngrams_chunk)
+
+            if not all_unique_ngrams_for_n_level:
+                print(f"  No unique n-grams found for n={n_val_loop} after aggregation.")
+                unique_ngrams_df = pd.DataFrame({'ngram': pd.Series(dtype='str')})
+            else:
+                unique_ngrams_df = pd.DataFrame(sorted(list(all_unique_ngrams_for_n_level)), columns=['ngram'])
+
+            unique_ngrams_df = unique_ngrams_df.sort_values('ngram').reset_index(drop=True)
+            unique_ngrams_df['id'] = unique_ngrams_df.index
+
+            try:
+                table_to_write = pyarrow.Table.from_pandas(unique_ngrams_df[['id', 'ngram']], preserve_index=False)
+                pq.write_table(table_to_write, output_ngram_map_file)
+                del table_to_write
+                print(f"  [n={n_val_loop}] Aggregated {len(unique_ngrams_df)} unique n-grams. Saved map: {os.path.basename(output_ngram_map_file)}")
+            except Exception as e_parquet_agg_write:
+                print(f"  [n={n_val_loop}] ERROR writing aggregated Parquet map: {e_parquet_agg_write}")
+                continue  # Skip to next n-value if map saving fails
+
+            if unique_ngrams_df.empty:
+                open(output_edge_file, 'w').close()
+                print(f"  [n={n_val_loop}] No n-grams, so no edges will be generated.")
+                continue
+
+            ngram_to_global_id_map = unique_ngrams_df.set_index('ngram')['id'].to_dict()
+
+            # 2. Aggregate edges and convert to global IDs
+            final_edge_list_str = []
+            total_edges_from_chunks = 0
+            for _, edges_str_pairs_chunk in results_by_n_level[n_val_loop]:
+                total_edges_from_chunks += len(edges_str_pairs_chunk)
+                for src_ngram_str, tgt_ngram_str in edges_str_pairs_chunk:
+                    src_id = ngram_to_global_id_map.get(src_ngram_str)
+                    tgt_id = ngram_to_global_id_map.get(tgt_ngram_str)
+                    if src_id is not None and tgt_id is not None:
+                        final_edge_list_str.append(f"{src_id} {tgt_id}\n")
+
+            try:
+                with open(output_edge_file, 'w') as f_edge:
+                    f_edge.writelines(final_edge_list_str)
+                print(f"  [n={n_val_loop}] Aggregated {len(final_edge_list_str)} edges (from {total_edges_from_chunks} chunk edges). Saved list: {os.path.basename(output_edge_file)}")
+            except Exception as e_edge_agg_write:
+                print(f"  [n={n_val_loop}] ERROR writing aggregated edge list: {e_edge_agg_write}")
+
+        print(f"<<< Phase 1.5 (Aggregation) finished in {time.time() - aggregation_start_time:.2f}s.")
+
+        # --- Phase 2: Building and saving final graph objects (remains mostly the same) ---
         DataUtils.print_header("Phase 2: Building and saving final graph objects")
         phase2_start_time = time.time()
         for n in n_values:
@@ -349,9 +359,13 @@ class GraphBuilder:
             print(f"  Graph for n={n} saved to {output_path}")
         print(f"<<< Phase 2 finished in {time.time() - phase2_start_time:.2f}s.")
 
+        # --- Phase 3: Cleaning up temporary files ---
         DataUtils.print_header("Phase 3: Cleaning up temporary files")
         phase3_start_time = time.time()
         if os.path.exists(self.temp_dir):
+            # We are not creating chunk-specific files in temp_dir anymore with this design,
+            # only the aggregated ngram_map_nX.parquet and edge_list_nX.txt.
+            # So, cleaning self.temp_dir is correct.
             shutil.rmtree(self.temp_dir)
             print(f"  Temporary directory {self.temp_dir} cleaned up.")
         else:
