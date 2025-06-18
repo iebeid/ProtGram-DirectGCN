@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 4.9 (Further simplify Dask compute; distinct & file writing in main process)
+# VERSION: 5.0 (Forced synchronous fallback for GraphBuilder due to persistent multiprocessing errors)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -12,7 +12,7 @@ import time
 from functools import partial
 from typing import List, Tuple, Dict, Iterator
 
-import dask.bag as db
+import dask.bag as db  # dask.bag is still used for the synchronous path for consistency
 import pandas as pd
 import pyarrow
 import pyarrow.parquet as pq
@@ -20,6 +20,8 @@ import pyarrow.parquet as pq
 from config import Config
 from src.utils.data_utils import DataUtils, DataLoader
 from src.utils.graph_utils import DirectedNgramGraph
+
+# from tqdm import tqdm # tqdm is not used in this version's output
 
 # TensorFlow import guard
 _tf = None
@@ -33,9 +35,7 @@ def get_tf():
     return _tf
 
 
-# --- Helper functions for Dask Bag processing ---
-# These functions are designed to be simple and stateless for Dask workers
-
+# --- Helper functions for Dask Bag processing (used by synchronous path) ---
 def _preprocess_sequence_tuple_for_bag(seq_tuple: Tuple[str, str], add_initial_space: bool) -> Tuple[str, str]:
     """Adds space tokens to a single sequence tuple."""
     pid, seq_text = seq_tuple
@@ -80,16 +80,16 @@ class GraphBuilder:
         self.protein_sequence_file = str(config.GCN_INPUT_FASTA_PATH)
         self.output_dir = str(config.GRAPH_OBJECTS_DIR)
         self.n_max = config.GCN_NGRAM_MAX_N
-        self.num_workers = config.GRAPH_BUILDER_WORKERS if config.GRAPH_BUILDER_WORKERS is not None else 1
+        self.num_workers_config = config.GRAPH_BUILDER_WORKERS if config.GRAPH_BUILDER_WORKERS is not None else 1
         self.temp_dir = os.path.join(str(config.BASE_OUTPUT_DIR), "temp_graph_builder")
         self.gcn_propagation_epsilon = getattr(config, 'GCN_PROPAGATION_EPSILON', 1e-9)
 
-        print(f"GraphBuilder initialized: n_max={self.n_max}, num_workers={self.num_workers}, output_dir='{self.output_dir}'")
+        print(f"GraphBuilder initialized: n_max={self.n_max}, configured_workers={self.num_workers_config}, output_dir='{self.output_dir}'")
         DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
 
     def run(self):
         overall_start_time = time.time()
-        DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs (Dask Bag Approach - Simplified Compute)")
+        DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs")
 
         if os.path.exists(self.temp_dir):
             print(f"Cleaning up existing temporary directory: {self.temp_dir}")
@@ -100,7 +100,23 @@ class GraphBuilder:
         print(f"Final graph objects will be saved to: {self.output_dir}")
 
         n_values = range(1, self.n_max + 1)
-        effective_num_workers = max(1, self.num_workers)
+
+        # --- FALLBACK IMPLEMENTATION ---
+        # Force synchronous operation if configured for more than 1 worker,
+        # due to persistent multiprocessing errors.
+        effective_num_workers = 1
+        if self.num_workers_config > 1:
+            print("\n" + "=" * 80)
+            print("WARNING: GraphBuilder is configured for parallel processing "
+                  f"(GRAPH_BUILDER_WORKERS={self.num_workers_config}),")
+            print("         but due to persistent multiprocessing instability (e.g., 'double free' errors),")
+            print("         this stage will be FORCED TO RUN SYNCHRONOUSLY (num_workers=1).")
+            print("         This will be slower but aims for stability.")
+            print("         To re-attempt parallel graph building, you'll need to resolve the underlying")
+            print("         environment or library conflicts related to multiprocessing.")
+            print("=" * 80 + "\n")
+
+        # --- END FALLBACK ---
 
         def get_preprocessed_sequence_stream() -> Iterator[Tuple[Tuple[str, str], bool]]:
             first_sequence = True
@@ -109,14 +125,7 @@ class GraphBuilder:
                 if first_sequence:
                     first_sequence = False
 
-        num_partitions_for_bag = effective_num_workers * 2
-
         # Materialize the generator to a list for db.from_sequence.
-        # For very large files, this could be a memory concern for the main process.
-        # However, the Dask Bag operations themselves will stream/partition this list.
-        # If this list materialization is too large, `db.read_text` followed by custom parsing
-        # in Dask would be an alternative, but adds complexity to the initial bag creation.
-        # Given the sample file is small (11 sequences), this is fine for now.
         try:
             sequence_stream_list = list(get_preprocessed_sequence_stream())
             if not sequence_stream_list:
@@ -126,22 +135,28 @@ class GraphBuilder:
             print(f"ERROR: FASTA file not found at {self.protein_sequence_file}")
             return
 
-        raw_sequence_bag_with_flag = db.from_sequence(sequence_stream_list, npartitions=num_partitions_for_bag)
+        # For the synchronous path, npartitions can be 1 or a small number.
+        # Dask Bag's single-threaded scheduler will process it sequentially anyway.
+        num_partitions_for_synchronous_bag = 1
+        raw_sequence_bag_with_flag = db.from_sequence(sequence_stream_list, npartitions=num_partitions_for_synchronous_bag)
         preprocessed_sequence_bag = raw_sequence_bag_with_flag.starmap(_preprocess_sequence_tuple_for_bag)
 
         original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+        # No need to set CUDA_VISIBLE_DEVICES to -1 here if all Dask is single-threaded
+        # But keeping it for consistency if any part of Dask's single-threaded scheduler
+        # might still be sensitive.
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-        print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations.")
+        print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations (even if synchronous).")
 
         for n_val_loop in n_values:
-            DataUtils.print_header(f"Processing N-gram Level n = {n_val_loop}")
+            DataUtils.print_header(f"Processing N-gram Level n = {n_val_loop} (Synchronously)")
             phase1_level_start_time = time.time()
 
             output_ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n_val_loop}.parquet')
             output_edge_file = os.path.join(self.temp_dir, f'edge_list_n{n_val_loop}.txt')
 
-            # --- Step 1: Generate N-grams (Dask) then Find Unique and Save (Sequential) ---
-            print(f"  [n={n_val_loop}] Generating all n-grams (including duplicates) using Dask Bag...")
+            # --- Step 1: Generate N-grams (Dask Bag - single-threaded) then Find Unique and Save (Sequential) ---
+            print(f"  [n={n_val_loop}] Generating all n-grams (including duplicates) using Dask Bag (single-threaded)...")
             sys.stdout.flush()
 
             extract_ngrams_partial = partial(_extract_ngrams_from_sequence_tuple, n_val=n_val_loop)
@@ -149,18 +164,15 @@ class GraphBuilder:
 
             all_ngrams_list_with_duplicates = []
             try:
-                if effective_num_workers == 1:
-                    print("    Computing all n-grams (with duplicates) synchronously...")
-                    all_ngrams_list_with_duplicates = all_ngrams_bag_flattened.compute(scheduler='single-threaded')
-                else:
-                    print(f"    Computing all n-grams (with duplicates) with 'processes' scheduler ({effective_num_workers} workers)...")
-                    all_ngrams_list_with_duplicates = all_ngrams_bag_flattened.compute(scheduler='processes', num_workers=effective_num_workers)
+                # Always use single-threaded scheduler due to fallback
+                print("    Computing all n-grams (with duplicates) synchronously...")
+                all_ngrams_list_with_duplicates = all_ngrams_bag_flattened.compute(scheduler='single-threaded')
                 print(f"    Computed {len(all_ngrams_list_with_duplicates)} n-grams (including duplicates).")
             except Exception as e_compute_ngrams:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for all n-grams: {e_compute_ngrams}")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
-                continue
+                continue  # Skip to next n-gram level
 
             # Sequential part: find unique, sort, create DataFrame, save
             print(f"    Finding unique n-grams and saving map sequentially...")
@@ -199,8 +211,8 @@ class GraphBuilder:
                 print(f"  [n={n_val_loop}] ERROR reading back ngram map: {e_read_map}. Skipping edge generation.")
                 continue
 
-            # --- Step 2: Generate Edge Strings (Dask) then Save (Sequential) ---
-            print(f"  [n={n_val_loop}] Generating all edge strings using Dask Bag...")
+            # --- Step 2: Generate Edge Strings (Dask Bag - single-threaded) then Save (Sequential) ---
+            print(f"  [n={n_val_loop}] Generating all edge strings using Dask Bag (single-threaded)...")
             sys.stdout.flush()
 
             extract_edges_partial = partial(_extract_edges_from_sequence_tuple, n_val=n_val_loop, ngram_to_id_map=ngram_to_id_map)
@@ -208,12 +220,9 @@ class GraphBuilder:
 
             all_edges_str_list = []
             try:
-                if effective_num_workers == 1:
-                    print("    Computing all edge strings synchronously...")
-                    all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler='single-threaded')
-                else:
-                    print(f"    Computing all edge strings with 'processes' scheduler ({effective_num_workers} workers)...")
-                    all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler='processes', num_workers=effective_num_workers)
+                # Always use single-threaded scheduler
+                print("    Computing all edge strings synchronously...")
+                all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler='single-threaded')
                 print(f"    Computed {len(all_edges_str_list)} edge strings.")
             except Exception as e_compute_edges:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for edge strings: {e_compute_edges}")
@@ -225,7 +234,7 @@ class GraphBuilder:
             print(f"    Saving edge list sequentially...")
             try:
                 with open(output_edge_file, 'w') as outfile:
-                    outfile.writelines(all_edges_str_list)  # writelines is efficient for list of strings
+                    outfile.writelines(all_edges_str_list)
                 print(f"  [n={n_val_loop}] Edge list saved: {os.path.basename(output_edge_file)}")
             except Exception as e_write_edges:
                 print(f"  [n={n_val_loop}] ERROR writing edge list file: {e_write_edges}")
@@ -239,6 +248,7 @@ class GraphBuilder:
             os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
         print("  Restored original CUDA_VISIBLE_DEVICES setting for the main process.")
 
+        # --- Phase 2: Building and saving final graph objects (remains the same) ---
         DataUtils.print_header("Phase 2: Building and saving final graph objects")
         phase2_start_time = time.time()
         for n in n_values:
@@ -295,6 +305,7 @@ class GraphBuilder:
             print(f"  Graph for n={n} saved to {output_path}")
         print(f"<<< Phase 2 finished in {time.time() - phase2_start_time:.2f}s.")
 
+        # --- Phase 3: Cleaning up temporary files ---
         DataUtils.print_header("Phase 3: Cleaning up temporary files")
         phase3_start_time = time.time()
         if os.path.exists(self.temp_dir):
