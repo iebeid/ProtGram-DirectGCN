@@ -197,7 +197,7 @@ class ProtGramDirectGCN(nn.Module):
             h_res = h
             # Pass the appropriate edge indices and weights to the layer
             gcn_out = self.convs[i]
-            res_out = self.res_projsi
+            res_out = self.res_projs[i]
             h = F.tanh(gcn_out + res_out)
             h = F.dropout(h, p=self.dropout, training=self.training)
 
