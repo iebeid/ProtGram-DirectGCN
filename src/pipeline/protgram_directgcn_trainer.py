@@ -83,7 +83,8 @@ class ProtGramDirectGCNTrainer:
 
             if epoch % (max(1, epochs // 10)) == 0 or epoch == epochs:
                 if self.config.DEBUG_VERBOSE:
-                    print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * l2_reg_term).item():.4f}")
+                    # print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * l2_reg_term).item():.4f}")
+                    print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}")
         # print("  Model training finished.")
 
     def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
