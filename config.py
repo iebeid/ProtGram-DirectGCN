@@ -21,7 +21,7 @@ class Config:
         self.RUN_WORD2VEC_PIPELINE = True
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = True
-        self.RUN_MAIN_PPI_EVALUATION = True
+        self.RUN_MAIN_PPI_EVALUATION = False
         self.RUN_DUMMY_TEST = True
         self.CLEANUP_DUMMY_DATA = True
 
@@ -44,6 +44,8 @@ class Config:
         self.EVALUATION_RESULTS_DIR = self.BASE_OUTPUT_DIR / "3_evaluation_results"
         self.BENCHMARKING_RESULTS_DIR = self.BASE_OUTPUT_DIR / "4_benchmarking_results"
         self.BENCHMARK_EMBEDDINGS_DIR = self.BENCHMARKING_RESULTS_DIR / "embeddings" # For GNN benchmark embeddings
+
+        self.PPI_EVALUATION_MODELS_DIR = self.BASE_DATA_DIR / "models"
 
         # --- GNN BENCHMARKING PARAMETERS ---
         self.BENCHMARK_NODE_CLASSIFICATION_DATASETS = [
@@ -116,8 +118,9 @@ class Config:
         self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 10000
         self.TF_DATASET_STRATEGY = 'from_tensor_slices'
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
-            {"name": "ProtT5-UniProt", "path": self.BASE_DATA_DIR / "models/per-protein.h5"},
-            {"name": "ProtNgramGCN-n5", "path": self.GCN_EMBEDDINGS_DIR / "gcn_n5_embeddings.h5"},
+            {"name": "ProtT5-UniProt", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5-per-protein.h5"},
+            {"name": "ProtNgramGCN-n5-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "protgram_directgcn_per_protein.h5"},
+            {"name": "Word2Vec-Mean-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "word2vec_dim100_mean_pca64.h5"}
             # {"name": "ProtBERT-Mean-PCA64", "path": self.TRANSFORMER_EMBEDDINGS_DIR / "ProtBERT_mean_pca64.h5"},
             # {"name": "Word2Vec-Mean-PCA64", "path": self.WORD2VEC_EMBEDDINGS_DIR / "word2vec_dim100_mean_pca64.h5"}
         ]
