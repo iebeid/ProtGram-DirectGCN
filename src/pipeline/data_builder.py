@@ -95,7 +95,7 @@ class GraphBuilder:
             print(f"  [Task n={n_value}] Pass 1 & 2 Complete for n={n_value}. Empty intermediate files created.")
             return
 
-        seq_bag = db.from_sequence(sequences, npartitions=num_dask_partitions)
+        seq_bag = db.from_sequence(sequences, npartitions=1)
 
         def get_ngrams_from_seq_tuple(seq_tuple: Tuple[str, str]) -> List[str]:
             _, sequence_text = seq_tuple
@@ -248,6 +248,24 @@ class GraphBuilder:
                 # or ensure workers can access the file path. Here, we pass the path.
                 with LocalCluster(n_workers=effective_num_workers, threads_per_worker=1, silence_logs=logging.ERROR, multiprocessing_method='spawn') as cluster, Client(cluster) as client:
                     print(f"    Dask LocalCluster started. Dashboard: {client.dashboard_link}")
+
+                    # --- Add this diagnostic block ---
+                    def simple_worker_task(x_val):
+                        import os
+                        # This task should be very light and not import heavy libraries like TF/Torch
+                        # if they are suspected of causing issues during Dask worker init.
+                        return x_val * x_val, os.getpid()
+
+                    print("    Submitting simple Dask diagnostic tasks...")
+                    try:
+                        simple_futures = [client.submit(simple_worker_task, i) for i in range(effective_num_workers * 2)]
+                        simple_results = client.gather(simple_futures)
+                        worker_pids = {res[1] for res in simple_results}
+                        print(f"    Simple Dask diagnostic tasks completed. Results count: {len(simple_results)}. Worker PIDs: {worker_pids}")
+                    except Exception as e_simple_dask:
+                        print(f"    ERROR during simple Dask diagnostic tasks: {e_simple_dask}. This might indicate a fundamental issue with Dask LocalCluster setup or environment.")
+                        # Optionally, you might want to return or raise here if the basic Dask functionality fails.
+                    # --- End diagnostic block ---
                     tasks = [client.submit(GraphBuilder._create_intermediate_files, n, self.temp_dir, self.protein_sequence_file, num_dask_partitions) for n in n_values]
                     for future in tqdm(tasks, desc="Dask Workers Progress (Phase 1)"):
                         try:
