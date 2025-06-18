@@ -195,17 +195,18 @@ class ProtGramDirectGCN(nn.Module):
         h = self._apply_pe(x)  # Initial input to the first layer
 
         for i in range(len(self.convs)):
-            h_res = h  # Store input for the residual connection
+            # h_res = h  # Store input for the residual connection
 
             gcn_layer = self.convs[i]  # Get the GCN layer instance
-            res_layer = self.res_projs[i]  # Get the residual projection layer instance
+            # res_layer = self.res_projs[i]  # Get the residual projection layer instance
 
             # Apply the layers to the input tensor (h_res)
-            gcn_output = gcn_layer(h_res, ei_in, ew_in, ei_out, ew_out)
-            residual_output = res_layer(h_res)
+            gcn_output = gcn_layer(h, ei_in, ew_in, ei_out, ew_out)
+            # residual_output = res_layer(h_res)
 
             # Add the outputs of the GCN and residual layers
-            h = gcn_output + residual_output
+            # h = gcn_output + residual_output
+            h = gcn_output
 
             # Apply activation and dropout *after* the residual addition
             h = F.tanh(h)
@@ -217,3 +218,40 @@ class ProtGramDirectGCN(nn.Module):
         final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
 
         return F.log_softmax(task_logits, dim=-1), final_normalized_embeddings
+
+    # def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
+    #     # The model expects the Data object to contain all necessary edge information
+    #     x = data.x
+    #     # These are expected to be derived from mathcal_A_in and mathcal_A_out
+    #     ei_in, ew_in = data.edge_index_in, data.edge_weight_in
+    #     ei_out, ew_out = data.edge_index_out, data.edge_weight_out
+    #
+    #     # Note: fai/fao components are now in `data` but not used by this model's layers yet.
+    #     # fai_ei, fai_ew = data.fai_edge_index, data.fai_edge_weight
+    #     # fao_ei, fao_ew = data.fao_edge_index, data.fao_edge_weight
+    #
+    #     h = self._apply_pe(x)  # Initial input to the first layer
+    #
+    #     for i in range(len(self.convs)):
+    #         h_res = h  # Store input for the residual connection
+    #
+    #         gcn_layer = self.convs[i]  # Get the GCN layer instance
+    #         res_layer = self.res_projs[i]  # Get the residual projection layer instance
+    #
+    #         # Apply the layers to the input tensor (h_res)
+    #         gcn_output = gcn_layer(h_res, ei_in, ew_in, ei_out, ew_out)
+    #         residual_output = res_layer(h_res)
+    #
+    #         # Add the outputs of the GCN and residual layers
+    #         h = gcn_output + residual_output
+    #
+    #         # Apply activation and dropout *after* the residual addition
+    #         h = F.tanh(h)
+    #         h = F.dropout(h, p=self.dropout, training=self.training)
+    #
+    #     final_embed_for_task = h
+    #     task_logits = self.decoder_fc(final_embed_for_task)
+    #
+    #     final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
+    #
+    #     return F.log_softmax(task_logits, dim=-1), final_normalized_embeddings

@@ -68,23 +68,21 @@ class ProtGramDirectGCNTrainer:
                 continue
 
             primary_loss = criterion(log_probs[mask], targets[mask].to(log_probs.device).long())
-            # l2_reg_term = torch.tensor(0., device=self.device)
-            # if l2_lambda > 0:
-            #     for param in model.parameters():
-            #         l2_reg_term += torch.norm(param, p=2).pow(2)
-            # loss = primary_loss + l2_lambda * l2_reg_term
-            loss = primary_loss
+            l2_reg_term = torch.tensor(0., device=self.device)
+            if l2_lambda > 0:
+                for param in model.parameters():
+                    l2_reg_term += torch.norm(param, p=2).pow(2)
+            loss = primary_loss + l2_lambda * l2_reg_term
 
             if loss.requires_grad:
                 loss.backward()
                 optimizer.step()
             # else:
-                # if epoch == 1: print(f"    Warning: Loss does not require grad in epoch {epoch}. Skipping backward/step.")
+            # if epoch == 1: print(f"    Warning: Loss does not require grad in epoch {epoch}. Skipping backward/step.")
 
             if epoch % (max(1, epochs // 10)) == 0 or epoch == epochs:
                 if self.config.DEBUG_VERBOSE:
-                    # print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * l2_reg_term).item():.4f}")
-                    print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}")
+                    print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * l2_reg_term).item():.4f}")
         # print("  Model training finished.")
 
     def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
@@ -98,7 +96,7 @@ class ProtGramDirectGCNTrainer:
         combined_adj_np = combined_adj_torch.cpu().numpy()
         combined_adj_sparse = csr_matrix(combined_adj_np)
 
-        if combined_adj_sparse.nnz == 0 :
+        if combined_adj_sparse.nnz == 0:
             # print(f"    Warning: Graph for {graph_n_value_str} has no weighted edges for community detection. Assigning all nodes to a single community (0).")
             return torch.zeros(graph.number_of_nodes, dtype=torch.long), 1
 
@@ -158,7 +156,7 @@ class ProtGramDirectGCNTrainer:
 
         labels_for_nodes = torch.full((num_nodes,), k_hops, dtype=torch.long)
 
-        for start_node_idx in range(num_nodes): # Removed tqdm for less verbose default
+        for start_node_idx in range(num_nodes):  # Removed tqdm for less verbose default
             target_aa = random.choice(AMINO_ACID_ALPHABET)
             if target_aa in node_sequences[start_node_idx]:
                 labels_for_nodes[start_node_idx] = 0
