@@ -20,8 +20,8 @@ class Config:
         self.RUN_GCN_PIPELINE = True
         self.RUN_WORD2VEC_PIPELINE = False
         self.RUN_TRANSFORMER_PIPELINE = False
-        self.RUN_BENCHMARKING_PIPELINE = False
-        self.RUN_MAIN_PPI_EVALUATION = False
+        self.RUN_BENCHMARKING_PIPELINE = True
+        self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_DUMMY_TEST = True
         self.CLEANUP_DUMMY_DATA = True
 
@@ -33,7 +33,7 @@ class Config:
         self.BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.BASE_OUTPUT_DIR = self.BASE_DATA_DIR / "results"
 
-        self.GCN_INPUT_FASTA_PATH = self.BASE_DATA_DIR / "sequences/uniprot_sequences_sample.fasta"
+        self.GCN_INPUT_FASTA_PATH = self.BASE_DATA_DIR / "sequences/uniprot_sprot.fasta"
         self.INTERACTIONS_POSITIVE_PATH = self.BASE_DATA_DIR / 'ground_truth/positive_interactions.csv'
         self.INTERACTIONS_NEGATIVE_PATH = self.BASE_DATA_DIR / 'ground_truth/negative_interactions.csv'
 
@@ -117,7 +117,7 @@ class Config:
         self.TF_DATASET_STRATEGY = 'from_tensor_slices'
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
             {"name": "ProtT5-UniProt", "path": self.BASE_DATA_DIR / "models/per-protein.h5"},
-            # {"name": "ProtNgramGCN-n3-PCA64", "path": self.GCN_EMBEDDINGS_DIR / "gcn_n3_embeddings_pca64.h5"},
+            {"name": "ProtNgramGCN-n5", "path": self.GCN_EMBEDDINGS_DIR / "gcn_n5_embeddings.h5"},
             # {"name": "ProtBERT-Mean-PCA64", "path": self.TRANSFORMER_EMBEDDINGS_DIR / "ProtBERT_mean_pca64.h5"},
             # {"name": "Word2Vec-Mean-PCA64", "path": self.WORD2VEC_EMBEDDINGS_DIR / "word2vec_dim100_mean_pca64.h5"}
         ]
