@@ -27,10 +27,11 @@ class Config:
 
         # --- PATH CONFIGURATION ---
         # self.PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-        self.PROJECT_ROOT = Path("/mnt/g/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction").resolve()
-        self.BASE_DATA_DIR = self.PROJECT_ROOT / "Data"
+        self.PROJECT_ROOT = Path(".").resolve()
+        print("PROJECT ROOT IS: " + str(self.PROJECT_ROOT))
+        self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
         self.BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
-        self.BASE_OUTPUT_DIR = self.BASE_DATA_DIR / "pipeline_output"
+        self.BASE_OUTPUT_DIR = self.BASE_DATA_DIR / "results"
 
         self.GCN_INPUT_FASTA_PATH = self.BASE_DATA_DIR / "sequences/uniprot_sequences_sample.fasta"
         self.INTERACTIONS_POSITIVE_PATH = self.BASE_DATA_DIR / 'ground_truth/positive_interactions.csv'
