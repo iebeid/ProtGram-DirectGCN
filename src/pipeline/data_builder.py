@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 5.1 (Added graph statistics in Phase 2, forced synchronous fallback)
+# VERSION: 5.2 (Fixed UnboundLocalError for weighted_edge_list_tuples)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -12,12 +12,12 @@ import time
 from functools import partial
 from typing import List, Tuple, Dict, Iterator
 
+import community as community_louvain  # For Louvain community detection
 import dask.bag as db
+import networkx as nx
 import pandas as pd
 import pyarrow
 import pyarrow.parquet as pq
-import networkx as nx
-import community as community_louvain # For Louvain community detection
 
 from config import Config
 from src.utils.data_utils import DataUtils, DataLoader
@@ -101,10 +101,6 @@ class GraphBuilder:
 
         n_values = range(1, self.n_max + 1)
 
-        # --- FALLBACK IMPLEMENTATION ---
-        # Force synchronous operation if configured for more than 1 worker,
-        # due to persistent multiprocessing errors.
-        # effective_num_workers = 1 # This variable is not used anymore in the synchronous path
         if self.num_workers_config > 1:
             print("\n" + "=" * 80)
             print("WARNING: GraphBuilder is configured for parallel processing "
@@ -115,7 +111,6 @@ class GraphBuilder:
             print("         To re-attempt parallel graph building, you'll need to resolve the underlying")
             print("         environment or library conflicts related to multiprocessing.")
             print("=" * 80 + "\n")
-        # --- END FALLBACK ---
 
         def get_preprocessed_sequence_stream() -> Iterator[Tuple[Tuple[str, str], bool]]:
             first_sequence = True
@@ -275,18 +270,21 @@ class GraphBuilder:
                 print(f"  ❌ Error: General error reading edge CSV file for n={n} at: {edge_file}. Details: {e_csv}. Assuming no edges.")
                 edge_df = pd.DataFrame(columns=['source', 'target'])
 
+            # Initialize weighted_edge_list_tuples *before* the if/else block
+            weighted_edge_list_tuples = []
             if edge_df.empty:
                 print(f"  ℹ️ Info: No edges found for n={n}. Creating a graph with nodes but no edges.")
-                weighted_edge_list_tuples = []
+                # weighted_edge_list_tuples remains empty as initialized
             else:
                 weighted_edge_df = edge_df.groupby(['source', 'target']).size().reset_index(name='weight')
                 print(f"  [DEBUG] Weighted edge_df for n={n}:")
                 print(weighted_edge_df.head())
                 print(f"  [DEBUG] Number of unique edges in weighted_edge_df: {len(weighted_edge_df)}")
-                print(f"  [DEBUG] weighted_edge_list_tuples (sample): {weighted_edge_list_tuples[:5] if weighted_edge_list_tuples else 'Empty'}")
-
-                print(f"  Aggregated {len(edge_df)} raw transitions into {len(weighted_edge_df)} unique weighted edges for n={n}.")
                 weighted_edge_list_tuples = [tuple(x) for x in weighted_edge_df[['source', 'target', 'weight']].to_numpy()]
+                print(f"  Aggregated {len(edge_df)} raw transitions into {len(weighted_edge_df)} unique weighted edges for n={n}.")
+
+            # This debug print can now safely access weighted_edge_list_tuples
+            print(f"  [DEBUG] weighted_edge_list_tuples (sample): {weighted_edge_list_tuples[:5] if weighted_edge_list_tuples else 'Empty'}")
 
             print(f"  Instantiating DirectedNgramGraph object for n={n}...")
             graph_object = DirectedNgramGraph(nodes=idx_to_node, edges=weighted_edge_list_tuples, epsilon_propagation=self.gcn_propagation_epsilon)
@@ -298,16 +296,12 @@ class GraphBuilder:
             # --- Calculate and Print Graph Statistics ---
             print(f"    --- Graph Statistics for n={n} ---")
             num_nodes = graph_object.number_of_nodes
-            num_edges = graph_object.number_of_edges  # Number of unique (source, target) pairs with weights
+            num_edges = graph_object.number_of_edges
 
             print(f"      Nodes: {num_nodes}")
             print(f"      Edges (unique weighted): {num_edges}")
 
             if num_nodes > 1:
-                # Density: E / (N * (N-1)) for directed graph without self-loops
-                # If self-loops are possible and counted in num_edges, density is E / (N*N)
-                # Assuming num_edges does not count self-loops unless explicitly added.
-                # For this calculation, we assume no self-loops are part of the "possible" edges.
                 possible_edges_no_self_loops = num_nodes * (num_nodes - 1)
                 density = num_edges / possible_edges_no_self_loops if possible_edges_no_self_loops > 0 else 0
                 print(f"      Density (E / N(N-1)): {density:.4f}")
@@ -318,26 +312,22 @@ class GraphBuilder:
             if num_nodes > 1:
                 if num_edges == num_nodes * (num_nodes - 1):
                     is_complete = True
-            elif num_nodes == 1 and num_edges == 0: # A single node graph
-                is_complete = True # Or False, depending on definition. Let's say True.
+            elif num_nodes == 1 and num_edges == 0:
+                is_complete = True
             print(f"      Is Complete (all N*(N-1) directed edges present): {is_complete}")
 
             if num_nodes > 0:
                 G_nx = nx.DiGraph()
                 G_nx.add_nodes_from(range(num_nodes))
-                # graph_object.edges are (s_idx, t_idx, weight)
-                # nx.add_weighted_edges_from expects list of (u, v, weight_dict) or (u,v,w)
                 edges_for_nx = [(u, v, {'weight': w}) for u, v, w in graph_object.edges]
-                G_nx.add_edges_from(edges_for_nx) # Use add_edges_from for (u,v,dict)
+                G_nx.add_edges_from(edges_for_nx)
 
                 num_wcc = nx.number_weakly_connected_components(G_nx)
                 print(f"      Weakly Connected Components: {num_wcc}")
 
-                if num_edges > 0: # SCC and Louvain require edges
+                if num_edges > 0:
                     num_scc = nx.number_strongly_connected_components(G_nx)
                     print(f"      Strongly Connected Components: {num_scc}")
-
-                    # Louvain communities (on undirected version for typical community structure)
                     G_undirected_nx = G_nx.to_undirected()
                     if G_undirected_nx.number_of_edges() > 0:
                         partition = community_louvain.best_partition(G_undirected_nx, random_state=self.config.RANDOM_STATE)
@@ -349,25 +339,21 @@ class GraphBuilder:
                     print("      Strongly Connected Components: N/A (no edges)")
                     print("      Louvain Communities: N/A (no edges)")
 
-                # Average Degree (unweighted, based on unique directed edges)
                 avg_in_degree = num_edges / num_nodes if num_nodes > 0 else 0.0
-                avg_out_degree = num_edges / num_nodes if num_nodes > 0 else 0.0 # For DiGraph, sum(in_degree) == sum(out_degree) == num_edges
+                avg_out_degree = num_edges / num_nodes if num_nodes > 0 else 0.0
                 print(f"      Average In-Degree: {avg_in_degree:.2f}")
                 print(f"      Average Out-Degree: {avg_out_degree:.2f}")
 
-                # Average Degree Centrality (normalized by N-1)
                 if num_nodes > 1:
                     in_degree_centrality = nx.in_degree_centrality(G_nx)
                     avg_in_degree_centrality = sum(in_degree_centrality.values()) / num_nodes
                     print(f"      Avg. In-Degree Centrality (normalized): {avg_in_degree_centrality:.4f}")
-
                     out_degree_centrality = nx.out_degree_centrality(G_nx)
                     avg_out_degree_centrality = sum(out_degree_centrality.values()) / num_nodes
                     print(f"      Avg. Out-Degree Centrality (normalized): {avg_out_degree_centrality:.4f}")
                 else:
                     print("      Avg. Degree Centrality: N/A (graph has <= 1 node)")
             print(f"    --- End of Graph Statistics for n={n} ---\n")
-            # --- End of Statistics Calculation ---
 
         print(f"<<< Phase 2 finished in {time.time() - phase2_start_time:.2f}s.")
 
