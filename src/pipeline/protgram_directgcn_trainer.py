@@ -68,11 +68,12 @@ class ProtGramDirectGCNTrainer:
                 continue
 
             primary_loss = criterion(log_probs[mask], targets[mask].to(log_probs.device).long())
-            l2_reg_term = torch.tensor(0., device=self.device)
-            if l2_lambda > 0:
-                for param in model.parameters():
-                    l2_reg_term += torch.norm(param, p=2).pow(2)
-            loss = primary_loss + l2_lambda * l2_reg_term
+            # l2_reg_term = torch.tensor(0., device=self.device)
+            # if l2_lambda > 0:
+            #     for param in model.parameters():
+            #         l2_reg_term += torch.norm(param, p=2).pow(2)
+            # loss = primary_loss + l2_lambda * l2_reg_term
+            loss = primary_loss
 
             if loss.requires_grad:
                 loss.backward()
