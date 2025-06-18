@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: main.py
 # PURPOSE: Pipeline entry point
-# VERSION: 1.1 (Enhanced logging, MLflow parent run for benchmarking)
+# VERSION: 1.2 (Uses config.RUN_MAIN_PPI_EVALUATION directly)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -63,19 +63,10 @@ def main():
         transformer_embedder = TransformerEmbedder(config)
         transformer_embedder.run()
 
-    # run_evaluation = any([config.RUN_GCN_PIPELINE, config.RUN_WORD2VEC_PIPELINE, config.RUN_TRANSFORMER_PIPELINE]) or \
-    #                  (not config.RUN_BENCHMARKING_PIPELINE and config.LP_EMBEDDING_FILES_TO_EVALUATE)
+    # Determine if any evaluation (dummy or main) should be set up
+    should_setup_ppi_evaluator = config.RUN_DUMMY_TEST or config.RUN_MAIN_PPI_EVALUATION
 
-    # In main.py
-    embedding_pipelines_ran = any([
-        config.RUN_GCN_PIPELINE,
-        config.RUN_WORD2VEC_PIPELINE,
-        config.RUN_TRANSFORMER_PIPELINE
-    ])
-    # Run evaluation if any embedding pipeline ran OR if there are pre-computed files to evaluate
-    run_evaluation = embedding_pipelines_ran or bool(config.LP_EMBEDDING_FILES_TO_EVALUATE)
-
-    if run_evaluation:
+    if should_setup_ppi_evaluator:
         if config.USE_MLFLOW:
             mlflow.set_experiment(config.MLFLOW_EXPERIMENT_NAME)
         ppi_evaluator = PPIPipeline(config)
@@ -89,19 +80,23 @@ def main():
             else:
                 ppi_evaluator.run(use_dummy_data=True)
 
-        if config.LP_EMBEDDING_FILES_TO_EVALUATE:
-            DataUtils.print_header("Running Main Evaluation for PPI Pipeline")
-            print("\nNote: The main PPI evaluation will now run on the files specified in your config's LP_EMBEDDING_FILES_TO_EVALUATE list.")
-            if config.USE_MLFLOW:
-                with mlflow.start_run(run_name="PPI_Production_Evaluation_Parent") as parent_run:
-                    mlflow.set_tag("run_type", "ppi_production_eval")
-                    ppi_evaluator.run(use_dummy_data=False, parent_run_id=parent_run.info.run_id)
+        if config.RUN_MAIN_PPI_EVALUATION:
+            if config.LP_EMBEDDING_FILES_TO_EVALUATE:
+                DataUtils.print_header("Running Main Evaluation for PPI Pipeline")
+                print("\nNote: The main PPI evaluation will now run on the files specified in your config's LP_EMBEDDING_FILES_TO_EVALUATE list.")
+                if config.USE_MLFLOW:
+                    with mlflow.start_run(run_name="PPI_Production_Evaluation_Parent") as parent_run:
+                        mlflow.set_tag("run_type", "ppi_production_eval")
+                        ppi_evaluator.run(use_dummy_data=False, parent_run_id=parent_run.info.run_id)
+                else:
+                    ppi_evaluator.run(use_dummy_data=False)
             else:
-                 ppi_evaluator.run(use_dummy_data=False)
-        elif not config.RUN_DUMMY_TEST:
-            print("No embeddings configured in LP_EMBEDDING_FILES_TO_EVALUATE for main PPI evaluation.")
+                print("Skipping Main PPI Evaluation: LP_EMBEDDING_FILES_TO_EVALUATE is empty, although RUN_MAIN_PPI_EVALUATION is True.")
+        elif not config.RUN_DUMMY_TEST: # Only print if dummy wasn't run and main eval was skipped due to empty list
+             print("Skipping Main PPI Evaluation: RUN_MAIN_PPI_EVALUATION is False or LP_EMBEDDING_FILES_TO_EVALUATE is empty.")
+
     else:
-        print("\nSkipping main PPI evaluation pipeline as no relevant embedding generation steps were run and no pre-computed files are set for evaluation.")
+        print("\nSkipping all PPI evaluation (Dummy and Main) as per configuration.")
 
     DataUtils.print_header(f"Full Orchestration Finished in {time.time() - script_start_time:.2f} seconds.")
 
