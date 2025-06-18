@@ -58,20 +58,17 @@ class Config:
 
 
         # --- 2. GCN PIPELINE PARAMETERS (Your custom GCN) ---
-        self.GCN_NGRAM_MAX_N = 3
+        self.GCN_NGRAM_MAX_N = 5
         self.DASK_CHUNK_SIZE = 2000000
-        # self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 2) if os.cpu_count() else 1
-        self.GRAPH_BUILDER_WORKERS = 1
-        self.GCN_HIDDEN_LAYER_DIMS = [128]
+        self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 8) if os.cpu_count() else 1
+        self.GCN_HIDDEN_LAYER_DIMS = [128, 128, 128, 128, 64]
 
         self.ID_MAPPING_MODE = 'regex'
         self.ID_MAPPING_OUTPUT_FILE = self.BASE_OUTPUT_DIR / "mappings/gcn_id_mapping.tsv"
         self.API_MAPPING_FROM_DB = "UniRef50"
         self.API_MAPPING_TO_DB = "UniProtKB"
 
-        self.GCN_1GRAM_INIT_DIM = 64
-        self.GCN_HIDDEN_DIM_1 = 128
-        self.GCN_HIDDEN_DIM_2 = 64
+        self.GCN_1GRAM_INIT_DIM = 512
         self.GCN_EPOCHS_PER_LEVEL = 10
         self.GCN_LR = 0.001
         self.GCN_DROPOUT_RATE = 0.5
@@ -82,7 +79,7 @@ class Config:
         self.GCN_USE_VECTOR_COEFFS = True
 
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
-            1: "community", 2: "next_node", 3: "closest_aa"
+            1: "next_node", 2: "next_node", 3: "next_node", 4: "closest_aa", 5: "community"
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
@@ -119,7 +116,7 @@ class Config:
         self.TF_DATASET_STRATEGY = 'from_tensor_slices'
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
             {"name": "ProtT5-UniProt", "path": self.BASE_DATA_DIR / "models/per-protein.h5"},
-            {"name": "ProtNgramGCN-n3-PCA64", "path": self.GCN_EMBEDDINGS_DIR / "gcn_n3_embeddings_pca64.h5"},
+            # {"name": "ProtNgramGCN-n3-PCA64", "path": self.GCN_EMBEDDINGS_DIR / "gcn_n3_embeddings_pca64.h5"},
             # {"name": "ProtBERT-Mean-PCA64", "path": self.TRANSFORMER_EMBEDDINGS_DIR / "ProtBERT_mean_pca64.h5"},
             # {"name": "Word2Vec-Mean-PCA64", "path": self.WORD2VEC_EMBEDDINGS_DIR / "word2vec_dim100_mean_pca64.h5"}
         ]
@@ -133,14 +130,14 @@ class Config:
 
         # Evaluation MLP Architecture & Training
         self.EVAL_EDGE_EMBEDDING_METHOD = 'concatenate'
-        self.EVAL_N_FOLDS = 4
+        self.EVAL_N_FOLDS = 5
         self.EVAL_MLP_DENSE1_UNITS = 128
         self.EVAL_MLP_DROPOUT1_RATE = 0.4
         self.EVAL_MLP_DENSE2_UNITS = 64
         self.EVAL_MLP_DROPOUT2_RATE = 0.4
         self.EVAL_MLP_L2_REG = 0.001
         self.EVAL_BATCH_SIZE = 64
-        self.EVAL_EPOCHS = 10
+        self.EVAL_EPOCHS = 5
         self.EVAL_LEARNING_RATE = 0.01
 
         # Evaluation Reporting

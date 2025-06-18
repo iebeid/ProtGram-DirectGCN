@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 4.3 (Robustly get original Dask scheduler, minor type hint fix)
+# VERSION: 4.4 (Added start/end space token processing for sequences)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -51,6 +51,8 @@ class GraphBuilder:
     def _create_intermediate_files(n_value: int, temp_dir: str, protein_sequence_file_path_or_data: Union[str, Path, List[Tuple[str, str]]], num_dask_partitions: int):
         """
         Creates intermediate ngram map and edge list files for a given n-gram size.
+        Sequences are modified to include a starting space for the first sequence
+        and an ending space for all sequences.
         This function is designed to be run by Dask, either via LocalCluster or synchronously.
         """
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -61,18 +63,33 @@ class GraphBuilder:
         output_ngram_map_file = os.path.join(temp_dir, f'ngram_map_n{n_value}.parquet')
         output_edge_file = os.path.join(temp_dir, f'edge_list_n{n_value}.txt')
 
-        sequences: List[Tuple[str, str]]
+        raw_sequences: List[Tuple[str, str]]
         if isinstance(protein_sequence_file_path_or_data, (str, Path)):
             print(f"  [Task n={n_value}] Pass 1: Discovering unique n-grams from '{os.path.basename(str(protein_sequence_file_path_or_data))}'...")
-            sequences = list(DataLoader.parse_sequences(str(protein_sequence_file_path_or_data)))
+            raw_sequences = list(DataLoader.parse_sequences(str(protein_sequence_file_path_or_data)))
         elif isinstance(protein_sequence_file_path_or_data, list):
-            sequences = protein_sequence_file_path_or_data
-            print(f"  [Task n={n_value}] Pass 1: Using provided sequence list ({len(sequences)} sequences)...")
+            raw_sequences = protein_sequence_file_path_or_data  # Assumes it's already List[Tuple[str,str]]
+            print(f"  [Task n={n_value}] Pass 1: Using provided sequence list ({len(raw_sequences)} sequences)...")
         else:
             raise TypeError("protein_sequence_file_path_or_data must be a path or a list of sequences.")
 
+        # --- MODIFICATION: Add space tokens ---
+        sequences: List[Tuple[str, str]] = []
+        if raw_sequences:
+            print(f"  [Task n={n_value}] Preprocessing sequences to add start/end space tokens...")
+            for i, (pid, seq_text) in enumerate(raw_sequences):
+                modified_seq_text = str(seq_text)  # Ensure it's a string
+                if i == 0:  # First sequence in the entire FASTA file/list
+                    modified_seq_text = " " + modified_seq_text
+                modified_seq_text = modified_seq_text + " "  # Add space at the end of every sequence
+                sequences.append((pid, modified_seq_text))
+            print(f"  [Task n={n_value}] Sequence preprocessing complete. Example of first processed sequence ('{sequences[0][0]}'): '{sequences[0][1][:30]}...'")
+        else:
+            sequences = []  # Keep it as an empty list if raw_sequences was empty
+        # --- END MODIFICATION ---
+
         if not sequences:
-            print(f"  [Task n={n_value}] ⚠️ Warning: No sequences found for n={n_value}.")
+            print(f"  [Task n={n_value}] ⚠️ Warning: No sequences found (or after processing) for n={n_value}.")
             pd.DataFrame({'id': pd.Series(dtype='int'), 'ngram': pd.Series(dtype='str')}).to_parquet(output_ngram_map_file)
             open(output_edge_file, 'w').close()
             print(f"  [Task n={n_value}] Pass 1 & 2 Complete for n={n_value}. Empty intermediate files created.")
@@ -130,7 +147,17 @@ class GraphBuilder:
             if not isinstance(sequence, str) or len(sequence) < n_value + 1:  # Need at least n+1 chars for an edge
                 return []
             edges_str = []
-            for i in range(len(sequence) - n_value):  # Iterate up to the point where a full target n-gram can be formed
+            # Iterate up to the point where a full target n-gram can be formed
+            # For a sequence of length L, and n-gram of size N,
+            # the last source n-gram starts at L-N.
+            # The last target n-gram starts at L-N+1.
+            # So, the loop for source n-gram should go up to len(sequence) - n_value.
+            # Example: "ABC ", N=1.
+            # i=0: src='A', trg='B'
+            # i=1: src='B', trg='C'
+            # i=2: src='C', trg=' '
+            # Loop range: len("ABC ") - 1 = 4 - 1 = 3. So i goes 0, 1, 2. Correct.
+            for i in range(len(sequence) - n_value):
                 source_ngram = sequence[i:i + n_value]
                 target_ngram = sequence[i + 1:i + 1 + n_value]
                 source_id = ngram_to_id_map.get(source_ngram)
@@ -180,13 +207,18 @@ class GraphBuilder:
         effective_num_workers = max(1, self.num_workers)
 
         try:
+            # Count sequences without loading all into memory for the count
+            # The DataLoader.parse_sequences is a generator, so this is efficient.
             num_sequences = sum(1 for _ in DataLoader.parse_sequences(self.protein_sequence_file))
-            sequences_per_partition_target = 500
+            sequences_per_partition_target = 500  # Heuristic
             num_dask_partitions = max(1, min(effective_num_workers * 4, (num_sequences + sequences_per_partition_target - 1) // sequences_per_partition_target))
             print(f"  Estimated {num_sequences} sequences. Using {num_dask_partitions} Dask Bag partitions.")
         except FileNotFoundError:
             print(f"ERROR: FASTA file not found at {self.protein_sequence_file}. Cannot proceed with graph building.")
             return
+        except Exception as e_count:
+            print(f"ERROR: Could not estimate number of sequences from {self.protein_sequence_file}: {e_count}. Proceeding with default Dask partitions.")
+            num_dask_partitions = effective_num_workers * 2  # Fallback
 
         DataUtils.print_header(f"Phase 1: Creating intermediate files...")
         phase1_start_time = time.time()
@@ -197,9 +229,7 @@ class GraphBuilder:
 
         if effective_num_workers == 1:
             print(f"  Running Phase 1 with Dask synchronous scheduler (num_workers=1).")
-            # Get the original scheduler, providing a default if not set.
-            # Dask's default for bags/arrays without a client is often 'threads' or 'synchronous'.
-            original_dask_scheduler = dask.config.get('scheduler', 'threads')  # <-- MODIFIED HERE
+            original_dask_scheduler = dask.config.get('scheduler', 'threads')
             dask.config.set(scheduler='synchronous')
             try:
                 for n_val_loop in tqdm(n_values, desc="Processing N-gram levels (Synchronous)"):
@@ -214,6 +244,8 @@ class GraphBuilder:
         else:  # effective_num_workers > 1
             print(f"  Running Phase 1 with Dask LocalCluster ({effective_num_workers} workers, 'spawn' method).")
             try:
+                # For LocalCluster, it's better to pass the sequence data directly if it's not excessively large,
+                # or ensure workers can access the file path. Here, we pass the path.
                 with LocalCluster(n_workers=effective_num_workers, threads_per_worker=1, silence_logs=logging.ERROR, multiprocessing_method='spawn') as cluster, Client(cluster) as client:
                     print(f"    Dask LocalCluster started. Dashboard: {client.dashboard_link}")
                     tasks = [client.submit(GraphBuilder._create_intermediate_files, n, self.temp_dir, self.protein_sequence_file, num_dask_partitions) for n in n_values]
@@ -250,10 +282,10 @@ class GraphBuilder:
                 continue
             try:
                 nodes_df = pd.read_parquet(ngram_map_file)
-            except pyarrow.lib.ArrowInvalid as e:  # Catch specific pyarrow error
+            except pyarrow.lib.ArrowInvalid as e:
                 print(f"  ❌ Error: Could not read Parquet file for n={n} at: {ngram_map_file}. Details: {e}. Skipping.")
                 continue
-            except Exception as e_parquet:  # Catch other potential errors
+            except Exception as e_parquet:
                 print(f"  ❌ Error: General error reading Parquet file for n={n} at: {ngram_map_file}. Details: {e_parquet}. Skipping.")
                 continue
 
@@ -272,7 +304,7 @@ class GraphBuilder:
             except FileNotFoundError:
                 print(f"  ❌ Error: Edge file not found for n={n} at: {edge_file}. Assuming no edges.")
                 edge_df = pd.DataFrame(columns=['source', 'target'])
-            except Exception as e_csv:  # Catch other potential errors
+            except Exception as e_csv:
                 print(f"  ❌ Error: General error reading edge CSV file for n={n} at: {edge_file}. Details: {e_csv}. Assuming no edges.")
                 edge_df = pd.DataFrame(columns=['source', 'target'])
 

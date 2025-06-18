@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 3.5 (Pass FAI/FAO sparse components in Data object) - No changes from previous version needed for this round
+# VERSION: 3.6 (Hierarchical feature initialization by pooling (n-1)-gram prefix/suffix embeddings)
 # ==============================================================================
 
 import collections
@@ -52,7 +52,7 @@ class ProtGramDirectGCNTrainer:
             print("  Warning: No valid training samples found based on the mask.")
             return
 
-        # print(f"  Starting model training for {epochs} epochs (L2 lambda: {l2_lambda})...")
+        print(f"  Starting model training for {epochs} epochs (L2 lambda: {l2_lambda})...")
         for epoch in range(1, epochs + 1):
             optimizer.zero_grad()
             log_probs, _ = model(data=data)
@@ -261,19 +261,52 @@ class ProtGramDirectGCNTrainer:
                     if num_initial_features <= 0: num_initial_features = 1
                     print(f"  Adjusted GCN_1GRAM_INIT_DIM for n=1 to {num_initial_features} based on PE config.")
                 x = torch.randn(graph_obj.number_of_nodes, num_initial_features, device=self.device)
-            else:
+            else:  # n_val > 1: MODIFIED LOGIC FOR FEATURE INITIALIZATION
                 if (n_val - 1) not in level_embeddings or level_embeddings[n_val - 1].size == 0:
                     print(f"  ERROR: Prev level n={n_val - 1} embeddings missing/empty for n={n_val}. Skipping.")
                     continue
-                prev_embeds = level_embeddings[n_val - 1]
-                prev_map = level_ngram_to_idx[n_val - 1]
-                num_initial_features = prev_embeds.shape[1]
+
+                prev_level_embeds_np = level_embeddings[n_val - 1]  # These are numpy arrays
+                prev_level_ngram_to_idx_map = level_ngram_to_idx[n_val - 1]
+
+                num_initial_features = prev_level_embeds_np.shape[1]
                 x = torch.zeros(graph_obj.number_of_nodes, num_initial_features, dtype=torch.float, device=self.device)
-                for ngram, idx in graph_obj.node_to_idx.items():
-                    prev_ngram = ngram[:-1]
-                    prev_idx = prev_map.get(prev_ngram)
-                    if prev_idx is not None and prev_idx < len(prev_embeds):
-                        x[idx] = torch.from_numpy(prev_embeds[prev_idx]).to(self.device)
+
+                print(f"  Initializing features for n={n_val} by pooling (n-1)-gram constituent embeddings...")
+
+                for current_ngram_str, current_node_idx in tqdm(graph_obj.node_to_idx.items(), desc=f"  Initializing n={n_val} features", leave=False, disable=not self.config.DEBUG_VERBOSE):
+                    if len(current_ngram_str) != n_val:  # Should not happen
+                        if self.config.DEBUG_VERBOSE:
+                            print(f"    Warning: Skipping n-gram '{current_ngram_str}' due to unexpected length for n={n_val}.")
+                        continue
+
+                    # Get the (n_val-1)-gram prefix and suffix of the current_ngram_str
+                    prefix_constituent_ngram = current_ngram_str[:-1]
+                    suffix_constituent_ngram = current_ngram_str[1:]
+
+                    constituent_embeddings_to_pool = []
+
+                    # Get embedding for prefix
+                    prefix_idx = prev_level_ngram_to_idx_map.get(prefix_constituent_ngram)
+                    if prefix_idx is not None and prefix_idx < len(prev_level_embeds_np):
+                        constituent_embeddings_to_pool.append(prev_level_embeds_np[prefix_idx])
+                    elif self.config.DEBUG_VERBOSE:
+                        print(f"    Warning: Prefix '{prefix_constituent_ngram}' not found in prev (n={n_val - 1}) level map for current_ngram '{current_ngram_str}'.")
+
+                    # Get embedding for suffix
+                    suffix_idx = prev_level_ngram_to_idx_map.get(suffix_constituent_ngram)
+                    if suffix_idx is not None and suffix_idx < len(prev_level_embeds_np):
+                        constituent_embeddings_to_pool.append(prev_level_embeds_np[suffix_idx])
+                    elif self.config.DEBUG_VERBOSE:
+                        print(f"    Warning: Suffix '{suffix_constituent_ngram}' not found in prev (n={n_val - 1}) level map for current_ngram '{current_ngram_str}'.")
+
+                    if constituent_embeddings_to_pool:
+                        # Mean pool the collected embeddings
+                        pooled_embedding_np = np.mean(np.array(constituent_embeddings_to_pool, dtype=np.float32), axis=0)
+                        x[current_node_idx] = torch.from_numpy(pooled_embedding_np).to(self.device)
+                    elif self.config.DEBUG_VERBOSE:
+                        print(f"    Warning: No constituent (n-1)-gram embeddings found for n-gram '{current_ngram_str}' (idx {current_node_idx}). Initialized to zeros.")
+            # END MODIFIED LOGIC
 
             print(f"  Initial node feature dimension for n={n_val}: {num_initial_features}")
 
