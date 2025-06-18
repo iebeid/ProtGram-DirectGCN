@@ -33,7 +33,7 @@ class Config:
         self.BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.BASE_OUTPUT_DIR = self.BASE_DATA_DIR / "results"
 
-        self.GCN_INPUT_FASTA_PATH = self.BASE_DATA_DIR / "sequences/uniprot_sprot.fasta"
+        self.GCN_INPUT_FASTA_PATH = self.BASE_DATA_DIR / "sequences/uniprot_sequences_sample.fasta"
         self.INTERACTIONS_POSITIVE_PATH = self.BASE_DATA_DIR / 'ground_truth/positive_interactions.csv'
         self.INTERACTIONS_NEGATIVE_PATH = self.BASE_DATA_DIR / 'ground_truth/negative_interactions.csv'
 
