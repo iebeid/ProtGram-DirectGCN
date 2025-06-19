@@ -64,7 +64,7 @@ class Config:
         self.GCN_NGRAM_MAX_N = 5
         self.DASK_CHUNK_SIZE = 2000000
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 8) if os.cpu_count() else 1
-        self.GCN_HIDDEN_LAYER_DIMS = [128, 128, 128, 128, 64]
+        self.GCN_HIDDEN_LAYER_DIMS = [256, 256, 256, 256, 128, 64]
 
         self.ID_MAPPING_MODE = 'regex'
         self.ID_MAPPING_OUTPUT_FILE = self.BASE_OUTPUT_DIR / "mappings/gcn_id_mapping.tsv"
@@ -72,11 +72,11 @@ class Config:
         self.API_MAPPING_TO_DB = "UniProtKB"
 
         self.GCN_1GRAM_INIT_DIM = 512
-        self.GCN_EPOCHS_PER_LEVEL = 10
-        self.GCN_LR = 0.005
+        self.GCN_EPOCHS_PER_LEVEL = 500
+        self.GCN_LR = 0.0005
         self.GCN_DROPOUT_RATE = 0.5
         self.GCN_WEIGHT_DECAY = 1e-4
-        self.GCN_L2_REG_LAMBDA = 0.00001
+        self.GCN_L2_REG_LAMBDA = 1e-6
         self.GCN_PROPAGATION_EPSILON = 1e-9
         self.GCN_MAX_PE_LEN = 512
         self.GCN_USE_VECTOR_COEFFS = True

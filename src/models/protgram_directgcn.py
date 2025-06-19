@@ -148,7 +148,14 @@ class ProtGramDirectGCN(nn.Module):
             self.res_projs.append(nn.Linear(in_dim, out_dim) if in_dim != out_dim else nn.Identity())
 
         final_embedding_dim = layer_dims[-1]
-        self.decoder_fc = nn.Linear(final_embedding_dim, task_num_output_classes)
+        # self.decoder_fc = nn.Linear(final_embedding_dim, task_num_output_classes)
+        decoder_hidden_dim = final_embedding_dim // 2  # Example, can be tuned
+        self.decoder_fc = nn.Sequential(
+            nn.Linear(final_embedding_dim, decoder_hidden_dim),
+            nn.ReLU(),  # Or another activation like Tanh
+            nn.Dropout(p=0.5),  # Optional dropout in the decoder
+            nn.Linear(decoder_hidden_dim, task_num_output_classes)
+        )
 
     def _apply_pe(self, x: torch.Tensor) -> torch.Tensor:
         """Applies positional embeddings if pe_layer is configured. Ensures out-of-place modification."""
