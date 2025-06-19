@@ -90,7 +90,7 @@ class GraphBuilder:
         DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
 
     def run(self):
-        overall_start_time = time.time()
+        overall_start_time = time.monotonic()
         DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs")
 
         if os.path.exists(self.temp_dir):
@@ -130,7 +130,7 @@ class GraphBuilder:
             print(f"ERROR: FASTA file not found at {self.protein_sequence_file}")
             return
 
-        num_partitions_for_synchronous_bag = 10
+        num_partitions_for_synchronous_bag = 1
         raw_sequence_bag_with_flag = db.from_sequence(sequence_stream_list, npartitions=num_partitions_for_synchronous_bag)
         preprocessed_sequence_bag = raw_sequence_bag_with_flag.starmap(_preprocess_sequence_tuple_for_bag)
 
@@ -154,7 +154,7 @@ class GraphBuilder:
             all_ngrams_list_with_duplicates = []
             try:
                 print("    Computing all n-grams (with duplicates) synchronously...")
-                all_ngrams_list_with_duplicates = all_ngrams_bag_flattened.compute(scheduler='threads', num_workers=max(1, os.cpu_count() // 8))
+                all_ngrams_list_with_duplicates = all_ngrams_bag_flattened.compute(scheduler='processes', num_workers=max(1, os.cpu_count() // 8))
                 print(f"    Computed {len(all_ngrams_list_with_duplicates)} n-grams (including duplicates).")
             except Exception as e_compute_ngrams:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for all n-grams: {e_compute_ngrams}")
@@ -207,7 +207,7 @@ class GraphBuilder:
             all_edges_str_list = []
             try:
                 print("    Computing all edge strings synchronously...")
-                all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler='threads', num_workers=max(1, os.cpu_count() // 8))
+                all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler='processes', num_workers=max(1, os.cpu_count() // 8))
                 print(f"    Computed {len(all_edges_str_list)} edge strings.")
             except Exception as e_compute_edges:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for edge strings: {e_compute_edges}")
