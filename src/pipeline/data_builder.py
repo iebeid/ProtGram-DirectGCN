@@ -1,14 +1,14 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 5.2 (Fixed UnboundLocalError for weighted_edge_list_tuples)
+# VERSION: 5.3 (Refactored Dask to use threaded scheduler, updated timing)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
 import shutil
 import sys
-import time
+import time # Ensure time is imported for time.monotonic()
 from functools import partial
 from typing import List, Tuple, Dict, Iterator
 
@@ -35,7 +35,7 @@ def get_tf():
     return _tf
 
 
-# --- Helper functions for Dask Bag processing (used by synchronous path) ---
+# --- Helper functions for Dask Bag processing ---
 def _preprocess_sequence_tuple_for_bag(seq_tuple: Tuple[str, str], add_initial_space: bool) -> Tuple[str, str]:
     """Adds space tokens to a single sequence tuple."""
     pid, seq_text = seq_tuple
@@ -46,24 +46,20 @@ def _preprocess_sequence_tuple_for_bag(seq_tuple: Tuple[str, str], add_initial_s
     return pid, modified_seq_text
 
 
-def _extract_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int) -> List[str]:
+def _extract_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int) -> Iterator[str]: # Changed return type hint
     """Extracts n-grams from a single preprocessed sequence tuple."""
     _, processed_seq_text = seq_tuple
-    # ngrams = []
     if len(processed_seq_text) >= n_val:
         for i in range(len(processed_seq_text) - n_val + 1):
-            # ngrams.append(processed_seq_text[i:i + n_val])
             yield processed_seq_text[i:i + n_val]
-    # return ngrams
 
 
-def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int, ngram_to_id_map: Dict[str, int]) -> List[str]:
+def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int, ngram_to_id_map: Dict[str, int]) -> Iterator[str]: # Changed return type hint
     """
     Extracts edges (as "src_id tgt_id\n" strings) from a single
     preprocessed sequence tuple using the provided ngram_to_id_map.
     """
     _, processed_seq_text = seq_tuple
-    # edge_strs = []
     if len(processed_seq_text) >= n_val + 1:
         for i in range(len(processed_seq_text) - n_val):
             source_ngram = processed_seq_text[i:i + n_val]
@@ -71,9 +67,7 @@ def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int, n
             source_id = ngram_to_id_map.get(source_ngram)
             target_id = ngram_to_id_map.get(target_ngram)
             if source_id is not None and target_id is not None:
-                # edge_strs.append(f"{source_id} {target_id}\n")
                 yield f"{source_id} {target_id}\n"
-    # return edge_strs
 
 
 class GraphBuilder:
@@ -103,16 +97,21 @@ class GraphBuilder:
 
         n_values = range(1, self.n_max + 1)
 
+        # Determine effective number of workers for Dask compute
+        # If num_workers_config is 1, it will run synchronously on the main thread.
+        # If > 1, it will use a thread pool of that size.
+        effective_dask_workers = self.num_workers_config
+        dask_scheduler = 'threads' if effective_dask_workers > 1 else 'sync' # Dask 'sync' scheduler for single worker
+
         if self.num_workers_config > 1:
             print("\n" + "=" * 80)
-            print("WARNING: GraphBuilder is configured for parallel processing "
-                  f"(GRAPH_BUILDER_WORKERS={self.num_workers_config}),")
-            print("         but due to persistent multiprocessing instability (e.g., 'double free' errors),")
-            print("         this stage will be FORCED TO RUN SYNCHRONOUSLY (num_workers=1).")
-            print("         This will be slower but aims for stability.")
-            print("         To re-attempt parallel graph building, you'll need to resolve the underlying")
-            print("         environment or library conflicts related to multiprocessing.")
+            print(f"GraphBuilder is configured for parallel processing (GRAPH_BUILDER_WORKERS={self.num_workers_config}).")
+            print(f"Attempting to use Dask with a THREADED scheduler ({effective_dask_workers} threads).")
+            print("This aims to improve speed while potentially avoiding multiprocessing-related memory issues.")
             print("=" * 80 + "\n")
+        else:
+            print("\nGraphBuilder is configured for synchronous (single-threaded) execution.\n")
+
 
         def get_preprocessed_sequence_stream() -> Iterator[Tuple[Tuple[str, str], bool]]:
             first_sequence = True
@@ -130,22 +129,26 @@ class GraphBuilder:
             print(f"ERROR: FASTA file not found at {self.protein_sequence_file}")
             return
 
-        num_partitions_for_synchronous_bag = 1
-        raw_sequence_bag_with_flag = db.from_sequence(sequence_stream_list, npartitions=num_partitions_for_synchronous_bag)
+        # For Dask bag, if using threads, partitioning might not be as critical as for processes,
+        # but Dask handles it. For 'sync' scheduler, npartitions=1 is fine.
+        num_partitions_for_bag = effective_dask_workers if effective_dask_workers > 1 else 1
+        raw_sequence_bag_with_flag = db.from_sequence(sequence_stream_list, npartitions=num_partitions_for_bag)
         preprocessed_sequence_bag = raw_sequence_bag_with_flag.starmap(_preprocess_sequence_tuple_for_bag)
 
+        # Temporarily hide GPU from Dask workers if they are separate processes (less critical for threads)
         original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
-        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-        print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations (even if synchronous).")
+        if dask_scheduler != 'sync': # Only modify if not purely synchronous
+            os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+            print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations.")
 
         for n_val_loop in n_values:
-            DataUtils.print_header(f"Processing N-gram Level n = {n_val_loop} (Synchronously)")
-            phase1_level_start_time = time.time()
+            DataUtils.print_header(f"Processing N-gram Level n = {n_val_loop} (Dask scheduler: {dask_scheduler})")
+            phase1_level_start_time = time.monotonic() # MODIFICATION
 
             output_ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n_val_loop}.parquet')
             output_edge_file = os.path.join(self.temp_dir, f'edge_list_n{n_val_loop}.txt')
 
-            print(f"  [n={n_val_loop}] Generating all n-grams (including duplicates) using Dask Bag (single-threaded)...")
+            print(f"  [n={n_val_loop}] Generating all n-grams (including duplicates) using Dask Bag...")
             sys.stdout.flush()
 
             extract_ngrams_partial = partial(_extract_ngrams_from_sequence_tuple, n_val=n_val_loop)
@@ -153,8 +156,8 @@ class GraphBuilder:
 
             all_ngrams_list_with_duplicates = []
             try:
-                print("    Computing all n-grams (with duplicates) synchronously...")
-                all_ngrams_list_with_duplicates = all_ngrams_bag_flattened.compute(scheduler='processes', num_workers=max(1, os.cpu_count() // 8))
+                print(f"    Computing all n-grams (with duplicates) using {dask_scheduler} scheduler ({effective_dask_workers} workers)...")
+                all_ngrams_list_with_duplicates = all_ngrams_bag_flattened.compute(scheduler=dask_scheduler, num_workers=effective_dask_workers)
                 print(f"    Computed {len(all_ngrams_list_with_duplicates)} n-grams (including duplicates).")
             except Exception as e_compute_ngrams:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for all n-grams: {e_compute_ngrams}")
@@ -186,7 +189,7 @@ class GraphBuilder:
             if unique_ngrams_df.empty:
                 open(output_edge_file, 'w').close()
                 print(f"  [n={n_val_loop}] No n-grams, so no edges will be generated.")
-                print(f"  Level n={n_val_loop} (Phase 1) finished in {time.time() - phase1_level_start_time:.2f}s.")
+                print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.") # MODIFICATION
                 continue
 
             try:
@@ -198,7 +201,7 @@ class GraphBuilder:
                 print(f"  [n={n_val_loop}] ERROR reading back ngram map: {e_read_map}. Skipping edge generation.")
                 continue
 
-            print(f"  [n={n_val_loop}] Generating all edge strings using Dask Bag (single-threaded)...")
+            print(f"  [n={n_val_loop}] Generating all edge strings using Dask Bag...")
             sys.stdout.flush()
 
             extract_edges_partial = partial(_extract_edges_from_sequence_tuple, n_val=n_val_loop, ngram_to_id_map=ngram_to_id_map)
@@ -206,8 +209,8 @@ class GraphBuilder:
 
             all_edges_str_list = []
             try:
-                print("    Computing all edge strings synchronously...")
-                all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler='processes', num_workers=max(1, os.cpu_count() // 8))
+                print(f"    Computing all edge strings using {dask_scheduler} scheduler ({effective_dask_workers} workers)...")
+                all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler=dask_scheduler, num_workers=effective_dask_workers)
                 print(f"    Computed {len(all_edges_str_list)} edge strings.")
             except Exception as e_compute_edges:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for edge strings: {e_compute_edges}")
@@ -224,16 +227,17 @@ class GraphBuilder:
                 print(f"  [n={n_val_loop}] ERROR writing edge list file: {e_write_edges}")
                 continue
 
-            print(f"  Level n={n_val_loop} (Phase 1) finished in {time.time() - phase1_level_start_time:.2f}s.")
+            print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.") # MODIFICATION
 
-        if original_cuda_visible_devices is None:
-            if "CUDA_VISIBLE_DEVICES" in os.environ: del os.environ["CUDA_VISIBLE_DEVICES"]
-        else:
-            os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
-        print("  Restored original CUDA_VISIBLE_DEVICES setting for the main process.")
+        if dask_scheduler != 'sync': # Restore only if it was changed
+            if original_cuda_visible_devices is None:
+                if "CUDA_VISIBLE_DEVICES" in os.environ: del os.environ["CUDA_VISIBLE_DEVICES"]
+            else:
+                os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
+            print("  Restored original CUDA_VISIBLE_DEVICES setting for the main process.")
 
         DataUtils.print_header("Phase 2: Building and saving final graph objects")
-        phase2_start_time = time.time()
+        phase2_start_time = time.monotonic() # MODIFICATION
         for n in n_values:
             print(f"\n--- Processing n = {n} for final graph object ---")
             ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
@@ -272,21 +276,20 @@ class GraphBuilder:
                 print(f"  ❌ Error: General error reading edge CSV file for n={n} at: {edge_file}. Details: {e_csv}. Assuming no edges.")
                 edge_df = pd.DataFrame(columns=['source', 'target'])
 
-            # Initialize weighted_edge_list_tuples *before* the if/else block
             weighted_edge_list_tuples = []
             if edge_df.empty:
                 print(f"  ℹ️ Info: No edges found for n={n}. Creating a graph with nodes but no edges.")
-                # weighted_edge_list_tuples remains empty as initialized
             else:
                 weighted_edge_df = edge_df.groupby(['source', 'target']).size().reset_index(name='weight')
-                print(f"  [DEBUG] Weighted edge_df for n={n}:")
-                print(weighted_edge_df.head())
-                print(f"  [DEBUG] Number of unique edges in weighted_edge_df: {len(weighted_edge_df)}")
+                if self.config.DEBUG_VERBOSE: # Conditional debug print
+                    print(f"  [DEBUG] Weighted edge_df for n={n}:")
+                    print(weighted_edge_df.head())
+                    print(f"  [DEBUG] Number of unique edges in weighted_edge_df: {len(weighted_edge_df)}")
                 weighted_edge_list_tuples = [tuple(x) for x in weighted_edge_df[['source', 'target', 'weight']].to_numpy()]
                 print(f"  Aggregated {len(edge_df)} raw transitions into {len(weighted_edge_df)} unique weighted edges for n={n}.")
 
-            # This debug print can now safely access weighted_edge_list_tuples
-            print(f"  [DEBUG] weighted_edge_list_tuples (sample): {weighted_edge_list_tuples[:5] if weighted_edge_list_tuples else 'Empty'}")
+            if self.config.DEBUG_VERBOSE: # Conditional debug print
+                print(f"  [DEBUG] weighted_edge_list_tuples (sample): {weighted_edge_list_tuples[:5] if weighted_edge_list_tuples else 'Empty'}")
 
             print(f"  Instantiating DirectedNgramGraph object for n={n}...")
             graph_object = DirectedNgramGraph(nodes=idx_to_node, edges=weighted_edge_list_tuples, epsilon_propagation=self.gcn_propagation_epsilon)
@@ -299,35 +302,26 @@ class GraphBuilder:
             print(f"    --- Graph Statistics for n={n} ---")
             num_nodes = graph_object.number_of_nodes
             num_edges = graph_object.number_of_edges
-
             print(f"      Nodes: {num_nodes}")
             print(f"      Edges (unique weighted): {num_edges}")
-
             if num_nodes > 1:
                 possible_edges_no_self_loops = num_nodes * (num_nodes - 1)
                 density = num_edges / possible_edges_no_self_loops if possible_edges_no_self_loops > 0 else 0
                 print(f"      Density (E / N(N-1)): {density:.4f}")
             else:
                 print("      Density: N/A (graph has <= 1 node)")
-
             is_complete = False
             if num_nodes > 1:
-                if num_edges == num_nodes * (num_nodes - 1):
-                    is_complete = True
-            elif num_nodes == 1 and num_edges == 0:
-                is_complete = True
-                is_complete = True
+                if num_edges == num_nodes * (num_nodes - 1): is_complete = True
+            elif num_nodes == 1 and num_edges == 0: is_complete = True
             print(f"      Is Complete (all N*(N-1) directed edges present): {is_complete}")
-
             if num_nodes > 0:
                 G_nx = nx.DiGraph()
                 G_nx.add_nodes_from(range(num_nodes))
                 edges_for_nx = [(u, v, {'weight': w}) for u, v, w in graph_object.edges]
                 G_nx.add_edges_from(edges_for_nx)
-
                 num_wcc = nx.number_weakly_connected_components(G_nx)
                 print(f"      Weakly Connected Components: {num_wcc}")
-
                 if num_edges > 0:
                     num_scc = nx.number_strongly_connected_components(G_nx)
                     print(f"      Strongly Connected Components: {num_scc}")
@@ -341,12 +335,10 @@ class GraphBuilder:
                 else:
                     print("      Strongly Connected Components: N/A (no edges)")
                     print("      Louvain Communities: N/A (no edges)")
-
                 avg_in_degree = num_edges / num_nodes if num_nodes > 0 else 0.0
                 avg_out_degree = num_edges / num_nodes if num_nodes > 0 else 0.0
                 print(f"      Average In-Degree: {avg_in_degree:.2f}")
                 print(f"      Average Out-Degree: {avg_out_degree:.2f}")
-
                 if num_nodes > 1:
                     in_degree_centrality = nx.in_degree_centrality(G_nx)
                     avg_in_degree_centrality = sum(in_degree_centrality.values()) / num_nodes
@@ -358,15 +350,15 @@ class GraphBuilder:
                     print("      Avg. Degree Centrality: N/A (graph has <= 1 node)")
             print(f"    --- End of Graph Statistics for n={n} ---\n")
 
-        print(f"<<< Phase 2 finished in {time.time() - phase2_start_time:.2f}s.")
+        print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.") # MODIFICATION
 
         DataUtils.print_header("Phase 3: Cleaning up temporary files")
-        phase3_start_time = time.time()
+        phase3_start_time = time.monotonic() # MODIFICATION
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
             print(f"  Temporary directory {self.temp_dir} cleaned up.")
         else:
             print("  Temporary directory not found, no cleanup needed.")
-        print(f"<<< Phase 3 finished in {time.time() - phase3_start_time:.2f}s.")
+        print(f"<<< Phase 3 finished in {time.monotonic() - phase3_start_time:.2f}s.") # MODIFICATION
 
-        DataUtils.print_header(f"N-gram Graph Building FINISHED in {time.time() - overall_start_time:.2f}s")
+        DataUtils.print_header(f"N-gram Graph Building FINISHED in {time.monotonic() - overall_start_time:.2f}s") # MODIFICATION
