@@ -49,11 +49,12 @@ def _preprocess_sequence_tuple_for_bag(seq_tuple: Tuple[str, str], add_initial_s
 def _extract_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int) -> List[str]:
     """Extracts n-grams from a single preprocessed sequence tuple."""
     _, processed_seq_text = seq_tuple
-    ngrams = []
+    # ngrams = []
     if len(processed_seq_text) >= n_val:
         for i in range(len(processed_seq_text) - n_val + 1):
-            ngrams.append(processed_seq_text[i:i + n_val])
-    return ngrams
+            # ngrams.append(processed_seq_text[i:i + n_val])
+            yield processed_seq_text[i:i + n_val]
+    # return ngrams
 
 
 def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int, ngram_to_id_map: Dict[str, int]) -> List[str]:
@@ -62,7 +63,7 @@ def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int, n
     preprocessed sequence tuple using the provided ngram_to_id_map.
     """
     _, processed_seq_text = seq_tuple
-    edge_strs = []
+    # edge_strs = []
     if len(processed_seq_text) >= n_val + 1:
         for i in range(len(processed_seq_text) - n_val):
             source_ngram = processed_seq_text[i:i + n_val]
@@ -70,8 +71,9 @@ def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int, n
             source_id = ngram_to_id_map.get(source_ngram)
             target_id = ngram_to_id_map.get(target_ngram)
             if source_id is not None and target_id is not None:
-                edge_strs.append(f"{source_id} {target_id}\n")
-    return edge_strs
+                # edge_strs.append(f"{source_id} {target_id}\n")
+                yield f"{source_id} {target_id}\n"
+    # return edge_strs
 
 
 class GraphBuilder:
@@ -128,7 +130,7 @@ class GraphBuilder:
             print(f"ERROR: FASTA file not found at {self.protein_sequence_file}")
             return
 
-        num_partitions_for_synchronous_bag = 1
+        num_partitions_for_synchronous_bag = 10
         raw_sequence_bag_with_flag = db.from_sequence(sequence_stream_list, npartitions=num_partitions_for_synchronous_bag)
         preprocessed_sequence_bag = raw_sequence_bag_with_flag.starmap(_preprocess_sequence_tuple_for_bag)
 
@@ -152,7 +154,7 @@ class GraphBuilder:
             all_ngrams_list_with_duplicates = []
             try:
                 print("    Computing all n-grams (with duplicates) synchronously...")
-                all_ngrams_list_with_duplicates = all_ngrams_bag_flattened.compute(scheduler='single-threaded')
+                all_ngrams_list_with_duplicates = all_ngrams_bag_flattened.compute(scheduler='processes', num_workers=max(1, os.cpu_count() // 8))
                 print(f"    Computed {len(all_ngrams_list_with_duplicates)} n-grams (including duplicates).")
             except Exception as e_compute_ngrams:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for all n-grams: {e_compute_ngrams}")
@@ -205,7 +207,7 @@ class GraphBuilder:
             all_edges_str_list = []
             try:
                 print("    Computing all edge strings synchronously...")
-                all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler='threads', num_workers=max(1, os.cpu_count() // 8))
+                all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler='processes', num_workers=max(1, os.cpu_count() // 8))
                 print(f"    Computed {len(all_edges_str_list)} edge strings.")
             except Exception as e_compute_edges:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for edge strings: {e_compute_edges}")
