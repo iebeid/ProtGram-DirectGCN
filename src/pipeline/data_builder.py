@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 5.7 (Dask DataFrame for Phase 2 aggregation, added edge bag debug count)
+# VERSION: 5.8 (Fixed Dask DataFrame reset_index, kept edge bag debug count)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -232,7 +232,6 @@ class GraphBuilder:
                                             ngram_to_id_map=ngram_to_id_map)
             all_edges_str_bag_flattened = final_preprocessed_input_bag.map(extract_edges_partial).flatten()
 
-            # *** ADDED DEBUG COUNT FOR EDGE BAG (n=1 specific) ***
             if n_val_loop == 1 and self.config.DEBUG_VERBOSE:
                 try:
                     print(f"    DEBUG: Attempting to count items in all_edges_str_bag_flattened for n=1 before to_textfiles...")
@@ -240,7 +239,6 @@ class GraphBuilder:
                     print(f"    DEBUG: Count from all_edges_str_bag_flattened for n=1: {intermediate_edge_count}")
                 except Exception as e_dbg_count:
                     print(f"    DEBUG: Error counting intermediate edge bag for n=1: {e_dbg_count}")
-            # *** END ADDED DEBUG COUNT ***
 
             temp_edge_output_dir = os.path.join(self.temp_dir, f'edge_list_n{n_val_loop}_parts')
             if os.path.exists(temp_edge_output_dir):
@@ -286,7 +284,7 @@ class GraphBuilder:
                 traceback.print_exc(file=sys.stderr)
                 open(output_edge_file, 'w').close()
                 print(f"  Created empty edge file for n={n_val_loop} due to memory error.")
-                if "Killed" in str(e_mem) or "Cannot allocate memory" in str(e_mem):  # More specific check
+                if "Killed" in str(e_mem) or "Cannot allocate memory" in str(e_mem):
                     print(f"  OOM likely killed a Dask worker or the process at n={n_val_loop} during edge processing. Further processing for this n-level may be unreliable.")
             except Exception as e_write_edges:
                 print(f"  [n={n_val_loop}] ERROR writing edge list file or during edge computation: {e_write_edges}")
@@ -334,30 +332,22 @@ class GraphBuilder:
             idx_to_node = nodes_df.set_index('id')['ngram'].to_dict()
             del nodes_df
 
-            # --- Use Dask DataFrame for Phase 2 edge aggregation ---
             print(f"  Loading and aggregating raw edges for n={n} using Dask DataFrame...")
-            weighted_edge_df_computed = pd.DataFrame(columns=['source', 'target', 'weight'])  # Default to empty
+            weighted_edge_df_computed = pd.DataFrame(columns=['source', 'target', 'weight'])
             raw_edge_file_was_empty = False
             try:
                 if not os.path.exists(edge_file) or os.path.getsize(edge_file) == 0:
                     print(f"  ℹ️ Info: Edge file for n={n} is empty or not found. Creating graph with no edges.")
                     raw_edge_file_was_empty = True
                 else:
-                    # Estimate blocksize for Dask DataFrame: aim for ~128-256MB chunks
-                    # This is a heuristic. Dask's default might also be fine.
-                    file_size_gb = os.path.getsize(edge_file) / (1024 ** 3)
-                    # For a 2-column int file, assume ~10-20 bytes per line.
-                    # If file is 10GB, 10 * 1024 / 128 = 80 blocks.
-                    # blocksize = "128MB" # Dask can interpret this
-                    # For simplicity, let Dask choose its default blocksize for read_csv,
-                    # or set npartitions based on num_workers.
-                    # npartitions_ddf = effective_dask_workers * 2 # Example: more partitions than workers
-
                     ddf = dd.read_csv(edge_file, sep=' ', header=None, names=['source', 'target'], dtype=int,
-                                      on_bad_lines='skip', blocksize='128MB')  # Added blocksize
-
+                                      on_bad_lines='skip', blocksize='128MB')
                     print(f"    Dask DataFrame created for n={n} with {ddf.npartitions} partitions.")
-                    weighted_ddf = ddf.groupby(['source', 'target']).size().reset_index(name='weight')
+
+                    # Correct way to handle reset_index for Dask DataFrame after groupby.size()
+                    # .size() returns a Dask Series. Convert to DataFrame and then name the column.
+                    weighted_ddf_series = ddf.groupby(['source', 'target']).size()
+                    weighted_ddf = weighted_ddf_series.to_frame(name='weight').reset_index()
 
                     print(f"    Computing aggregated weighted edges for n={n}...")
                     weighted_edge_df_computed = weighted_ddf.compute(scheduler=dask_scheduler, num_workers=effective_dask_workers)
@@ -366,27 +356,23 @@ class GraphBuilder:
                 if weighted_edge_df_computed.empty and not raw_edge_file_was_empty:
                     print(f"  Warning: Dask DataFrame aggregation resulted in empty weighted edges for n={n}, though raw edge file was not empty.")
 
-            except FileNotFoundError:  # Should be caught by os.path.exists above, but as a fallback
+            except FileNotFoundError:
                 print(f"  ❌ Error: Edge file not found for n={n} at: {edge_file} (during Dask DF load). Assuming no edges.")
-                raw_edge_file_was_empty = True  # Treat as if it was empty
+                raw_edge_file_was_empty = True
             except Exception as e_ddf:
                 print(f"  ❌ Error: Dask DataFrame processing error for edges n={n}: {e_ddf}. Assuming no edges.")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
-                raw_edge_file_was_empty = True  # Treat as if it was empty
-            # --- End Dask DataFrame for Phase 2 ---
+                raw_edge_file_was_empty = True
 
             weighted_edge_list_tuples = []
             if weighted_edge_df_computed.empty:
                 if not raw_edge_file_was_empty:
                     print(f"  ℹ️ Info: No unique edges found after aggregation for n={n}.")
-                # If raw_edge_file_was_empty, the message was already printed.
             else:
                 if self.config.DEBUG_VERBOSE:
                     print(f"  [DEBUG] Weighted edge_df (from Dask DF) for n={n}:")
                     print(weighted_edge_df_computed.head())
-                # The number of raw edges is known from Phase 1's edge_count.
-                # We can report the number of unique weighted edges here.
                 print(f"  Aggregated raw transitions into {len(weighted_edge_df_computed)} unique weighted edges for n={n}.")
                 weighted_edge_list_tuples = [tuple(x) for x in weighted_edge_df_computed[['source', 'target', 'weight']].to_numpy()]
 
@@ -397,18 +383,15 @@ class GraphBuilder:
                 print(f"  [DEBUG] weighted_edge_list_tuples (sample): {weighted_edge_list_tuples[:5] if weighted_edge_list_tuples else 'Empty'}")
 
             print(f"  Instantiating DirectedNgramGraph object for n={n}...")
-            # This is where the OOM happened for n=4 due to dense matrix in DirectedNgramGraph
-            # The following line will still cause OOM for large n until DirectedNgramGraph uses sparse matrices.
             graph_object = DirectedNgramGraph(nodes=idx_to_node, edges=weighted_edge_list_tuples, epsilon_propagation=self.gcn_propagation_epsilon)
             graph_object.n_value = n
             output_path = os.path.join(self.output_dir, f'ngram_graph_n{n}.pkl')
             DataUtils.save_object(graph_object, output_path)
             print(f"  Graph for n={n} saved to {output_path}")
 
-            # --- Calculate and Print Graph Statistics ---
             print(f"    --- Graph Statistics for n={n} ---")
             num_nodes = graph_object.number_of_nodes
-            num_edges = graph_object.number_of_edges  # This is now unique weighted edges
+            num_edges = graph_object.number_of_edges
             print(f"      Nodes: {num_nodes}")
             print(f"      Edges (unique weighted): {num_edges}")
             if num_nodes > 1:
