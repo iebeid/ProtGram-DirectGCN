@@ -154,7 +154,7 @@ class GraphBuilder:
             all_ngrams_list_with_duplicates = []
             try:
                 print("    Computing all n-grams (with duplicates) synchronously...")
-                all_ngrams_list_with_duplicates = all_ngrams_bag_flattened.compute(scheduler='processes', num_workers=max(1, os.cpu_count() // 8))
+                all_ngrams_list_with_duplicates = all_ngrams_bag_flattened.compute(scheduler='threads', num_workers=max(1, os.cpu_count() // 8))
                 print(f"    Computed {len(all_ngrams_list_with_duplicates)} n-grams (including duplicates).")
             except Exception as e_compute_ngrams:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for all n-grams: {e_compute_ngrams}")
@@ -207,7 +207,7 @@ class GraphBuilder:
             all_edges_str_list = []
             try:
                 print("    Computing all edge strings synchronously...")
-                all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler='processes', num_workers=max(1, os.cpu_count() // 8))
+                all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler='threads', num_workers=max(1, os.cpu_count() // 8))
                 print(f"    Computed {len(all_edges_str_list)} edge strings.")
             except Exception as e_compute_edges:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for edge strings: {e_compute_edges}")
