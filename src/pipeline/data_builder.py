@@ -205,7 +205,7 @@ class GraphBuilder:
             all_edges_str_list = []
             try:
                 print("    Computing all edge strings synchronously...")
-                all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler='single-threaded')
+                all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler='threads', num_workers=max(1, os.cpu_count() // 4))
                 print(f"    Computed {len(all_edges_str_list)} edge strings.")
             except Exception as e_compute_edges:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for edge strings: {e_compute_edges}")
@@ -313,6 +313,7 @@ class GraphBuilder:
                 if num_edges == num_nodes * (num_nodes - 1):
                     is_complete = True
             elif num_nodes == 1 and num_edges == 0:
+                is_complete = True
                 is_complete = True
             print(f"      Is Complete (all N*(N-1) directed edges present): {is_complete}")
 
