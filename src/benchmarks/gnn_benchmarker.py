@@ -1,17 +1,17 @@
 # ==============================================================================
 # MODULE: gnn_benchmarker.py
 # PURPOSE: To benchmark various GNN models on standard datasets.
-# VERSION: 3.2 (Removed PPI dataset from benchmarking, fixed ProtGramDirectGCN instantiation for PPI if re-added)
+# VERSION: 3.3 (Using time.monotonic for durations)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
-import time
+import time # Ensure time is imported
 from tqdm import tqdm
 from typing import Dict, List, Tuple, Any, Optional
 import pandas as pd
 from sklearn.metrics import f1_score, accuracy_score
-from torch_geometric.datasets import (KarateClub, Planetoid) # PPI removed
+from torch_geometric.datasets import (KarateClub, Planetoid)
 from torch_geometric.loader import DataLoader as PyGDataLoader
 import torch_geometric.transforms as T
 from torch_geometric.utils import to_undirected
@@ -23,7 +23,7 @@ import torch.nn.functional as F
 
 from config import Config
 from src.models.gnn_zoo import *
-from src.models.protgram_directgcn import ProtGramDirectGCN # Still imported but not used in model_zoo_cfg
+from src.models.protgram_directgcn import ProtGramDirectGCN
 from src.utils.data_utils import DataUtils
 from src.utils.models_utils import EmbeddingProcessor
 
@@ -41,7 +41,6 @@ class GNNBenchmarker:
         transform_compose = T.Compose(transform_list)
 
         print(f"  Attempting to load dataset: {name} (root: {root_path}, undirected_requested: {make_undirected})...")
-        # dataset_path = os.path.join(root_path, name) # Not directly used
 
         dataset_obj = None
         data_obj = None
@@ -51,13 +50,12 @@ class GNNBenchmarker:
         elif name.lower() in ['cora', 'citeseer', 'pubmed']:
             dataset_obj = Planetoid(root=root_path, name=name, transform=None)
         elif name.lower() in ['cornell', 'texas', 'wisconsin']:
-            from torch_geometric.datasets import WebKB # Keep import local if only for these
+            from torch_geometric.datasets import WebKB
             try:
                 dataset_obj = WebKB(root=root_path, name=name, transform=None)
             except Exception as e:
                 print(f"Warning: Could not load {name} using WebKB loader: {e}")
                 return None, None, None, None
-        # PPI dataset loading logic is removed
         else:
             print(f"ERROR: Dataset '{name}' loader not implemented or dataset is excluded from benchmark list.")
             return None, None, None, None
@@ -76,19 +74,19 @@ class GNNBenchmarker:
                 data_obj.edge_attr = edge_attr_undir
             else:
                 data_obj.edge_index = to_undirected(data_obj.edge_index, num_nodes=data_obj.num_nodes)
-            data_obj.is_undirected_explicit = True # Custom flag
+            data_obj.is_undirected_explicit = True
 
-        data_obj = transform_compose(data_obj) # Apply ToDevice
+        data_obj = transform_compose(data_obj)
 
         print(f"  {name} loaded: Nodes: {data_obj.num_nodes}, Edges: {data_obj.num_edges}, Features: {dataset_obj.num_features}, Classes: {dataset_obj.num_classes}")
 
         has_standard_masks = hasattr(data_obj, 'train_mask') and hasattr(data_obj, 'val_mask') and hasattr(data_obj, 'test_mask')
-        if has_standard_masks and data_obj.train_mask.ndim > 1: # Handle datasets like WebKB with multiple splits
+        if has_standard_masks and data_obj.train_mask.ndim > 1:
             print(f"  Dataset {name} has multiple standard mask splits. Using the first one (index 0).")
             data_obj.train_mask = data_obj.train_mask[:, 0]
             data_obj.val_mask = data_obj.val_mask[:, 0]
             data_obj.test_mask = data_obj.test_mask[:, 0]
-            has_standard_masks = True # Re-affirm
+            has_standard_masks = True
 
         if not has_standard_masks:
             print(f"  Dataset {name} is missing standard train/val/test masks. Applying RandomNodeSplit.")
@@ -101,16 +99,16 @@ class GNNBenchmarker:
                 return None, None, None, None
 
             split_transform = T.RandomNodeSplit(split='train_rest', num_val=num_val, num_test=num_test)
-            data_on_cpu_for_split = data_obj.to('cpu') # Split on CPU
+            data_on_cpu_for_split = data_obj.to('cpu')
             try:
                 data_on_cpu_for_split = split_transform(data_on_cpu_for_split)
-                data_obj = data_on_cpu_for_split.to(self.device) # Move back to device
+                data_obj = data_on_cpu_for_split.to(self.device)
                 print(f"  Applied RandomNodeSplit to {name}. Train: {data_obj.train_mask.sum()}, Val: {data_obj.val_mask.sum()}, Test: {data_obj.test_mask.sum()}")
             except Exception as e_split:
                 print(f"ERROR applying RandomNodeSplit to {name}: {e_split}. Skipping dataset.")
                 return None, None, None, None
 
-        return data_obj, data_obj, data_obj, 'single-label-node' # All current datasets are node classification
+        return data_obj, data_obj, data_obj, 'single-label-node'
 
     def _save_node_embeddings(self, model: nn.Module, data_for_emb, model_name: str, dataset_name: str, graph_variant_suffix: str):
         if not self.config.BENCHMARK_SAVE_EMBEDDINGS:
@@ -120,7 +118,7 @@ class GNNBenchmarker:
         model.eval()
         with torch.no_grad():
             node_embeddings_tensor = None
-            if isinstance(data_for_emb, Data):  # Single graph
+            if isinstance(data_for_emb, Data):
                 if hasattr(model, 'get_embeddings') and callable(getattr(model, 'get_embeddings')):
                     node_embeddings_tensor = model.get_embeddings(data_for_emb.to(self.device))
                 elif hasattr(model, 'embedding_output') and model.embedding_output is not None:
@@ -202,7 +200,7 @@ class GNNBenchmarker:
         criterion = None
         metric_name = ""
 
-        if task_type == 'multi-label-graph': # Should not be hit as PPI is removed
+        if task_type == 'multi-label-graph':
             criterion = F.binary_cross_entropy_with_logits
             metric_fn = lambda y_true, y_pred_logits: f1_score(y_true.cpu().numpy(), (y_pred_logits.detach() > 0).cpu().numpy(), average='micro', zero_division=0)
             metric_name = "F1 Micro"
@@ -216,7 +214,7 @@ class GNNBenchmarker:
         print(f"  Using Loss: {criterion.__name__ if hasattr(criterion, '__name__') else str(criterion)}, Metric: {metric_name}")
 
         for epoch in range(num_epochs):
-            epoch_start_time = time.time()
+            epoch_start_time = time.monotonic() # MODIFICATION
             model.train()
             total_loss = 0
             num_batches_or_graphs = 0
@@ -224,12 +222,12 @@ class GNNBenchmarker:
             current_train_data = train_data_or_loader
             if isinstance(current_train_data, Data): current_train_data = current_train_data.to(self.device)
 
-            if isinstance(current_train_data, PyGDataLoader): # Should not be hit
+            if isinstance(current_train_data, PyGDataLoader):
                 for batch_data in current_train_data:
                     optimizer.zero_grad()
                     out = model(batch_data)
                     if isinstance(out, tuple): out = out[0]
-                    loss = criterion(out, batch_data.y.float()) # Assuming y is float for BCEWithLogits
+                    loss = criterion(out, batch_data.y.float())
                     loss.backward()
                     optimizer.step()
                     total_loss += loss.item()
@@ -260,7 +258,7 @@ class GNNBenchmarker:
                 current_val_data = val_data_or_loader
                 if isinstance(current_val_data, Data): current_val_data = current_val_data.to(self.device)
 
-                if isinstance(current_val_data, PyGDataLoader): # Should not be hit
+                if isinstance(current_val_data, PyGDataLoader):
                     all_preds_val, all_labels_val = [], []
                     for batch_data_val in current_val_data:
                         preds_val = model(batch_data_val)
@@ -281,19 +279,19 @@ class GNNBenchmarker:
                 else:
                     raise TypeError(f"val_data_or_loader type {type(current_val_data)} not supported.")
 
-            epoch_duration = time.time() - epoch_start_time
+            epoch_duration = time.monotonic() - epoch_start_time # MODIFICATION
             if self.config.DEBUG_VERBOSE or epoch % (max(1, num_epochs // 10)) == 0 or epoch == num_epochs - 1:
                 print(f"    Epoch {epoch:03d}, Loss: {avg_loss:.4f}, Val {metric_name}: {val_metric:.4f}, Time: {epoch_duration:.2f}s")
             history.append({'epoch': epoch, 'loss': avg_loss, f'val_{metric_name.lower().replace(" ", "_")}': val_metric})
 
-            if val_metric >= best_val_metric: # Use >= to update on ties, preferring later epochs
+            if val_metric >= best_val_metric:
                 best_val_metric = val_metric
-                final_trained_model_state = model.state_dict() # Save state of best val model
+                final_trained_model_state = model.state_dict()
 
                 current_test_data = test_data_or_loader
                 if isinstance(current_test_data, Data): current_test_data = current_test_data.to(self.device)
 
-                if isinstance(current_test_data, PyGDataLoader): # Should not be hit
+                if isinstance(current_test_data, PyGDataLoader):
                     all_preds_test, all_labels_test = [], []
                     for batch_data_test in current_test_data:
                         preds_test = model(batch_data_test)
@@ -314,7 +312,7 @@ class GNNBenchmarker:
         print(f"  Finished training for {model_name_str} on {dataset_name}.")
         print(f"  Best Val {metric_name}: {best_val_metric:.4f}, Corresponding Test {metric_name}: {best_test_metric_at_best_val:.4f}")
 
-        if final_trained_model_state: # Load the best model state for embedding extraction
+        if final_trained_model_state:
             model.load_state_dict(final_trained_model_state)
 
         return best_val_metric, best_test_metric_at_best_val, pd.DataFrame(history), metric_name
@@ -326,7 +324,7 @@ class GNNBenchmarker:
         DataUtils.print_header(f"Benchmarking on Dataset: {dataset_name}{graph_variant_suffix}")
 
         for model_name, m_config in model_zoo_config.items():
-            if model_name == "ProtGramDirectGCN": # Skip your custom model in this standard zoo
+            if model_name == "ProtGramDirectGCN":
                 print(f"Skipping ProtGramDirectGCN in standard GNN benchmark loop for {dataset_name}{graph_variant_suffix}.")
                 continue
 
@@ -349,7 +347,7 @@ class GNNBenchmarker:
                 }
                 dataset_results.append(result_entry)
 
-                data_for_emb_extraction = test_data # Use test_data for final embeddings
+                data_for_emb_extraction = test_data
                 self._save_node_embeddings(model_instance, data_for_emb_extraction, model_name, dataset_name, graph_variant_suffix)
 
                 reports_dir = str(self.config.BENCHMARKING_RESULTS_DIR / f"{dataset_name}{graph_variant_suffix}")
@@ -374,7 +372,7 @@ class GNNBenchmarker:
         all_results_summary = []
 
         for dataset_name in self.config.BENCHMARK_NODE_CLASSIFICATION_DATASETS:
-            if dataset_name.lower() == 'ppi': # Explicitly skip PPI
+            if dataset_name.lower() == 'ppi':
                 print(f"Skipping dataset '{dataset_name}' as per requirement.")
                 continue
 

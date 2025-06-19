@@ -73,10 +73,10 @@ class Config:
 
         self.GCN_1GRAM_INIT_DIM = 512
         self.GCN_EPOCHS_PER_LEVEL = 10
-        self.GCN_LR = 0.001
+        self.GCN_LR = 0.005
         self.GCN_DROPOUT_RATE = 0.5
         self.GCN_WEIGHT_DECAY = 1e-4
-        self.GCN_L2_REG_LAMBDA = 0.0001
+        self.GCN_L2_REG_LAMBDA = 0.00001
         self.GCN_PROPAGATION_EPSILON = 1e-9
         self.GCN_MAX_PE_LEN = 512
         self.GCN_USE_VECTOR_COEFFS = True
@@ -116,7 +116,7 @@ class Config:
         self.PLOT_TRAINING_HISTORY = True
         self.EARLY_STOPPING_PATIENCE = 10
         self.PERFORM_H5_INTEGRITY_CHECK = True
-        self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 10000
+        self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 50000
         self.TF_DATASET_STRATEGY = 'from_tensor_slices'
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
             {"name": "ProtT5-UniProt", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5-per-protein.h5"},

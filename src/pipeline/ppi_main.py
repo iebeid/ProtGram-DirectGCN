@@ -2,7 +2,7 @@
 # MODULE: pipeline/ppi_main.py
 # PURPOSE: Contains the complete workflow for evaluating one or more sets of
 #          protein embeddings on a link prediction task.
-# VERSION: 3.3 (Integrate batch-wise feature generation with tf.data.Dataset.from_generator)
+# VERSION: 3.4 (Using time.monotonic, fixed TF dataset exhaustion)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -10,10 +10,10 @@ import gc
 import os
 import random
 import shutil
-import time
+import time  # Ensure time is imported
 from contextlib import nullcontext
 from typing import List, Optional, Dict, Any, Tuple
-from functools import partial  # For from_generator
+from functools import partial
 
 import h5py
 import mlflow
@@ -48,7 +48,7 @@ class PPIPipeline:
         dummy_emb_file = os.path.join(dummy_data_dir, "dummy_embeddings.h5")
         with h5py.File(dummy_emb_file, 'w') as hf:
             for pid in protein_ids:
-                hf.create_dataset(pid, data=np.random.rand(embedding_dim).astype(np.float16))  # Save dummy as float16
+                hf.create_dataset(pid, data=np.random.rand(embedding_dim).astype(np.float16))
         print(f"  Dummy embeddings saved to: {dummy_emb_file}")
 
         dummy_pos_path = os.path.join(dummy_data_dir, "dummy_pos.csv")
@@ -65,7 +65,7 @@ class PPIPipeline:
         return dummy_pos_path, dummy_neg_path, dummy_emb_config
 
     def _run_cv_workflow(self, embedding_name: str, all_pairs_for_cv: List[Tuple[str, str, int]], protein_embeddings: Dict[str, np.ndarray]) -> Dict[str, Any]:
-        cv_start_time = time.time()
+        cv_start_time = time.monotonic()  # MODIFICATION
         print(f"Starting CV workflow for {embedding_name}. Total pairs for CV: {len(all_pairs_for_cv)}")
         aggregated_results: Dict[str, Any] = {'embedding_name': embedding_name, 'history_dict_fold1': {}, 'notes': ""}
 
@@ -98,12 +98,19 @@ class PPIPipeline:
         edge_feature_dim = feature_dim_map.get(self.config.EVAL_EDGE_EMBEDDING_METHOD, embedding_dim * 2)
 
         for fold_num, (train_idx, val_idx) in enumerate(skf.split(np.zeros(len(all_pairs_for_cv)), labels_array)):
-            fold_start_time = time.time()
+            fold_start_time = time.monotonic()  # MODIFICATION
             print(f"\n  --- Fold {fold_num + 1}/{self.config.EVAL_N_FOLDS} for {embedding_name} ---")
 
             train_pairs_fold = [all_pairs_for_cv[i] for i in train_idx]
             val_pairs_fold = [all_pairs_for_cv[i] for i in val_idx]
             print(f"    Train pairs: {len(train_pairs_fold)}, Validation pairs: {len(val_pairs_fold)}")
+
+            # Calculate steps per epoch
+            num_train_batches = (len(train_pairs_fold) + self.config.EVAL_BATCH_SIZE - 1) // self.config.EVAL_BATCH_SIZE
+            num_val_batches = (len(val_pairs_fold) + self.config.EVAL_BATCH_SIZE - 1) // self.config.EVAL_BATCH_SIZE
+
+            if len(train_pairs_fold) > 0 and num_train_batches == 0: num_train_batches = 1
+            if len(val_pairs_fold) > 0 and num_val_batches == 0: num_val_batches = 1
 
             train_generator_func = partial(EmbeddingProcessor.generate_edge_features_batched,
                                            interaction_pairs=train_pairs_fold,
@@ -111,12 +118,20 @@ class PPIPipeline:
                                            method=self.config.EVAL_EDGE_EMBEDDING_METHOD,
                                            batch_size=self.config.EVAL_BATCH_SIZE,
                                            embedding_dim=embedding_dim)
-            val_generator_func = partial(EmbeddingProcessor.generate_edge_features_batched,
-                                         interaction_pairs=val_pairs_fold,
-                                         protein_embeddings=protein_embeddings,
-                                         method=self.config.EVAL_EDGE_EMBEDDING_METHOD,
-                                         batch_size=self.config.EVAL_BATCH_SIZE,
-                                         embedding_dim=embedding_dim)
+
+            val_generator_func_for_fit = partial(EmbeddingProcessor.generate_edge_features_batched,  # For Keras model.fit validation_data
+                                                 interaction_pairs=val_pairs_fold,
+                                                 protein_embeddings=protein_embeddings,
+                                                 method=self.config.EVAL_EDGE_EMBEDDING_METHOD,
+                                                 batch_size=self.config.EVAL_BATCH_SIZE,
+                                                 embedding_dim=embedding_dim)
+
+            val_generator_func_for_eval = partial(EmbeddingProcessor.generate_edge_features_batched,  # For final evaluation
+                                                  interaction_pairs=val_pairs_fold,
+                                                  protein_embeddings=protein_embeddings,
+                                                  method=self.config.EVAL_EDGE_EMBEDDING_METHOD,
+                                                  batch_size=self.config.EVAL_BATCH_SIZE,
+                                                  embedding_dim=embedding_dim)
 
             output_signature = (
                 tf.TensorSpec(shape=(None, edge_feature_dim), dtype=tf.float16),
@@ -124,12 +139,10 @@ class PPIPipeline:
             )
 
             train_ds = tf.data.Dataset.from_generator(train_generator_func, output_signature=output_signature)
-            # Determine approximate number of batches for shuffle buffer
-            num_train_batches = (len(train_pairs_fold) // self.config.EVAL_BATCH_SIZE) + 1
-            train_ds = train_ds.shuffle(buffer_size=num_train_batches).prefetch(tf.data.AUTOTUNE)
+            train_ds = train_ds.shuffle(buffer_size=max(1, num_train_batches)).repeat().prefetch(tf.data.AUTOTUNE)
 
-            val_ds = tf.data.Dataset.from_generator(val_generator_func, output_signature=output_signature)
-            val_ds = val_ds.prefetch(tf.data.AUTOTUNE)
+            val_ds_for_fit = tf.data.Dataset.from_generator(val_generator_func_for_fit, output_signature=output_signature)
+            val_ds_for_fit = val_ds_for_fit.repeat().prefetch(tf.data.AUTOTUNE)
 
             mlp_params = {'dense1_units': self.config.EVAL_MLP_DENSE1_UNITS, 'dropout1_rate': self.config.EVAL_MLP_DROPOUT1_RATE,
                           'dense2_units': self.config.EVAL_MLP_DENSE2_UNITS, 'dropout2_rate': self.config.EVAL_MLP_DROPOUT2_RATE,
@@ -138,8 +151,11 @@ class PPIPipeline:
             model = model_builder.build()
             print(f"    MLP model built with input shape: {edge_feature_dim}")
 
-            print(f"    Starting model training for {self.config.EVAL_EPOCHS} epochs...")
-            history = model.fit(train_ds, epochs=self.config.EVAL_EPOCHS, validation_data=val_ds,
+            print(f"    Starting model training for {self.config.EVAL_EPOCHS} epochs (train_steps: {num_train_batches}, val_steps: {num_val_batches})...")
+            history = model.fit(train_ds, epochs=self.config.EVAL_EPOCHS,
+                                validation_data=val_ds_for_fit,
+                                steps_per_epoch=num_train_batches,
+                                validation_steps=num_val_batches if num_val_batches > 0 else None,
                                 verbose=1 if self.config.DEBUG_VERBOSE else 0,
                                 callbacks=[
                                     tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=self.config.EARLY_STOPPING_PATIENCE, restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else [])
@@ -150,13 +166,16 @@ class PPIPipeline:
             y_val_fold_true_np_list = []
             y_pred_proba_list = []
 
-            # Iterate through val_ds to get true labels and predictions
-            # This ensures we only evaluate on pairs that successfully generated features
-            for x_batch_val, y_batch_val in val_ds:
+            val_ds_eval = tf.data.Dataset.from_generator(val_generator_func_for_eval, output_signature=output_signature)
+            val_ds_eval = val_ds_eval.prefetch(tf.data.AUTOTUNE)
+
+            eval_iterations = num_val_batches if num_val_batches > 0 else (1 if len(val_pairs_fold) > 0 else 0)
+
+            for x_batch_val, y_batch_val in val_ds_eval.take(eval_iterations):
                 y_val_fold_true_np_list.append(y_batch_val.numpy())
                 y_pred_proba_list.append(model.predict_on_batch(x_batch_val).flatten())
 
-            if not y_val_fold_true_np_list:  # Should not happen if val_pairs_fold was not empty and generator worked
+            if not y_val_fold_true_np_list:
                 print(f"    Warning: No data yielded by validation generator for fold {fold_num + 1}. Skipping metrics.")
                 current_metrics = {'precision_sklearn': np.nan, 'recall_sklearn': np.nan, 'f1_sklearn': np.nan, 'auc_sklearn': np.nan}
             else:
@@ -178,16 +197,16 @@ class PPIPipeline:
                     current_metrics['auc_sklearn'] = 0.5
                     if fold_num == 0: aggregated_results['roc_data_representative'] = (np.array([0, 1]), np.array([0, 1]), 0.5)
 
-            for k_val_table in self.config.EVAL_K_VALUES_FOR_TABLE:  # Renamed k to k_val_table
-                current_metrics[f'hits_at_{k_val_table}'] = 0.0
-                current_metrics[f'ndcg_at_{k_val_table}'] = 0.0
+            for k_val_table in self.config.EVAL_K_VALUES_FOR_TABLE:
+                current_metrics[f'hits_at_{k_val_table}'] = 0.0  # Placeholder, implement if needed
+                current_metrics[f'ndcg_at_{k_val_table}'] = 0.0  # Placeholder, implement if needed
 
             fold_metrics_list.append(current_metrics)
             print(f"    Fold {fold_num + 1} Metrics: {current_metrics}")
-            del model, history, train_ds, val_ds
+            del model, history, train_ds, val_ds_for_fit, val_ds_eval
             gc.collect()
             tf.keras.backend.clear_session()
-            print(f"    Fold {fold_num + 1} completed in {time.time() - fold_start_time:.2f}s.")
+            print(f"    Fold {fold_num + 1} completed in {time.monotonic() - fold_start_time:.2f}s.")  # MODIFICATION
 
         if fold_metrics_list:
             metrics_keys = fold_metrics_list[0].keys() if fold_metrics_list else []
@@ -201,16 +220,16 @@ class PPIPipeline:
 
             aggregated_results['fold_f1_scores'] = [fm.get('f1_sklearn', np.nan) for fm in fold_metrics_list]
             aggregated_results['fold_auc_scores'] = [fm.get('auc_sklearn', np.nan) for fm in fold_metrics_list]
-            for k_val_table in self.config.EVAL_K_VALUES_FOR_TABLE:  # Renamed k to k_val_table
+            for k_val_table in self.config.EVAL_K_VALUES_FOR_TABLE:
                 aggregated_results[f'fold_hits_at_{k_val_table}_scores'] = [fm.get(f'hits_at_{k_val_table}', np.nan) for fm in fold_metrics_list]
                 aggregated_results[f'fold_ndcg_at_{k_val_table}_scores'] = [fm.get(f'ndcg_at_{k_val_table}', np.nan) for fm in fold_metrics_list]
 
-        print(f"CV workflow for {embedding_name} finished in {time.time() - cv_start_time:.2f}s.")
+        print(f"CV workflow for {embedding_name} finished in {time.monotonic() - cv_start_time:.2f}s.")  # MODIFICATION
         if self.config.DEBUG_VERBOSE: print(f"  Aggregated results for {embedding_name}: {aggregated_results}")
         return aggregated_results
 
     def run(self, use_dummy_data: bool = False, parent_run_id: Optional[str] = None):
-        pipeline_start_time = time.time()
+        pipeline_start_time = time.monotonic()  # MODIFICATION
         run_type = "DUMMY EVALUATION" if use_dummy_data else "MAIN EVALUATION"
         DataUtils.print_header(f"PPI EVALUATION PIPELINE ({run_type})")
 
@@ -236,9 +255,8 @@ class PPIPipeline:
         reporter = EvaluationReporter(base_output_dir=output_dir, k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE)
 
         DataUtils.print_header("Loading Interaction Pairs")
-        load_pairs_start_time = time.time()
+        load_pairs_start_time = time.monotonic()  # MODIFICATION
         all_pairs_initial_load: List[Tuple[str, str, int]] = []
-        # Use a larger batch size for initial loading from files
         streaming_batch_size = self.config.EVAL_BATCH_SIZE * 100
         positive_stream = GroundTruthLoader.stream_interaction_pairs(pos_fp, 1, batch_size=streaming_batch_size, random_state=self.config.RANDOM_STATE)
         for batch in positive_stream: all_pairs_initial_load.extend(batch)
@@ -252,11 +270,9 @@ class PPIPipeline:
         if not all_pairs_initial_load:
             print("CRITICAL: No interaction pairs were loaded. Exiting evaluation.")
             return
-        print(f"Total pairs loaded: {len(all_pairs_initial_load)} in {time.time() - load_pairs_start_time:.2f}s.")
-        random.shuffle(all_pairs_initial_load)  # Shuffle once after loading all
+        print(f"Total pairs loaded: {len(all_pairs_initial_load)} in {time.monotonic() - load_pairs_start_time:.2f}s.")  # MODIFICATION
+        random.shuffle(all_pairs_initial_load)
 
-        # Get all unique protein IDs that *could* be involved from the files
-        # This is used to load only necessary embeddings into memory.
         all_required_protein_ids = GroundTruthLoader.get_required_ids_from_files([pos_fp, neg_fp])
         print(f"Found {len(all_required_protein_ids)} unique protein IDs across all interaction files.")
 
@@ -289,21 +305,19 @@ class PPIPipeline:
                 try:
                     with EmbeddingLoader(emb_path) as protein_embeddings_loader:
                         print("  Loading required embeddings into memory for CV...")
-                        load_mem_start_time = time.time()
-                        # Load only the embeddings for IDs present in the interaction files
+                        load_mem_start_time = time.monotonic()  # MODIFICATION
                         current_protein_embeddings_dict = {
                             pid: protein_embeddings_loader[pid]
                             for pid in all_required_protein_ids if pid in protein_embeddings_loader
                         }
                         loaded_emb_dtype = next(iter(current_protein_embeddings_dict.values())).dtype if current_protein_embeddings_dict else 'N/A'
-                        print(f"  Loaded {len(current_protein_embeddings_dict)} embeddings (dtype: {loaded_emb_dtype}) into memory in {time.time() - load_mem_start_time:.2f}s.")
+                        print(f"  Loaded {len(current_protein_embeddings_dict)} embeddings (dtype: {loaded_emb_dtype}) into memory in {time.monotonic() - load_mem_start_time:.2f}s.")  # MODIFICATION
 
                         if not current_protein_embeddings_dict:
-                            print(f"  No embeddings loaded into memory for {emb_name} (possibly none of the required IDs were found in H5). Skipping CV.")
+                            print(f"  No embeddings loaded into memory for {emb_name}. Skipping CV.")
                             if mlflow_active and run: mlflow.log_param("status", "no_embeddings_loaded_for_pairs")
                             continue
 
-                        # Filter the initially loaded pairs based on actually available embeddings in current_protein_embeddings_dict
                         pairs_for_cv = []
                         missing_from_loaded_dict = 0
                         for p1, p2, label in all_pairs_initial_load:
@@ -313,7 +327,7 @@ class PPIPipeline:
                                 missing_from_loaded_dict += 1
 
                         if missing_from_loaded_dict > 0:
-                            print(f"  Note: {missing_from_loaded_dict} pairs were further removed because one/both proteins were not in the loaded embedding dictionary (e.g. not in H5 file).")
+                            print(f"  Note: {missing_from_loaded_dict} pairs were further removed because one/both proteins were not in the loaded embedding dictionary.")
 
                         if not pairs_for_cv:
                             print(f"  No pairs remain after ensuring both proteins have loaded embeddings for {emb_name}. Skipping CV.")
@@ -368,7 +382,7 @@ class PPIPipeline:
                     if main_emb_results:
                         mlflow.log_metric(f"summary_{self.config.EVAL_MAIN_EMBEDDING_FOR_STATS}_auc", main_emb_results.get('test_auc_sklearn', 0))
                         mlflow.log_metric(f"summary_{self.config.EVAL_MAIN_EMBEDDING_FOR_STATS}_f1", main_emb_results.get('test_f1_sklearn', 0))
-                if self.config.USE_MLFLOW and summary_run and parent_run_id:  # Ensure summary_run is not None before calling end_run
+                if self.config.USE_MLFLOW and summary_run and parent_run_id:
                     mlflow.end_run()
         else:
             print("\nNo CV results generated from any embedding configurations.")
@@ -383,4 +397,4 @@ class PPIPipeline:
                     print(f"Error cleaning up dummy data directory {dummy_dir_to_clean}: {e}")
             else:
                 print(f"Dummy data directory {dummy_dir_to_clean} not found for cleanup.")
-        DataUtils.print_header(f"PPI Evaluation Pipeline ({run_type}) FINISHED in {time.time() - pipeline_start_time:.2f}s")
+        DataUtils.print_header(f"PPI Evaluation Pipeline ({run_type}) FINISHED in {time.monotonic() - pipeline_start_time:.2f}s")  # MODIFICATION
