@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 5.5 (Memory optimization for edge list creation using to_textfiles)
+# VERSION: 5.6 (Added debug count for persisted bag, refined OOM handling for edges)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -119,14 +119,11 @@ class GraphBuilder:
                     first_sequence = False
 
         try:
-            # Convert iterator to list for Dask Bag. This might still be memory intensive for very large FASTA files.
-            # For truly massive files, DataLoader.parse_sequences might need to yield file paths/chunks
-            # and Dask.bag.read_text could be used directly on those chunks.
-            # But for now, assuming the list of (pid, seq) tuples fits in memory.
             sequence_stream_list = list(get_preprocessed_sequence_stream())
             if not sequence_stream_list:
                 print("ERROR: No sequences found in the FASTA file. Cannot proceed.")
                 return
+            print(f"  Loaded {len(sequence_stream_list)} sequences from FASTA.")  # Log initial sequence count
         except FileNotFoundError:
             print(f"ERROR: FASTA file not found at {self.protein_sequence_file}")
             return
@@ -137,15 +134,26 @@ class GraphBuilder:
 
         num_partitions_for_bag = effective_dask_workers if effective_dask_workers > 1 else 1
         raw_sequence_bag_with_flag = db.from_sequence(sequence_stream_list, npartitions=num_partitions_for_bag)
-        preprocessed_sequence_bag = raw_sequence_bag_with_flag.starmap(_preprocess_sequence_tuple_for_bag)
+        preprocessed_sequence_bag_unpersisted = raw_sequence_bag_with_flag.starmap(_preprocess_sequence_tuple_for_bag)
 
-        # Persist if using parallelism and bag is reused multiple times (in the n_val_loop)
-        # This keeps the preprocessed sequences in Dask's memory (RAM or disk if configured)
-        # to avoid re-reading and re-preprocessing the FASTA for each n_val.
+        final_preprocessed_input_bag = preprocessed_sequence_bag_unpersisted
         if dask_scheduler != 'sync':
             print("  Persisting preprocessed_sequence_bag in Dask memory...")
-            # Use client.persist if using a distributed client, otherwise .persist() is fine for threads
-            preprocessed_sequence_bag = preprocessed_sequence_bag.persist(scheduler=dask_scheduler, num_workers=effective_dask_workers)
+            final_preprocessed_input_bag = preprocessed_sequence_bag_unpersisted.persist(
+                scheduler=dask_scheduler, num_workers=effective_dask_workers
+            )
+            # *** ADDED DEBUG COUNT ***
+            try:
+                persisted_bag_count = final_preprocessed_input_bag.count().compute(scheduler=dask_scheduler, num_workers=effective_dask_workers)
+                print(f"  DEBUG: Count of items in persisted preprocessed_sequence_bag: {persisted_bag_count}")
+                if persisted_bag_count != len(sequence_stream_list):
+                    print(f"  CRITICAL WARNING: Mismatch! Initial sequence list had {len(sequence_stream_list)} items, but persisted bag has {persisted_bag_count}.")
+            except Exception as e_count:
+                print(f"  DEBUG: Error counting persisted bag items: {e_count}")
+            # *** END ADDED DEBUG COUNT ***
+            print(f"  Preprocessed bag persisted. Type: {type(final_preprocessed_input_bag)}")
+        else:
+            print("  Using unpersisted preprocessed_sequence_bag for synchronous execution.")
 
         original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
         if dask_scheduler != 'sync':
@@ -159,15 +167,14 @@ class GraphBuilder:
             output_ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n_val_loop}.parquet')
             output_edge_file = os.path.join(self.temp_dir, f'edge_list_n{n_val_loop}.txt')
 
-            print(f"  [n={n_val_loop}] Generating all n-grams using Dask Bag...")
+            print(f"  [n={n_val_loop}] Generating n-grams using Dask Bag (source: final_preprocessed_input_bag)...")
             sys.stdout.flush()
 
             extract_ngrams_partial = partial(_extract_ngrams_from_sequence_tuple, n_val=n_val_loop)
-            all_ngrams_bag_flattened = preprocessed_sequence_bag.map(extract_ngrams_partial).flatten()
+            all_ngrams_bag_flattened = final_preprocessed_input_bag.map(extract_ngrams_partial).flatten()
 
             print(f"    Computing unique n-grams using Dask Bag's distinct()...")
             try:
-                # This computes unique n-grams, should be less memory intensive than collecting all duplicates
                 unique_ngrams_list = list(all_ngrams_bag_flattened.distinct().compute(
                     scheduler=dask_scheduler, num_workers=effective_dask_workers
                 ))
@@ -183,12 +190,12 @@ class GraphBuilder:
                 print("  The number of unique n-grams might be too large to fit in memory even after using distinct().")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
-                continue  # Skip edge generation and phase 2 for this n_val
+                continue
             except Exception as e_compute_distinct_ngrams:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for distinct n-grams: {e_compute_distinct_ngrams}")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
-                continue  # Skip edge generation and phase 2 for this n_val
+                continue
 
             unique_ngrams_df = unique_ngrams_df.sort_values('ngram').reset_index(drop=True)
             unique_ngrams_df['id'] = unique_ngrams_df.index
@@ -207,95 +214,90 @@ class GraphBuilder:
                 print(f"  [n={n_val_loop}] No n-grams, so no edges will be generated.")
                 print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.")
                 continue
-            del unique_ngrams_df  # Free memory
+            del unique_ngrams_df
 
             try:
                 map_table_read = pq.read_table(output_ngram_map_file, columns=['ngram', 'id'])
                 map_df_read = map_table_read.to_pandas()
                 ngram_to_id_map = map_df_read.set_index('ngram')['id'].to_dict()
-                del map_table_read, map_df_read  # Free memory
+                del map_table_read, map_df_read
             except Exception as e_read_map:
                 print(f"  [n={n_val_loop}] ERROR reading back ngram map: {e_read_map}. Skipping edge generation.")
                 continue
 
-            print(f"  [n={n_val_loop}] Generating all edge strings using Dask Bag...")
+            print(f"  [n={n_val_loop}] Generating edge strings using Dask Bag (source: final_preprocessed_input_bag)...")
             sys.stdout.flush()
 
             extract_edges_partial = partial(_extract_edges_from_sequence_tuple,
                                             n_val=n_val_loop,
                                             ngram_to_id_map=ngram_to_id_map)
-            all_edges_str_bag_flattened = preprocessed_sequence_bag.map(extract_edges_partial).flatten()
+            all_edges_str_bag_flattened = final_preprocessed_input_bag.map(extract_edges_partial).flatten()
 
-            # --- Memory-efficient edge writing using to_textfiles ---
-            # Define a temporary directory for the parts of the edge list
             temp_edge_output_dir = os.path.join(self.temp_dir, f'edge_list_n{n_val_loop}_parts')
-            # No need to os.makedirs, to_textfiles will create it if it doesn't exist.
+            if os.path.exists(temp_edge_output_dir):  # Ensure clean state for parts directory
+                shutil.rmtree(temp_edge_output_dir)
 
             print(f"    Writing edge strings to directory: {temp_edge_output_dir} using {dask_scheduler} scheduler...")
-
+            edge_count = 0
             try:
-                # Use Dask to write the bag contents to multiple text files
-                # The output path pattern specifies how part files will be named.
                 all_edges_str_bag_flattened.to_textfiles(
                     os.path.join(temp_edge_output_dir, 'part-*.txt'),
-                    compute=True,  # Ensure computation happens and files are written
+                    compute=True,
                     scheduler=dask_scheduler,
                     num_workers=effective_dask_workers
                 )
                 print(f"    Edge parts saved to directory {temp_edge_output_dir}.")
 
-                # Concatenate these part-files into your single output_edge_file
                 print(f"    Concatenating edge parts into {os.path.basename(output_edge_file)}...")
-
-                edge_count = 0
-                # Ensure the directory was created by to_textfiles before listing
                 if not os.path.exists(temp_edge_output_dir):
                     print(f"    Warning: Dask did not create the edge parts directory: {temp_edge_output_dir}. Assuming no edges were generated.")
-                    open(output_edge_file, 'w').close()  # Create an empty edge file
+                    open(output_edge_file, 'w').close()
                 else:
                     with open(output_edge_file, 'w') as outfile:
-                        # Sort part files to ensure deterministic concatenation if order matters (usually not critical for edge lists)
                         part_files = sorted([
                             os.path.join(temp_edge_output_dir, f)
                             for f in os.listdir(temp_edge_output_dir)
                             if f.startswith('part-') and f.endswith('.txt')
                         ])
-
                         if not part_files:
                             print(f"    Warning: No edge part-files found in {temp_edge_output_dir}. Output edge file will be empty.")
-
-                        # Use tqdm for progress during concatenation, as this can take time for large files
                         for part_file_name in tqdm(part_files, desc="    Concatenating parts", leave=False, disable=not self.config.DEBUG_VERBOSE):
                             with open(part_file_name, 'r') as infile:
-                                for line in infile:  # Stream line by line
+                                for line in infile:
                                     outfile.write(line)
                                     edge_count += 1
-
                 print(f"    Successfully wrote {edge_count} raw edge transitions to {os.path.basename(output_edge_file)}.")
-
-                # Clean up the temporary directory with part-files
                 if os.path.exists(temp_edge_output_dir):
                     shutil.rmtree(temp_edge_output_dir)
-                # --- End of to_textfiles edge writing ---
 
-            except MemoryError as e_mem:  # Should be much less likely with to_textfiles
-                print(f"  [n={n_val_loop}] MEMORY ERROR during edge string computation or writing: {e_mem}")
-                print("  This is unexpected with to_textfiles. Check Dask logs or system memory.")
+            except MemoryError as e_mem:
+                print(f"  [n={n_val_loop}] MEMORY ERROR during edge string computation or writing (to_textfiles): {e_mem}")
+                print("  This can happen if even a single partition's result is too large for a worker, or during Dask's internal operations for to_textfiles.")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
-                continue  # Skip Phase 2 for this n_val
+                # Create an empty edge file so Phase 2 can proceed or skip gracefully
+                open(output_edge_file, 'w').close()
+                print(f"  Created empty edge file for n={n_val_loop} due to memory error.")
+                # We might want to continue to the next n_val_loop or stop, depending on desired behavior.
+                # For now, let's continue to allow other n-levels to process if possible.
+                # If this was the OOM for n=5, this 'continue' will effectively skip Phase 2 for n=5.
+                # The "Killed" message means the whole process died, so this 'continue' might not be reached
+                # if the OOM is severe enough to kill the main Python process.
+                # However, if Dask itself catches and reports a MemoryError from a worker, this block will run.
+                if n_val_loop == 5 and "Killed" in str(e_mem):  # Heuristic, might not always catch "Killed" as MemoryError
+                    print(f"  OOM likely killed the process at n={n_val_loop} during edge processing. Further processing may be unreliable.")
+                    # Optionally, could raise an exception here to stop the whole GraphBuilder
+                    # raise RuntimeError(f"Process likely killed by OOM at n={n_val_loop}") from e_mem
+                # Fall through to the 'continue' in the outer exception block if this doesn't raise
             except Exception as e_write_edges:
                 print(f"  [n={n_val_loop}] ERROR writing edge list file or during edge computation: {e_write_edges}")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
-                continue  # Skip Phase 2 for this n_val
+                open(output_edge_file, 'w').close()  # Ensure empty file exists
+                print(f"  Created empty edge file for n={n_val_loop} due to error.")
 
-            del ngram_to_id_map  # Free memory
-            # all_edges_str_bag_flattened is a Dask bag, its memory is managed by Dask.
-            # Explicitly deleting it might not be necessary unless you want to signal Dask earlier.
-            # However, ensure intermediate results that are Python lists are deleted.
-            gc.collect()  # Explicit garbage collection
-
+            del ngram_to_id_map
+            gc.collect()
             print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.")
 
         if dask_scheduler != 'sync':
@@ -312,11 +314,9 @@ class GraphBuilder:
             ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
             edge_file = os.path.join(self.temp_dir, f'edge_list_n{n}.txt')
 
-            # Check if Phase 1 for this n_val completed successfully by checking for the edge file
             if not os.path.exists(ngram_map_file) or not os.path.exists(edge_file):
                 print(f"  Warning: Intermediate files for n={n} not found (likely due to error in Phase 1). Skipping graph generation for this level.")
                 continue
-
             try:
                 table_read = pq.read_table(ngram_map_file, columns=['id', 'ngram'])
                 nodes_df = table_read.to_pandas()
@@ -333,10 +333,9 @@ class GraphBuilder:
                 continue
             print(f"  Loaded {len(nodes_df)} n-grams for n={n} from map file.")
             idx_to_node = nodes_df.set_index('id')['ngram'].to_dict()
-            del nodes_df  # Free memory
+            del nodes_df
 
             try:
-                # Reading the potentially large edge file for aggregation
                 edge_df = pd.read_csv(edge_file, sep=' ', header=None, names=['source', 'target'], dtype=int)
                 print(f"  Loaded {len(edge_df)} raw edges for n={n} from edge list file.")
             except pd.errors.EmptyDataError:
@@ -353,17 +352,15 @@ class GraphBuilder:
             if edge_df.empty:
                 print(f"  ℹ️ Info: No edges found for n={n}. Creating a graph with nodes but no edges.")
             else:
-                # This is the aggregation step that creates unique, weighted edges
                 weighted_edge_df = edge_df.groupby(['source', 'target']).size().reset_index(name='weight')
                 if self.config.DEBUG_VERBOSE:
                     print(f"  [DEBUG] Weighted edge_df for n={n}:")
                     print(weighted_edge_df.head())
                     print(f"  [DEBUG] Number of unique edges in weighted_edge_df: {len(weighted_edge_df)}")
-                # Convert the aggregated DataFrame to a list of tuples
                 weighted_edge_list_tuples = [tuple(x) for x in weighted_edge_df[['source', 'target', 'weight']].to_numpy()]
                 print(f"  Aggregated {len(edge_df)} raw transitions into {len(weighted_edge_df)} unique weighted edges for n={n}.")
-                del weighted_edge_df  # Free memory
-            del edge_df  # Free memory
+                del weighted_edge_df
+            del edge_df
 
             if self.config.DEBUG_VERBOSE:
                 print(f"  [DEBUG] weighted_edge_list_tuples (sample): {weighted_edge_list_tuples[:5] if weighted_edge_list_tuples else 'Empty'}")
@@ -396,7 +393,6 @@ class GraphBuilder:
             if num_nodes > 0:
                 G_nx = nx.DiGraph()
                 G_nx.add_nodes_from(range(num_nodes))
-                # Use the aggregated weighted edges for NetworkX
                 edges_for_nx = [(u, v, {'weight': w}) for u, v, w in graph_object.edges]
                 G_nx.add_edges_from(edges_for_nx)
                 num_wcc = nx.number_weakly_connected_components(G_nx)
@@ -406,7 +402,6 @@ class GraphBuilder:
                     print(f"      Strongly Connected Components: {num_scc}")
                     G_undirected_nx = G_nx.to_undirected()
                     if G_undirected_nx.number_of_edges() > 0:
-                        # Louvain works on the undirected version
                         partition = community_louvain.best_partition(G_undirected_nx, random_state=self.config.RANDOM_STATE)
                         num_communities = len(set(partition.values()))
                         print(f"      Louvain Communities (on undirected graph): {num_communities}")
@@ -420,7 +415,6 @@ class GraphBuilder:
                 print(f"      Average In-Degree: {avg_in_degree:.2f}")
                 print(f"      Average Out-Degree: {avg_out_degree:.2f}")
                 if num_nodes > 1:
-                    # Degree centrality calculations should use the NetworkX graph
                     in_degree_centrality = nx.in_degree_centrality(G_nx)
                     avg_in_degree_centrality = sum(in_degree_centrality.values()) / num_nodes
                     print(f"      Avg. In-Degree Centrality (normalized): {avg_in_degree_centrality:.4f}")
@@ -430,7 +424,7 @@ class GraphBuilder:
                 else:
                     print("      Avg. Degree Centrality: N/A (graph has <= 1 node)")
             print(f"    --- End of Graph Statistics for n={n} ---\n")
-            del graph_object, idx_to_node, weighted_edge_list_tuples, G_nx  # Free memory
+            del graph_object, idx_to_node, weighted_edge_list_tuples, G_nx
             gc.collect()
 
         print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.")
