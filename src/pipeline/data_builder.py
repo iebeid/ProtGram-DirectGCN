@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 5.8 (Fixed Dask DataFrame reset_index, kept edge bag debug count)
+# VERSION: 5.9 (Diagnostic: Force sync scheduler for to_textfiles to check edge doubling)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -101,12 +101,14 @@ class GraphBuilder:
         n_values = range(1, self.n_max + 1)
 
         effective_dask_workers = self.num_workers_config
-        dask_scheduler = 'threads' if effective_dask_workers > 1 else 'sync'
+        # General dask_scheduler for most operations
+        dask_scheduler_general = 'threads' if effective_dask_workers > 1 else 'sync'
+
 
         if self.num_workers_config > 1:
             print("\n" + "=" * 80)
             print(f"GraphBuilder is configured for parallel processing (GRAPH_BUILDER_WORKERS={self.num_workers_config}).")
-            print(f"Attempting to use Dask with a THREADED scheduler ({effective_dask_workers} threads).")
+            print(f"Attempting to use Dask with a THREADED scheduler ({effective_dask_workers} threads) for most ops.")
             print("This aims to improve speed while potentially avoiding multiprocessing-related memory issues.")
             print("=" * 80 + "\n")
         else:
@@ -138,13 +140,13 @@ class GraphBuilder:
         preprocessed_sequence_bag_unpersisted = raw_sequence_bag_with_flag.starmap(_preprocess_sequence_tuple_for_bag)
 
         final_preprocessed_input_bag = preprocessed_sequence_bag_unpersisted
-        if dask_scheduler != 'sync':
+        if dask_scheduler_general != 'sync':
             print("  Persisting preprocessed_sequence_bag in Dask memory...")
             final_preprocessed_input_bag = preprocessed_sequence_bag_unpersisted.persist(
-                scheduler=dask_scheduler, num_workers=effective_dask_workers
+                scheduler=dask_scheduler_general, num_workers=effective_dask_workers
             )
             try:
-                persisted_bag_count = final_preprocessed_input_bag.count().compute(scheduler=dask_scheduler, num_workers=effective_dask_workers)
+                persisted_bag_count = final_preprocessed_input_bag.count().compute(scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
                 print(f"  DEBUG: Count of items in persisted preprocessed_sequence_bag: {persisted_bag_count}")
                 if persisted_bag_count != len(sequence_stream_list):
                     print(f"  CRITICAL WARNING: Mismatch! Initial sequence list had {len(sequence_stream_list)} items, but persisted bag has {persisted_bag_count}.")
@@ -155,12 +157,12 @@ class GraphBuilder:
             print("  Using unpersisted preprocessed_sequence_bag for synchronous execution.")
 
         original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
-        if dask_scheduler != 'sync':
+        if dask_scheduler_general != 'sync': # Only hide if Dask might use other contexts
             os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
             print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations.")
 
         for n_val_loop in n_values:
-            DataUtils.print_header(f"Processing N-gram Level n = {n_val_loop} (Dask scheduler: {dask_scheduler})")
+            DataUtils.print_header(f"Processing N-gram Level n = {n_val_loop} (Dask scheduler general: {dask_scheduler_general})")
             phase1_level_start_time = time.monotonic()
 
             output_ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n_val_loop}.parquet')
@@ -175,7 +177,7 @@ class GraphBuilder:
             print(f"    Computing unique n-grams using Dask Bag's distinct()...")
             try:
                 unique_ngrams_list = list(all_ngrams_bag_flattened.distinct().compute(
-                    scheduler=dask_scheduler, num_workers=effective_dask_workers
+                    scheduler=dask_scheduler_general, num_workers=effective_dask_workers
                 ))
                 print(f"    Found {len(unique_ngrams_list)} unique {n_val_loop}-grams.")
 
@@ -235,7 +237,7 @@ class GraphBuilder:
             if n_val_loop == 1 and self.config.DEBUG_VERBOSE:
                 try:
                     print(f"    DEBUG: Attempting to count items in all_edges_str_bag_flattened for n=1 before to_textfiles...")
-                    intermediate_edge_count = all_edges_str_bag_flattened.count().compute(scheduler=dask_scheduler, num_workers=effective_dask_workers)
+                    intermediate_edge_count = all_edges_str_bag_flattened.count().compute(scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
                     print(f"    DEBUG: Count from all_edges_str_bag_flattened for n=1: {intermediate_edge_count}")
                 except Exception as e_dbg_count:
                     print(f"    DEBUG: Error counting intermediate edge bag for n=1: {e_dbg_count}")
@@ -244,14 +246,20 @@ class GraphBuilder:
             if os.path.exists(temp_edge_output_dir):
                 shutil.rmtree(temp_edge_output_dir)
 
-            print(f"    Writing edge strings to directory: {temp_edge_output_dir} using {dask_scheduler} scheduler...")
+            # --- DIAGNOSTIC CHANGE FOR to_textfiles SCHEDULER ---
+            # Use 'sync' for to_textfiles to see if it resolves the doubling issue.
+            # The general dask_scheduler_general ('threads' or 'sync') is used for other Dask compute calls.
+            scheduler_for_to_textfiles = 'sync'
+            print(f"    Writing edge strings to directory: {temp_edge_output_dir} using Dask scheduler: '{scheduler_for_to_textfiles}' (DIAGNOSTIC)...")
+            # --- END DIAGNOSTIC CHANGE ---
             edge_count = 0
             try:
                 all_edges_str_bag_flattened.to_textfiles(
                     os.path.join(temp_edge_output_dir, 'part-*.txt'),
                     compute=True,
-                    scheduler=dask_scheduler,
-                    num_workers=effective_dask_workers
+                    scheduler=scheduler_for_to_textfiles, # Using the diagnostic scheduler
+                    # num_workers will be ignored by 'sync' scheduler but Dask expects it if not 'sync'
+                    num_workers=effective_dask_workers if scheduler_for_to_textfiles != 'sync' else None
                 )
                 print(f"    Edge parts saved to directory {temp_edge_output_dir}.")
 
@@ -297,7 +305,7 @@ class GraphBuilder:
             gc.collect()
             print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.")
 
-        if dask_scheduler != 'sync':
+        if dask_scheduler_general != 'sync': # Check against the general scheduler
             if original_cuda_visible_devices is None:
                 if "CUDA_VISIBLE_DEVICES" in os.environ: del os.environ["CUDA_VISIBLE_DEVICES"]
             else:
@@ -344,13 +352,12 @@ class GraphBuilder:
                                       on_bad_lines='skip', blocksize='128MB')
                     print(f"    Dask DataFrame created for n={n} with {ddf.npartitions} partitions.")
 
-                    # Correct way to handle reset_index for Dask DataFrame after groupby.size()
-                    # .size() returns a Dask Series. Convert to DataFrame and then name the column.
                     weighted_ddf_series = ddf.groupby(['source', 'target']).size()
                     weighted_ddf = weighted_ddf_series.to_frame(name='weight').reset_index()
 
                     print(f"    Computing aggregated weighted edges for n={n}...")
-                    weighted_edge_df_computed = weighted_ddf.compute(scheduler=dask_scheduler, num_workers=effective_dask_workers)
+                    # Use the general dask_scheduler for Dask DataFrame compute
+                    weighted_edge_df_computed = weighted_ddf.compute(scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
                     print(f"    Finished computing aggregated weighted edges for n={n}.")
 
                 if weighted_edge_df_computed.empty and not raw_edge_file_was_empty:
