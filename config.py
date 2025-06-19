@@ -33,7 +33,7 @@ class Config:
         self.BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.BASE_OUTPUT_DIR = self.BASE_DATA_DIR / "results"
 
-        self.GCN_INPUT_FASTA_PATH = self.BASE_DATA_DIR / "sequences/uniprot_sequences_sample.fasta"
+        self.GCN_INPUT_FASTA_PATH = self.BASE_DATA_DIR / "sequences/uniprot_sprot.fasta"
         self.INTERACTIONS_POSITIVE_PATH = self.BASE_DATA_DIR / 'ground_truth/positive_interactions.csv'
         self.INTERACTIONS_NEGATIVE_PATH = self.BASE_DATA_DIR / 'ground_truth/negative_interactions.csv'
 
@@ -64,7 +64,7 @@ class Config:
         self.GCN_NGRAM_MAX_N = 5
         self.DASK_CHUNK_SIZE = 2000000
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 8) if os.cpu_count() else 1
-        self.GCN_HIDDEN_LAYER_DIMS = [256, 256, 256, 256, 128, 64]
+        self.GCN_HIDDEN_LAYER_DIMS = [128, 128, 128, 128, 128, 64]
 
         self.ID_MAPPING_MODE = 'regex'
         self.ID_MAPPING_OUTPUT_FILE = self.BASE_OUTPUT_DIR / "mappings/gcn_id_mapping.tsv"
@@ -73,7 +73,7 @@ class Config:
 
         self.GCN_1GRAM_INIT_DIM = 512
         self.GCN_EPOCHS_PER_LEVEL = 500
-        self.GCN_LR = 0.05
+        self.GCN_LR = 0.01
         self.GCN_DROPOUT_RATE = 0.5
         self.GCN_WEIGHT_DECAY = 1e-4
         self.GCN_L2_REG_LAMBDA = 1e-6
@@ -85,7 +85,7 @@ class Config:
             1: "next_node", 2: "next_node", 3: "closest_aa", 4: "closest_aa", 5: "community"
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
-        self.GCN_CLOSEST_AA_K_HOPS: int = 3
+        self.GCN_CLOSEST_AA_K_HOPS: int = 5
 
         self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 8) if os.cpu_count() else 1
         self.APPLY_PCA_TO_GCN = True # PCA for your main GCN pipeline embeddings

@@ -1,0 +1,25 @@
+conda clean --all
+conda update --all
+conda clean --all
+conda create -n my_new_env python=3.11
+conda activate my_new_env
+conda install -c nvidia cuda-toolkit=12.5
+conda install -c nvidia cudnn=9.3
+conda install -c conda-forge tensorflow
+python -c "import tensorflow as tf; print('Num GPUs Available: ', len(tf.config.list_physical_devices('GPU')))"
+pip3 install torch torchvision torchaudio
+python -c "import torch; print(torch.cuda.is_available())"
+conda clean --all
+pip cache purge
+conda install -c conda-forge dask
+conda install -c conda-forge tqdm
+conda install -c conda-forge biopython
+pip install torch_geometric
+conda install -c conda-forge matplotlib
+conda install -c conda-forge scipy
+conda install -c conda-forge scikit-learn
+pip install mlflow
+conda install conda-forge::transformers
+conda install gensim
+conda install -c conda-forge python-louvain
+
