@@ -73,7 +73,7 @@ class Config:
 
         self.GCN_1GRAM_INIT_DIM = 512
         self.GCN_EPOCHS_PER_LEVEL = 500
-        self.GCN_LR = 0.0005
+        self.GCN_LR = 0.05
         self.GCN_DROPOUT_RATE = 0.5
         self.GCN_WEIGHT_DECAY = 1e-4
         self.GCN_L2_REG_LAMBDA = 1e-6
@@ -82,7 +82,7 @@ class Config:
         self.GCN_USE_VECTOR_COEFFS = True
 
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
-            1: "next_node", 2: "next_node", 3: "next_node", 4: "closest_aa", 5: "community"
+            1: "next_node", 2: "next_node", 3: "closest_aa", 4: "closest_aa", 5: "community"
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
