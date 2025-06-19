@@ -1,14 +1,14 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 5.3 (Refactored Dask to use threaded scheduler, updated timing)
+# VERSION: 5.4 (Memory optimization for unique n-gram collection)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
 import shutil
 import sys
-import time # Ensure time is imported for time.monotonic()
+import time  # Ensure time is imported for time.monotonic()
 from functools import partial
 from typing import List, Tuple, Dict, Iterator
 
@@ -46,7 +46,7 @@ def _preprocess_sequence_tuple_for_bag(seq_tuple: Tuple[str, str], add_initial_s
     return pid, modified_seq_text
 
 
-def _extract_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int) -> Iterator[str]: # Changed return type hint
+def _extract_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int) -> Iterator[str]:
     """Extracts n-grams from a single preprocessed sequence tuple."""
     _, processed_seq_text = seq_tuple
     if len(processed_seq_text) >= n_val:
@@ -54,7 +54,7 @@ def _extract_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int) 
             yield processed_seq_text[i:i + n_val]
 
 
-def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int, ngram_to_id_map: Dict[str, int]) -> Iterator[str]: # Changed return type hint
+def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int, ngram_to_id_map: Dict[str, int]) -> Iterator[str]:
     """
     Extracts edges (as "src_id tgt_id\n" strings) from a single
     preprocessed sequence tuple using the provided ngram_to_id_map.
@@ -97,11 +97,8 @@ class GraphBuilder:
 
         n_values = range(1, self.n_max + 1)
 
-        # Determine effective number of workers for Dask compute
-        # If num_workers_config is 1, it will run synchronously on the main thread.
-        # If > 1, it will use a thread pool of that size.
         effective_dask_workers = self.num_workers_config
-        dask_scheduler = 'threads' if effective_dask_workers > 1 else 'sync' # Dask 'sync' scheduler for single worker
+        dask_scheduler = 'threads' if effective_dask_workers > 1 else 'sync'
 
         if self.num_workers_config > 1:
             print("\n" + "=" * 80)
@@ -111,7 +108,6 @@ class GraphBuilder:
             print("=" * 80 + "\n")
         else:
             print("\nGraphBuilder is configured for synchronous (single-threaded) execution.\n")
-
 
         def get_preprocessed_sequence_stream() -> Iterator[Tuple[Tuple[str, str], bool]]:
             first_sequence = True
@@ -129,21 +125,23 @@ class GraphBuilder:
             print(f"ERROR: FASTA file not found at {self.protein_sequence_file}")
             return
 
-        # For Dask bag, if using threads, partitioning might not be as critical as for processes,
-        # but Dask handles it. For 'sync' scheduler, npartitions=1 is fine.
         num_partitions_for_bag = effective_dask_workers if effective_dask_workers > 1 else 1
         raw_sequence_bag_with_flag = db.from_sequence(sequence_stream_list, npartitions=num_partitions_for_bag)
         preprocessed_sequence_bag = raw_sequence_bag_with_flag.starmap(_preprocess_sequence_tuple_for_bag)
 
-        # Temporarily hide GPU from Dask workers if they are separate processes (less critical for threads)
+        # Persist if using parallelism and bag is reused multiple times (in the n_val_loop)
+        if dask_scheduler != 'sync':
+            print("  Persisting preprocessed_sequence_bag in Dask memory...")
+            preprocessed_sequence_bag = preprocessed_sequence_bag.persist(scheduler=dask_scheduler, num_workers=effective_dask_workers)
+
         original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
-        if dask_scheduler != 'sync': # Only modify if not purely synchronous
+        if dask_scheduler != 'sync':
             os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
             print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations.")
 
         for n_val_loop in n_values:
             DataUtils.print_header(f"Processing N-gram Level n = {n_val_loop} (Dask scheduler: {dask_scheduler})")
-            phase1_level_start_time = time.monotonic() # MODIFICATION
+            phase1_level_start_time = time.monotonic()
 
             output_ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n_val_loop}.parquet')
             output_edge_file = os.path.join(self.temp_dir, f'edge_list_n{n_val_loop}.txt')
@@ -154,25 +152,24 @@ class GraphBuilder:
             extract_ngrams_partial = partial(_extract_ngrams_from_sequence_tuple, n_val=n_val_loop)
             all_ngrams_bag_flattened = preprocessed_sequence_bag.map(extract_ngrams_partial).flatten()
 
-            all_ngrams_list_with_duplicates = []
+            print(f"    Computing unique n-grams using Dask Bag's distinct()...")
             try:
-                print(f"    Computing all n-grams (with duplicates) using {dask_scheduler} scheduler ({effective_dask_workers} workers)...")
-                all_ngrams_list_with_duplicates = all_ngrams_bag_flattened.compute(scheduler=dask_scheduler, num_workers=effective_dask_workers)
-                print(f"    Computed {len(all_ngrams_list_with_duplicates)} n-grams (including duplicates).")
-            except Exception as e_compute_ngrams:
-                print(f"  [n={n_val_loop}] ERROR during Dask compute for all n-grams: {e_compute_ngrams}")
+                # This computes unique n-grams, should be less memory intensive than collecting all duplicates
+                unique_ngrams_list = list(all_ngrams_bag_flattened.distinct().compute(
+                    scheduler=dask_scheduler, num_workers=effective_dask_workers
+                ))
+                print(f"    Found {len(unique_ngrams_list)} unique {n_val_loop}-grams.")
+
+                if not unique_ngrams_list:
+                    print(f"  [n={n_val_loop}] No n-grams generated. Creating empty map file.")
+                    unique_ngrams_df = pd.DataFrame({'ngram': pd.Series(dtype='str')})
+                else:
+                    unique_ngrams_df = pd.DataFrame(sorted(unique_ngrams_list), columns=['ngram'])
+            except Exception as e_compute_distinct_ngrams:
+                print(f"  [n={n_val_loop}] ERROR during Dask compute for distinct n-grams: {e_compute_distinct_ngrams}")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
                 continue
-
-            print(f"    Finding unique n-grams and saving map sequentially...")
-            if not all_ngrams_list_with_duplicates:
-                print(f"  [n={n_val_loop}] No n-grams generated. Creating empty map file.")
-                unique_ngrams_df = pd.DataFrame({'ngram': pd.Series(dtype='str')})
-            else:
-                unique_ngrams_set = set(all_ngrams_list_with_duplicates)
-                print(f"    Found {len(unique_ngrams_set)} unique {n_val_loop}-grams.")
-                unique_ngrams_df = pd.DataFrame(sorted(list(unique_ngrams_set)), columns=['ngram'])
 
             unique_ngrams_df = unique_ngrams_df.sort_values('ngram').reset_index(drop=True)
             unique_ngrams_df['id'] = unique_ngrams_df.index
@@ -189,14 +186,15 @@ class GraphBuilder:
             if unique_ngrams_df.empty:
                 open(output_edge_file, 'w').close()
                 print(f"  [n={n_val_loop}] No n-grams, so no edges will be generated.")
-                print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.") # MODIFICATION
+                print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.")
                 continue
+            del unique_ngrams_df  # Free memory
 
             try:
                 map_table_read = pq.read_table(output_ngram_map_file, columns=['ngram', 'id'])
                 map_df_read = map_table_read.to_pandas()
                 ngram_to_id_map = map_df_read.set_index('ngram')['id'].to_dict()
-                del map_table_read, map_df_read
+                del map_table_read, map_df_read  # Free memory
             except Exception as e_read_map:
                 print(f"  [n={n_val_loop}] ERROR reading back ngram map: {e_read_map}. Skipping edge generation.")
                 continue
@@ -204,32 +202,37 @@ class GraphBuilder:
             print(f"  [n={n_val_loop}] Generating all edge strings using Dask Bag...")
             sys.stdout.flush()
 
-            extract_edges_partial = partial(_extract_edges_from_sequence_tuple, n_val=n_val_loop, ngram_to_id_map=ngram_to_id_map)
+            extract_edges_partial = partial(_extract_edges_from_sequence_tuple,
+                                            n_val=n_val_loop,
+                                            ngram_to_id_map=ngram_to_id_map)
             all_edges_str_bag_flattened = preprocessed_sequence_bag.map(extract_edges_partial).flatten()
 
-            all_edges_str_list = []
+            # If the number of edges is still too large for .compute() into a list,
+            # this section will need to be changed to use .to_textfiles() or manual partition processing.
+            # For now, assuming the n-gram fix was the primary OOM cause.
+            edge_count = 0
             try:
                 print(f"    Computing all edge strings using {dask_scheduler} scheduler ({effective_dask_workers} workers)...")
-                all_edges_str_list = all_edges_str_bag_flattened.compute(scheduler=dask_scheduler, num_workers=effective_dask_workers)
-                print(f"    Computed {len(all_edges_str_list)} edge strings.")
-            except Exception as e_compute_edges:
-                print(f"  [n={n_val_loop}] ERROR during Dask compute for edge strings: {e_compute_edges}")
+                # This still collects all edge strings in memory before writing.
+                all_edges_str_list_computed = all_edges_str_bag_flattened.compute(scheduler=dask_scheduler, num_workers=effective_dask_workers)
+                print(f"    Computed {len(all_edges_str_list_computed)} edge strings.")
+
+                print(f"    Saving edge list sequentially...")
+                with open(output_edge_file, 'w') as outfile:
+                    outfile.writelines(all_edges_str_list_computed)  # This is memory intensive if list is huge
+                edge_count = len(all_edges_str_list_computed)
+                del all_edges_str_list_computed  # Free memory
+                print(f"    Successfully wrote {edge_count} edge strings to {os.path.basename(output_edge_file)}.")
+            except Exception as e_write_edges:
+                print(f"  [n={n_val_loop}] ERROR writing edge list file or during edge computation: {e_write_edges}")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
                 continue
 
-            print(f"    Saving edge list sequentially...")
-            try:
-                with open(output_edge_file, 'w') as outfile:
-                    outfile.writelines(all_edges_str_list)
-                print(f"  [n={n_val_loop}] Edge list saved: {os.path.basename(output_edge_file)}")
-            except Exception as e_write_edges:
-                print(f"  [n={n_val_loop}] ERROR writing edge list file: {e_write_edges}")
-                continue
+            del ngram_to_id_map  # Free memory
+            print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.")
 
-            print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.") # MODIFICATION
-
-        if dask_scheduler != 'sync': # Restore only if it was changed
+        if dask_scheduler != 'sync':
             if original_cuda_visible_devices is None:
                 if "CUDA_VISIBLE_DEVICES" in os.environ: del os.environ["CUDA_VISIBLE_DEVICES"]
             else:
@@ -237,7 +240,7 @@ class GraphBuilder:
             print("  Restored original CUDA_VISIBLE_DEVICES setting for the main process.")
 
         DataUtils.print_header("Phase 2: Building and saving final graph objects")
-        phase2_start_time = time.monotonic() # MODIFICATION
+        phase2_start_time = time.monotonic()
         for n in n_values:
             print(f"\n--- Processing n = {n} for final graph object ---")
             ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
@@ -262,6 +265,7 @@ class GraphBuilder:
                 continue
             print(f"  Loaded {len(nodes_df)} n-grams for n={n} from map file.")
             idx_to_node = nodes_df.set_index('id')['ngram'].to_dict()
+            del nodes_df  # Free memory
 
             try:
                 edge_df = pd.read_csv(edge_file, sep=' ', header=None, names=['source', 'target'], dtype=int)
@@ -281,14 +285,16 @@ class GraphBuilder:
                 print(f"  ℹ️ Info: No edges found for n={n}. Creating a graph with nodes but no edges.")
             else:
                 weighted_edge_df = edge_df.groupby(['source', 'target']).size().reset_index(name='weight')
-                if self.config.DEBUG_VERBOSE: # Conditional debug print
+                if self.config.DEBUG_VERBOSE:
                     print(f"  [DEBUG] Weighted edge_df for n={n}:")
                     print(weighted_edge_df.head())
                     print(f"  [DEBUG] Number of unique edges in weighted_edge_df: {len(weighted_edge_df)}")
                 weighted_edge_list_tuples = [tuple(x) for x in weighted_edge_df[['source', 'target', 'weight']].to_numpy()]
                 print(f"  Aggregated {len(edge_df)} raw transitions into {len(weighted_edge_df)} unique weighted edges for n={n}.")
+                del weighted_edge_df  # Free memory
+            del edge_df  # Free memory
 
-            if self.config.DEBUG_VERBOSE: # Conditional debug print
+            if self.config.DEBUG_VERBOSE:
                 print(f"  [DEBUG] weighted_edge_list_tuples (sample): {weighted_edge_list_tuples[:5] if weighted_edge_list_tuples else 'Empty'}")
 
             print(f"  Instantiating DirectedNgramGraph object for n={n}...")
@@ -313,7 +319,8 @@ class GraphBuilder:
             is_complete = False
             if num_nodes > 1:
                 if num_edges == num_nodes * (num_nodes - 1): is_complete = True
-            elif num_nodes == 1 and num_edges == 0: is_complete = True
+            elif num_nodes == 1 and num_edges == 0:
+                is_complete = True
             print(f"      Is Complete (all N*(N-1) directed edges present): {is_complete}")
             if num_nodes > 0:
                 G_nx = nx.DiGraph()
@@ -349,16 +356,18 @@ class GraphBuilder:
                 else:
                     print("      Avg. Degree Centrality: N/A (graph has <= 1 node)")
             print(f"    --- End of Graph Statistics for n={n} ---\n")
+            del graph_object, idx_to_node, weighted_edge_list_tuples, G_nx  # Free memory
+            gc.collect()
 
-        print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.") # MODIFICATION
+        print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.")
 
         DataUtils.print_header("Phase 3: Cleaning up temporary files")
-        phase3_start_time = time.monotonic() # MODIFICATION
+        phase3_start_time = time.monotonic()
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
             print(f"  Temporary directory {self.temp_dir} cleaned up.")
         else:
             print("  Temporary directory not found, no cleanup needed.")
-        print(f"<<< Phase 3 finished in {time.monotonic() - phase3_start_time:.2f}s.") # MODIFICATION
+        print(f"<<< Phase 3 finished in {time.monotonic() - phase3_start_time:.2f}s.")
 
-        DataUtils.print_header(f"N-gram Graph Building FINISHED in {time.monotonic() - overall_start_time:.2f}s") # MODIFICATION
+        DataUtils.print_header(f"N-gram Graph Building FINISHED in {time.monotonic() - overall_start_time:.2f}s")
