@@ -3,7 +3,8 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 3.9 (Added diagnostics for n=5 community task zero loss)
+# VERSION: 4.0 (Handles sparse mathcal_A from graph_utils, removed fai/fao)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import collections
@@ -18,9 +19,9 @@ import h5py
 import numpy as np
 import torch
 import torch.optim as optim
-from scipy.sparse import csr_matrix
+# from scipy.sparse import csr_matrix # No longer needed for community label generation with sparse mathcal_A
 from torch_geometric.data import Data
-from torch_geometric.utils import dense_to_sparse
+# from torch_geometric.utils import dense_to_sparse # No longer needed for mathcal_A
 from tqdm import tqdm
 
 from config import Config
@@ -80,7 +81,6 @@ class ProtGramDirectGCNTrainer:
 
             loss = primary_loss + l2_lambda * final_l2_reg_term
 
-            # --- DIAGNOSTIC PRINT FOR N=5 COMMUNITY ---
             if current_n_val_for_diag == 5 and epoch == 1 and self.config.DEBUG_VERBOSE:
                 print(f"    DIAGNOSTIC (n=5, epoch=1):")
                 print(f"      Primary Loss: {primary_loss.item():.4f}")
@@ -89,7 +89,6 @@ class ProtGramDirectGCNTrainer:
                 if log_probs[mask].numel() > 0:
                     print(f"      Sample log_probs[mask][0]: {log_probs[mask][0]}")
                     print(f"      Sample targets[mask][0]: {targets[mask][0]}")
-            # --- END DIAGNOSTIC ---
 
             if loss.requires_grad:
                 loss.backward()
@@ -102,20 +101,50 @@ class ProtGramDirectGCNTrainer:
     def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
         import networkx as nx
         import community as community_louvain
-        graph_n_value_str = f"n={graph.n_value if hasattr(graph, 'n_value') else 'Unknown'}"
+        # graph_n_value_str = f"n={graph.n_value if hasattr(graph, 'n_value') else 'Unknown'}" # Not used
         if graph.number_of_nodes == 0: return torch.empty(0, dtype=torch.long), 1
 
-        combined_adj_torch = graph.A_in_w + graph.A_out_w
-        combined_adj_np = combined_adj_torch.cpu().numpy()
-        combined_adj_sparse = csr_matrix(combined_adj_np)
+        # Combine A_in_w and A_out_w (which are sparse) for community detection
+        # Ensure they are on CPU for NetworkX conversion
+        A_in_w_cpu_sparse = graph.A_in_w.cpu()
+        A_out_w_cpu_sparse = graph.A_out_w.cpu()
 
-        if combined_adj_sparse.nnz == 0:
+        # Add sparse matrices
+        combined_adj_sparse_torch = (A_in_w_cpu_sparse + A_out_w_cpu_sparse).coalesce()
+
+        if combined_adj_sparse_torch._nnz() == 0:
             return torch.zeros(graph.number_of_nodes, dtype=torch.long), 1
 
-        nx_graph = nx.from_scipy_sparse_array(combined_adj_sparse)
-        if nx_graph.number_of_nodes() == 0: return torch.empty(0, dtype=torch.long), 1
+        # Convert sparse PyTorch tensor to NetworkX graph
+        # Need indices and values for from_scipy_sparse_array or add_weighted_edges_from
+        # A more direct way if PyG is available:
+        # from torch_geometric.utils import to_networkx
+        # data_for_nx = Data(edge_index=combined_adj_sparse_torch.indices(),
+        #                    edge_attr=combined_adj_sparse_torch.values(),
+        #                    num_nodes=graph.number_of_nodes)
+        # nx_graph = to_networkx(data_for_nx, edge_attrs=['edge_attr'], to_undirected=True)
+        # For now, let's build it manually to avoid new dependencies if not already used
 
-        partition = community_louvain.best_partition(nx_graph, random_state=self.config.RANDOM_STATE)
+        nx_graph = nx.Graph()  # Louvain works on undirected graphs
+        nx_graph.add_nodes_from(range(graph.number_of_nodes))
+        edge_indices = combined_adj_sparse_torch.indices()
+        edge_values = combined_adj_sparse_torch.values()
+
+        for i in range(edge_indices.shape[1]):
+            u, v = edge_indices[0, i].item(), edge_indices[1, i].item()
+            weight = edge_values[i].item()
+            if nx_graph.has_edge(u, v):
+                nx_graph[u][v]['weight'] += weight
+            else:
+                nx_graph.add_edge(u, v, weight=weight)
+
+        if nx_graph.number_of_nodes() == 0: return torch.empty(0, dtype=torch.long), 1
+        if nx_graph.number_of_edges() == 0:  # If no edges, all nodes are their own community
+            labels = torch.arange(graph.number_of_nodes, dtype=torch.long)
+            num_classes = graph.number_of_nodes if graph.number_of_nodes > 0 else 1
+            return labels, num_classes
+
+        partition = community_louvain.best_partition(nx_graph, random_state=self.config.RANDOM_STATE, weight='weight')
         labels_list = [partition.get(i, -1) for i in range(graph.number_of_nodes)]
         unique_labels_from_partition = sorted(list(set(labels_list)))
 
@@ -127,67 +156,104 @@ class ProtGramDirectGCNTrainer:
             labels = torch.tensor([label_map[lbl] for lbl in labels_list], dtype=torch.long)
             num_classes = len(unique_labels_from_partition)
 
-        # --- DIAGNOSTIC PRINT FOR N=5 COMMUNITY ---
         if hasattr(graph, 'n_value') and graph.n_value == 5 and self.config.DEBUG_VERBOSE:
             print(f"    DIAGNOSTIC (n=5 Community Labels):")
             print(f"      Number of communities detected (num_classes): {num_classes}")
             print(f"      Unique labels in generated 'labels' tensor: {labels.unique().tolist() if labels.numel() > 0 else '[]'}")
-        # --- END DIAGNOSTIC ---
         return labels, num_classes
 
     def _generate_next_node_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
         num_nodes = graph.number_of_nodes
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1
-        adj_out_weighted = graph.A_out_w
+
+        adj_out_weighted_sparse = graph.A_out_w  # This is sparse
         labels_list = [-1] * num_nodes
+
         for i in range(num_nodes):
-            successors_indices = (adj_out_weighted[i, :] > 0).nonzero(as_tuple=True)[0]
-            if successors_indices.numel() > 0:
-                weights = adj_out_weighted[i, successors_indices]
-                max_weight = torch.max(weights)
-                highest_prob_successors = successors_indices[weights == max_weight]
+            # Get outgoing edges for node i
+            # A_out_w is (num_nodes, num_nodes). Row i corresponds to outgoing edges from node i.
+            # For a sparse COO tensor, we need to find entries where indices()[0] == i
+            row_mask = (adj_out_weighted_sparse.indices()[0] == i)
+            if not torch.any(row_mask):  # No outgoing edges
+                labels_list[i] = i  # Self-loop as target
+                continue
+
+            successors_indices_for_row_i = adj_out_weighted_sparse.indices()[1][row_mask]
+            weights_for_row_i = adj_out_weighted_sparse.values()[row_mask]
+
+            if successors_indices_for_row_i.numel() > 0:
+                max_weight = torch.max(weights_for_row_i)
+                highest_prob_successors = successors_indices_for_row_i[weights_for_row_i == max_weight]
                 labels_list[i] = random.choice(highest_prob_successors.cpu().tolist())
-            else:
+            else:  # Should have been caught by torch.any(row_mask)
                 labels_list[i] = i
+
         final_labels = torch.tensor(labels_list, dtype=torch.long)
-        return final_labels, num_nodes
+        return final_labels, num_nodes  # num_classes is num_nodes
 
     def _generate_closest_amino_acid_labels(self, graph: DirectedNgramGraph, k_hops: int) -> Tuple[torch.Tensor, int]:
         num_nodes = graph.number_of_nodes
-        adj_out_for_bfs = graph.A_out_w
+        adj_out_sparse = graph.A_out_w  # This is sparse
+
         if not hasattr(graph, 'node_sequences') or not graph.node_sequences:
             if hasattr(graph, 'idx_to_node') and graph.idx_to_node:
                 graph.node_sequences = [graph.idx_to_node[i] for i in range(num_nodes)]
             else:
                 raise AttributeError("Graph needs 'node_sequences' or 'idx_to_node' populated with actual n-gram strings.")
+
         node_sequences = graph.node_sequences
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), k_hops + 1
         if k_hops < 0: raise ValueError("k_hops must be non-negative.")
-        labels_for_nodes = torch.full((num_nodes,), k_hops, dtype=torch.long)
+
+        labels_for_nodes = torch.full((num_nodes,), k_hops, dtype=torch.long)  # Default to max_hops (target not found within k)
+
         for start_node_idx in range(num_nodes):
             target_aa = random.choice(AMINO_ACID_ALPHABET)
-            if target_aa in node_sequences[start_node_idx]:
+
+            current_node_sequence = node_sequences[start_node_idx]
+            if not isinstance(current_node_sequence, str): current_node_sequence = str(current_node_sequence)
+
+            if target_aa in current_node_sequence:
                 labels_for_nodes[start_node_idx] = 0
                 continue
+
             if k_hops > 0:
                 q = collections.deque([(start_node_idx, 0)])
                 visited = {start_node_idx}
-                found_at_hop = -1
+                found_at_hop = -1  # Flag to break outer loop once found
+
                 while q:
-                    curr_node, hop_level = q.popleft()
-                    if hop_level >= k_hops: continue
-                    neighbors_indices = (adj_out_for_bfs[curr_node, :] > 0).nonzero(as_tuple=True)[0]
-                    for neighbor_node_tensor in neighbors_indices:
-                        neighbor_node = neighbor_node_tensor.item()
-                        if neighbor_node not in visited:
-                            visited.add(neighbor_node)
-                            if target_aa in node_sequences[neighbor_node]:
+                    curr_node_q_idx, hop_level = q.popleft()
+                    if hop_level >= k_hops:  # Already at max depth for this path
+                        continue
+
+                    # Get neighbors for curr_node_q_idx from sparse adj_out_sparse
+                    row_mask_bfs = (adj_out_sparse.indices()[0] == curr_node_q_idx)
+                    if not torch.any(row_mask_bfs):
+                        continue
+
+                    neighbors_indices_for_curr = adj_out_sparse.indices()[1][row_mask_bfs]
+
+                    for neighbor_node_tensor in neighbors_indices_for_curr:
+                        neighbor_node_idx = neighbor_node_tensor.item()
+                        if neighbor_node_idx not in visited:
+                            visited.add(neighbor_node_idx)
+
+                            neighbor_node_sequence = node_sequences[neighbor_node_idx]
+                            if not isinstance(neighbor_node_sequence, str): neighbor_node_sequence = str(neighbor_node_sequence)
+
+                            if target_aa in neighbor_node_sequence:
                                 labels_for_nodes[start_node_idx] = hop_level + 1
                                 found_at_hop = hop_level + 1
-                                break
-                            q.append((neighbor_node, hop_level + 1))
-                    if found_at_hop != -1: break
-        num_output_classes = k_hops + 1
+                                break  # Found for this start_node_idx, break from neighbor loop
+
+                            if hop_level + 1 < k_hops:  # Only add to queue if not exceeding max hops
+                                q.append((neighbor_node_idx, hop_level + 1))
+
+                    if found_at_hop != -1:
+                        break  # Break from BFS queue loop for this start_node_idx
+
+        num_output_classes = k_hops + 1  # Classes are 0, 1, ..., k_hops
         return labels_for_nodes, num_output_classes
 
     def run(self):
@@ -218,19 +284,33 @@ class ProtGramDirectGCNTrainer:
                 loaded_data = DataUtils.load_object(graph_path)
                 if isinstance(loaded_data, DirectedNgramGraph):
                     graph_obj = loaded_data
-                    graph_obj.epsilon_propagation = self.gcn_propagation_epsilon
+                    # Re-initialize propagation matrices as they are not pickled with sparse tensors well by default
+                    # and to ensure correct device placement if loaded object was on CPU.
                     if graph_obj.number_of_nodes > 0:
-                        graph_obj._create_raw_weighted_adj_matrices_torch()
+                        # Ensure A_out_w and A_in_w are on the correct device before recomputing mathcal_A
+                        # This assumes _create_raw_weighted_adj_matrices_torch sets them to CPU or a default device
+                        # If they are already torch tensors, move them.
+                        if hasattr(graph_obj, 'A_out_w') and isinstance(graph_obj.A_out_w, torch.Tensor):
+                            graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
+                        if hasattr(graph_obj, 'A_in_w') and isinstance(graph_obj.A_in_w, torch.Tensor):
+                            graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
+
+                        # If A_out_w/A_in_w were not properly initialized or are not sparse tensors,
+                        # re-run _create_raw_weighted_adj_matrices_torch.
+                        # This is a safeguard. Ideally, the pickled object should be consistent.
+                        if not (hasattr(graph_obj, 'A_out_w') and graph_obj.A_out_w.is_sparse) or \
+                                not (hasattr(graph_obj, 'A_in_w') and graph_obj.A_in_w.is_sparse):
+                            print("    Re-creating raw weighted adjacency matrices for loaded graph object...")
+                            graph_obj._create_raw_weighted_adj_matrices_torch()  # This will use self.device internally if A_out_w is created new
+
+                        # Always re-create propagation matrices after loading
+                        print("    Re-creating propagation matrices for loaded graph object...")
                         graph_obj._create_propagation_matrices_for_gcn()
-                        graph_obj._create_symmetrized_magnitudes_fai_fao()
-                elif isinstance(loaded_data, tuple) and len(loaded_data) == 2:
-                    nodes_data, edges_data = loaded_data
-                    graph_obj = DirectedNgramGraph(nodes_data, edges_data, epsilon_propagation=self.gcn_propagation_epsilon)
-                elif hasattr(loaded_data, 'nodes_map') and hasattr(loaded_data, 'original_edges'):
-                    graph_obj = DirectedNgramGraph(loaded_data.nodes_map, loaded_data.original_edges, epsilon_propagation=self.gcn_propagation_epsilon)
                 else:
-                    raise TypeError("Loaded graph object is not in an expected format.")
+                    raise TypeError(f"Loaded graph object is not of type DirectedNgramGraph, but {type(loaded_data)}.")
+
                 if graph_obj: graph_obj.n_value = n_val
+
             except FileNotFoundError:
                 print(f"  ERROR: Graph object not found at {graph_path}. Skipping n={n_val}.")
                 continue
@@ -281,18 +361,18 @@ class ProtGramDirectGCNTrainer:
                     prefix_idx = prev_level_ngram_to_idx_map.get(prefix_constituent_ngram)
                     if prefix_idx is not None and prefix_idx < len(prev_level_embeds_np):
                         constituent_embeddings_to_pool.append(prev_level_embeds_np[prefix_idx])
-                    elif self.config.DEBUG_VERBOSE:
-                        print(f"    Warning: Prefix '{prefix_constituent_ngram}' not found in prev (n={n_val - 1}) level map for current_ngram '{current_ngram_str}'.")
+                    # elif self.config.DEBUG_VERBOSE:
+                    # print(f"    Warning: Prefix '{prefix_constituent_ngram}' not found in prev (n={n_val - 1}) level map for current_ngram '{current_ngram_str}'.")
                     suffix_idx = prev_level_ngram_to_idx_map.get(suffix_constituent_ngram)
                     if suffix_idx is not None and suffix_idx < len(prev_level_embeds_np):
                         constituent_embeddings_to_pool.append(prev_level_embeds_np[suffix_idx])
-                    elif self.config.DEBUG_VERBOSE:
-                        print(f"    Warning: Suffix '{suffix_constituent_ngram}' not found in prev (n={n_val - 1}) level map for current_ngram '{current_ngram_str}'.")
+                    # elif self.config.DEBUG_VERBOSE:
+                    # print(f"    Warning: Suffix '{suffix_constituent_ngram}' not found in prev (n={n_val - 1}) level map for current_ngram '{current_ngram_str}'.")
                     if constituent_embeddings_to_pool:
                         pooled_embedding_np = np.mean(np.array(constituent_embeddings_to_pool, dtype=np.float32), axis=0)
                         x[current_node_idx] = torch.from_numpy(pooled_embedding_np).to(self.device)
-                    elif self.config.DEBUG_VERBOSE:
-                        print(f"    Warning: No constituent (n-1)-gram embeddings found for n-gram '{current_ngram_str}' (idx {current_node_idx}). Initialized to zeros.")
+                    # elif self.config.DEBUG_VERBOSE:
+                    # print(f"    Warning: No constituent (n-1)-gram embeddings found for n-gram '{current_ngram_str}' (idx {current_node_idx}). Initialized to zeros.")
 
             print(f"  Initial node feature dimension for n={n_val}: {num_initial_features}")
 
@@ -312,7 +392,12 @@ class ProtGramDirectGCNTrainer:
                 if num_classes == 0: num_classes = 1
                 labels = torch.zeros(graph_obj.number_of_nodes, dtype=torch.long)
 
-            # --- DIAGNOSTIC PRINT FOR N=5 COMMUNITY ---
+            if num_classes == 0 and graph_obj.number_of_nodes > 0:  # Safety net
+                print(f"  Warning: num_classes is 0 for n={n_val}, task '{current_task_type}' despite having nodes. Setting to 1.")
+                num_classes = 1
+                if labels is not None and labels.max() >= num_classes:  # Adjust labels if they exceed new num_classes
+                    labels = torch.zeros_like(labels)
+
             if n_val == 5 and current_task_type == "community" and self.config.DEBUG_VERBOSE:
                 print(f"    DIAGNOSTIC (n=5, before model init):")
                 print(f"      Task type: {current_task_type}")
@@ -320,24 +405,21 @@ class ProtGramDirectGCNTrainer:
                 if labels is not None:
                     print(f"      Shape of labels tensor: {labels.shape}")
                     print(f"      Unique labels passed to Data object: {labels.unique().tolist() if labels.numel() > 0 else '[]'}")
-            # --- END DIAGNOSTIC ---
 
-            labels = labels.to(self.device)
-            edge_index_in, edge_weight_in = dense_to_sparse(torch.from_numpy(graph_obj.mathcal_A_in).float())
-            edge_index_out, edge_weight_out = dense_to_sparse(torch.from_numpy(graph_obj.mathcal_A_out).float())
-            fai_edge_index, fai_edge_weight = graph_obj.get_fai_sparse()
-            fao_edge_index, fao_edge_weight = graph_obj.get_fao_sparse()
+            # mathcal_A_out and mathcal_A_in are now sparse torch.Tensor
+            # Their indices and values are directly used for PyG Data object
+            edge_index_in = graph_obj.mathcal_A_in.indices().to(self.device)
+            edge_weight_in = graph_obj.mathcal_A_in.values().to(self.device)
+            edge_index_out = graph_obj.mathcal_A_out.indices().to(self.device)
+            edge_weight_out = graph_obj.mathcal_A_out.values().to(self.device)
 
+            # fai and fao are removed
             data = Data(x=x.to(self.device),
                         y=labels.to(self.device),
-                        edge_index_in=edge_index_in.to(self.device),
-                        edge_weight_in=edge_weight_in.to(self.device),
-                        edge_index_out=edge_index_out.to(self.device),
-                        edge_weight_out=edge_weight_out.to(self.device),
-                        fai_edge_index=fai_edge_index.to(self.device),
-                        fai_edge_weight=fai_edge_weight.to(self.device),
-                        fao_edge_index=fao_edge_index.to(self.device),
-                        fao_edge_weight=fao_edge_weight.to(self.device))
+                        edge_index_in=edge_index_in,
+                        edge_weight_in=edge_weight_in,
+                        edge_index_out=edge_index_out,
+                        edge_weight_out=edge_weight_out)
             data.num_nodes = graph_obj.number_of_nodes
 
             full_layer_dims = [num_initial_features] + self.config.GCN_HIDDEN_LAYER_DIMS
@@ -354,16 +436,15 @@ class ProtGramDirectGCNTrainer:
 
             current_optimizer_weight_decay = self.config.GCN_WEIGHT_DECAY
             if l2_lambda_val > 0:
-                current_optimizer_weight_decay = 0.0
+                current_optimizer_weight_decay = 0.0  # L2 reg handled in loss
             optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=current_optimizer_weight_decay)
 
-            self._train_model(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, l2_lambda_val, current_n_val_for_diag=n_val)  # Pass n_val for diag
+            self._train_model(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, l2_lambda_val, current_n_val_for_diag=n_val)
             current_level_embeddings = EmbeddingProcessor.extract_gcn_node_embeddings(model, data, self.device)
             level_embeddings[n_val] = current_level_embeddings
 
             del model, data, graph_obj, optimizer, x, labels
             del edge_index_in, edge_weight_in, edge_index_out, edge_weight_out
-            del fai_edge_index, fai_edge_weight, fao_edge_index, fao_edge_weight
             if torch.cuda.is_available(): torch.cuda.empty_cache()
             gc.collect()
 
@@ -381,11 +462,24 @@ class ProtGramDirectGCNTrainer:
         pooled_embeddings = {}
         num_pooling_workers = self.config.POOLING_WORKERS if self.config.POOLING_WORKERS is not None else os.cpu_count()
         if num_pooling_workers is None or num_pooling_workers < 1: num_pooling_workers = 1
-        with Pool(processes=num_pooling_workers) as pool:
-            for original_id, vec in tqdm(pool.imap_unordered(pool_func, protein_sequences), total=len(protein_sequences), desc="  Pooling Protein Embeddings", disable=not self.config.DEBUG_VERBOSE):
+
+        # Limit pooling workers if num_sequences is small to avoid overhead
+        effective_pooling_workers = min(num_pooling_workers, len(protein_sequences)) if len(protein_sequences) > 0 else 1
+
+        if effective_pooling_workers > 1 and len(protein_sequences) > effective_pooling_workers:  # Only use Pool if beneficial
+            with Pool(processes=effective_pooling_workers) as pool:
+                for original_id, vec in tqdm(pool.imap_unordered(pool_func, protein_sequences), total=len(protein_sequences), desc="  Pooling Protein Embeddings (Parallel)", disable=not self.config.DEBUG_VERBOSE):
+                    if vec is not None:
+                        final_key = self.id_map.get(original_id, original_id)
+                        pooled_embeddings[final_key] = vec
+        else:  # Sequential pooling for small number of sequences or if workers=1
+            print(f"  Using sequential pooling (workers: {effective_pooling_workers}, sequences: {len(protein_sequences)}).")
+            for seq_data in tqdm(protein_sequences, desc="  Pooling Protein Embeddings (Sequential)", disable=not self.config.DEBUG_VERBOSE):
+                original_id, vec = pool_func(seq_data)
                 if vec is not None:
                     final_key = self.id_map.get(original_id, original_id)
                     pooled_embeddings[final_key] = vec
+
         if not pooled_embeddings: print("  Warning: No protein embeddings after pooling.")
 
         DataUtils.print_header("Step 4: Saving Generated Embeddings")
@@ -414,6 +508,6 @@ class ProtGramDirectGCNTrainer:
                         print(f"  SUCCESS: PCA-reduced embeddings saved to: {pca_h5_path}")
                     else:
                         print("  PCA Warning: No valid PCA embeddings to determine dimension for saving.")
-                elif pooled_embeddings:
-                    print("  Warning: PCA was requested but resulted in no embeddings (apply_pca returned None).")
+                elif pooled_embeddings:  # Check original pooled_embeddings as pca_embeds might be None if PCA failed
+                    print("  Warning: PCA was requested but resulted in no embeddings (apply_pca returned None or empty dict).")
         DataUtils.print_header("ProtGramDirectGCN Embedding PIPELINE STEP FINISHED")
