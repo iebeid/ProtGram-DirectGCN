@@ -17,11 +17,11 @@ class Config:
         self.DEBUG_VERBOSE = True # Set to False for less verbose training logs
 
         # --- Workflow Control Flags ---
-        self.RUN_GCN_PIPELINE = True
-        self.RUN_WORD2VEC_PIPELINE = True
+        self.RUN_GCN_PIPELINE = False
+        self.RUN_WORD2VEC_PIPELINE = False
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = False
-        self.RUN_MAIN_PPI_EVALUATION = False
+        self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_DUMMY_TEST = True
         self.CLEANUP_DUMMY_DATA = True
 
@@ -119,9 +119,9 @@ class Config:
         self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 50000
         self.TF_DATASET_STRATEGY = 'from_tensor_slices'
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
-            {"name": "ProtT5-UniProt", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5-per-protein.h5"},
-            {"name": "ProtNgramGCN-n5-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "protgram_directgcn_per_protein.h5"},
-            {"name": "Word2Vec-Mean-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "word2vec_dim100_mean_pca64.h5"}
+            {"name": "ProtT5-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
+            {"name": "ProtGramDirectGCN-n3-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "protgram_directgcn.h5"},
+            {"name": "Word2Vec-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "word2vec.h5"}
             # {"name": "ProtBERT-Mean-PCA64", "path": self.TRANSFORMER_EMBEDDINGS_DIR / "ProtBERT_mean_pca64.h5"},
             # {"name": "Word2Vec-Mean-PCA64", "path": self.WORD2VEC_EMBEDDINGS_DIR / "word2vec_dim100_mean_pca64.h5"}
         ]
