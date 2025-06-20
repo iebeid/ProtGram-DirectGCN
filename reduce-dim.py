@@ -3,67 +3,92 @@ import numpy as np
 from sklearn.decomposition import PCA
 import os
 
-def process_embeddings_with_pca(input_h5_path, output_h5_path, target_dimension):
+def process_protein_embeddings_with_global_pca(input_h5_path, output_h5_path, target_dimension):
     """
-    Reads feature embeddings from an HDF5 file, applies PCA to reduce their
-    dimensionality, and saves the transformed embeddings to a new HDF5 file.
+    Reads protein embeddings (one vector per protein/key) from an HDF5 file,
+    collects all embeddings, applies PCA globally to reduce their dimensionality,
+    and saves the transformed embeddings to a new HDF5 file, maintaining keys.
 
     Args:
-        input_h5_path (str): Path to the input HDF5 file containing feature embeddings.
+        input_h5_path (str): Path to the input HDF5 file containing protein embeddings.
         output_h5_path (str): Path to the output HDF5 file for PCA-transformed embeddings.
-        target_dimension (int): The desired target dimension after PCA.
+        target_dimension (int): The desired target dimension for each protein embedding after PCA.
     """
 
     if not os.path.exists(input_h5_path):
         print(f"Error: Input file '{input_h5_path}' not found.")
         return
 
-    print(f"Processing embeddings from '{input_h5_path}'...")
+    print(f"Processing embeddings from '{input_h5_path}' using global PCA...")
     print(f"Target dimension for PCA: {target_dimension}")
 
+    all_embeddings_list = []
+    protein_keys = []
+    original_embedding_dimension = -1 # To store the common dimension
+
     try:
+        # Step 1: Collect all embeddings and keys
+        print("Step 1/3: Collecting all protein embeddings...")
         with h5py.File(input_h5_path, 'r') as infile:
-            with h5py.File(output_h5_path, 'w') as outfile:
-                for key in infile.keys():
-                    embeddings = infile[key][()] # Load embeddings for the current key
+            for key in infile.keys():
+                embedding = infile[key][()] # Load the embedding for the current key
+                protein_keys.append(key)
 
-                    # Ensure embeddings are at least 2D for PCA
-                    if embeddings.ndim == 1:
-                        embeddings = embeddings.reshape(1, -1)
+                # Ensure the embedding is 2D (1, original_dimension) for consistency
+                if embedding.ndim == 1:
+                    embedding = embedding.reshape(1, -1)
+                elif embedding.ndim > 2:
+                    # If it's more than 2D, we assume it's (1, ..., features) and take the last dimension
+                    # or that the user has a more complex structure not fitting "single embedding per protein"
+                    # For simplicity, we assume (1, features)
+                    print(f"  Warning: Embedding for key '{key}' has shape {embedding.shape}. Expected (features,) or (1, features). Flattening to (1, features).")
+                    embedding = embedding.reshape(1, -1)
 
-                    original_dimension = embeddings.shape[-1]
-                    print(f"  Processing key: '{key}' with original dimension: {original_dimension}")
 
-                    if target_dimension >= original_dimension:
-                        print(f"    Warning: Target dimension ({target_dimension}) is not smaller than or equal to original dimension ({original_dimension}). Skipping PCA for this key and copying data directly.")
-                        outfile.create_dataset(key, data=embeddings)
-                        continue
+                if original_embedding_dimension == -1:
+                    original_embedding_dimension = embedding.shape[1]
+                elif embedding.shape[1] != original_embedding_dimension:
+                    print(f"  Warning: Embedding for key '{key}' has dimension {embedding.shape[1]}, "
+                          f"which is different from the first embedding's dimension ({original_embedding_dimension}). "
+                          f"PCA requires consistent input dimensions. This might cause issues.")
+                all_embeddings_list.append(embedding)
 
-                    # Initialize PCA
-                    # n_components can be an int (desired dimension) or a float (variance explained)
-                    pca = PCA(n_components=target_dimension)
+        # Concatenate all embeddings into a single NumPy array
+        # Stack vertically if each is (1, D), resulting in (N_proteins, D)
+        all_embeddings_np = np.vstack(all_embeddings_list)
+        num_proteins = all_embeddings_np.shape[0]
+        actual_original_dimension = all_embeddings_np.shape[1]
 
-                    # Fit PCA and transform the embeddings
-                    # If embeddings is 2D, PCA will work as expected.
-                    # If embeddings is 3D (e.g., [num_samples, seq_len, embed_dim]), you might need to flatten
-                    # or apply PCA to the last dimension. This script assumes the last dimension is the embedding.
-                    # For simplicity, if it's >2D, we assume it's (..., feature_dimension) and reshape to (num_samples, feature_dimension)
-                    # perform PCA, then reshape back.
-                    original_shape = embeddings.shape
-                    if embeddings.ndim > 2:
-                        # Flatten all but the last dimension for PCA
-                        num_samples_flat = int(np.prod(original_shape[:-1]))
-                        flat_embeddings = embeddings.reshape(num_samples_flat, original_dimension)
-                        pca_embeddings_flat = pca.fit_transform(flat_embeddings)
-                        pca_embeddings = pca_embeddings_flat.reshape(*original_shape[:-1], target_dimension)
-                    else:
-                        pca_embeddings = pca.fit_transform(embeddings)
+        print(f"  Collected {num_proteins} protein embeddings, each with original dimension: {actual_original_dimension}")
 
-                    # Save the transformed embeddings to the new HDF5 file
-                    outfile.create_dataset(key, data=pca_embeddings)
-                    print(f"    Transformed to dimension: {pca_embeddings.shape[-1]}")
+        # Basic check for target_dimension validity
+        if target_dimension >= actual_original_dimension:
+            print(f"Error: Target dimension ({target_dimension}) must be smaller than the original embedding dimension ({actual_original_dimension}).")
+            return
+        if target_dimension <= 0:
+            print(f"Error: Target dimension must be a positive integer.")
+            return
+        if target_dimension > num_proteins:
+             print(f"Warning: Target dimension ({target_dimension}) is greater than the number of proteins ({num_proteins}). "
+                   f"PCA's n_components cannot exceed the number of samples. Setting n_components to {num_proteins}.")
+             target_dimension = num_proteins # Adjust n_components to max possible
 
-        print(f"Successfully processed embeddings and saved to '{output_h5_path}'")
+
+        # Step 2: Apply PCA globally
+        print(f"Step 2/3: Applying PCA to all embeddings...")
+        pca = PCA(n_components=target_dimension)
+        pca_transformed_embeddings = pca.fit_transform(all_embeddings_np)
+        print(f"  PCA applied. Transformed data shape: {pca_transformed_embeddings.shape}")
+        print(f"  Explained variance ratio (first {target_dimension} components): {np.sum(pca.explained_variance_ratio_)}")
+
+        # Step 3: Save the transformed embeddings to a new HDF5 file
+        print(f"Step 3/3: Saving transformed embeddings to '{output_h5_path}'...")
+        with h5py.File(output_h5_path, 'w') as outfile:
+            for i, key in enumerate(protein_keys):
+                # Each row in pca_transformed_embeddings corresponds to a protein
+                outfile.create_dataset(key, data=pca_transformed_embeddings[i])
+
+        print(f"Successfully processed all protein embeddings and saved to '{output_h5_path}'")
 
     except Exception as e:
         print(f"An error occurred during processing: {e}")
@@ -71,31 +96,32 @@ def process_embeddings_with_pca(input_h5_path, output_h5_path, target_dimension)
 # --- How to use the script ---
 
 # Define your input and output file paths
-from pathlib import Path
-PROJECT_ROOT = Path(".").resolve()
-print("PROJECT ROOT IS: " + str(PROJECT_ROOT))
-input_file = PROJECT_ROOT / "data" / "models" / "per-protein.h5" # <--- IMPORTANT: Change this to your input H5 file path
-output_file = PROJECT_ROOT / "data" / "models" / 'pca_transformed_embeddings.h5'
+input_file = '/home/beid/documents/projects/ProtGram-DirectGCN/data/models/per-protein.h5' # <--- IMPORTANT: Change this to your input H5 file path
+output_file = '/home/beid/documents/projects/ProtGram-DirectGCN/data/models/pca_transformed_proteins.h5' # Renamed output file for clarity
 desired_dimension = 64 # <--- IMPORTANT: Change this to your desired output dimension
 
-# Example of creating a dummy H5 file for testing if you don't have one
-# You can comment out this section if you already have your input_file
+# Example of creating a dummy H5 file for testing
+# This dummy will correctly simulate one 1024-dim embedding per protein
 if not os.path.exists(input_file):
     print(f"Creating a dummy H5 file '{input_file}' for demonstration purposes...")
     with h5py.File(input_file, 'w') as f:
-        f.create_dataset('embedding_set_1', data=np.random.rand(100, 512)) # 100 samples, 512 original dim
-        f.create_dataset('embedding_set_2', data=np.random.rand(50, 256))  # 50 samples, 256 original dim
-        f.create_dataset('embedding_set_3', data=np.random.rand(200, 128)) # 200 samples, 128 original dim
-        f.create_dataset('embedding_set_4_small', data=np.random.rand(10, 30)) # For testing when target_dimension > original_dimension
+        f.create_dataset('ProteinA', data=np.random.rand(1024)) # Single 1024-dim vector
+        f.create_dataset('ProteinB', data=np.random.rand(1024))
+        f.create_dataset('ProteinC', data=np.random.rand(1024))
+        f.create_dataset('ProteinD', data=np.random.rand(1024))
+        f.create_dataset('A0A009IHW8', data=np.random.rand(1024)) # Your problematic key simulated
+        # Add more proteins to ensure enough 'samples' for PCA
+        for i in range(100): # Create 100 more dummy proteins
+            f.create_dataset(f'Protein_{i}', data=np.random.rand(1024))
         print("Dummy H5 file created.")
 
-
 # Run the function
-process_embeddings_with_pca(input_file, output_file, desired_dimension)
+process_protein_embeddings_with_global_pca(input_file, output_file, desired_dimension)
 
 # You can optionally verify the output file
 if os.path.exists(output_file):
     print(f"\nVerifying output file: '{output_file}'")
     with h5py.File(output_file, 'r') as f:
         for key in f.keys():
+            # The output shape for each key should now be (target_dimension,)
             print(f"  Key: '{key}', Shape: {f[key].shape}")
