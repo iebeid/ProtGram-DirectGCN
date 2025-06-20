@@ -61,10 +61,10 @@ class Config:
 
 
         # --- 2. GCN PIPELINE PARAMETERS (Your custom GCN) ---
-        self.GCN_NGRAM_MAX_N = 5
+        self.GCN_NGRAM_MAX_N = 3
         self.DASK_CHUNK_SIZE = 2000000
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 8) if os.cpu_count() else 1
-        self.GCN_HIDDEN_LAYER_DIMS = [128, 128, 128, 128, 128, 64]
+        self.GCN_HIDDEN_LAYER_DIMS = [128, 128, 128, 64]
 
         self.ID_MAPPING_MODE = 'regex'
         self.ID_MAPPING_OUTPUT_FILE = self.BASE_OUTPUT_DIR / "mappings/gcn_id_mapping.tsv"
@@ -82,7 +82,7 @@ class Config:
         self.GCN_USE_VECTOR_COEFFS = True
 
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
-            1: "next_node", 2: "next_node", 3: "closest_aa", 4: "closest_aa", 5: "community"
+            1: "next_node", 2: "closest_aa", 3: "community"
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
         self.GCN_CLOSEST_AA_K_HOPS: int = 5
