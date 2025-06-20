@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: utils/graph_utils.py
 # PURPOSE: Contains robust classes for n-gram graph representation.
-# VERSION: 7.1 (Corrected sparse tensor addition/subtraction syntax)
+# VERSION: 7.2 (Added debug prints for sparse tensor nnz/memory in propagation calc)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -9,6 +9,8 @@ from typing import List, Dict, Tuple, Any, Optional
 
 import numpy as np  # Ensure numpy is imported
 import torch
+
+
 # dense_to_sparse is still used by PyG internally, but we won't use it to convert our main matrices
 # from dense to sparse anymore, as they will be computed sparsely.
 # from torch_geometric.utils import dense_to_sparse
@@ -66,11 +68,11 @@ class Graph:
         # Ensure indices are non-negative
         all_integer_indices = {idx for idx in all_integer_indices if isinstance(idx, (int, np.integer)) and idx >= 0}
 
-        if not all_integer_indices: # Re-check after filtering negatives
-             self.number_of_nodes = 0
-             self.edges = []
-             self.number_of_edges = 0
-             return
+        if not all_integer_indices:  # Re-check after filtering negatives
+            self.number_of_nodes = 0
+            self.edges = []
+            self.number_of_edges = 0
+            return
 
         max_idx = max(all_integer_indices)
 
@@ -89,7 +91,6 @@ class Graph:
         # Ensure node_sequences is populated for tasks like closest_aa
         self.node_sequences = [self.idx_to_node.get(i, f"__NODE_{i}__") for i in range(self.number_of_nodes)]
 
-
         self.edges = []
         for i, edge_tuple in enumerate(self.original_edges):
             if len(edge_tuple) < 2:
@@ -102,9 +103,9 @@ class Graph:
             valid_t_type = isinstance(t_idx_orig, (int, np.integer))
 
             if not (valid_s_type and valid_t_type):
-                 # print( # Commented out verbose warning
-                 # f"    [Graph Constructor WARNING]: Edge {i}: Non-integer indices ({s_idx_orig}, {t_idx_orig}). Skipping.")
-                 continue
+                # print( # Commented out verbose warning
+                # f"    [Graph Constructor WARNING]: Edge {i}: Non-integer indices ({s_idx_orig}, {t_idx_orig}). Skipping.")
+                continue
 
             s_idx = int(s_idx_orig)
             t_idx = int(t_idx_orig)
@@ -118,7 +119,7 @@ class Graph:
                 continue
 
             weight = float(edge_tuple[2]) if len(edge_tuple) > 2 else 1.0
-            processed_edge = (s_idx, t_idx, weight) # Only keep source, target, weight
+            processed_edge = (s_idx, t_idx, weight)  # Only keep source, target, weight
             self.edges.append(processed_edge)
 
         self.number_of_edges = len(self.edges)
@@ -142,14 +143,14 @@ class DirectedNgramGraph(Graph):
         # fai and fao are removed as they are not used by the current GCN model
 
         if self.number_of_nodes > 0:
-            self._create_raw_weighted_adj_matrices_torch() # Creates sparse A_out_w, A_in_w
-            self._create_propagation_matrices_for_gcn()    # Computes mathcal_A_out, mathcal_A_in sparsely
+            self._create_raw_weighted_adj_matrices_torch()  # Creates sparse A_out_w, A_in_w
+            self._create_propagation_matrices_for_gcn()  # Computes mathcal_A_out, mathcal_A_in sparsely
             # _create_symmetrized_magnitudes_fai_fao() is removed
         else:
             # Initialize as empty sparse tensors
             empty_indices = torch.empty((2, 0), dtype=torch.long)
             empty_values = torch.empty(0, dtype=torch.float32)
-            size_empty = (0, 0) # Use (0,0) size for 0 nodes
+            size_empty = (0, 0)  # Use (0,0) size for 0 nodes
 
             self.A_out_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
             self.A_in_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
@@ -181,10 +182,9 @@ class DirectedNgramGraph(Graph):
             # else: # Commented out verbose warning
             # print(f"    [DirectedNgramGraph WARNING]: Edge ({s_idx},{t_idx}) out of bounds for num_nodes={self.number_of_nodes} during sparse adj matrix creation. Skipping.")
 
-
         size = (self.number_of_nodes, self.number_of_nodes)
 
-        if not source_indices: # No valid edges
+        if not source_indices:  # No valid edges
             empty_indices = torch.empty((2, 0), dtype=torch.long)
             empty_values = torch.empty(0, dtype=torch.float32)
             self.A_out_w = torch.sparse_coo_tensor(empty_indices, empty_values, size)
@@ -202,60 +202,107 @@ class DirectedNgramGraph(Graph):
         using sparse tensor operations.
         Input A_w_torch_sparse is expected to be a sparse COO tensor.
         """
-        if self.number_of_nodes == 0 or (A_w_torch_sparse.is_sparse and A_w_torch_sparse._nnz() == 0 and A_w_torch_sparse.shape[0] == 0) or \
-           (not A_w_torch_sparse.is_sparse and A_w_torch_sparse.numel() == 0 and A_w_torch_sparse.shape[0] == 0) : # Check numel for dense
-             # Return empty sparse tensor of correct shape (N, N) for 0 nodes or empty input
-             empty_indices = torch.empty((2, 0), dtype=torch.long, device=A_w_torch_sparse.device)
-             empty_values = torch.empty(0, dtype=torch.float32, device=A_w_torch_sparse.device)
-             size = (self.number_of_nodes, self.number_of_nodes)
-             return torch.sparse_coo_tensor(empty_indices, empty_values, size).coalesce()
 
+        # --- Debug Print Function ---
+        def print_sparse_info(tensor: torch.Tensor, name: str, n_val_debug: Optional[int] = None):
+            prefix = f"    DEBUG_SPARSE (n={n_val_debug if n_val_debug is not None else 'N/A'})"
+            if tensor.is_sparse:
+                nnz = tensor._nnz()
+                shape = tensor.shape
+                # Approximate memory: indices (2*nnz*8 bytes for long) + values (nnz*4 bytes for float)
+                mem_bytes = (2 * nnz * 8) + (nnz * 4)
+                mem_mb = mem_bytes / (1024 * 1024)
+                print(f"{prefix} [{name}]: shape={shape}, nnz={nnz}, device={tensor.device}, estimated_mem={mem_mb:.3f} MB")
+            else:
+                mem_bytes = tensor.numel() * tensor.element_size()
+                mem_mb = mem_bytes / (1024 * 1024)
+                print(f"{prefix} [{name}]: shape={tensor.shape}, device={tensor.device} (Dense), estimated_mem={mem_mb:.3f} MB")
 
-        dev = A_w_torch_sparse.device # Get device from the sparse tensor
+        # --- End Debug Print Function ---
+
+        current_n_val = self.n_value  # For logging
+
+        if self.number_of_nodes == 0 or \
+                (A_w_torch_sparse.is_sparse and A_w_torch_sparse._nnz() == 0 and A_w_torch_sparse.shape[0] == 0) or \
+                (not A_w_torch_sparse.is_sparse and A_w_torch_sparse.numel() == 0 and A_w_torch_sparse.shape[0] == 0):
+            empty_indices = torch.empty((2, 0), dtype=torch.long, device=A_w_torch_sparse.device)
+            empty_values = torch.empty(0, dtype=torch.float32, device=A_w_torch_sparse.device)
+            size = (self.number_of_nodes, self.number_of_nodes)
+            return torch.sparse_coo_tensor(empty_indices, empty_values, size).coalesce()
+
+        dev = A_w_torch_sparse.device
         num_nodes = self.number_of_nodes
+
+        print_sparse_info(A_w_torch_sparse, "A_w_input", current_n_val)
 
         # 1. Calculate row sums (degrees) - Result is dense
         row_sum = torch.sparse.sum(A_w_torch_sparse, dim=1).to_dense()
+        # print_sparse_info(row_sum, "row_sum (dense)", current_n_val) # Usually small
 
         # 2. Calculate D_inv_diag_vals (1 / row_sum) - Result is dense
         D_inv_diag_vals = torch.zeros_like(row_sum, dtype=torch.float32, device=dev)
         non_zero_degrees_mask = row_sum != 0
         if torch.any(non_zero_degrees_mask):
             D_inv_diag_vals[non_zero_degrees_mask] = 1.0 / row_sum[non_zero_degrees_mask]
+        del row_sum  # Free memory
 
         # 3. Create sparse diagonal matrix D_inv_sparse from D_inv_diag_vals
         diag_indices = torch.arange(num_nodes, device=dev).unsqueeze(0).repeat(2, 1)
         D_inv_sparse = torch.sparse_coo_tensor(diag_indices, D_inv_diag_vals, (num_nodes, num_nodes)).coalesce()
+        print_sparse_info(D_inv_sparse, "D_inv", current_n_val)
+        del D_inv_diag_vals, diag_indices  # Free memory
 
         # 4. Compute A_n = D_inv_sparse @ A_w_torch_sparse (Sparse matrix multiplication)
         A_n_sparse = torch.sparse.mm(D_inv_sparse, A_w_torch_sparse).coalesce()
+        print_sparse_info(A_n_sparse, "A_n", current_n_val)
+        del D_inv_sparse  # Free memory
 
-        # 5. Compute S = (A_n + A_n.t()) / 2.0 (Sparse addition and transpose)
-        S_sparse = (A_n_sparse + A_n_sparse.t().coalesce()).coalesce() # Corrected: Use + operator
+        # 5. Compute S = (A_n + A_n.t()) / 2.0
+        A_n_t_sparse = A_n_sparse.t().coalesce()
+        # print_sparse_info(A_n_t_sparse, "A_n_transpose (for S)", current_n_val)
+        S_sparse = (A_n_sparse + A_n_t_sparse).coalesce()
+        # print_sparse_info(S_sparse, "S_before_div", current_n_val)
         S_sparse = torch.sparse_coo_tensor(S_sparse.indices(), S_sparse.values() / 2.0, S_sparse.size()).coalesce()
+        print_sparse_info(S_sparse, "S_final", current_n_val)
+        del A_n_t_sparse
 
-
-        # 6. Compute K = (A_n - A_n.t()) / 2.0 (Sparse subtraction and transpose)
-        K_sparse = (A_n_sparse - A_n_sparse.t().coalesce()).coalesce() # Corrected: Use - operator
+        # 6. Compute K = (A_n - A_n.t()) / 2.0
+        A_n_t_sparse_for_K = A_n_sparse.t().coalesce()  # Re-transpose A_n_sparse
+        # print_sparse_info(A_n_t_sparse_for_K, "A_n_transpose (for K)", current_n_val)
+        K_sparse = (A_n_sparse - A_n_t_sparse_for_K).coalesce()
+        # print_sparse_info(K_sparse, "K_before_div", current_n_val)
         K_sparse = torch.sparse_coo_tensor(K_sparse.indices(), K_sparse.values() / 2.0, K_sparse.size()).coalesce()
-
+        print_sparse_info(K_sparse, "K_final", current_n_val)
+        del A_n_t_sparse_for_K, A_n_sparse  # A_n_sparse no longer needed
 
         # 7. Compute mathcal_A_base = sqrt(S^2 + K^2 + epsilon) element-wise
-        S_sq_sparse = torch.sparse_coo_tensor(S_sparse.indices(), S_sparse.values().pow(2), S_sparse.size()).coalesce()
-        K_sq_sparse = torch.sparse_coo_tensor(K_sparse.indices(), K_sparse.values().pow(2), K_sparse.size()).coalesce()
+        S_sq_values = S_sparse.values().pow(2)
+        S_sq_sparse = torch.sparse_coo_tensor(S_sparse.indices(), S_sq_values, S_sparse.size()).coalesce()
+        print_sparse_info(S_sq_sparse, "S_squared", current_n_val)
+        del S_sq_values, S_sparse
 
-        # Element-wise addition of S_sq_sparse and K_sq_sparse.
-        S_sq_plus_K_sq_sparse = (S_sq_sparse + K_sq_sparse).coalesce() # Corrected: Use + operator
+        K_sq_values = K_sparse.values().pow(2)
+        K_sq_sparse = torch.sparse_coo_tensor(K_sparse.indices(), K_sq_values, K_sparse.size()).coalesce()
+        print_sparse_info(K_sq_sparse, "K_squared", current_n_val)
+        del K_sq_values, K_sparse
+
+        S_sq_plus_K_sq_sparse = (S_sq_sparse + K_sq_sparse).coalesce()
+        print_sparse_info(S_sq_plus_K_sq_sparse, "S_sq_plus_K_sq", current_n_val)
+        del S_sq_sparse, K_sq_sparse
 
         epsilon_tensor = torch.tensor(self.epsilon_propagation, device=dev, dtype=torch.float32)
-        # Add epsilon only to the non-zero values before sqrt
         mathcal_A_base_values = torch.sqrt(S_sq_plus_K_sq_sparse.values() + epsilon_tensor)
         mathcal_A_base_sparse = torch.sparse_coo_tensor(S_sq_plus_K_sq_sparse.indices(), mathcal_A_base_values, S_sq_plus_K_sq_sparse.size()).coalesce()
+        print_sparse_info(mathcal_A_base_sparse, "mathcal_A_base", current_n_val)
+        del S_sq_plus_K_sq_sparse, mathcal_A_base_values
 
-        # 8. Add sparse identity matrix: mathcal_A = mathcal_A_base + I
-        identity_sparse = _sparse_identity(num_nodes, device=dev) # Use helper
+        # 8. Add sparse identity matrix
+        identity_sparse = _sparse_identity(num_nodes, device=dev)
+        # print_sparse_info(identity_sparse, "Identity", current_n_val)
 
-        mathcal_A_with_self_loops_sparse = (mathcal_A_base_sparse + identity_sparse).coalesce() # Corrected: Use + operator
+        mathcal_A_with_self_loops_sparse = (mathcal_A_base_sparse + identity_sparse).coalesce()
+        print_sparse_info(mathcal_A_with_self_loops_sparse, "mathcal_A_final", current_n_val)
+        del mathcal_A_base_sparse, identity_sparse
 
         return mathcal_A_with_self_loops_sparse
 
@@ -271,7 +318,9 @@ class DirectedNgramGraph(Graph):
             self.mathcal_A_in = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
             return
 
+        print(f"  Creating mathcal_A_out for n={self.n_value}...")
         self.mathcal_A_out = self._calculate_single_propagation_matrix_for_gcn(self.A_out_w)
+        print(f"  Creating mathcal_A_in for n={self.n_value}...")
         self.mathcal_A_in = self._calculate_single_propagation_matrix_for_gcn(self.A_in_w)
 
     # _create_symmetrized_magnitudes_fai_fao is removed
@@ -281,10 +330,12 @@ class DirectedNgramGraph(Graph):
 # --- Helper function for creating sparse identity matrix (can be used internally) ---
 def _sparse_identity(size: int, device: torch.device) -> torch.Tensor:
     """Creates a sparse identity matrix of given size."""
-    if size <= 0: # Ensure size is positive for arange
+    if size <= 0:  # Ensure size is positive for arange
         empty_indices = torch.empty((2, 0), dtype=torch.long, device=device)
         empty_values = torch.empty(0, dtype=torch.float32, device=device)
-        return torch.sparse_coo_tensor(empty_indices, empty_values, (0 if size < 0 else size, 0 if size < 0 else size)).coalesce()
+        # Ensure the size tuple is non-negative for sparse_coo_tensor
+        valid_size = max(0, size)
+        return torch.sparse_coo_tensor(empty_indices, empty_values, (valid_size, valid_size)).coalesce()
 
     indices = torch.arange(size, device=device).unsqueeze(0).repeat(2, 1)
     values = torch.ones(size, device=device, dtype=torch.float32)
