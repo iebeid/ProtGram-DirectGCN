@@ -137,9 +137,9 @@ if not os.path.exists(input_file):
 # Run the function
 process_protein_embeddings_with_global_pca(input_file, output_file, desired_dimension)
 
-# You can optionally verify the output file
-if os.path.exists(output_file):
-    print(f"\nVerifying output file: '{output_file}'")
-    with h5py.File(output_file, 'r') as f:
-        for key in f.keys():
-            print(f"  Key: '{key}', Shape: {f[key].shape}")
+# # You can optionally verify the output file
+# if os.path.exists(output_file):
+#     print(f"\nVerifying output file: '{output_file}'")
+#     with h5py.File(output_file, 'r') as f:
+#         for key in f.keys():
+#             print(f"  Key: '{key}', Shape: {f[key].shape}")
