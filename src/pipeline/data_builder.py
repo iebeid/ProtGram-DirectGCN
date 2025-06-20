@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 5.9 (Diagnostic: Force sync scheduler for to_textfiles to check edge doubling)
+# VERSION: 6.0 (Added diagnostic for part-file line counts before concatenation)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -104,7 +104,6 @@ class GraphBuilder:
         # General dask_scheduler for most operations
         dask_scheduler_general = 'threads' if effective_dask_workers > 1 else 'sync'
 
-
         if self.num_workers_config > 1:
             print("\n" + "=" * 80)
             print(f"GraphBuilder is configured for parallel processing (GRAPH_BUILDER_WORKERS={self.num_workers_config}).")
@@ -157,7 +156,7 @@ class GraphBuilder:
             print("  Using unpersisted preprocessed_sequence_bag for synchronous execution.")
 
         original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
-        if dask_scheduler_general != 'sync': # Only hide if Dask might use other contexts
+        if dask_scheduler_general != 'sync':  # Only hide if Dask might use other contexts
             os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
             print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations.")
 
@@ -234,54 +233,75 @@ class GraphBuilder:
                                             ngram_to_id_map=ngram_to_id_map)
             all_edges_str_bag_flattened = final_preprocessed_input_bag.map(extract_edges_partial).flatten()
 
-            if n_val_loop == 1 and self.config.DEBUG_VERBOSE:
+            if n_val_loop == 1 and self.config.DEBUG_VERBOSE:  # Keep this for n=1
                 try:
-                    print(f"    DEBUG: Attempting to count items in all_edges_str_bag_flattened for n=1 before to_textfiles...")
+                    print(f"    DEBUG: Attempting to count items in all_edges_str_bag_flattened for n={n_val_loop} before to_textfiles...")
                     intermediate_edge_count = all_edges_str_bag_flattened.count().compute(scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
-                    print(f"    DEBUG: Count from all_edges_str_bag_flattened for n=1: {intermediate_edge_count}")
+                    print(f"    DEBUG: Count from all_edges_str_bag_flattened for n={n_val_loop}: {intermediate_edge_count}")
                 except Exception as e_dbg_count:
-                    print(f"    DEBUG: Error counting intermediate edge bag for n=1: {e_dbg_count}")
+                    print(f"    DEBUG: Error counting intermediate edge bag for n={n_val_loop}: {e_dbg_count}")
 
             temp_edge_output_dir = os.path.join(self.temp_dir, f'edge_list_n{n_val_loop}_parts')
             if os.path.exists(temp_edge_output_dir):
                 shutil.rmtree(temp_edge_output_dir)
 
-            # --- DIAGNOSTIC CHANGE FOR to_textfiles SCHEDULER ---
-            # Use 'sync' for to_textfiles to see if it resolves the doubling issue.
-            # The general dask_scheduler_general ('threads' or 'sync') is used for other Dask compute calls.
-            scheduler_for_to_textfiles = 'sync'
+            scheduler_for_to_textfiles = 'sync'  # Keep 'sync' for to_textfiles for diagnostic stability
             print(f"    Writing edge strings to directory: {temp_edge_output_dir} using Dask scheduler: '{scheduler_for_to_textfiles}' (DIAGNOSTIC)...")
-            # --- END DIAGNOSTIC CHANGE ---
-            edge_count = 0
+
+            edge_count_from_concatenation = 0  # Renamed to avoid conflict with any prior edge_count
             try:
                 all_edges_str_bag_flattened.to_textfiles(
                     os.path.join(temp_edge_output_dir, 'part-*.txt'),
                     compute=True,
-                    scheduler=scheduler_for_to_textfiles, # Using the diagnostic scheduler
-                    # num_workers will be ignored by 'sync' scheduler but Dask expects it if not 'sync'
+                    scheduler=scheduler_for_to_textfiles,
                     num_workers=effective_dask_workers if scheduler_for_to_textfiles != 'sync' else None
                 )
                 print(f"    Edge parts saved to directory {temp_edge_output_dir}.")
 
+                # *** ADDED DIAGNOSTIC FOR PART FILES (APPLIES TO ALL N) ***
+                if self.config.DEBUG_VERBOSE and os.path.exists(temp_edge_output_dir):
+                    part_files_check = sorted([  # Sort for consistent order if it matters for debugging
+                        os.path.join(temp_edge_output_dir, f)
+                        for f in os.listdir(temp_edge_output_dir)
+                        if f.startswith('part-') and f.endswith('.txt')
+                    ])
+                    print(f"    DEBUG (n={n_val_loop}): Found {len(part_files_check)} part-files in {temp_edge_output_dir}.")
+                    total_lines_in_parts = 0
+                    for i_part, pf_path in enumerate(part_files_check):
+                        try:
+                            with open(pf_path, 'r', encoding='utf-8') as temp_pf:  # Added encoding
+                                lines_in_this_part = sum(1 for _ in temp_pf)
+                                total_lines_in_parts += lines_in_this_part
+                                if i_part < 3 or (len(part_files_check) > 5 and i_part > len(part_files_check) - 3):  # Print for first/last few parts
+                                    print(f"      DEBUG (n={n_val_loop}): Part-file '{os.path.basename(pf_path)}' has {lines_in_this_part} lines.")
+                        except Exception as e_pf_read:
+                            print(f"      DEBUG (n={n_val_loop}): Error reading part-file {pf_path}: {e_pf_read}")
+                    print(f"    DEBUG (n={n_val_loop}): Total lines counted across all part-files: {total_lines_in_parts}")
+                # *** END ADDED DIAGNOSTIC ***
+
                 print(f"    Concatenating edge parts into {os.path.basename(output_edge_file)}...")
+                edge_count_from_concatenation = 0  # Reset before this specific loop
                 if not os.path.exists(temp_edge_output_dir):
                     print(f"    Warning: Dask did not create the edge parts directory: {temp_edge_output_dir}. Assuming no edges were generated.")
                     open(output_edge_file, 'w').close()
                 else:
-                    with open(output_edge_file, 'w') as outfile:
-                        part_files = sorted([
-                            os.path.join(temp_edge_output_dir, f)
-                            for f in os.listdir(temp_edge_output_dir)
-                            if f.startswith('part-') and f.endswith('.txt')
-                        ])
-                        if not part_files:
-                            print(f"    Warning: No edge part-files found in {temp_edge_output_dir}. Output edge file will be empty.")
-                        for part_file_name in tqdm(part_files, desc="    Concatenating parts", leave=False, disable=not self.config.DEBUG_VERBOSE):
-                            with open(part_file_name, 'r') as infile:
+                    # Use the already sorted list if available from diagnostic, else re-list and sort
+                    part_files_for_concat = part_files_check if 'part_files_check' in locals() and self.config.DEBUG_VERBOSE else sorted([
+                        os.path.join(temp_edge_output_dir, f)
+                        for f in os.listdir(temp_edge_output_dir)
+                        if f.startswith('part-') and f.endswith('.txt')
+                    ])
+
+                    if not part_files_for_concat:
+                        print(f"    Warning: No edge part-files found in {temp_edge_output_dir} for concatenation. Output edge file will be empty.")
+
+                    with open(output_edge_file, 'w', encoding='utf-8') as outfile:  # Added encoding
+                        for part_file_name in tqdm(part_files_for_concat, desc=f"    Concatenating parts (n={n_val_loop})", leave=False, disable=not self.config.DEBUG_VERBOSE):
+                            with open(part_file_name, 'r', encoding='utf-8') as infile:  # Added encoding
                                 for line in infile:
                                     outfile.write(line)
-                                    edge_count += 1
-                print(f"    Successfully wrote {edge_count} raw edge transitions to {os.path.basename(output_edge_file)}.")
+                                    edge_count_from_concatenation += 1
+                print(f"    Successfully wrote {edge_count_from_concatenation} raw edge transitions to {os.path.basename(output_edge_file)}.")
                 if os.path.exists(temp_edge_output_dir):
                     shutil.rmtree(temp_edge_output_dir)
 
@@ -305,7 +325,7 @@ class GraphBuilder:
             gc.collect()
             print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.")
 
-        if dask_scheduler_general != 'sync': # Check against the general scheduler
+        if dask_scheduler_general != 'sync':
             if original_cuda_visible_devices is None:
                 if "CUDA_VISIBLE_DEVICES" in os.environ: del os.environ["CUDA_VISIBLE_DEVICES"]
             else:
@@ -349,14 +369,13 @@ class GraphBuilder:
                     raw_edge_file_was_empty = True
                 else:
                     ddf = dd.read_csv(edge_file, sep=' ', header=None, names=['source', 'target'], dtype=int,
-                                      on_bad_lines='skip', blocksize='128MB')
+                                      on_bad_lines='skip', blocksize='128MB')  # Added on_bad_lines
                     print(f"    Dask DataFrame created for n={n} with {ddf.npartitions} partitions.")
 
                     weighted_ddf_series = ddf.groupby(['source', 'target']).size()
                     weighted_ddf = weighted_ddf_series.to_frame(name='weight').reset_index()
 
                     print(f"    Computing aggregated weighted edges for n={n}...")
-                    # Use the general dask_scheduler for Dask DataFrame compute
                     weighted_edge_df_computed = weighted_ddf.compute(scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
                     print(f"    Finished computing aggregated weighted edges for n={n}.")
 
@@ -374,12 +393,16 @@ class GraphBuilder:
 
             weighted_edge_list_tuples = []
             if weighted_edge_df_computed.empty:
-                if not raw_edge_file_was_empty:
+                if not raw_edge_file_was_empty:  # Only print if raw file wasn't empty but aggregation is
                     print(f"  ℹ️ Info: No unique edges found after aggregation for n={n}.")
             else:
                 if self.config.DEBUG_VERBOSE:
                     print(f"  [DEBUG] Weighted edge_df (from Dask DF) for n={n}:")
                     print(weighted_edge_df_computed.head())
+                # The Dask DataFrame aggregation now gives the count of unique weighted edges.
+                # The number of raw transitions processed by Dask DF would be weighted_edge_df_computed['weight'].sum()
+                # if we wanted to report that, but the log from Phase 1 (edge_count_from_concatenation)
+                # already gives the number of lines in the concatenated file.
                 print(f"  Aggregated raw transitions into {len(weighted_edge_df_computed)} unique weighted edges for n={n}.")
                 weighted_edge_list_tuples = [tuple(x) for x in weighted_edge_df_computed[['source', 'target', 'weight']].to_numpy()]
 
