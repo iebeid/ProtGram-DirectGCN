@@ -84,7 +84,7 @@ class Config:
 
         self.GCN_PROPAGATION_EPSILON = 1e-9
         self.GCN_MAX_PE_LEN = 512
-        self.GCN_USE_VECTOR_COEFFS = True
+        self.GCN_USE_VECTOR_COEFFS = False
 
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
             1: "next_node",
