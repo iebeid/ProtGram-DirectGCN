@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 4.3 (Added large graph skip for next_node and closest_aa label generation)
+# VERSION: 4.4 (Implemented label generation sampling for large graphs)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -96,18 +96,37 @@ class ProtGramDirectGCNTrainer:
                 if self.config.DEBUG_VERBOSE:
                     print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * final_l2_reg_term).item():.4f}")
 
-    def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
+    def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int, torch.Tensor]:
         import networkx as nx
         import community as community_louvain
 
-        # --- MODIFICATION: Skip NetworkX for very large graphs ---
-        if graph.number_of_nodes > 50000 or graph.number_of_edges > 1000000: # Thresholds can be tuned
-            print(f"  Warning: Skipping NetworkX-based community detection for large graph (Nodes: {graph.number_of_nodes}, Edges: {graph.number_of_edges}). Using dummy labels.")
-            # Return dummy labels (e.g., all nodes in one community)
-            return torch.zeros(graph.number_of_nodes, dtype=torch.long), 1
-        # --- END MODIFICATION ---
+        num_nodes = graph.number_of_nodes
+        if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1, torch.empty(0, dtype=torch.bool)
 
-        if graph.number_of_nodes == 0: return torch.empty(0, dtype=torch.long), 1
+        labels_for_all_nodes = torch.full((num_nodes,), -1, dtype=torch.long)  # Initialize with -1 (unlabeled)
+        train_mask = torch.zeros(num_nodes, dtype=torch.bool)  # Initialize all to False
+
+        nodes_to_process_indices = list(range(num_nodes))
+        if self.config.GCN_LABEL_GENERATION_SAMPLE_NODES is not None and \
+                num_nodes > self.config.GCN_LABEL_GENERATION_SAMPLE_NODES:
+            print(f"  Warning: Graph too large for full community label generation (Nodes: {num_nodes}). Sampling {self.config.GCN_LABEL_GENERATION_SAMPLE_NODES} nodes.")
+            random.seed(self.config.RANDOM_STATE)  # Ensure reproducibility
+            nodes_to_process_indices = random.sample(nodes_to_process_indices, self.config.GCN_LABEL_GENERATION_SAMPLE_NODES)
+        else:
+            print(f"  Generating community labels for all {num_nodes} nodes.")
+
+        # --- NetworkX-based community detection (potentially slow for large graphs) ---
+        # This part will only run for the sampled nodes, but NetworkX still needs the full graph.
+        # If the full graph is too large for NetworkX, we still need to skip.
+        # The threshold here is for NetworkX itself, not for sampling.
+        if num_nodes > 50000 or graph.number_of_edges > 1000000:  # Thresholds can be tuned
+            print(f"  Warning: Skipping NetworkX-based community detection for large graph (Nodes: {num_nodes}, Edges: {graph.number_of_edges}). Using dummy labels (all in one community) for sampled nodes.")
+            # For sampled nodes, assign them to community 0.
+            for i in nodes_to_process_indices:
+                labels_for_all_nodes[i] = 0
+                train_mask[i] = True
+            return labels_for_all_nodes[train_mask], 1, train_mask
+        # --- END MODIFICATION ---
 
         A_in_w_cpu_sparse = graph.A_in_w.cpu()
         A_out_w_cpu_sparse = graph.A_out_w.cpu()
@@ -115,10 +134,14 @@ class ProtGramDirectGCNTrainer:
         combined_adj_sparse_torch = (A_in_w_cpu_sparse + A_out_w_cpu_sparse).coalesce()
 
         if combined_adj_sparse_torch._nnz() == 0:
-            return torch.zeros(graph.number_of_nodes, dtype=torch.long), 1
+            # If no edges, all nodes are their own community, or if sampled, assign to 0
+            for i in nodes_to_process_indices:
+                labels_for_all_nodes[i] = 0  # Or i if each is its own community
+                train_mask[i] = True
+            return labels_for_all_nodes[train_mask], 1, train_mask  # Assuming 1 class if no edges
 
         nx_graph = nx.Graph()
-        nx_graph.add_nodes_from(range(graph.number_of_nodes))
+        nx_graph.add_nodes_from(range(num_nodes))  # Add all nodes to NetworkX graph
         edge_indices = combined_adj_sparse_torch.indices()
         edge_values = combined_adj_sparse_torch.values()
 
@@ -130,72 +153,96 @@ class ProtGramDirectGCNTrainer:
             else:
                 nx_graph.add_edge(u, v, weight=weight)
 
-        if nx_graph.number_of_nodes() == 0: return torch.empty(0, dtype=torch.long), 1
+        if nx_graph.number_of_nodes() == 0: return torch.empty(0, dtype=torch.long), 1, torch.empty(0, dtype=torch.bool)
         if nx_graph.number_of_edges() == 0:
-            labels = torch.arange(graph.number_of_nodes, dtype=torch.long)
-            num_classes = graph.number_of_nodes if graph.number_of_nodes > 0 else 1
-            return labels, num_classes
+            for i in nodes_to_process_indices:
+                labels_for_all_nodes[i] = 0  # All sampled nodes in one community
+                train_mask[i] = True
+            return labels_for_all_nodes[train_mask], 1, train_mask
 
+        # Perform community detection on the full NetworkX graph
         partition = community_louvain.best_partition(nx_graph, random_state=self.config.RANDOM_STATE, weight='weight')
-        labels_list = [partition.get(i, -1) for i in range(graph.number_of_nodes)]
-        unique_labels_from_partition = sorted(list(set(labels_list)))
 
+        # Assign labels only for the sampled nodes
+        for i in nodes_to_process_indices:
+            labels_for_all_nodes[i] = partition.get(i, -1)  # Get community label, -1 if not found (shouldn't happen for existing nodes)
+            train_mask[i] = True
+
+        # Map labels to 0-indexed classes based on the communities found in the full graph
+        unique_labels_from_partition = sorted(list(set(partition.values())))
         if not unique_labels_from_partition or (len(unique_labels_from_partition) == 1 and unique_labels_from_partition[0] == -1):
-            labels = torch.zeros(graph.number_of_nodes, dtype=torch.long)
             num_classes = 1
+            # If only one community or no valid communities, all sampled nodes get label 0
+            for i in nodes_to_process_indices:
+                labels_for_all_nodes[i] = 0
         else:
             label_map = {lbl: i for i, lbl in enumerate(unique_labels_from_partition)}
-            labels = torch.tensor([label_map[lbl] for lbl in labels_list], dtype=torch.long)
+            for i in nodes_to_process_indices:
+                if labels_for_all_nodes[i].item() != -1:  # Only map if a valid community was assigned
+                    labels_for_all_nodes[i] = label_map[labels_for_all_nodes[i].item()]
             num_classes = len(unique_labels_from_partition)
 
         if hasattr(graph, 'n_value') and graph.n_value == 5 and self.config.DEBUG_VERBOSE:
             print(f"    DIAGNOSTIC (n=5 Community Labels):")
             print(f"      Number of communities detected (num_classes): {num_classes}")
-            print(f"      Unique labels in generated 'labels' tensor: {labels.unique().tolist() if labels.numel() > 0 else '[]'}")
-        return labels, num_classes
+            print(f"      Unique labels in generated 'labels' tensor (for sampled nodes): {labels_for_all_nodes[train_mask].unique().tolist() if labels_for_all_nodes[train_mask].numel() > 0 else '[]'}")
 
-    def _generate_next_node_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
-        # --- MODIFICATION: Skip for very large graphs ---
-        if graph.number_of_nodes > 50000 or graph.number_of_edges > 1000000: # Thresholds can be tuned
-            print(f"  Warning: Skipping next_node label generation for large graph (Nodes: {graph.number_of_nodes}, Edges: {graph.number_of_edges}). Using dummy labels.")
-            # Return dummy labels (e.g., all nodes map to node 0)
-            return torch.zeros(graph.number_of_nodes, dtype=torch.long), graph.number_of_nodes if graph.number_of_nodes > 0 else 1
-        # --- END MODIFICATION ---
+        return labels_for_all_nodes[train_mask], num_classes, train_mask
 
+    def _generate_next_node_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int, torch.Tensor]:
         num_nodes = graph.number_of_nodes
-        if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1
+        if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1, torch.empty(0, dtype=torch.bool)
+
+        labels_for_all_nodes = torch.full((num_nodes,), -1, dtype=torch.long)  # Initialize with -1 (unlabeled)
+        train_mask = torch.zeros(num_nodes, dtype=torch.bool)  # Initialize all to False
+
+        nodes_to_process_indices = list(range(num_nodes))
+        if self.config.GCN_LABEL_GENERATION_SAMPLE_NODES is not None and \
+                num_nodes > self.config.GCN_LABEL_GENERATION_SAMPLE_NODES:
+            print(f"  Warning: Graph too large for full next_node label generation (Nodes: {num_nodes}). Sampling {self.config.GCN_LABEL_GENERATION_SAMPLE_NODES} nodes.")
+            random.seed(self.config.RANDOM_STATE)  # Ensure reproducibility
+            nodes_to_process_indices = random.sample(nodes_to_process_indices, self.config.GCN_LABEL_GENERATION_SAMPLE_NODES)
+        else:
+            print(f"  Generating next_node labels for all {num_nodes} nodes.")
 
         adj_out_weighted_sparse = graph.A_out_w
-        labels_list = [-1] * num_nodes
 
-        for i in range(num_nodes):
+        for i in tqdm(nodes_to_process_indices, desc="  Generating next_node labels", disable=not self.config.DEBUG_VERBOSE):
             row_mask = (adj_out_weighted_sparse.indices()[0] == i)
             if not torch.any(row_mask):
-                labels_list[i] = i
-                continue
-
-            successors_indices_for_row_i = adj_out_weighted_sparse.indices()[1][row_mask]
-            weights_for_row_i = adj_out_weighted_sparse.values()[row_mask]
-
-            if successors_indices_for_row_i.numel() > 0:
-                max_weight = torch.max(weights_for_row_i)
-                highest_prob_successors = successors_indices_for_row_i[weights_for_row_i == max_weight]
-                labels_list[i] = random.choice(highest_prob_successors.cpu().tolist())
+                labels_for_all_nodes[i] = i  # Self-loop as target if no outgoing edges
             else:
-                labels_list[i] = i
+                successors_indices_for_row_i = adj_out_weighted_sparse.indices()[1][row_mask]
+                weights_for_row_i = adj_out_weighted_sparse.values()[row_mask]
+                if successors_indices_for_row_i.numel() > 0:
+                    max_weight = torch.max(weights_for_row_i)
+                    highest_prob_successors = successors_indices_for_row_i[weights_for_row_i == max_weight]
+                    labels_for_all_nodes[i] = random.choice(highest_prob_successors.cpu().tolist())
+                else:
+                    labels_for_all_nodes[i] = i  # Fallback to self-loop
 
-        final_labels = torch.tensor(labels_list, dtype=torch.long)
-        return final_labels, num_nodes
+            train_mask[i] = True  # Mark this node as part of the training set
 
-    def _generate_closest_amino_acid_labels(self, graph: DirectedNgramGraph, k_hops: int) -> Tuple[torch.Tensor, int]:
-        # --- MODIFICATION: Skip for very large graphs ---
-        if graph.number_of_nodes > 50000 or graph.number_of_edges > 1000000: # Thresholds can be tuned
-            print(f"  Warning: Skipping closest_aa label generation for large graph (Nodes: {graph.number_of_nodes}, Edges: {graph.number_of_edges}). Using dummy labels.")
-            # Return dummy labels (e.g., all nodes map to class 0)
-            return torch.zeros(graph.number_of_nodes, dtype=torch.long), k_hops + 1
-        # --- END MODIFICATION ---
+        final_labels = labels_for_all_nodes[train_mask]  # Only return labels for nodes in mask
+        # num_classes is still num_nodes, as any node can be a target
+        return final_labels, num_nodes, train_mask  # Return mask as well
 
+    def _generate_closest_amino_acid_labels(self, graph: DirectedNgramGraph, k_hops: int) -> Tuple[torch.Tensor, int, torch.Tensor]:
         num_nodes = graph.number_of_nodes
+        if num_nodes == 0: return torch.empty(0, dtype=torch.long), k_hops + 1, torch.empty(0, dtype=torch.bool)
+
+        labels_for_all_nodes = torch.full((num_nodes,), k_hops, dtype=torch.long)  # Default to max_hops
+        train_mask = torch.zeros(num_nodes, dtype=torch.bool)  # Initialize all to False
+
+        nodes_to_process_indices = list(range(num_nodes))
+        if self.config.GCN_LABEL_GENERATION_SAMPLE_NODES is not None and \
+                num_nodes > self.config.GCN_LABEL_GENERATION_SAMPLE_NODES:
+            print(f"  Warning: Graph too large for full closest_aa label generation (Nodes: {num_nodes}). Sampling {self.config.GCN_LABEL_GENERATION_SAMPLE_NODES} nodes.")
+            random.seed(self.config.RANDOM_STATE)  # Ensure reproducibility
+            nodes_to_process_indices = random.sample(nodes_to_process_indices, self.config.GCN_LABEL_GENERATION_SAMPLE_NODES)
+        else:
+            print(f"  Generating closest_aa labels for all {num_nodes} nodes.")
+
         adj_out_sparse = graph.A_out_w
 
         if not hasattr(graph, 'node_sequences') or not graph.node_sequences:
@@ -203,24 +250,16 @@ class ProtGramDirectGCNTrainer:
                 graph.node_sequences = [graph.idx_to_node[i] for i in range(num_nodes)]
             else:
                 raise AttributeError("Graph needs 'node_sequences' or 'idx_to_node' populated with actual n-gram strings.")
-
         node_sequences = graph.node_sequences
-        if num_nodes == 0: return torch.empty(0, dtype=torch.long), k_hops + 1
-        if k_hops < 0: raise ValueError("k_hops must be non-negative.")
 
-        labels_for_nodes = torch.full((num_nodes,), k_hops, dtype=torch.long)
-
-        for start_node_idx in range(num_nodes):
+        for start_node_idx in tqdm(nodes_to_process_indices, desc="  Generating closest_aa labels", disable=not self.config.DEBUG_VERBOSE):
             target_aa = random.choice(AMINO_ACID_ALPHABET)
-
             current_node_sequence = node_sequences[start_node_idx]
             if not isinstance(current_node_sequence, str): current_node_sequence = str(current_node_sequence)
 
             if target_aa in current_node_sequence:
-                labels_for_nodes[start_node_idx] = 0
-                continue
-
-            if k_hops > 0:
+                labels_for_all_nodes[start_node_idx] = 0
+            elif k_hops > 0:
                 q = collections.deque([(start_node_idx, 0)])
                 visited = {start_node_idx}
                 found_at_hop = -1
@@ -240,12 +279,11 @@ class ProtGramDirectGCNTrainer:
                         neighbor_node_idx = neighbor_node_tensor.item()
                         if neighbor_node_idx not in visited:
                             visited.add(neighbor_node_idx)
-
                             neighbor_node_sequence = node_sequences[neighbor_node_idx]
                             if not isinstance(neighbor_node_sequence, str): neighbor_node_sequence = str(neighbor_node_sequence)
 
                             if target_aa in neighbor_node_sequence:
-                                labels_for_nodes[start_node_idx] = hop_level + 1
+                                labels_for_all_nodes[start_node_idx] = hop_level + 1
                                 found_at_hop = hop_level + 1
                                 break
 
@@ -254,9 +292,11 @@ class ProtGramDirectGCNTrainer:
 
                     if found_at_hop != -1:
                         break
+            train_mask[start_node_idx] = True  # Mark this node as part of the training set
 
+        final_labels = labels_for_all_nodes[train_mask]  # Only return labels for nodes in mask
         num_output_classes = k_hops + 1
-        return labels_for_nodes, num_output_classes
+        return final_labels, num_output_classes, train_mask  # Return mask as well
 
     def run(self):
         DataUtils.print_header("PIPELINE STEP 2: Training ProtGramDirectGCN & Generating Embeddings")
@@ -368,27 +408,31 @@ class ProtGramDirectGCNTrainer:
 
             print(f"  Initial node feature dimension for n={n_val}: {num_initial_features}")
 
-            labels, num_classes = None, 0
+            labels, num_classes, train_mask = None, 0, None  # Initialize train_mask
+
             if current_task_type == "community":
-                labels, num_classes = self._generate_community_labels(graph_obj)
+                labels, num_classes, train_mask = self._generate_community_labels(graph_obj)
             elif current_task_type == "next_node":
-                labels, num_classes = self._generate_next_node_labels(graph_obj)
+                labels, num_classes, train_mask = self._generate_next_node_labels(graph_obj)
             elif current_task_type == "closest_aa":
                 k_hops_for_task = getattr(self.config, 'GCN_CLOSEST_AA_K_HOPS', 3)
-                labels, num_classes = self._generate_closest_amino_acid_labels(graph_obj, k_hops_for_task)
+                labels, num_classes, train_mask = self._generate_closest_amino_acid_labels(graph_obj, k_hops_for_task)
             else:
                 raise ValueError(f"Unsupported GCN_TASK_TYPE '{current_task_type}' for n={n_val}.")
 
+            # Handle cases where label generation might result in empty labels or mask
             if graph_obj.number_of_nodes > 0 and (labels is None or labels.numel() == 0):
                 print(f"  Warning: No labels generated for n={n_val}, task '{current_task_type}'. Using zeros.")
                 if num_classes == 0: num_classes = 1
                 labels = torch.zeros(graph_obj.number_of_nodes, dtype=torch.long)
+                train_mask = torch.ones(graph_obj.number_of_nodes, dtype=torch.bool)  # If labels are dummy, train on all
 
             if num_classes == 0 and graph_obj.number_of_nodes > 0:
                 print(f"  Warning: num_classes is 0 for n={n_val}, task '{current_task_type}' despite having nodes. Setting to 1.")
                 num_classes = 1
                 if labels is not None and labels.max() >= num_classes:
                     labels = torch.zeros_like(labels)
+                if train_mask is None: train_mask = torch.ones(graph_obj.number_of_nodes, dtype=torch.bool)
 
             if n_val == 5 and current_task_type == "community" and self.config.DEBUG_VERBOSE:
                 print(f"    DIAGNOSTIC (n=5, before model init):")
@@ -408,7 +452,8 @@ class ProtGramDirectGCNTrainer:
                         edge_index_in=edge_index_in,
                         edge_weight_in=edge_weight_in,
                         edge_index_out=edge_index_out,
-                        edge_weight_out=edge_weight_out)
+                        edge_weight_out=edge_weight_out,
+                        train_mask=train_mask.to(self.device))  # Pass the train_mask
             data.num_nodes = graph_obj.number_of_nodes
 
             full_layer_dims = [num_initial_features] + self.config.GCN_HIDDEN_LAYER_DIMS
