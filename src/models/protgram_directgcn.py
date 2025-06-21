@@ -171,7 +171,7 @@ class ProtGramDirectGCN(nn.Module):
             gcn_layer, res_layer = self.convs[i], self.res_projs[i]
             gcn_output = gcn_layer(h_res, ei_in, ew_in, ei_out, ew_out, original_indices)
             residual_output = res_layer(h_res)
-            h = F.tanh(gcn_output + residual_output)
+            h = F.leaky_relu(gcn_output + residual_output)
             h = F.dropout(h, p=self.dropout, training=self.training)
 
         final_embed_for_task = h
