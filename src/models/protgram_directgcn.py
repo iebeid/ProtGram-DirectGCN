@@ -72,13 +72,13 @@ class DirectGCNLayer(MessagePassing):
         h_main_in_propagated = self.propagate(edge_index_in, x=h_main_in_transformed, edge_weight=edge_weight_in)
         h_shared_for_in = self.lin_shared(x)
         h_shared_in_propagated = self.propagate(edge_index_in, x=h_shared_for_in, edge_weight=edge_weight_in)
-        ic_combined = (h_main_in_propagated + self.bias_main_in) + (h_shared_for_in + self.bias_shared_in)
+        ic_combined = (h_main_in_propagated + self.bias_main_in) + (h_shared_in_propagated + self.bias_shared_in)
 
         h_main_out_transformed = self.lin_main_out(x)
         h_main_out_propagated = self.propagate(edge_index_out, x=h_main_out_transformed, edge_weight=edge_weight_out)
         h_shared_for_out = self.lin_shared(x)
         h_shared_out_propagated = self.propagate(edge_index_out, x=h_shared_for_out, edge_weight=edge_weight_out)
-        oc_combined = (h_main_out_propagated + self.bias_main_out) + (h_shared_for_out + self.bias_shared_out)
+        oc_combined = (h_main_out_propagated + self.bias_main_out) + (h_shared_out_propagated + self.bias_shared_out)
 
         if self.use_vector_coeffs and original_indices is not None:
             c_in = self.C_in_vec[original_indices]
