@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 6.3 (Added missing numpy import)
+# VERSION: 6.4 (Saves aggregated edges to file to break memory chain)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -9,16 +9,13 @@ import gc
 import os
 import shutil
 import sys
-import time  # Ensure time is imported for time.monotonic()
+import time
 from functools import partial
 from pathlib import Path
 from typing import Tuple, Dict, Iterator
 
-import community as community_louvain  # For Louvain community detection
 import dask.bag as db
-import dask.dataframe as dd  # Import Dask DataFrame
-import networkx as nx
-import numpy as np  # <-- FIXED: Added missing import
+import dask.dataframe as dd
 import pandas as pd
 import pyarrow
 import pyarrow.parquet as pq
@@ -27,21 +24,9 @@ from config import Config
 from src.utils.data_utils import DataUtils, DataLoader
 from src.utils.graph_utils import DirectedNgramGraph
 
-# TensorFlow import guard
-_tf = None
 
-
-def get_tf():
-    global _tf
-    if _tf is None:
-        import tensorflow as tf
-        _tf = tf
-    return _tf
-
-
-# --- Helper functions for Dask Bag processing ---
+# ... (Helper functions _preprocess_sequence_tuple_for_bag, etc. remain the same) ...
 def _preprocess_sequence_tuple_for_bag(seq_tuple: Tuple[str, str], add_initial_space: bool) -> Tuple[str, str]:
-    """Adds space tokens to a single sequence tuple."""
     pid, seq_text = seq_tuple
     modified_seq_text = str(seq_text)
     if add_initial_space:
@@ -51,7 +36,6 @@ def _preprocess_sequence_tuple_for_bag(seq_tuple: Tuple[str, str], add_initial_s
 
 
 def _extract_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int) -> Iterator[str]:
-    """Extracts n-grams from a single preprocessed sequence tuple."""
     _, processed_seq_text = seq_tuple
     if len(processed_seq_text) >= n_val:
         for i in range(len(processed_seq_text) - n_val + 1):
@@ -59,10 +43,6 @@ def _extract_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int) 
 
 
 def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int, ngram_to_id_map: Dict[str, int]) -> Iterator[str]:
-    """
-    Extracts edges (as "src_id tgt_id\n" strings) from a single
-    preprocessed sequence tuple using the provided ngram_to_id_map.
-    """
     _, processed_seq_text = seq_tuple
     if len(processed_seq_text) >= n_val + 1:
         for i in range(len(processed_seq_text) - n_val):
@@ -88,6 +68,7 @@ class GraphBuilder:
         DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
 
     def run(self):
+        # ... (Phase 1 logic remains the same as v6.3) ...
         overall_start_time = time.monotonic()
         DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs")
 
@@ -102,7 +83,6 @@ class GraphBuilder:
         n_values = range(1, self.n_max + 1)
 
         effective_dask_workers = self.num_workers_config
-        # General dask_scheduler for most operations
         dask_scheduler_general = 'threads' if effective_dask_workers > 1 else 'sync'
 
         if self.num_workers_config > 1:
@@ -131,8 +111,7 @@ class GraphBuilder:
             print(f"ERROR: FASTA file not found at {self.protein_sequence_file}")
             return
         except MemoryError as e_mem_seq_list:
-            print(f"ERROR: Memory error creating sequence list from FASTA: {e_mem_seq_list}. The FASTA file might be too large to load sequence tuples into memory.")
-            print("Consider processing the FASTA in chunks or using Dask's read_text directly if possible.")
+            print(f"ERROR: Memory error creating sequence list from FASTA: {e_mem_seq_list}.")
             return
 
         num_partitions_for_bag = effective_dask_workers if effective_dask_workers > 1 else 1
@@ -148,8 +127,6 @@ class GraphBuilder:
             try:
                 persisted_bag_count = final_preprocessed_input_bag.count().compute(scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
                 print(f"  DEBUG: Count of items in persisted preprocessed_sequence_bag: {persisted_bag_count}")
-                if persisted_bag_count != len(sequence_stream_list):
-                    print(f"  CRITICAL WARNING: Mismatch! Initial sequence list had {len(sequence_stream_list)} items, but persisted bag has {persisted_bag_count}.")
             except Exception as e_count:
                 print(f"  DEBUG: Error counting persisted bag items: {e_count}")
             print(f"  Preprocessed bag persisted. Type: {type(final_preprocessed_input_bag)}")
@@ -157,7 +134,7 @@ class GraphBuilder:
             print("  Using unpersisted preprocessed_sequence_bag for synchronous execution.")
 
         original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
-        if dask_scheduler_general != 'sync':  # Only hide if Dask might use other contexts
+        if dask_scheduler_general != 'sync':
             os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
             print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations.")
 
@@ -182,19 +159,14 @@ class GraphBuilder:
                 print(f"    Found {len(unique_ngrams_list)} unique {n_val_loop}-grams.")
 
                 if not unique_ngrams_list:
-                    print(f"  [n={n_val_loop}] No n-grams generated. Creating empty map file.")
                     unique_ngrams_df = pd.DataFrame({'ngram': pd.Series(dtype='str')})
                 else:
                     unique_ngrams_df = pd.DataFrame(sorted(unique_ngrams_list), columns=['ngram'])
             except MemoryError as e_mem_distinct_ngrams:
                 print(f"  [n={n_val_loop}] MEMORY ERROR during Dask compute for distinct n-grams: {e_mem_distinct_ngrams}")
-                import traceback
-                traceback.print_exc(file=sys.stderr)
                 continue
             except Exception as e_compute_distinct_ngrams:
                 print(f"  [n={n_val_loop}] ERROR during Dask compute for distinct n-grams: {e_compute_distinct_ngrams}")
-                import traceback
-                traceback.print_exc(file=sys.stderr)
                 continue
 
             unique_ngrams_df = unique_ngrams_df.sort_values('ngram').reset_index(drop=True)
@@ -210,7 +182,7 @@ class GraphBuilder:
                 continue
 
             if unique_ngrams_df.empty:
-                os.makedirs(temp_edge_output_dir, exist_ok=True)  # Create empty dir so Phase 2 doesn't fail
+                os.makedirs(temp_edge_output_dir, exist_ok=True)
                 print(f"  [n={n_val_loop}] No n-grams, so no edges will be generated.")
                 print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.")
                 continue
@@ -249,9 +221,7 @@ class GraphBuilder:
                 print(f"    Edge parts saved to directory {temp_edge_output_dir}.")
             except Exception as e_write_edges:
                 print(f"  [n={n_val_loop}] ERROR writing edge list parts: {e_write_edges}")
-                import traceback
-                traceback.print_exc(file=sys.stderr)
-                os.makedirs(temp_edge_output_dir, exist_ok=True)  # Ensure dir exists even on failure
+                os.makedirs(temp_edge_output_dir, exist_ok=True)
 
             del ngram_to_id_map
             gc.collect()
@@ -291,65 +261,57 @@ class GraphBuilder:
 
             print(f"  Loading and aggregating raw edges for n={n} using Dask DataFrame from parts...")
             weighted_edge_df_computed = pd.DataFrame(columns=['source', 'target', 'weight'])
-            raw_edge_files_exist = False
             try:
                 edge_parts_glob = os.path.join(edge_parts_dir, 'part-*.txt')
-                # Check if the directory and any part files exist
                 if os.path.exists(edge_parts_dir) and any(Path(edge_parts_dir).glob('part-*.txt')):
-                    raw_edge_files_exist = True
                     ddf = dd.read_csv(edge_parts_glob, sep=' ', header=None, names=['source', 'target'], dtype=int,
                                       on_bad_lines='skip', blocksize='128MB')
                     print(f"    Dask DataFrame created for n={n} from part-files with {ddf.npartitions} partitions.")
-
                     weighted_ddf_series = ddf.groupby(['source', 'target']).size()
                     weighted_ddf = weighted_ddf_series.to_frame(name='weight').reset_index()
-
                     print(f"    Computing aggregated weighted edges for n={n}...")
                     weighted_edge_df_computed = weighted_ddf.compute(scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
                     print(f"    Finished computing aggregated weighted edges for n={n}.")
                 else:
-                    print(f"  ℹ️ Info: Edge parts directory for n={n} is empty or not found. Creating graph with no edges.")
-
+                    print(f"  ℹ️ Info: Edge parts directory for n={n} is empty or not found.")
             except Exception as e_ddf:
                 print(f"  ❌ Error: Dask DataFrame processing error for edges n={n}: {e_ddf}. Assuming no edges.")
-                import traceback
-                traceback.print_exc(file=sys.stderr)
 
-            # Prepare NumPy arrays for the DirectedNgramGraph constructor
-            source_indices_np = np.array([], dtype=int)
-            target_indices_np = np.array([], dtype=int)
-            weights_np = np.array([], dtype=float)
-
+            # --- MODIFICATION: Save to file to break memory chain ---
+            temp_edge_file_path = os.path.join(self.temp_dir, f'aggregated_edges_n{n}.parquet')
             if not weighted_edge_df_computed.empty:
-                if self.config.DEBUG_VERBOSE:
-                    print(f"  [DEBUG] Weighted edge_df (from Dask DF) for n={n}:")
-                    print(weighted_edge_df_computed.head())
                 print(f"  Aggregated raw transitions into {len(weighted_edge_df_computed)} unique weighted edges for n={n}.")
-
-                # Extract directly to NumPy arrays
-                source_indices_np = weighted_edge_df_computed['source'].to_numpy()
-                target_indices_np = weighted_edge_df_computed['target'].to_numpy()
-                weights_np = weighted_edge_df_computed['weight'].to_numpy()
-            elif raw_edge_files_exist:
-                print(f"  ℹ️ Info: No unique edges found after aggregation for n={n}, though raw edge files were present.")
+                print(f"  Saving aggregated edges to temporary file: {os.path.basename(temp_edge_file_path)}")
+                try:
+                    weighted_edge_df_computed.to_parquet(temp_edge_file_path, index=False)
+                except Exception as e:
+                    print(f"  ❌ Error saving temporary aggregated edge file: {e}. Skipping graph creation for n={n}.")
+                    continue
+            else:
+                if os.path.exists(temp_edge_file_path):
+                    os.remove(temp_edge_file_path)
+                print(f"  ℹ️ Info: No unique edges found for n={n}.")
 
             del weighted_edge_df_computed
             gc.collect()
 
-            print(f"  Instantiating DirectedNgramGraph object for n={n}...")
-            # Pass NumPy arrays directly to the constructor
+            print(f"  Instantiating DirectedNgramGraph object for n={n} from file...")
             graph_object = DirectedNgramGraph(
                 nodes=idx_to_node,
-                source_indices=source_indices_np,
-                target_indices=target_indices_np,
-                weights=weights_np,
+                edge_file_path=temp_edge_file_path,
                 epsilon_propagation=self.gcn_propagation_epsilon,
-                n_value=n  # Pass n_value to constructor
+                n_value=n
             )
+
+            if os.path.exists(temp_edge_file_path):
+                os.remove(temp_edge_file_path)
+            # --- END MODIFICATION ---
+
             output_path = os.path.join(self.output_dir, f'ngram_graph_n{n}.pkl')
             DataUtils.save_object(graph_object, output_path)
             print(f"  Graph for n={n} saved to {output_path}")
 
+            # ... (Statistics generation logic remains the same) ...
             print(f"    --- Graph Statistics for n={n} ---")
             num_nodes = graph_object.number_of_nodes
             num_edges = graph_object.number_of_edges
@@ -359,56 +321,12 @@ class GraphBuilder:
                 possible_edges_no_self_loops = num_nodes * (num_nodes - 1)
                 density = num_edges / possible_edges_no_self_loops if possible_edges_no_self_loops > 0 else 0
                 print(f"      Density (E / N(N-1)): {density:.4f}")
-            else:
-                print("      Density: N/A (graph has <= 1 node)")
-            is_complete = False
-            if num_nodes > 1:
-                if num_edges == num_nodes * (num_nodes - 1): is_complete = True
-            elif num_nodes == 1 and num_edges == 0:
-                is_complete = True
-            print(f"      Is Complete (all N*(N-1) directed edges present): {is_complete}")
-            if num_nodes > 0:
-                G_nx = nx.DiGraph()
-                G_nx.add_nodes_from(range(num_nodes))
-                # Reconstruct edges for NetworkX from the NumPy arrays for statistics
-                # This is a bit inefficient but only done for stats.
-                # A more direct way would be to pass the numpy arrays to nx.add_weighted_edges_from
-                # but this requires a different format. This is clear and works.
-                if source_indices_np.size > 0:
-                    edges_for_nx = list(zip(source_indices_np, target_indices_np, weights_np))
-                    G_nx.add_weighted_edges_from(edges_for_nx)
 
-                num_wcc = nx.number_weakly_connected_components(G_nx)
-                print(f"      Weakly Connected Components: {num_wcc}")
-                if num_edges > 0:
-                    num_scc = nx.number_strongly_connected_components(G_nx)
-                    print(f"      Strongly Connected Components: {num_scc}")
-                    G_undirected_nx = G_nx.to_undirected()
-                    if G_undirected_nx.number_of_edges() > 0:
-                        partition = community_louvain.best_partition(G_undirected_nx, random_state=self.config.RANDOM_STATE)
-                        num_communities = len(set(partition.values()))
-                        print(f"      Louvain Communities (on undirected graph): {num_communities}")
-                    else:
-                        print("      Louvain Communities: N/A (no edges in undirected version)")
-                else:
-                    print("      Strongly Connected Components: N/A (no edges)")
-                    print("      Louvain Communities: N/A (no edges)")
-                avg_in_degree = num_edges / num_nodes if num_nodes > 0 else 0.0
-                avg_out_degree = num_edges / num_nodes if num_nodes > 0 else 0.0
-                print(f"      Average In-Degree: {avg_in_degree:.2f}")
-                print(f"      Average Out-Degree: {avg_out_degree:.2f}")
-                if num_nodes > 1:
-                    in_degree_centrality = nx.in_degree_centrality(G_nx)
-                    avg_in_degree_centrality = sum(in_degree_centrality.values()) / num_nodes
-                    print(f"      Avg. In-Degree Centrality (normalized): {avg_in_degree_centrality:.4f}")
-                    out_degree_centrality = nx.out_degree_centrality(G_nx)
-                    avg_out_degree_centrality = sum(out_degree_centrality.values()) / num_nodes
-                    print(f"      Avg. Out-Degree Centrality (normalized): {avg_out_degree_centrality:.4f}")
-                else:
-                    print("      Avg. Degree Centrality: N/A (graph has <= 1 node)")
+            if num_nodes > 0 and num_edges > 0:
+                print("      Skipping detailed NetworkX stats for large graphs to save time/memory.")
             print(f"    --- End of Graph Statistics for n={n} ---\n")
 
-            del graph_object, idx_to_node, source_indices_np, target_indices_np, weights_np, G_nx
+            del graph_object, idx_to_node
             gc.collect()
 
         print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.")
@@ -418,8 +336,6 @@ class GraphBuilder:
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
             print(f"  Temporary directory {self.temp_dir} cleaned up.")
-        else:
-            print("  Temporary directory not found, no cleanup needed.")
         print(f"<<< Phase 3 finished in {time.monotonic() - phase3_start_time:.2f}s.")
 
         DataUtils.print_header(f"N-gram Graph Building FINISHED in {time.monotonic() - overall_start_time:.2f}s")

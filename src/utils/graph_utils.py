@@ -1,14 +1,16 @@
 # ==============================================================================
 # MODULE: utils/graph_utils.py
 # PURPOSE: Contains robust classes for n-gram graph representation.
-# VERSION: 7.6 (Aggressive memory optimization for initial sparse tensor creation)
+# VERSION: 7.7 (Constructor now loads edges from file to break memory chain)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import gc
+import os
 from typing import List, Dict, Tuple, Any, Optional
 
 import numpy as np
+import pandas as pd
 import torch
 
 
@@ -44,6 +46,7 @@ class Graph:
         if self.idx_to_node_map_from_constructor:
             all_integer_indices.update(self.idx_to_node_map_from_constructor.keys())
 
+        # This part is now only for the base Graph class, not used by DirectedNgramGraph's main path
         for edge_tuple in self.original_edges:
             if len(edge_tuple) >= 2:
                 if not isinstance(edge_tuple[0], (int, np.integer)) or \
@@ -52,23 +55,22 @@ class Graph:
                 all_integer_indices.add(int(edge_tuple[0]))
                 all_integer_indices.add(int(edge_tuple[1]))
 
-        if not all_integer_indices:
+        if not all_integer_indices and not self.idx_to_node_map_from_constructor:
             self.number_of_nodes = 0
-            self.edges = []
-            self.number_of_edges = 0
             return
 
-        max_idx = -1
-        all_integer_indices = {idx for idx in all_integer_indices if isinstance(idx, (int, np.integer)) and idx >= 0}
+        # Determine number of nodes from the node map primarily
+        max_node_map_idx = -1
+        if self.idx_to_node_map_from_constructor:
+            valid_node_indices = {idx for idx in self.idx_to_node_map_from_constructor.keys() if isinstance(idx, (int, np.integer)) and idx >= 0}
+            if valid_node_indices:
+                max_node_map_idx = max(valid_node_indices)
 
-        if not all_integer_indices:
-            self.number_of_nodes = 0
-            self.edges = []
-            self.number_of_edges = 0
-            return
+        max_edge_idx = -1
+        if all_integer_indices:
+            max_edge_idx = max(all_integer_indices)
 
-        max_idx = max(all_integer_indices)
-        self.number_of_nodes = max_idx + 1
+        self.number_of_nodes = max(max_node_map_idx, max_edge_idx) + 1
 
         temp_idx_to_node_name = {}
         for i in range(self.number_of_nodes):
@@ -81,40 +83,17 @@ class Graph:
         self.node_to_idx = {name: idx for idx, name in self.idx_to_node.items()}
         self.node_sequences = [self.idx_to_node.get(i, f"__NODE_{i}__") for i in range(self.number_of_nodes)]
 
-        self.edges = []
-        for i, edge_tuple in enumerate(self.original_edges):
-            if len(edge_tuple) < 2:
-                continue
-
-            s_idx_orig, t_idx_orig = edge_tuple[0], edge_tuple[1]
-            valid_s_type = isinstance(s_idx_orig, (int, np.integer))
-            valid_t_type = isinstance(t_idx_orig, (int, np.integer))
-
-            if not (valid_s_type and valid_t_type):
-                continue
-
-            s_idx, t_idx = int(s_idx_orig), int(t_idx_orig)
-            valid_s_bound = (0 <= s_idx < self.number_of_nodes)
-            valid_t_bound = (0 <= t_idx < self.number_of_nodes)
-
-            if not (valid_s_bound and valid_t_bound):
-                continue
-
-            weight = float(edge_tuple[2]) if len(edge_tuple) > 2 else 1.0
-            processed_edge = (s_idx, t_idx, weight)
-            self.edges.append(processed_edge)
-
+        # This logic is now mostly for the base class, as DirectedNgramGraph builds edges differently
+        self.edges = self.original_edges
         self.number_of_edges = len(self.edges)
 
 
 class DirectedNgramGraph(Graph):
     def __init__(self, nodes: Dict[int, Any],
-                 source_indices: Optional[np.ndarray] = None,
-                 target_indices: Optional[np.ndarray] = None,
-                 weights: Optional[np.ndarray] = None,
+                 edge_file_path: Optional[str] = None,
                  epsilon_propagation: float = 1e-9, n_value: Optional[int] = None):
 
-        # Call super init with empty edges to only process nodes
+        # Call super init with empty edges to only process nodes initially
         super().__init__(nodes=nodes, edges=[])
 
         self.epsilon_propagation = epsilon_propagation
@@ -125,39 +104,55 @@ class DirectedNgramGraph(Graph):
         self.mathcal_A_out: torch.Tensor
         self.mathcal_A_in: torch.Tensor
 
-        if self.number_of_nodes > 0 and source_indices is not None and source_indices.size > 0:
-            self.number_of_edges = len(source_indices)
-            self._create_raw_weighted_adj_matrices_torch(source_indices, target_indices, weights)
-            self._create_propagation_matrices_for_gcn()
-        else:
-            # Initialize as empty sparse tensors if no edges or nodes
-            self.number_of_edges = 0
-            empty_indices = torch.empty((2, 0), dtype=torch.long)
-            empty_values = torch.empty(0, dtype=torch.float32)
-            size_empty = (self.number_of_nodes, self.number_of_nodes)
+        # Read from file if path is provided
+        if self.number_of_nodes > 0 and edge_file_path and os.path.exists(edge_file_path):
+            print(f"    Loading edges from {os.path.basename(edge_file_path)}...")
+            try:
+                edge_df = pd.read_parquet(edge_file_path)
+                source_indices = edge_df['source'].to_numpy(dtype=np.int64)
+                target_indices = edge_df['target'].to_numpy(dtype=np.int64)
+                weights = edge_df['weight'].to_numpy(dtype=np.float32)
+                del edge_df
+                gc.collect()
 
-            self.A_out_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-            self.A_in_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-            self.mathcal_A_out = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-            self.mathcal_A_in = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
+                self.number_of_edges = len(source_indices)
+                self._create_raw_weighted_adj_matrices_torch(source_indices, target_indices, weights)
+                self._create_propagation_matrices_for_gcn()
+
+            except Exception as e:
+                print(f"    ❌ Error reading edge file {edge_file_path}: {e}. Initializing empty graph.")
+                self._initialize_empty_matrices()
+        else:
+            self._initialize_empty_matrices()
+
+    def _initialize_empty_matrices(self):
+        """Helper to set all matrices to empty sparse tensors."""
+        self.number_of_edges = 0
+        empty_indices = torch.empty((2, 0), dtype=torch.long)
+        empty_values = torch.empty(0, dtype=torch.float32)
+        size_empty = (self.number_of_nodes, self.number_of_nodes)
+
+        self.A_out_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
+        self.A_in_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
+        self.mathcal_A_out = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
+        self.mathcal_A_in = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
 
     def _create_raw_weighted_adj_matrices_torch(self, source_indices: np.ndarray, target_indices: np.ndarray, weights: np.ndarray):
         """Creates sparse adjacency matrices directly from numpy arrays with memory optimization."""
         size = (self.number_of_nodes, self.number_of_nodes)
 
-        # Convert numpy arrays to tensors one by one and stack to avoid large intermediate np.vstack
         source_tensor = torch.from_numpy(source_indices)
         target_tensor = torch.from_numpy(target_indices)
         edge_indices_tensor = torch.stack([source_tensor, target_tensor]).long()
-        del source_tensor, target_tensor, source_indices, target_indices  # Free memory
+        del source_tensor, target_tensor, source_indices, target_indices
         gc.collect()
 
         edge_weights_tensor = torch.from_numpy(weights).float()
-        del weights  # Free memory
+        del weights
         gc.collect()
 
         self.A_out_w = torch.sparse_coo_tensor(edge_indices_tensor, edge_weights_tensor, size).coalesce()
-        del edge_indices_tensor, edge_weights_tensor  # Free memory
+        del edge_indices_tensor, edge_weights_tensor
         gc.collect()
 
         self.A_in_w = self.A_out_w.t().coalesce()
@@ -242,16 +237,12 @@ class DirectedNgramGraph(Graph):
     def _create_propagation_matrices_for_gcn(self):
         """Computes the mathcal_A_out and mathcal_A_in propagation matrices sparsely."""
         if self.number_of_nodes == 0:
-            empty_indices = torch.empty((2, 0), dtype=torch.long)
-            empty_values = torch.empty(0, dtype=torch.float32)
-            size_empty = (0, 0)
-            self.mathcal_A_out = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-            self.mathcal_A_in = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
+            self._initialize_empty_matrices()
             return
 
         print(f"  Creating mathcal_A_out for n={self.n_value}...")
         self.mathcal_A_out = self._calculate_single_propagation_matrix_for_gcn(self.A_out_w)
-        gc.collect()  # Force garbage collection between the two large calculations
+        gc.collect()
 
         print(f"  Creating mathcal_A_in for n={self.n_value}...")
         self.mathcal_A_in = self._calculate_single_propagation_matrix_for_gcn(self.A_in_w)
