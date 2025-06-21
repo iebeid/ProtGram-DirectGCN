@@ -2,7 +2,7 @@
 # ==============================================================================
 # MODULE: models/protgram_directgcn.py
 # PURPOSE: Contains the PyTorch class definitions for the custom GCN model.
-# VERSION: 8.2 (Implemented hierarchical gating and dual-path transformations)
+# VERSION: 8.3 (Stable & Corrected - Cleaned up hierarchical gating and dual-path logic)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -39,10 +39,12 @@ class DirectGCNLayer(MessagePassing):
         self.bias_undirected = nn.Parameter(torch.Tensor(out_channels))
 
         # --- Shared Components (used by all paths) ---
+        # A single shared linear layer for all paths to learn a general transformation
         self.lin_shared = nn.Linear(in_channels, out_channels, bias=False)
-        self.bias_directed_shared_in = nn.Parameter(torch.Tensor(out_channels))
-        self.bias_directed_shared_out = nn.Parameter(torch.Tensor(out_channels))
-        self.bias_undirected_shared = nn.Parameter(torch.Tensor(out_channels))
+        # Separate biases for the shared transformation on each path
+        self.bias_shared_in = nn.Parameter(torch.Tensor(out_channels))
+        self.bias_shared_out = nn.Parameter(torch.Tensor(out_channels))
+        self.bias_shared_undir = nn.Parameter(torch.Tensor(out_channels))
 
         # --- Hierarchical Learnable Coefficients ---
         if self.use_vector_coeffs and self.num_nodes > 0:
@@ -68,12 +70,15 @@ class DirectGCNLayer(MessagePassing):
         self.reset_parameters()
 
     def reset_parameters(self):
-        for lin in [self.lin_main_in, self.lin_main_out, self.lin_shared, self.lin_undirected]:
+        # Initialize all linear layers
+        for lin in [self.lin_main_in, self.lin_main_out, self.lin_undirected, self.lin_shared]:
             nn.init.xavier_uniform_(lin.weight)
-        for bias in [self.bias_main_in, self.bias_main_out, self.bias_directed_shared_in,
-                     self.bias_directed_shared_out, self.bias_undirected, self.bias_undirected_shared]:
+        # Initialize all bias terms
+        for bias in [self.bias_main_in, self.bias_main_out, self.bias_undirected,
+                     self.bias_shared_in, self.bias_shared_out, self.bias_shared_undir]:
             nn.init.zeros_(bias)
 
+        # Initialize all gating coefficients to 1
         if self.use_vector_coeffs:
             nn.init.ones_(self.C_in_vec)
             nn.init.ones_(self.C_out_vec)
@@ -100,17 +105,17 @@ class DirectGCNLayer(MessagePassing):
         # --- 1. Directed Incoming Path ---
         h_main_in = self.propagate(edge_index_in, x=self.lin_main_in(x), edge_weight=edge_weight_in)
         h_shared_in = self.propagate(edge_index_in, x=self.lin_shared(x), edge_weight=edge_weight_in)
-        ic_combined = (h_main_in + self.bias_main_in) + (h_shared_in + self.bias_directed_shared_in)
+        ic_combined = (h_main_in + self.bias_main_in) + (h_shared_in + self.bias_shared_in)
 
         # --- 2. Directed Outgoing Path ---
         h_main_out = self.propagate(edge_index_out, x=self.lin_main_out(x), edge_weight=edge_weight_out)
         h_shared_out = self.propagate(edge_index_out, x=self.lin_shared(x), edge_weight=edge_weight_out)
-        oc_combined = (h_main_out + self.bias_main_out) + (h_shared_out + self.bias_directed_shared_out)
+        oc_combined = (h_main_out + self.bias_main_out) + (h_shared_out + self.bias_shared_out)
 
         # --- 3. Undirected Structural Path ---
         h_main_undir = self.propagate(edge_index_undirected, x=self.lin_undirected(x), edge_weight=edge_weight_undirected)
         h_shared_undir = self.propagate(edge_index_undirected, x=self.lin_shared(x), edge_weight=edge_weight_undirected)
-        uc_combined = (h_main_undir + self.bias_undirected) + (h_shared_undir + self.bias_undirected_shared)
+        uc_combined = (h_main_undir + self.bias_undirected) + (h_shared_undir + self.bias_shared_undir)
 
         # --- 4. Get Coefficients and Constant ---
         if self.use_vector_coeffs and original_indices is not None:

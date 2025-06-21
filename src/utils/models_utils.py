@@ -2,7 +2,7 @@
 # MODULE: utils/models_utils.py
 # PURPOSE: Contains tools for loading and post-processing embeddings, such as PCA,
 #          normalization, pooling, GCN node extraction, and edge feature creation.
-# VERSION: 3.7 (Added fast, inverted-index based pooling method)
+# VERSION: 3.8 (Fixed AttributeError in generate_edge_features_batched)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -275,7 +275,7 @@ class EmbeddingProcessor:
     @staticmethod
     def generate_edge_features_batched(
             interaction_pairs: List[Tuple[str, str, int]],
-            protein_embeddings: Dict[str, np.ndarray],  # Embeddings are np.float16
+            protein_embeddings: 'EmbeddingLoader',  # Type hint for clarity
             method: str,
             batch_size: int,
             embedding_dim: int) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
@@ -284,7 +284,7 @@ class EmbeddingProcessor:
         Yields (features_batch, labels_batch). Features are float16.
         """
         if not protein_embeddings:
-            print("EmbeddingProcessor.generate_edge_features_batched ERROR: Protein embeddings dictionary is empty.")
+            print("EmbeddingProcessor.generate_edge_features_batched ERROR: Protein embeddings object is invalid.")
             return
         if embedding_dim <= 0:
             print("EmbeddingProcessor.generate_edge_features_batched ERROR: Invalid embedding_dim.")
@@ -294,21 +294,23 @@ class EmbeddingProcessor:
         current_batch_labels = []
 
         for p1_id, p2_id, label in interaction_pairs:
-            emb1 = protein_embeddings.get(p1_id)
-            emb2 = protein_embeddings.get(p2_id)
+            # --- FIX: Use the correct access pattern for EmbeddingLoader ---
+            emb1 = protein_embeddings[p1_id] if p1_id in protein_embeddings else None
+            emb2 = protein_embeddings[p2_id] if p2_id in protein_embeddings else None
+            # --- END FIX ---
 
             if emb1 is not None and emb2 is not None and emb1.size > 0 and emb2.size > 0:
                 if emb1.shape[0] == embedding_dim and emb2.shape[0] == embedding_dim:
                     if method == 'concatenate':
-                        feature = np.concatenate((emb1, emb2))  # Result will be float16
+                        feature = np.concatenate((emb1, emb2))
                     elif method == 'average':
                         feature = ((emb1.astype(np.float32) + emb2.astype(np.float32)) / 2.0).astype(np.float16)
                     elif method == 'hadamard':
-                        feature = emb1 * emb2  # Result float16
+                        feature = emb1 * emb2
                     elif method == 'l1_distance':
-                        feature = np.abs(emb1 - emb2)  # Result float16
+                        feature = np.abs(emb1 - emb2)
                     elif method == 'l2_distance':
-                        feature = (emb1 - emb2) ** 2  # Result float16
+                        feature = (emb1 - emb2) ** 2
                     else:  # Default to concatenate
                         feature = np.concatenate((emb1, emb2))
 
@@ -325,7 +327,7 @@ class EmbeddingProcessor:
 
     @staticmethod
     def create_edge_embeddings(interaction_pairs: List[Tuple[str, str, int]],
-                               protein_embeddings: Dict[str, np.ndarray],  # Embeddings are np.float16
+                               protein_embeddings: Dict[str, np.ndarray],
                                method: str = 'concatenate') -> Optional[Tuple[np.ndarray, np.ndarray]]:
         """
         DEPRECATED in favor of generate_edge_features_batched for large datasets.
