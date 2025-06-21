@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 4.7 (Implemented Cluster-GCN style training and Mixed Precision)
+# VERSION: 4.8 (Fixed device mismatch in subgraph creation)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -108,6 +108,7 @@ class ProtGramDirectGCNTrainer:
         try:
             import metis
             print("  Using METIS for graph partitioning...")
+            # metis.part_graph returns (edge_cut, parts)
             _, parts = metis.part_graph(g_nx, num_clusters, seed=self.config.RANDOM_STATE)
             partition = {node_idx: part_id for node_idx, part_id in enumerate(parts)}
         except (ImportError, ModuleNotFoundError):
@@ -124,7 +125,8 @@ class ProtGramDirectGCNTrainer:
 
         subgraphs = []
         for cluster_nodes in tqdm(cluster_list, desc="  Creating subgraphs", leave=False):
-            cluster_nodes_tensor = torch.tensor(cluster_nodes, dtype=torch.long)
+            # FIX: Move cluster_nodes_tensor to the same device as graph.mathcal_A_in.indices()
+            cluster_nodes_tensor = torch.tensor(cluster_nodes, dtype=torch.long).to(self.device)
 
             # Create subgraph for both IN and OUT propagation matrices
             sub_edge_index_in, sub_edge_weight_in = subgraph(cluster_nodes_tensor, graph.mathcal_A_in.indices(), graph.mathcal_A_in.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
@@ -143,7 +145,6 @@ class ProtGramDirectGCNTrainer:
 
         return subgraphs
 
-    # ... (label generation functions remain the same as v4.5) ...
     def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
         import networkx as nx
         import community as community_louvain
@@ -154,6 +155,7 @@ class ProtGramDirectGCNTrainer:
         A_out_w_cpu_sparse = graph.A_out_w.cpu()
         combined_adj_sparse_torch = (A_in_w_cpu_sparse + A_out_w_cpu_sparse).coalesce()
         if combined_adj_sparse_torch._nnz() == 0: return torch.zeros(num_nodes, dtype=torch.long), 1
+        # Use to_networkx from torch_geometric.utils to handle sparse tensor conversion
         nx_graph = to_networkx(Data(edge_index=combined_adj_sparse_torch.indices(), edge_attr=combined_adj_sparse_torch.values(), num_nodes=num_nodes), to_undirected=True, edge_attrs=['edge_attr'])
         if nx_graph.number_of_edges() == 0: return torch.zeros(num_nodes, dtype=torch.long), 1
         partition = community_louvain.best_partition(nx_graph, random_state=self.config.RANDOM_STATE, weight='edge_attr')
@@ -218,7 +220,6 @@ class ProtGramDirectGCNTrainer:
     def run(self):
         DataUtils.print_header("PIPELINE STEP 2: Training ProtGramDirectGCN & Generating Embeddings")
         os.makedirs(self.config.GCN_EMBEDDINGS_DIR, exist_ok=True)
-        # ... (ID mapping logic is the same) ...
         DataUtils.print_header("Step 1: Loading Protein ID Mapping (if configured)")
         if self.config.ID_MAPPING_MODE != 'none':
             id_mapper_instance = DataLoader(config=self.config)
@@ -233,7 +234,6 @@ class ProtGramDirectGCNTrainer:
 
         for n_val in range(1, self.config.GCN_NGRAM_MAX_N + 1):
             DataUtils.print_header(f"Processing N-gram Level: n = {n_val}")
-            # ... (Graph loading logic is the same) ...
             graph_path = os.path.join(self.config.GRAPH_OBJECTS_DIR, f"ngram_graph_n{n_val}.pkl")
             try:
                 graph_obj = DataUtils.load_object(graph_path)
@@ -256,7 +256,6 @@ class ProtGramDirectGCNTrainer:
             current_task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(n_val, self.config.GCN_DEFAULT_TASK_TYPE)
             print(f"  Selected training task for n={n_val}: '{current_task_type}'")
 
-            # ... (Feature initialization logic is the same) ...
             num_initial_features: int
             if n_val == 1:
                 num_initial_features = self.config.GCN_1GRAM_INIT_DIM
@@ -278,7 +277,6 @@ class ProtGramDirectGCNTrainer:
                         x[idx] = torch.from_numpy(np.mean(np.array(embeds_to_pool, dtype=np.float32), axis=0)).to(self.device)
             print(f"  Initial node feature dimension for n={n_val}: {num_initial_features}")
 
-            # --- Label Generation ---
             labels, num_classes = None, 0
             if current_task_type == "community":
                 labels, num_classes = self._generate_community_labels(graph_obj)
@@ -289,11 +287,9 @@ class ProtGramDirectGCNTrainer:
             else:
                 raise ValueError(f"Unsupported GCN_TASK_TYPE '{current_task_type}' for n={n_val}.")
 
-            # --- Create Full Data Object ---
             full_data = Data(x=x, y=labels.to(self.device))
             full_data.num_nodes = graph_obj.number_of_nodes
 
-            # --- Model and Optimizer Creation ---
             full_layer_dims = [num_initial_features] + self.config.GCN_HIDDEN_LAYER_DIMS
             model = ProtGramDirectGCN(
                 layer_dims=full_layer_dims, num_graph_nodes=graph_obj.number_of_nodes,
@@ -304,20 +300,16 @@ class ProtGramDirectGCNTrainer:
             )
             optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=self.config.GCN_WEIGHT_DECAY if l2_lambda_val <= 0 else 0.0)
 
-            # --- CHOOSE TRAINING STRATEGY ---
             if self.config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
                 subgraphs = self._create_clustered_subgraphs(graph_obj, full_data)
                 self._train_model_clustered(model, subgraphs, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, current_task_type, l2_lambda_val)
             else:
-                # Add the full graph's edge data to the Data object for full-batch training
                 full_data.edge_index_in = graph_obj.mathcal_A_in.indices().to(self.device)
                 full_data.edge_weight_in = graph_obj.mathcal_A_in.values().to(self.device)
                 full_data.edge_index_out = graph_obj.mathcal_A_out.indices().to(self.device)
                 full_data.edge_weight_out = graph_obj.mathcal_A_out.values().to(self.device)
                 self._train_model_full_batch(model, full_data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, current_task_type, l2_lambda_val)
 
-            # --- Embedding extraction is always full-batch ---
-            # Add edge info to full_data if it wasn't added before
             if not hasattr(full_data, 'edge_index_in'):
                 full_data.edge_index_in = graph_obj.mathcal_A_in.indices().to(self.device)
                 full_data.edge_weight_in = graph_obj.mathcal_A_in.values().to(self.device)
@@ -330,7 +322,6 @@ class ProtGramDirectGCNTrainer:
             gc.collect()
             if torch.cuda.is_available(): torch.cuda.empty_cache()
 
-        # ... (Pooling, saving, and PCA logic remains the same) ...
         DataUtils.print_header("Step 3: Pooling N-gram Embeddings to Protein Level")
         final_n_val = self.config.GCN_NGRAM_MAX_N
         if final_n_val not in level_embeddings or level_embeddings[final_n_val].size == 0:
