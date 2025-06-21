@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: gnn_benchmarker.py
 # PURPOSE: To benchmark various GNN models on standard datasets.
-# VERSION: 3.4.7 (Added missing sklearn.metrics imports)
+# VERSION: 3.4.8 (Robust handling of empty/malformed edge_index in _get_undirected_normalized_edges)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.transforms as T
-from sklearn.metrics import f1_score, accuracy_score  # <-- ADDED THIS LINE
+from sklearn.metrics import f1_score, accuracy_score
 from torch_geometric.data import Data
 from torch_geometric.datasets import (KarateClub, Planetoid)
 from torch_geometric.loader import DataLoader as PyGDataLoader
@@ -232,27 +232,48 @@ class GNNBenchmarker:
         This logic is adapted from DirectedNgramGraph's _create_undirected_normalized_adj_matrix.
         """
         num_nodes = data.num_nodes
-        edge_index = data.edge_index.cpu() # Perform operations on CPU for potentially large graphs
+        edge_index = data.edge_index.cpu()  # Perform operations on CPU for potentially large graphs
 
-        # 1. Ensure undirectedness and add self-loops
-        # to_undirected handles unique edges and makes them symmetric
+        # Ensure edge_index is 2D (2, N)
+        if edge_index.ndim != 2 or edge_index.shape[0] != 2:
+            print(f"WARNING: _get_undirected_normalized_edges received malformed data.edge_index with shape {edge_index.shape}. Expected (2, N). Returning empty tensors.")
+            return torch.empty((2, 0), dtype=torch.long, device=self.device), torch.empty((0,), dtype=torch.float32, device=self.device)
+
+        # 1. Ensure undirectedness
         undir_edge_index, _ = to_undirected(edge_index, num_nodes=num_nodes)
+
+        # --- CRITICAL FIX: Ensure undir_edge_index is always (2, N) ---
+        # If to_undirected returns an empty 1D tensor (e.g., torch.empty(0)) or a scalar,
+        # convert it to a (2, 0) tensor. This handles unexpected outputs from to_undirected.
+        if undir_edge_index.ndim != 2 or undir_edge_index.shape[0] != 2:
+            print(f"WARNING: to_undirected returned unexpected shape {undir_edge_index.shape}. Converting to (2, 0) empty tensor.")
+            undir_edge_index = torch.empty((2, 0), dtype=torch.long, device=undir_edge_index.device)
+        # --- END CRITICAL FIX ---
+
+        # Add self-loops
+        # This will add self-loops for all nodes if undir_edge_index is (2,0) and num_nodes > 0
         undir_edge_index, _ = add_self_loops(undir_edge_index, num_nodes=num_nodes)
 
         # 2. Create edge weights of 1 for all edges (as per the new design)
-        edge_weight = torch.ones(undir_edge_index.size(1), dtype=torch.float32)
+        # Check if undir_edge_index is empty before calling .size(1)
+        if undir_edge_index.numel() == 0:
+            edge_weight = torch.empty((0,), dtype=torch.float32, device=self.device)
+        else:
+            edge_weight = torch.ones(undir_edge_index.size(1), dtype=torch.float32, device=self.device)
 
         # 3. Calculate symmetric normalization: D^(-0.5) * A * D^(-0.5)
-        row, col = undir_edge_index
-        deg = degree(col, num_nodes, dtype=edge_weight.dtype)
-        deg_inv_sqrt = deg.pow(-0.5)
-        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0  # Handle nodes with degree 0
-
-        norm_values = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
+        # Only proceed if there are edges to normalize
+        if undir_edge_index.numel() == 0:
+            norm_values = torch.empty((0,), dtype=torch.float32, device=self.device)
+        else:
+            row, col = undir_edge_index
+            deg = degree(col, num_nodes, dtype=edge_weight.dtype)
+            deg_inv_sqrt = deg.pow(-0.5)
+            deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0  # Handle nodes with degree 0
+            norm_values = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
 
         # Move to device at the end
         return undir_edge_index.to(self.device), norm_values.to(self.device)
-
 
     def train_and_evaluate(
             self, model_name_str: str, model: nn.Module, dataset_name: str,
