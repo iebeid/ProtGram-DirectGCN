@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 4.14 (Adds undirected normalized matrix to Data object for new model)
+# VERSION: 4.15 (Integrates new undirected matrix from graph_obj into Data object)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -75,7 +75,6 @@ class ProtGramDirectGCNTrainer:
 
     def _train_model_full_batch(self, model: ProtGramDirectGCN, data: Data, optimizer: torch.optim.Optimizer, epochs: int,
                                 task_type: str, l2_lambda: float = 0.0):
-        # This method remains unchanged from v4.13
         model.train()
         model.to(self.device)
         data = data.to(self.device)
@@ -100,7 +99,7 @@ class ProtGramDirectGCNTrainer:
             scaler.update()
             if scheduler:
                 scheduler.step(loss)
-            if epoch % (max(1, epochs // 10)) == 0 or epoch == epochs:
+            if epoch == epochs: # Only print for the last epoch
                 if self.config.DEBUG_VERBOSE:
                     print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * l2_reg).item():.4f}")
             if early_stopper and early_stopper.early_stop(loss.item()):
@@ -110,7 +109,6 @@ class ProtGramDirectGCNTrainer:
     def _train_model_clustered(self, model: ProtGramDirectGCN, subgraphs: List[Data], optimizer: torch.optim.Optimizer,
                                epochs: int, task_type: str, l2_lambda: float = 0.0,
                                total_nodes_in_level_graph: int = 1):
-        # This method remains unchanged from v4.13
         model.train()
         model.to(self.device)
         scheduler = None
@@ -142,7 +140,7 @@ class ProtGramDirectGCNTrainer:
             avg_epoch_loss = epoch_loss / len(subgraphs)
             if scheduler:
                 scheduler.step(avg_epoch_loss)
-            if epoch % (max(1, epochs // 10)) == 0 or epoch == epochs:
+            if epoch == epochs: # Only print for the last epoch
                 if self.config.DEBUG_VERBOSE:
                     print(f"    Epoch: {epoch:03d}, Avg Batch Loss: {avg_epoch_loss:.4f}")
             if early_stopper and early_stopper.early_stop(avg_epoch_loss):
@@ -183,21 +181,20 @@ class ProtGramDirectGCNTrainer:
             sub_edge_index_in, sub_edge_weight_in = subgraph(cluster_nodes_tensor, graph.mathcal_A_in.indices(), graph.mathcal_A_in.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
             sub_edge_index_out, sub_edge_weight_out = subgraph(cluster_nodes_tensor, graph.mathcal_A_out.indices(), graph.mathcal_A_out.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
             sub_edge_index_undir, sub_edge_weight_undir = subgraph(cluster_nodes_tensor, graph.A_undirected_norm_sparse.indices(), graph.A_undirected_norm_sparse.values(), relabel_nodes=True,
-                                                                   num_nodes=graph.number_of_nodes)  # NEW
+                                                                   num_nodes=graph.number_of_nodes)
 
             subgraph_data = Data(
                 x=full_data.x[cluster_nodes_tensor],
                 y=full_data.y[cluster_nodes_tensor] if full_data.y.numel() > 0 else torch.empty(0),
                 edge_index_in=sub_edge_index_in, edge_weight_in=sub_edge_weight_in,
                 edge_index_out=sub_edge_index_out, edge_weight_out=sub_edge_weight_out,
-                edge_index_undirected_norm=sub_edge_index_undir,  # NEW
-                edge_weight_undirected_norm=sub_edge_weight_undir,  # NEW
+                edge_index_undirected_norm=sub_edge_index_undir,
+                edge_weight_undirected_norm=sub_edge_weight_undir,
                 original_indices=cluster_nodes_tensor
             )
             subgraphs.append(subgraph_data)
         return subgraphs
 
-    # ... (Label generation methods remain the same) ...
     def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
         import networkx as nx
         import community as community_louvain
@@ -270,7 +267,6 @@ class ProtGramDirectGCNTrainer:
         return labels_for_all_nodes, k_hops + 1
 
     def run(self):
-        # ... (Setup and loop start are the same) ...
         DataUtils.print_header("PIPELINE STEP 2: Training ProtGramDirectGCN & Generating Embeddings")
         os.makedirs(self.config.GCN_EMBEDDINGS_DIR, exist_ok=True)
         DataUtils.print_header("Step 1: Loading Protein ID Mapping (if configured)")
@@ -296,7 +292,7 @@ class ProtGramDirectGCNTrainer:
                 if graph_obj.number_of_nodes > 0:
                     graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
                     graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
-                    graph_obj.A_undirected_norm_sparse = graph_obj.A_undirected_norm_sparse.to(self.device)  # NEW
+                    graph_obj.A_undirected_norm_sparse = graph_obj.A_undirected_norm_sparse.to(self.device)
                     print("    Re-creating propagation matrices for loaded graph object...")
                     graph_obj._create_propagation_matrices_for_gcn()
             except Exception as e:
@@ -311,7 +307,6 @@ class ProtGramDirectGCNTrainer:
             current_task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(n_val, self.config.GCN_DEFAULT_TASK_TYPE)
             print(f"  Selected training task for n={n_val}: '{current_task_type}'")
 
-            # ... (Feature initialization logic remains the same) ...
             num_initial_features: int
             if n_val == 1:
                 num_initial_features = self.config.GCN_1GRAM_INIT_DIM
@@ -333,7 +328,6 @@ class ProtGramDirectGCNTrainer:
                         x[idx] = torch.from_numpy(np.mean(np.array(embeds_to_pool, dtype=np.float32), axis=0)).to(self.device)
             print(f"  Initial node feature dimension for n={n_val}: {num_initial_features}")
 
-            # ... (Label generation logic remains the same) ...
             labels, num_classes = None, 0
             if current_task_type == "community":
                 labels, num_classes = self._generate_community_labels(graph_obj)
@@ -347,7 +341,6 @@ class ProtGramDirectGCNTrainer:
             full_data = Data(x=x, y=labels.to(self.device))
             full_data.num_nodes = graph_obj.number_of_nodes
 
-            # ... (Model and optimizer setup is the same) ...
             full_layer_dims = [num_initial_features] + self.config.GCN_HIDDEN_LAYER_DIMS
             model = ProtGramDirectGCN(
                 layer_dims=full_layer_dims, num_graph_nodes=graph_obj.number_of_nodes,
@@ -374,7 +367,7 @@ class ProtGramDirectGCNTrainer:
                 self._train_model_full_batch(model, full_data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, current_task_type, l2_lambda_val)
 
             # Ensure data object has all matrices for embedding extraction
-            if not hasattr(full_data, 'edge_index_in'):
+            if not hasattr(full_data, 'edge_index_undirected_norm'):
                 full_data.edge_index_in = graph_obj.mathcal_A_in.indices().to(self.device)
                 full_data.edge_weight_in = graph_obj.mathcal_A_in.values().to(self.device)
                 full_data.edge_index_out = graph_obj.mathcal_A_out.indices().to(self.device)
@@ -389,7 +382,6 @@ class ProtGramDirectGCNTrainer:
             gc.collect()
             if torch.cuda.is_available(): torch.cuda.empty_cache()
 
-        # ... (The rest of the run method, including pooling, saving, and sanity check, remains the same) ...
         DataUtils.print_header("Step 3: Pooling N-gram Embeddings to Protein Level")
         final_n_val = self.config.GCN_NGRAM_MAX_N
         if final_n_val not in level_embeddings or level_embeddings[final_n_val].size == 0:

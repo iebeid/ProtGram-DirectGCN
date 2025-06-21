@@ -1,23 +1,27 @@
 # ==============================================================================
 # MODULE: gnn_benchmarker.py
 # PURPOSE: To benchmark various GNN models on standard datasets.
-# VERSION: 3.4.5 (Added seeding for full reproducibility)
+# VERSION: 3.4.7 (Added missing sklearn.metrics imports)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
 import random
 import time
-from typing import Dict
+from typing import Dict, List, Tuple, Any, Optional
 
 import h5py
 import numpy as np
 import pandas as pd
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import torch_geometric.transforms as T
-from sklearn.metrics import f1_score, accuracy_score
+from sklearn.metrics import f1_score, accuracy_score  # <-- ADDED THIS LINE
+from torch_geometric.data import Data
 from torch_geometric.datasets import (KarateClub, Planetoid)
 from torch_geometric.loader import DataLoader as PyGDataLoader
-from torch_geometric.utils import to_undirected
+from torch_geometric.utils import add_self_loops, degree, to_undirected
 
 from config import Config
 from src.models.gnn_zoo import *
@@ -46,6 +50,7 @@ class GNNBenchmarker:
             # These settings can slow down training but ensure reproducibility
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
+
         print(f"  Seeds set to {seed} for reproducibility.")
 
     def _get_dataset(self, name: str, root_path: str, make_undirected: bool = False):
@@ -150,6 +155,12 @@ class GNNBenchmarker:
                     pg_data_for_emb.edge_index_in = pg_data_for_emb.edge_index[[1, 0]]
                     pg_data_for_emb.edge_weight_out = getattr(pg_data_for_emb, 'edge_attr', None)
                     pg_data_for_emb.edge_weight_in = getattr(pg_data_for_emb, 'edge_attr', None)
+                    # NEW: Add undirected normalized edges for embedding extraction
+                    undir_edge_index, undir_edge_weight = self._get_undirected_normalized_edges(data_for_emb)
+                    pg_data_for_emb.edge_index_undirected_norm = undir_edge_index
+                    pg_data_for_emb.edge_weight_undirected_norm = undir_edge_weight
+                    # END NEW
+
                     _, node_embeddings_tensor = model(data=pg_data_for_emb.to(self.device))
                 elif hasattr(model, 'get_embeddings') and callable(getattr(model, 'get_embeddings')):
                     node_embeddings_tensor = model.get_embeddings(data_for_emb.to(self.device))
@@ -214,6 +225,35 @@ class GNNBenchmarker:
         except Exception as e:
             print(f"      ERROR saving embeddings to {emb_path}: {e}")
 
+    def _get_undirected_normalized_edges(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Helper to create the undirected, symmetrically normalized adjacency matrix
+        from a PyG Data object's edge_index.
+        This logic is adapted from DirectedNgramGraph's _create_undirected_normalized_adj_matrix.
+        """
+        num_nodes = data.num_nodes
+        edge_index = data.edge_index.cpu() # Perform operations on CPU for potentially large graphs
+
+        # 1. Ensure undirectedness and add self-loops
+        # to_undirected handles unique edges and makes them symmetric
+        undir_edge_index, _ = to_undirected(edge_index, num_nodes=num_nodes)
+        undir_edge_index, _ = add_self_loops(undir_edge_index, num_nodes=num_nodes)
+
+        # 2. Create edge weights of 1 for all edges (as per the new design)
+        edge_weight = torch.ones(undir_edge_index.size(1), dtype=torch.float32)
+
+        # 3. Calculate symmetric normalization: D^(-0.5) * A * D^(-0.5)
+        row, col = undir_edge_index
+        deg = degree(col, num_nodes, dtype=edge_weight.dtype)
+        deg_inv_sqrt = deg.pow(-0.5)
+        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0  # Handle nodes with degree 0
+
+        norm_values = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
+
+        # Move to device at the end
+        return undir_edge_index.to(self.device), norm_values.to(self.device)
+
+
     def train_and_evaluate(
             self, model_name_str: str, model: nn.Module, dataset_name: str,
             train_data_or_loader, val_data_or_loader, test_data_or_loader,
@@ -258,6 +298,11 @@ class GNNBenchmarker:
                 adapted_data.edge_index_in = adapted_data.edge_index[[1, 0]]
                 adapted_data.edge_weight_out = getattr(adapted_data, 'edge_attr', None)
                 adapted_data.edge_weight_in = getattr(adapted_data, 'edge_attr', None)
+                # NEW: Add undirected normalized edges for training
+                undir_edge_index, undir_edge_weight = self._get_undirected_normalized_edges(current_train_data)
+                adapted_data.edge_index_undirected_norm = undir_edge_index
+                adapted_data.edge_weight_undirected_norm = undir_edge_weight
+                # END NEW
                 current_train_data = adapted_data.to(self.device)
             elif isinstance(current_train_data, Data):
                 current_train_data = current_train_data.to(self.device)
@@ -305,6 +350,11 @@ class GNNBenchmarker:
                     adapted_data_val.edge_index_in = adapted_data_val.edge_index[[1, 0]]
                     adapted_data_val.edge_weight_out = getattr(adapted_data_val, 'edge_attr', None)
                     adapted_data_val.edge_weight_in = getattr(adapted_data_val, 'edge_attr', None)
+                    # NEW: Add undirected normalized edges for validation
+                    undir_edge_index, undir_edge_weight = self._get_undirected_normalized_edges(current_val_data)
+                    adapted_data_val.edge_index_undirected_norm = undir_edge_index
+                    adapted_data_val.edge_weight_undirected_norm = undir_edge_weight
+                    # END NEW
                     current_val_data = adapted_data_val.to(self.device)
                 elif isinstance(current_val_data, Data):
                     current_val_data = current_val_data.to(self.device)
@@ -351,6 +401,11 @@ class GNNBenchmarker:
                     adapted_data_test.edge_index_in = adapted_data_test.edge_index[[1, 0]]
                     adapted_data_test.edge_weight_out = getattr(adapted_data_test, 'edge_attr', None)
                     adapted_data_test.edge_weight_in = getattr(adapted_data_test, 'edge_attr', None)
+                    # NEW: Add undirected normalized edges for testing
+                    undir_edge_index, undir_edge_weight = self._get_undirected_normalized_edges(current_test_data)
+                    adapted_data_test.edge_index_undirected_norm = undir_edge_index
+                    adapted_data_test.edge_weight_undirected_norm = undir_edge_weight
+                    # END NEW
                     current_test_data = adapted_data_test.to(self.device)
                 elif isinstance(current_test_data, Data):
                     current_test_data = current_test_data.to(self.device)
