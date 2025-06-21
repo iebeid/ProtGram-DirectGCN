@@ -17,12 +17,12 @@ class Config:
         self.DEBUG_VERBOSE = True
 
         # --- Workflow Control Flags ---
-        self.RUN_GCN_PIPELINE = True
+        self.RUN_GCN_PIPELINE = False
         self.RUN_WORD2VEC_PIPELINE = False
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = False
-        self.RUN_MAIN_PPI_EVALUATION = False
-        self.RUN_DUMMY_TEST = False
+        self.RUN_MAIN_PPI_EVALUATION = True
+        self.RUN_DUMMY_TEST = True
         self.CLEANUP_DUMMY_DATA = True
 
         # --- PATH CONFIGURATION ---
@@ -129,8 +129,9 @@ class Config:
         # Ensure these paths are correct for your generated embeddings
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
             {"name": "ProtT5-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
-            {"name": "ProtGramDirectGCN-UniProt-PCA64", "path": self.GCN_EMBEDDINGS_DIR / f"gcn_n{self.GCN_NGRAM_MAX_N}_embeddings_pca{self.PCA_TARGET_DIMENSION}.h5"},
-            {"name": "Word2Vec-UniProt-PCA64", "path": self.WORD2VEC_EMBEDDINGS_DIR / f"word2vec_dim{self.W2V_VECTOR_SIZE}_mean_pca{self.PCA_TARGET_DIMENSION}.h5"}
+            {"name": "ProtGramDirectGCN-UniProt-PCA64-Old", "path": self.GCN_EMBEDDINGS_DIR / f"protgram_directgcn_1.h5"},
+            {"name": "ProtGramDirectGCN-UniProt-PCA64-New", "path": self.GCN_EMBEDDINGS_DIR / f"protgram_directgcn_2.h5"},
+            {"name": "Word2Vec-UniProt-PCA64", "path": self.WORD2VEC_EMBEDDINGS_DIR / f"word2vec.h5"}
         ]
 
         # --- 6. MLFLOW & EXPERIMENT TRACKING ---
@@ -154,5 +155,5 @@ class Config:
 
         # Evaluation Reporting
         self.EVAL_K_VALUES_FOR_TABLE = [50, 100]
-        self.EVAL_MAIN_EMBEDDING_FOR_STATS = "ProtGramDirectGCN-UniProt-PCA64"
+        self.EVAL_MAIN_EMBEDDING_FOR_STATS = "ProtGramDirectGCN-UniProt-PCA64-New"
         self.EVAL_STATISTICAL_TEST_ALPHA = 0.05
