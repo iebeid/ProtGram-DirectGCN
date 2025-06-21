@@ -54,9 +54,6 @@ class GNNBenchmarker:
         print(f"  Seeds set to {seed} for reproducibility.")
 
     def _get_dataset(self, name: str, root_path: str, make_undirected: bool = False):
-        # transform_list = [T.ToDevice(self.device)] # Apply this AFTER mask creation
-        # transform_compose = T.Compose(transform_list)
-
         print(f"  Attempting to load dataset: {name} (root: {root_path}, undirected_requested: {make_undirected})...")
 
         dataset_obj = None
