@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 4.9 (Automated cluster count based on target nodes per cluster)
+# VERSION: 4.10 (Corrected clustering to use combined mathcal_A matrices)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -108,8 +108,19 @@ class ProtGramDirectGCNTrainer:
 
         print(f"  Partitioning graph with {graph.number_of_nodes} nodes into {num_clusters} clusters (target nodes/cluster: {self.config.GCN_TARGET_NODES_PER_CLUSTER})...")
 
-        # Use the undirected version of the original graph for clustering
-        g_nx = to_networkx(Data(edge_index=graph.A_out_w.indices().cpu(), num_nodes=graph.number_of_nodes), to_undirected=True)
+        # --- MODIFIED: Use combined mathcal_A matrices for clustering ---
+        # mathcal_A_out and mathcal_A_in are already sparse tensors on the device.
+        # Sum them to get a combined adjacency for clustering.
+        # Move to CPU for to_networkx, and ensure it's undirected.
+        mathcal_A_combined_sparse_cpu = (graph.mathcal_A_out + graph.mathcal_A_in).coalesce().cpu()
+
+        # Create a PyG Data object from the combined sparse tensor for to_networkx
+        g_nx = to_networkx(Data(edge_index=mathcal_A_combined_sparse_cpu.indices(),
+                                edge_attr=mathcal_A_combined_sparse_cpu.values(),
+                                num_nodes=graph.number_of_nodes),
+                           to_undirected=True,
+                           edge_attrs=['edge_attr']) # Pass edge_attr to preserve weights in NetworkX
+        # --- END MODIFIED ---
 
         try:
             import metis
@@ -135,6 +146,7 @@ class ProtGramDirectGCNTrainer:
             cluster_nodes_tensor = torch.tensor(cluster_nodes, dtype=torch.long).to(self.device)
 
             # Create subgraph for both IN and OUT propagation matrices
+            # These still use the separate mathcal_A_in and mathcal_A_out from the original graph_obj
             sub_edge_index_in, sub_edge_weight_in = subgraph(cluster_nodes_tensor, graph.mathcal_A_in.indices(), graph.mathcal_A_in.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
             sub_edge_index_out, sub_edge_weight_out = subgraph(cluster_nodes_tensor, graph.mathcal_A_out.indices(), graph.mathcal_A_out.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
 
