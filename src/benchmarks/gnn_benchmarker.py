@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: gnn_benchmarker.py
 # PURPOSE: To benchmark various GNN models on standard datasets.
-# VERSION: 3.4.8 (Robust handling of empty/malformed edge_index in _get_undirected_normalized_edges)
+# VERSION: 3.4.9 (Fixed device mismatch in _get_undirected_normalized_edges)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -232,7 +232,9 @@ class GNNBenchmarker:
         This logic is adapted from DirectedNgramGraph's _create_undirected_normalized_adj_matrix.
         """
         num_nodes = data.num_nodes
-        edge_index = data.edge_index.cpu()  # Perform operations on CPU for potentially large graphs
+        # Keep edge_index on the device it's already on, or move it if necessary
+        # It should already be on self.device from transform_compose in _get_dataset
+        edge_index = data.edge_index
 
         # Ensure edge_index is 2D (2, N)
         if edge_index.ndim != 2 or edge_index.shape[0] != 2:
@@ -259,6 +261,7 @@ class GNNBenchmarker:
         if undir_edge_index.numel() == 0:
             edge_weight = torch.empty((0,), dtype=torch.float32, device=self.device)
         else:
+            # Create edge_weight directly on the correct device
             edge_weight = torch.ones(undir_edge_index.size(1), dtype=torch.float32, device=self.device)
 
         # 3. Calculate symmetric normalization: D^(-0.5) * A * D^(-0.5)
@@ -267,13 +270,14 @@ class GNNBenchmarker:
             norm_values = torch.empty((0,), dtype=torch.float32, device=self.device)
         else:
             row, col = undir_edge_index
+            # Ensure deg_inv_sqrt is on the same device as row and col
             deg = degree(col, num_nodes, dtype=edge_weight.dtype)
             deg_inv_sqrt = deg.pow(-0.5)
             deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0  # Handle nodes with degree 0
             norm_values = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
 
-        # Move to device at the end
-        return undir_edge_index.to(self.device), norm_values.to(self.device)
+        # Return tensors that are already on the correct device
+        return undir_edge_index, norm_values
 
     def train_and_evaluate(
             self, model_name_str: str, model: nn.Module, dataset_name: str,
