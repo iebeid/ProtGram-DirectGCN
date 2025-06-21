@@ -17,11 +17,11 @@ class Config:
         self.DEBUG_VERBOSE = True
 
         # --- Workflow Control Flags ---
-        self.RUN_GCN_PIPELINE = False
+        self.RUN_GCN_PIPELINE = True
         self.RUN_WORD2VEC_PIPELINE = False
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = False
-        self.RUN_MAIN_PPI_EVALUATION = True
+        self.RUN_MAIN_PPI_EVALUATION = False
         self.RUN_DUMMY_TEST = False
         self.CLEANUP_DUMMY_DATA = False
 
@@ -57,7 +57,7 @@ class Config:
         self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8}
 
         # --- 2. GCN PIPELINE PARAMETERS (Your custom GCN) ---
-        self.GCN_NGRAM_MAX_N = 3
+        self.GCN_NGRAM_MAX_N = 4
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
 
         self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]
@@ -89,7 +89,8 @@ class Config:
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
             1: "next_node",
             2: "next_node",
-            3: "next_node"
+            3: "next_node",
+            4: "next_node"
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
