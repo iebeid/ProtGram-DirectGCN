@@ -1,7 +1,8 @@
+# src/utils/graph_utils.py
 # ==============================================================================
 # MODULE: utils/graph_utils.py
 # PURPOSE: Contains robust classes for n-gram graph representation.
-# VERSION: 7.7 (Constructor now loads edges from file to break memory chain)
+# VERSION: 7.8 (Optimized sparse matrix multiplication for A_n_sparse)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -168,7 +169,7 @@ class DirectedNgramGraph(Graph):
             if tensor.is_sparse:
                 nnz = tensor._nnz()
                 shape = tensor.shape
-                mem_bytes = (2 * nnz * 8) + (nnz * 4)
+                mem_bytes = (2 * nnz * 8) + (nnz * 4) # 2x long for indices, 1x float for values
                 mem_mb = mem_bytes / (1024 * 1024)
                 print(f"{prefix} [{name}]: shape={shape}, nnz={nnz}, device={tensor.device}, estimated_mem={mem_mb:.3f} MB")
             else:
@@ -196,14 +197,21 @@ class DirectedNgramGraph(Graph):
             D_inv_diag_vals[non_zero_degrees_mask] = 1.0 / row_sum[non_zero_degrees_mask]
         del row_sum
 
-        diag_indices = torch.arange(num_nodes, device=dev).unsqueeze(0).repeat(2, 1)
-        D_inv_sparse = torch.sparse_coo_tensor(diag_indices, D_inv_diag_vals, (num_nodes, num_nodes)).coalesce()
-        print_sparse_info(D_inv_sparse, "D_inv", current_n_val)
-        del D_inv_diag_vals, diag_indices
+        # --- MODIFIED: Optimized calculation of A_n_sparse (D_inv_sparse @ A_w_torch_sparse) ---
+        # Multiplying a sparse matrix by a diagonal matrix is equivalent to scaling its rows.
+        # This avoids a general sparse matrix multiplication (SpGEMM) which can be resource-intensive.
+        A_w_indices = A_w_torch_sparse.indices()
+        A_w_values = A_w_torch_sparse.values()
 
-        A_n_sparse = torch.sparse.mm(D_inv_sparse, A_w_torch_sparse).coalesce()
+        # Get the diagonal values of D_inv_sparse corresponding to the row indices of A_w_torch_sparse
+        # A_w_indices[0] gives the row indices for each non-zero element in A_w_torch_sparse
+        scaled_values = A_w_values * D_inv_diag_vals[A_w_indices[0]]
+
+        A_n_sparse = torch.sparse_coo_tensor(A_w_indices, scaled_values, A_w_torch_sparse.size()).coalesce()
+        # --- END MODIFIED ---
+
         print_sparse_info(A_n_sparse, "A_n", current_n_val)
-        del D_inv_sparse
+        del D_inv_diag_vals # D_inv_diag_vals is no longer needed after A_n_sparse is computed
 
         print("    Calculating S^2+K^2 using memory-optimized formula...")
         A_n_sq_values = A_n_sparse.values().pow(2)

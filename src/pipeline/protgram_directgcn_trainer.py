@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 4.10 (Corrected clustering to use combined mathcal_A matrices)
+# VERSION: 4.11 (Implemented weighted loss for Cluster-GCN)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -68,8 +68,9 @@ class ProtGramDirectGCNTrainer:
                     print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * l2_reg).item():.4f}")
 
     def _train_model_clustered(self, model: ProtGramDirectGCN, subgraphs: List[Data], optimizer: torch.optim.Optimizer,
-                               epochs: int, task_type: str, l2_lambda: float = 0.0):
-        """Cluster-GCN style training for large graphs with Mixed Precision."""
+                               epochs: int, task_type: str, l2_lambda: float = 0.0,
+                               total_nodes_in_level_graph: int = 1): # Added total_nodes_in_level_graph
+        """Cluster-GCN style training for large graphs with Mixed Precision and weighted loss."""
         model.train()
         model.to(self.device)
         scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == 'cuda'))
@@ -84,9 +85,18 @@ class ProtGramDirectGCNTrainer:
                 optimizer.zero_grad()
                 with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda')):
                     task_output, _ = model(data=batch_data)
-                    primary_loss = criterion(task_output, batch_data.y)
+                    primary_loss_per_node_avg = criterion(task_output, batch_data.y) # This is L_A_tt'
+
+                    # Calculate the weighting factor: |V_t| / N
+                    # Ensure total_nodes_in_level_graph is not zero to avoid division by zero
+                    weight_factor = batch_data.num_nodes / total_nodes_in_level_graph if total_nodes_in_level_graph > 0 else 0.0
+
+                    # Apply the weighting factor to the primary loss
+                    # This makes the loss for the current batch proportional to its size
+                    weighted_primary_loss = primary_loss_per_node_avg * weight_factor
+
                     l2_reg = sum(p.norm(2).pow(2) for p in model.parameters() if p.requires_grad)
-                    loss = primary_loss + l2_lambda * l2_reg
+                    loss = weighted_primary_loss + l2_lambda * l2_reg # This is the L_A' term + L2 regularization
 
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
@@ -320,7 +330,8 @@ class ProtGramDirectGCNTrainer:
 
             if self.config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
                 subgraphs = self._create_clustered_subgraphs(graph_obj, full_data)
-                self._train_model_clustered(model, subgraphs, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, current_task_type, l2_lambda_val)
+                self._train_model_clustered(model, subgraphs, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, current_task_type, l2_lambda_val,
+                                            total_nodes_in_level_graph=graph_obj.number_of_nodes) # Pass total nodes
             else:
                 full_data.edge_index_in = graph_obj.mathcal_A_in.indices().to(self.device)
                 full_data.edge_weight_in = graph_obj.mathcal_A_in.values().to(self.device)
