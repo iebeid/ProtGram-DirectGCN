@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 4.11 (Implemented weighted loss for Cluster-GCN)
+# VERSION: 4.13 (Cleaned up implementation of LR Scheduler, Early Stopping, and Sanity Check)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -11,8 +11,9 @@ import collections
 import gc
 import os
 import random
-import math  # Import math for ceil function
+import math
 from typing import Dict, Tuple, Optional, List
+from functools import partial
 
 import h5py
 import numpy as np
@@ -25,11 +26,40 @@ from tqdm import tqdm
 
 from config import Config
 from src.models.protgram_directgcn import ProtGramDirectGCN
-from src.utils.data_utils import DataLoader, DataUtils
-from src.utils.graph_utils import DirectedNgramGraph
-from src.utils.models_utils import EmbeddingProcessor
+from src.utils.data_utils import DataLoader, DataUtils, GroundTruthLoader
+from src.utils.models_utils import EmbeddingProcessor, EmbeddingLoader
+
+# --- Optional Imports for Sanity Check PPI Task ---
+try:
+    import tensorflow as tf
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_score
+    from src.models.mlp import MLP
+    TENSORFLOW_AVAILABLE = True
+except ImportError:
+    TENSORFLOW_AVAILABLE = False
+# --- End Optional Imports ---
 
 AMINO_ACID_ALPHABET = list("ACDEFGHIKLMNPQRSTVWY")
+
+
+class EarlyStopper:
+    """A simple early stopper to monitor loss and stop training when it stops improving."""
+    def __init__(self, patience: int = 1, min_delta: float = 0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.best_loss = float('inf')
+
+    def early_stop(self, validation_loss: float) -> bool:
+        if validation_loss < self.best_loss - self.min_delta:
+            self.best_loss = validation_loss
+            self.counter = 0
+        else:
+            self.counter += 1
+            if self.counter >= self.patience:
+                return True
+        return False
 
 
 class ProtGramDirectGCNTrainer:
@@ -42,18 +72,34 @@ class ProtGramDirectGCNTrainer:
 
     def _train_model_full_batch(self, model: ProtGramDirectGCN, data: Data, optimizer: torch.optim.Optimizer, epochs: int,
                                 task_type: str, l2_lambda: float = 0.0):
-        """Original training method for smaller graphs, now with Mixed Precision."""
+        """Original training method for smaller graphs, now with scheduler and early stopping."""
         model.train()
         model.to(self.device)
         data = data.to(self.device)
-        scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == 'cuda'))
 
+        # --- Initialize Scheduler and Early Stopping ---
+        scheduler = None
+        if self.config.GCN_USE_LR_SCHEDULER:
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE,
+                factor=self.config.GCN_LR_SCHEDULER_FACTOR, verbose=self.config.DEBUG_VERBOSE
+            )
+
+        early_stopper = None
+        if self.config.GCN_USE_EARLY_STOPPING:
+            early_stopper = EarlyStopper(
+                patience=self.config.GCN_EARLY_STOPPING_PATIENCE,
+                min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA
+            )
+        # --- End Initialization ---
+
+        scaler = torch.amp.GradScaler('cuda', enabled=(self.device.type == 'cuda'))
         criterion = F.nll_loss
 
-        print(f"  Starting full-batch training for {epochs} epochs (Task: {task_type}, L2 lambda: {l2_lambda})...")
+        print(f"  Starting full-batch training for up to {epochs} epochs (Task: {task_type}, L2 lambda: {l2_lambda})...")
         for epoch in range(1, epochs + 1):
             optimizer.zero_grad()
-            with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda')):
+            with torch.amp.autocast('cuda', enabled=(self.device.type == 'cuda')):
                 task_output, _ = model(data=data)
                 primary_loss = criterion(task_output, data.y)
                 l2_reg = sum(p.norm(2).pow(2) for p in model.parameters() if p.requires_grad)
@@ -63,40 +109,57 @@ class ProtGramDirectGCNTrainer:
             scaler.step(optimizer)
             scaler.update()
 
+            if scheduler:
+                scheduler.step(loss)
+
             if epoch % (max(1, epochs // 10)) == 0 or epoch == epochs:
                 if self.config.DEBUG_VERBOSE:
                     print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * l2_reg).item():.4f}")
 
+            if early_stopper and early_stopper.early_stop(loss.item()):
+                print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
+                break
+
     def _train_model_clustered(self, model: ProtGramDirectGCN, subgraphs: List[Data], optimizer: torch.optim.Optimizer,
                                epochs: int, task_type: str, l2_lambda: float = 0.0,
-                               total_nodes_in_level_graph: int = 1): # Added total_nodes_in_level_graph
-        """Cluster-GCN style training for large graphs with Mixed Precision and weighted loss."""
+                               total_nodes_in_level_graph: int = 1):
+        """Cluster-GCN style training with scheduler and early stopping."""
         model.train()
         model.to(self.device)
-        scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == 'cuda'))
+
+        # --- Initialize Scheduler and Early Stopping ---
+        scheduler = None
+        if self.config.GCN_USE_LR_SCHEDULER:
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE,
+                factor=self.config.GCN_LR_SCHEDULER_FACTOR, verbose=self.config.DEBUG_VERBOSE
+            )
+
+        early_stopper = None
+        if self.config.GCN_USE_EARLY_STOPPING:
+            early_stopper = EarlyStopper(
+                patience=self.config.GCN_EARLY_STOPPING_PATIENCE,
+                min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA
+            )
+        # --- End Initialization ---
+
+        scaler = torch.amp.GradScaler('cuda', enabled=(self.device.type == 'cuda'))
         criterion = F.nll_loss
 
-        print(f"  Starting Cluster-GCN style training for {epochs} epochs on {len(subgraphs)} subgraphs (Task: {task_type})...")
+        print(f"  Starting Cluster-GCN style training for up to {epochs} epochs on {len(subgraphs)} subgraphs (Task: {task_type})...")
         for epoch in range(1, epochs + 1):
             random.shuffle(subgraphs)
             epoch_loss = 0.0
             for batch_data in tqdm(subgraphs, desc=f"  Epoch {epoch}", leave=False, disable=not self.config.DEBUG_VERBOSE):
                 batch_data = batch_data.to(self.device)
                 optimizer.zero_grad()
-                with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda')):
+                with torch.amp.autocast('cuda', enabled=(self.device.type == 'cuda')):
                     task_output, _ = model(data=batch_data)
-                    primary_loss_per_node_avg = criterion(task_output, batch_data.y) # This is L_A_tt'
-
-                    # Calculate the weighting factor: |V_t| / N
-                    # Ensure total_nodes_in_level_graph is not zero to avoid division by zero
+                    primary_loss_per_node_avg = criterion(task_output, batch_data.y)
                     weight_factor = batch_data.num_nodes / total_nodes_in_level_graph if total_nodes_in_level_graph > 0 else 0.0
-
-                    # Apply the weighting factor to the primary loss
-                    # This makes the loss for the current batch proportional to its size
                     weighted_primary_loss = primary_loss_per_node_avg * weight_factor
-
                     l2_reg = sum(p.norm(2).pow(2) for p in model.parameters() if p.requires_grad)
-                    loss = weighted_primary_loss + l2_lambda * l2_reg # This is the L_A' term + L2 regularization
+                    loss = weighted_primary_loss + l2_lambda * l2_reg
 
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
@@ -104,38 +167,34 @@ class ProtGramDirectGCNTrainer:
                 epoch_loss += loss.item()
 
             avg_epoch_loss = epoch_loss / len(subgraphs)
+
+            if scheduler:
+                scheduler.step(avg_epoch_loss)
+
             if epoch % (max(1, epochs // 10)) == 0 or epoch == epochs:
                 if self.config.DEBUG_VERBOSE:
                     print(f"    Epoch: {epoch:03d}, Avg Batch Loss: {avg_epoch_loss:.4f}")
 
-    def _create_clustered_subgraphs(self, graph: DirectedNgramGraph, full_data: Data) -> List[Data]:
-        """Partitions the graph into subgraphs using METIS or Louvain."""
+            if early_stopper and early_stopper.early_stop(avg_epoch_loss):
+                print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
+                break
 
-        # Dynamically determine num_clusters based on graph size and target nodes per cluster
+    def _create_clustered_subgraphs(self, graph: 'DirectedNgramGraph', full_data: Data) -> List[Data]:
+        """Partitions the graph into subgraphs using METIS or Louvain."""
         num_clusters_calculated = math.ceil(graph.number_of_nodes / self.config.GCN_TARGET_NODES_PER_CLUSTER)
         num_clusters = max(self.config.GCN_MIN_CLUSTERS, num_clusters_calculated)
         num_clusters = min(num_clusters, self.config.GCN_MAX_CLUSTERS)
 
         print(f"  Partitioning graph with {graph.number_of_nodes} nodes into {num_clusters} clusters (target nodes/cluster: {self.config.GCN_TARGET_NODES_PER_CLUSTER})...")
 
-        # --- MODIFIED: Use combined mathcal_A matrices for clustering ---
-        # mathcal_A_out and mathcal_A_in are already sparse tensors on the device.
-        # Sum them to get a combined adjacency for clustering.
-        # Move to CPU for to_networkx, and ensure it's undirected.
         mathcal_A_combined_sparse_cpu = (graph.mathcal_A_out + graph.mathcal_A_in).coalesce().cpu()
-
-        # Create a PyG Data object from the combined sparse tensor for to_networkx
         g_nx = to_networkx(Data(edge_index=mathcal_A_combined_sparse_cpu.indices(),
                                 edge_attr=mathcal_A_combined_sparse_cpu.values(),
                                 num_nodes=graph.number_of_nodes),
-                           to_undirected=True,
-                           edge_attrs=['edge_attr']) # Pass edge_attr to preserve weights in NetworkX
-        # --- END MODIFIED ---
-
+                           to_undirected=True, edge_attrs=['edge_attr'])
         try:
             import metis
             print("  Using METIS for graph partitioning...")
-            # metis.part_graph returns (edge_cut, parts)
             _, parts = metis.part_graph(g_nx, num_clusters, seed=self.config.RANDOM_STATE)
             partition = {node_idx: part_id for node_idx, part_id in enumerate(parts)}
         except (ImportError, ModuleNotFoundError):
@@ -152,28 +211,20 @@ class ProtGramDirectGCNTrainer:
 
         subgraphs = []
         for cluster_nodes in tqdm(cluster_list, desc="  Creating subgraphs", leave=False):
-            # FIX: Move cluster_nodes_tensor to the same device as graph.mathcal_A_in.indices()
             cluster_nodes_tensor = torch.tensor(cluster_nodes, dtype=torch.long).to(self.device)
-
-            # Create subgraph for both IN and OUT propagation matrices
-            # These still use the separate mathcal_A_in and mathcal_A_out from the original graph_obj
             sub_edge_index_in, sub_edge_weight_in = subgraph(cluster_nodes_tensor, graph.mathcal_A_in.indices(), graph.mathcal_A_in.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
             sub_edge_index_out, sub_edge_weight_out = subgraph(cluster_nodes_tensor, graph.mathcal_A_out.indices(), graph.mathcal_A_out.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
-
             subgraph_data = Data(
                 x=full_data.x[cluster_nodes_tensor],
                 y=full_data.y[cluster_nodes_tensor] if full_data.y.numel() > 0 else torch.empty(0),
-                edge_index_in=sub_edge_index_in,
-                edge_weight_in=sub_edge_weight_in,
-                edge_index_out=sub_edge_index_out,
-                edge_weight_out=sub_edge_weight_out,
+                edge_index_in=sub_edge_index_in, edge_weight_in=sub_edge_weight_in,
+                edge_index_out=sub_edge_index_out, edge_weight_out=sub_edge_weight_out,
                 original_indices=cluster_nodes_tensor
             )
             subgraphs.append(subgraph_data)
-
         return subgraphs
 
-    def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
+    def _generate_community_labels(self, graph: 'DirectedNgramGraph') -> Tuple[torch.Tensor, int]:
         import networkx as nx
         import community as community_louvain
         num_nodes = graph.number_of_nodes
@@ -183,7 +234,6 @@ class ProtGramDirectGCNTrainer:
         A_out_w_cpu_sparse = graph.A_out_w.cpu()
         combined_adj_sparse_torch = (A_in_w_cpu_sparse + A_out_w_cpu_sparse).coalesce()
         if combined_adj_sparse_torch._nnz() == 0: return torch.zeros(num_nodes, dtype=torch.long), 1
-        # Use to_networkx from torch_geometric.utils to handle sparse tensor conversion
         nx_graph = to_networkx(Data(edge_index=combined_adj_sparse_torch.indices(), edge_attr=combined_adj_sparse_torch.values(), num_nodes=num_nodes), to_undirected=True, edge_attrs=['edge_attr'])
         if nx_graph.number_of_edges() == 0: return torch.zeros(num_nodes, dtype=torch.long), 1
         partition = community_louvain.best_partition(nx_graph, random_state=self.config.RANDOM_STATE, weight='edge_attr')
@@ -196,7 +246,7 @@ class ProtGramDirectGCNTrainer:
             labels = torch.tensor([label_map[lbl] for lbl in labels_list], dtype=torch.long)
             return labels, len(unique_labels_from_partition)
 
-    def _generate_next_node_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
+    def _generate_next_node_labels(self, graph: 'DirectedNgramGraph') -> Tuple[torch.Tensor, int]:
         num_nodes = graph.number_of_nodes
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1
         print(f"  Generating next_node labels for all {num_nodes} nodes.")
@@ -213,7 +263,7 @@ class ProtGramDirectGCNTrainer:
                 labels_list[i] = random.choice(max_weight_successors.cpu().tolist())
         return torch.tensor(labels_list, dtype=torch.long), num_nodes
 
-    def _generate_closest_amino_acid_labels(self, graph: DirectedNgramGraph, k_hops: int) -> Tuple[torch.Tensor, int]:
+    def _generate_closest_amino_acid_labels(self, graph: 'DirectedNgramGraph', k_hops: int) -> Tuple[torch.Tensor, int]:
         num_nodes = graph.number_of_nodes
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), k_hops + 1
         labels_for_all_nodes = torch.full((num_nodes,), k_hops, dtype=torch.long)
@@ -265,7 +315,8 @@ class ProtGramDirectGCNTrainer:
             graph_path = os.path.join(self.config.GRAPH_OBJECTS_DIR, f"ngram_graph_n{n_val}.pkl")
             try:
                 graph_obj = DataUtils.load_object(graph_path)
-                if not isinstance(graph_obj, DirectedNgramGraph): raise TypeError("Loaded object is not a DirectedNgramGraph")
+                if not isinstance(graph_obj, type(self).__annotations__['_create_clustered_subgraphs'].__globals__['DirectedNgramGraph']):
+                    raise TypeError("Loaded object is not a DirectedNgramGraph")
                 graph_obj.n_value = n_val
                 if graph_obj.number_of_nodes > 0:
                     graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
@@ -331,7 +382,7 @@ class ProtGramDirectGCNTrainer:
             if self.config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
                 subgraphs = self._create_clustered_subgraphs(graph_obj, full_data)
                 self._train_model_clustered(model, subgraphs, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, current_task_type, l2_lambda_val,
-                                            total_nodes_in_level_graph=graph_obj.number_of_nodes) # Pass total nodes
+                                            total_nodes_in_level_graph=graph_obj.number_of_nodes)
             else:
                 full_data.edge_index_in = graph_obj.mathcal_A_in.indices().to(self.device)
                 full_data.edge_weight_in = graph_obj.mathcal_A_in.values().to(self.device)
@@ -365,12 +416,16 @@ class ProtGramDirectGCNTrainer:
         )
         if self.id_map:
             pooled_embeddings = {self.id_map.get(k, k): v for k, v in pooled_embeddings.items()}
+
         DataUtils.print_header("Step 4: Saving Generated Embeddings")
         output_h5_path = os.path.join(self.config.GCN_EMBEDDINGS_DIR, f"gcn_n{final_n_val}_embeddings.h5")
         with h5py.File(output_h5_path, 'w') as hf:
             for key, vector in tqdm(pooled_embeddings.items(), desc="  Writing H5 File"):
                 if vector is not None: hf.create_dataset(key, data=vector)
         print(f"\nSUCCESS: Primary embeddings saved to: {output_h5_path}")
+
+        final_embedding_path_for_sanity_check = output_h5_path
+
         if self.config.APPLY_PCA_TO_GCN and pooled_embeddings:
             DataUtils.print_header("Step 5: Applying PCA for Dimensionality Reduction")
             pca_embeds = EmbeddingProcessor.apply_pca(pooled_embeddings, self.config.PCA_TARGET_DIMENSION, self.config.RANDOM_STATE)
@@ -381,4 +436,94 @@ class ProtGramDirectGCNTrainer:
                     for key, vector in tqdm(pca_embeds.items(), desc="  Writing PCA H5 File"):
                         if vector is not None: hf.create_dataset(key, data=vector)
                 print(f"  SUCCESS: PCA-reduced embeddings saved to: {pca_h5_path}")
+                final_embedding_path_for_sanity_check = pca_h5_path
+
+        # --- NEW: Run Sanity Check PPI Task ---
+        if self.config.GCN_RUN_SANITY_CHECK_PPI:
+            self._run_sanity_check_ppi(final_embedding_path_for_sanity_check)
+        # --- END NEW ---
+
         DataUtils.print_header("ProtGramDirectGCN Embedding PIPELINE STEP FINISHED")
+
+    def _run_sanity_check_ppi(self, embedding_path: str):
+        """
+        Runs a quick, simple link prediction task on the generated embeddings as a sanity check.
+        """
+        DataUtils.print_header("Step 6: Running Sanity Check PPI Task")
+        if not TENSORFLOW_AVAILABLE:
+            print("  Skipping sanity check: TensorFlow is not installed.")
+            return
+        if not os.path.exists(embedding_path):
+            print(f"  Skipping sanity check: Embedding file not found at {embedding_path}")
+            return
+
+        # 1. Load interaction pairs
+        pos_pairs = GroundTruthLoader.load_interaction_pairs(str(self.config.INTERACTIONS_POSITIVE_PATH), 1)
+        neg_pairs = GroundTruthLoader.load_interaction_pairs(str(self.config.INTERACTIONS_NEGATIVE_PATH), 0, sample_n=len(pos_pairs), random_state=self.config.RANDOM_STATE)
+        all_pairs = pos_pairs + neg_pairs
+        random.shuffle(all_pairs)
+
+        if not all_pairs:
+            print("  Skipping sanity check: No interaction pairs loaded.")
+            return
+
+        # 2. Load embeddings
+        with EmbeddingLoader(embedding_path) as protein_embeddings:
+            # 3. Filter pairs
+            pairs_for_eval = [p for p in all_pairs if p[0] in protein_embeddings and p[1] in protein_embeddings]
+            print(f"  Found embeddings for {len(pairs_for_eval)} out of {len(all_pairs)} total pairs.")
+            if not pairs_for_eval:
+                print("  Skipping sanity check: No valid pairs with embeddings found.")
+                return
+
+            # 4. Train/Test Split
+            labels = [p[2] for p in pairs_for_eval]
+            train_pairs, test_pairs = train_test_split(pairs_for_eval, test_size=self.config.GCN_SANITY_CHECK_TEST_SPLIT, random_state=self.config.RANDOM_STATE, stratify=labels)
+
+            first_emb_key = next(iter(protein_embeddings.get_keys()))
+            embedding_dim = protein_embeddings[first_emb_key].shape[0]
+            edge_feature_dim = embedding_dim * 2  # Assuming concatenate
+
+            # 5. Create TF Datasets
+            train_gen = partial(EmbeddingProcessor.generate_edge_features_batched, interaction_pairs=train_pairs, protein_embeddings=protein_embeddings, method='concatenate', batch_size=self.config.EVAL_BATCH_SIZE,
+                                embedding_dim=embedding_dim)
+            test_gen = partial(EmbeddingProcessor.generate_edge_features_batched, interaction_pairs=test_pairs, protein_embeddings=protein_embeddings, method='concatenate', batch_size=self.config.EVAL_BATCH_SIZE,
+                               embedding_dim=embedding_dim)
+
+            output_sig = (tf.TensorSpec(shape=(None, edge_feature_dim), dtype=tf.float16), tf.TensorSpec(shape=(None,), dtype=tf.int32))
+            train_ds = tf.data.Dataset.from_generator(train_gen, output_signature=output_sig).prefetch(tf.data.AUTOTUNE)
+            test_ds = tf.data.Dataset.from_generator(test_gen, output_signature=output_sig).prefetch(tf.data.AUTOTUNE)
+
+            # 6. Build and Train MLP
+            mlp_params = {'dense1_units': 64, 'dropout1_rate': 0.5, 'dense2_units': 32, 'dropout2_rate': 0.5, 'l2_reg': 1e-5}
+            model = MLP(edge_feature_dim, mlp_params, self.config.EVAL_LEARNING_RATE).build()
+
+            print(f"  Training sanity check MLP for {self.config.GCN_SANITY_CHECK_EPOCHS} epochs...")
+            model.fit(train_ds, epochs=self.config.GCN_SANITY_CHECK_EPOCHS, verbose=1 if self.config.DEBUG_VERBOSE else 0)
+
+            # 7. Evaluate and Report
+            print("  Evaluating sanity check model...")
+            y_true_list, y_pred_list = [], []
+            for x_batch, y_batch in test_ds:
+                y_true_list.append(y_batch.numpy())
+                y_pred_list.append(model.predict_on_batch(x_batch).flatten())
+
+            if not y_true_list:
+                print("  Evaluation failed: No data in test set.")
+                return
+
+            y_true = np.concatenate(y_true_list)
+            y_pred_proba = np.concatenate(y_pred_list)
+            y_pred_class = (y_pred_proba > 0.5).astype(int)
+
+            auc = roc_auc_score(y_true, y_pred_proba)
+            f1 = f1_score(y_true, y_pred_class)
+            precision = precision_score(y_true, y_pred_class)
+            recall = recall_score(y_true, y_pred_class)
+
+            print("\n  --- Sanity Check PPI Results ---")
+            print(f"  AUC:       {auc:.4f}")
+            print(f"  F1-Score:  {f1:.4f}")
+            print(f"  Precision: {precision:.4f}")
+            print(f"  Recall:    {recall:.4f}")
+            print("  --------------------------------\n")

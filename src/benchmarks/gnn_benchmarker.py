@@ -1,12 +1,12 @@
 # ==============================================================================
 # MODULE: gnn_benchmarker.py
 # PURPOSE: To benchmark various GNN models on standard datasets.
-# VERSION: 3.3 (Using time.monotonic for durations)
+# VERSION: 3.4.2 (Correctly sets edge_index_in as transpose for ProtGramDirectGCN)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
-import time # Ensure time is imported
+import time
 from tqdm import tqdm
 from typing import Dict, List, Tuple, Any, Optional
 import pandas as pd
@@ -14,7 +14,7 @@ from sklearn.metrics import f1_score, accuracy_score
 from torch_geometric.datasets import (KarateClub, Planetoid)
 from torch_geometric.loader import DataLoader as PyGDataLoader
 import torch_geometric.transforms as T
-from torch_geometric.utils import to_undirected
+from torch_geometric.utils import to_undirected, transpose
 import h5py
 import numpy as np
 import torch
@@ -119,7 +119,20 @@ class GNNBenchmarker:
         with torch.no_grad():
             node_embeddings_tensor = None
             if isinstance(data_for_emb, Data):
-                if hasattr(model, 'get_embeddings') and callable(getattr(model, 'get_embeddings')):
+                # Special handling for ProtGramDirectGCN's forward method
+                if model_name == "ProtGramDirectGCN":
+                    # ProtGramDirectGCN's forward returns (logits, embeddings)
+                    # It expects edge_index_in/out, so we need to ensure data_for_emb has them
+                    # If data_for_emb is the original PyG Data object, we need to adapt it here too
+                    pg_data_for_emb = data_for_emb.clone()
+                    pg_data_for_emb.edge_index_out = pg_data_for_emb.edge_index
+                    pg_data_for_emb.edge_index_in = transpose(pg_data_for_emb.edge_index, pg_data_for_emb.num_nodes)
+                    pg_data_for_emb.edge_weight_out = getattr(pg_data_for_emb, 'edge_attr', None)
+                    pg_data_for_emb.edge_weight_in = getattr(pg_data_for_emb, 'edge_attr', None)  # Assuming symmetric weights for transpose
+
+                    _, node_embeddings_tensor = model(data=pg_data_for_emb.to(self.device))
+
+                elif hasattr(model, 'get_embeddings') and callable(getattr(model, 'get_embeddings')):
                     node_embeddings_tensor = model.get_embeddings(data_for_emb.to(self.device))
                 elif hasattr(model, 'embedding_output') and model.embedding_output is not None:
                     node_embeddings_tensor = model.embedding_output
@@ -130,8 +143,8 @@ class GNNBenchmarker:
                     else:
                         node_embeddings_tensor = output
                     if node_embeddings_tensor.shape[-1] == getattr(data_for_emb, 'num_classes', -1) or \
-                       node_embeddings_tensor.shape[-1] == getattr(data_for_emb, 'y', torch.tensor([-1])).max().item() +1 :
-                         print(f"      Using final layer output (likely logits) as embeddings for {model_name}.")
+                            node_embeddings_tensor.shape[-1] == getattr(data_for_emb, 'y', torch.tensor([-1])).max().item() + 1:
+                        print(f"      Using final layer output (likely logits) as embeddings for {model_name}.")
 
                 if node_embeddings_tensor is None:
                     print(f"      Could not extract embeddings for {model_name}. Skipping save.")
@@ -149,8 +162,8 @@ class GNNBenchmarker:
         filename_suffix = f"_dim{emb_dim}"
 
         if self.config.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS and \
-           emb_dim > self.config.BENCHMARK_PCA_TARGET_DIM and \
-           node_embeddings_np.shape[0] > self.config.BENCHMARK_PCA_TARGET_DIM:
+                emb_dim > self.config.BENCHMARK_PCA_TARGET_DIM and \
+                node_embeddings_np.shape[0] > self.config.BENCHMARK_PCA_TARGET_DIM:
             print(f"      Applying PCA to {model_name} embeddings (target dim: {self.config.BENCHMARK_PCA_TARGET_DIM})...")
             temp_emb_dict = {str(i): node_embeddings_np[i] for i in range(node_embeddings_np.shape[0])}
             pca_embeds_dict = EmbeddingProcessor.apply_pca(temp_emb_dict, self.config.BENCHMARK_PCA_TARGET_DIM, self.config.RANDOM_STATE, output_dtype=np.float32)
@@ -214,13 +227,25 @@ class GNNBenchmarker:
         print(f"  Using Loss: {criterion.__name__ if hasattr(criterion, '__name__') else str(criterion)}, Metric: {metric_name}")
 
         for epoch in range(num_epochs):
-            epoch_start_time = time.monotonic() # MODIFICATION
+            epoch_start_time = time.monotonic()
             model.train()
             total_loss = 0
             num_batches_or_graphs = 0
 
             current_train_data = train_data_or_loader
-            if isinstance(current_train_data, Data): current_train_data = current_train_data.to(self.device)
+            # Special handling for ProtGramDirectGCN's input format
+            if model_name_str == "ProtGramDirectGCN":
+                # Clone and adapt the data object for ProtGramDirectGCN's specific input
+                # edge_index_out is the original edge_index (source -> target)
+                # edge_index_in is the transpose of the original edge_index (target -> source)
+                adapted_data = current_train_data.clone()
+                adapted_data.edge_index_out = adapted_data.edge_index
+                adapted_data.edge_index_in = transpose(adapted_data.edge_index, adapted_data.num_nodes)
+                adapted_data.edge_weight_out = getattr(adapted_data, 'edge_attr', None)
+                adapted_data.edge_weight_in = getattr(adapted_data, 'edge_attr', None)  # Assuming symmetric weights for transpose
+                current_train_data = adapted_data.to(self.device)
+            elif isinstance(current_train_data, Data):
+                current_train_data = current_train_data.to(self.device)
 
             if isinstance(current_train_data, PyGDataLoader):
                 for batch_data in current_train_data:
@@ -234,8 +259,12 @@ class GNNBenchmarker:
                     num_batches_or_graphs += 1
             elif isinstance(current_train_data, Data):
                 optimizer.zero_grad()
-                out = model(current_train_data)
-                if isinstance(out, tuple): out = out[0]
+                # ProtGramDirectGCN's forward returns (logits, embeddings)
+                if model_name_str == "ProtGramDirectGCN":
+                    out, _ = model(data=current_train_data)
+                else:
+                    out = model(current_train_data)
+                    if isinstance(out, tuple): out = out[0]
 
                 if current_train_data.train_mask.sum() == 0:
                     print(f"Warning: Epoch {epoch:03d}, No training nodes in train_mask for {dataset_name}.")
@@ -256,7 +285,16 @@ class GNNBenchmarker:
             model.eval()
             with torch.no_grad():
                 current_val_data = val_data_or_loader
-                if isinstance(current_val_data, Data): current_val_data = current_val_data.to(self.device)
+                # Special handling for ProtGramDirectGCN's input format for validation
+                if model_name_str == "ProtGramDirectGCN":
+                    adapted_data_val = current_val_data.clone()
+                    adapted_data_val.edge_index_out = adapted_data_val.edge_index
+                    adapted_data_val.edge_index_in = transpose(adapted_data_val.edge_index, adapted_data_val.num_nodes)
+                    adapted_data_val.edge_weight_out = getattr(adapted_data_val, 'edge_attr', None)
+                    adapted_data_val.edge_weight_in = getattr(adapted_data_val, 'edge_attr', None)
+                    current_val_data = adapted_data_val.to(self.device)
+                elif isinstance(current_val_data, Data):
+                    current_val_data = current_val_data.to(self.device)
 
                 if isinstance(current_val_data, PyGDataLoader):
                     all_preds_val, all_labels_val = [], []
@@ -269,8 +307,12 @@ class GNNBenchmarker:
                     val_labels_cat = torch.cat(all_labels_val)
                     val_metric = metric_fn(val_labels_cat, val_preds_cat)
                 elif isinstance(current_val_data, Data):
-                    out_val = model(current_val_data)
-                    if isinstance(out_val, tuple): out_val = out_val[0]
+                    # ProtGramDirectGCN's forward returns (logits, embeddings)
+                    if model_name_str == "ProtGramDirectGCN":
+                        out_val, _ = model(data=current_val_data)
+                    else:
+                        out_val = model(current_val_data)
+                        if isinstance(out_val, tuple): out_val = out_val[0]
 
                     if current_val_data.val_mask.sum() == 0:
                         val_metric = 0.0
@@ -279,7 +321,7 @@ class GNNBenchmarker:
                 else:
                     raise TypeError(f"val_data_or_loader type {type(current_val_data)} not supported.")
 
-            epoch_duration = time.monotonic() - epoch_start_time # MODIFICATION
+            epoch_duration = time.monotonic() - epoch_start_time
             if self.config.DEBUG_VERBOSE or epoch % (max(1, num_epochs // 10)) == 0 or epoch == num_epochs - 1:
                 print(f"    Epoch {epoch:03d}, Loss: {avg_loss:.4f}, Val {metric_name}: {val_metric:.4f}, Time: {epoch_duration:.2f}s")
             history.append({'epoch': epoch, 'loss': avg_loss, f'val_{metric_name.lower().replace(" ", "_")}': val_metric})
@@ -289,7 +331,16 @@ class GNNBenchmarker:
                 final_trained_model_state = model.state_dict()
 
                 current_test_data = test_data_or_loader
-                if isinstance(current_test_data, Data): current_test_data = current_test_data.to(self.device)
+                # Special handling for ProtGramDirectGCN's input format for testing
+                if model_name_str == "ProtGramDirectGCN":
+                    adapted_data_test = current_test_data.clone()
+                    adapted_data_test.edge_index_out = adapted_data_test.edge_index
+                    adapted_data_test.edge_index_in = transpose(adapted_data_test.edge_index, adapted_data_test.num_nodes)
+                    adapted_data_test.edge_weight_out = getattr(adapted_data_test, 'edge_attr', None)
+                    adapted_data_test.edge_weight_in = getattr(adapted_data_test, 'edge_attr', None)
+                    current_test_data = adapted_data_test.to(self.device)
+                elif isinstance(current_test_data, Data):
+                    current_test_data = current_test_data.to(self.device)
 
                 if isinstance(current_test_data, PyGDataLoader):
                     all_preds_test, all_labels_test = [], []
@@ -302,8 +353,12 @@ class GNNBenchmarker:
                     test_labels_cat = torch.cat(all_labels_test)
                     best_test_metric_at_best_val = metric_fn(test_labels_cat, test_preds_cat)
                 elif isinstance(current_test_data, Data):
-                    out_test = model(current_test_data)
-                    if isinstance(out_test, tuple): out_test = out_test[0]
+                    # ProtGramDirectGCN's forward returns (logits, embeddings)
+                    if model_name_str == "ProtGramDirectGCN":
+                        out_test, _ = model(data=current_test_data)
+                    else:
+                        out_test = model(current_test_data)
+                        if isinstance(out_test, tuple): out_test = out_test[0]
                     if current_test_data.test_mask.sum() == 0:
                         best_test_metric_at_best_val = 0.0
                     else:
@@ -323,20 +378,73 @@ class GNNBenchmarker:
         dataset_results = []
         DataUtils.print_header(f"Benchmarking on Dataset: {dataset_name}{graph_variant_suffix}")
 
+        # --- NEW: Handle ProtGramDirectGCN as a special case first ---
+        print(f"\n--- Benchmarking Model: ProtGramDirectGCN on Dataset: {dataset_name}{graph_variant_suffix} ---")
+        try:
+            # ProtGramDirectGCN specific initialization
+            # It uses GCN_HIDDEN_LAYER_DIMS from the main config
+            layer_dims = [num_features] + self.config.GCN_HIDDEN_LAYER_DIMS + [num_classes]
+
+            model_instance = ProtGramDirectGCN(
+                layer_dims=layer_dims,
+                num_graph_nodes=train_data.num_nodes,  # Pass actual number of nodes for vector coeffs
+                task_num_output_classes=num_classes,
+                n_gram_len=0,  # Not applicable for these datasets, set to 0
+                one_gram_dim=0,  # Not applicable, set to 0
+                max_pe_len=0,  # Not applicable, set to 0
+                dropout=self.config.GCN_DROPOUT_RATE,
+                use_vector_coeffs=self.config.GCN_USE_VECTOR_COEFFS
+            ).to(self.device)
+
+            if self.config.DEBUG_VERBOSE: print(f"  Model Architecture:\n{model_instance}")
+            optimizer = torch.optim.Adam(model_instance.parameters(), lr=self.config.EVAL_LEARNING_RATE, weight_decay=5e-4)
+
+            # train_and_evaluate will now handle adapting the Data object for ProtGramDirectGCN
+            val_metric, test_metric, history_df, metric_name_used = self.train_and_evaluate(
+                "ProtGramDirectGCN", model_instance, f"{dataset_name}{graph_variant_suffix}",
+                train_data, val_data, test_data,  # Pass the original Data objects
+                optimizer, num_epochs=self.config.EVAL_EPOCHS, task_type=task_type,
+                num_classes=num_classes
+            )
+            result_entry = {
+                'dataset': f"{dataset_name}{graph_variant_suffix}", 'model': "ProtGramDirectGCN",
+                f'best_val_{metric_name_used.lower().replace(" ", "_")}': val_metric,
+                f'test_{metric_name_used.lower().replace(" ", "_")}': test_metric
+            }
+            dataset_results.append(result_entry)
+
+            # _save_node_embeddings also needs to handle ProtGramDirectGCN's specific input
+            self._save_node_embeddings(model_instance, test_data, "ProtGramDirectGCN", dataset_name, graph_variant_suffix)
+
+            reports_dir = str(self.config.BENCHMARKING_RESULTS_DIR / f"{dataset_name}{graph_variant_suffix}")
+            os.makedirs(reports_dir, exist_ok=True)
+            history_path = os.path.join(reports_dir, f'benchmark_ProtGramDirectGCN_history.csv')
+            history_df.to_csv(history_path, index=False)
+            print(f"  Saved ProtGramDirectGCN training history for {dataset_name}{graph_variant_suffix} to {history_path}")
+
+        except Exception as e:
+            print(f"ERROR during training/evaluation of ProtGramDirectGCN on {dataset_name}{graph_variant_suffix}: {e}")
+            import traceback
+            traceback.print_exc()
+            dataset_results.append({'dataset': f"{dataset_name}{graph_variant_suffix}", 'model': "ProtGramDirectGCN", 'error': str(e)})
+        # --- End of special case for ProtGramDirectGCN ---
+
+        # --- Loop for other standard models ---
         for model_name, m_config in model_zoo_config.items():
+            # Skip ProtGramDirectGCN here as it's already handled above
             if model_name == "ProtGramDirectGCN":
-                print(f"Skipping ProtGramDirectGCN in standard GNN benchmark loop for {dataset_name}{graph_variant_suffix}.")
                 continue
 
             print(f"\n--- Benchmarking Model: {model_name} on Dataset: {dataset_name}{graph_variant_suffix} ---")
             try:
+                # Standard models receive the original Data object (train_data, val_data, test_data)
                 model_instance = m_config["class"](in_channels=num_features, out_channels=num_classes, **m_config["params"]).to(self.device)
                 if self.config.DEBUG_VERBOSE: print(f"  Model Architecture:\n{model_instance}")
                 optimizer = torch.optim.Adam(model_instance.parameters(), lr=self.config.EVAL_LEARNING_RATE, weight_decay=5e-4)
 
                 val_metric, test_metric, history_df, metric_name_used = self.train_and_evaluate(
                     model_name, model_instance, f"{dataset_name}{graph_variant_suffix}",
-                    train_data, val_data, test_data,
+                    train_data, val_data, test_data,  # Pass the original data objects
                     optimizer, num_epochs=self.config.EVAL_EPOCHS, task_type=task_type,
                     num_classes=num_classes
                 )
@@ -392,6 +500,7 @@ class GNNBenchmarker:
                 print(f"Unexpected task type '{task_type_orig}' for dataset {dataset_name}. Skipping.")
                 continue
 
+            # Define the standard model zoo configuration
             model_zoo_cfg = {
                 "GCN": {"class": GCN, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
                 "GAT": {"class": GAT, "params": {"hidden_channels": 32, "heads": 8, "num_layers": 2, "dropout_rate": 0.6}},
@@ -402,13 +511,16 @@ class GNNBenchmarker:
                 "TongDiGCN": {"class": TongDiGCN, "params": {"hidden_channels": 128, "num_layers": 2, "dropout_rate": 0.5}},
             }
 
+            # Run on the original (potentially directed) graph variant
             results_orig = self.run_on_dataset_variant(dataset_name, model_zoo_cfg,
                                                        train_loader_orig, val_loader_orig, test_loader_orig,
                                                        task_type_orig, num_features, num_classes, "_Original")
             all_results_summary.extend(results_orig)
 
+            # Run on the explicitly undirected graph variant if configured
             if self.config.BENCHMARK_TEST_ON_UNDIRECTED and task_type_orig == 'single-label-node':
-                train_data_undir, val_data_undir, test_data_undir, task_type_undir = self._get_dataset(dataset_name, base_dataset_path, make_undirected=True)
+                train_data_undir, val_data_undir, test_data_undir, task_type_undir = self._get_dataset(
+                    dataset_name, base_dataset_path, make_undirected=True)
                 if train_data_undir is not None:
                     results_undir = self.run_on_dataset_variant(dataset_name, model_zoo_cfg,
                                                                 train_data_undir, val_data_undir, test_data_undir,
@@ -417,6 +529,7 @@ class GNNBenchmarker:
                 else:
                     print(f"Skipping undirected variant for {dataset_name} due to loading error.")
 
+            # Save summary for the current dataset
             current_dataset_summary = [res for res in all_results_summary if res['dataset'].startswith(dataset_name)]
             if current_dataset_summary:
                 dataset_summary_df = pd.DataFrame(current_dataset_summary)
@@ -425,6 +538,7 @@ class GNNBenchmarker:
                 print(f"\nCombined Summary for dataset {dataset_name} (all variants) saved to {dataset_summary_path}")
                 print(dataset_summary_df)
 
+        # Save overall summary
         if all_results_summary:
             final_summary_df = pd.DataFrame(all_results_summary)
             final_summary_path = os.path.join(str(self.config.BENCHMARKING_RESULTS_DIR), "gnn_benchmark_FULL_SUMMARY.csv")
