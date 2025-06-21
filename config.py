@@ -150,7 +150,7 @@ class Config:
         self.EVAL_MLP_DROPOUT2_RATE = 0.4
         self.EVAL_MLP_L2_REG = 1e-5
         self.EVAL_BATCH_SIZE = 512
-        self.EVAL_EPOCHS = 20
+        self.EVAL_EPOCHS = 5
         self.EVAL_LEARNING_RATE = 0.001
 
         # Evaluation Reporting
