@@ -17,11 +17,11 @@ class Config:
         self.DEBUG_VERBOSE = True
 
         # --- Workflow Control Flags ---
-        self.RUN_GCN_PIPELINE = True
+        self.RUN_GCN_PIPELINE = False
         self.RUN_WORD2VEC_PIPELINE = False
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = False
-        self.RUN_MAIN_PPI_EVALUATION = False
+        self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_DUMMY_TEST = False
         self.CLEANUP_DUMMY_DATA = False
 
@@ -142,8 +142,9 @@ class Config:
         # Ensure these paths are correct for your generated embeddings
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
             {"name": "ProtT5-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
-            {"name": "ProtGramDirectGCN-UniProt-PCA64-Old", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_1.h5"},
-            {"name": "ProtGramDirectGCN-UniProt-PCA64-New", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_2.h5"},
+            {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-old", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_old.h5"},
+            {"name": "ProtGramDirectGCN-UniProt-PCA64-n4-old", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_n4.h5"},
+            {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-new", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_n3_new.h5"},
             {"name": "Word2Vec-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / f"word2vec.h5"}
         ]
 
@@ -163,7 +164,7 @@ class Config:
         self.EVAL_MLP_DROPOUT2_RATE = 0.4
         self.EVAL_MLP_L2_REG = 1e-5
         self.EVAL_BATCH_SIZE = 1024
-        self.EVAL_EPOCHS = 300
+        self.EVAL_EPOCHS = 5
         self.EVAL_LEARNING_RATE = 0.001
 
         # Evaluation Reporting
