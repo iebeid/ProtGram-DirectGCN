@@ -97,13 +97,39 @@ class PPIPipeline:
                            'hadamard': embedding_dim, 'l1_distance': embedding_dim, 'l2_distance': embedding_dim}
         edge_feature_dim = feature_dim_map.get(self.config.EVAL_EDGE_EMBEDDING_METHOD, embedding_dim * 2)
 
+        # G:/My Drive/Knowledge/Research/TWU/Topics/AI in Proteomics/Protein-protein interaction prediction/Code/ProtGram-DirectGCN/src/pipeline/ppi_main.py
+
+        # ... (inside _run_cv_workflow method) ...
+
         for fold_num, (train_idx, val_idx) in enumerate(skf.split(np.zeros(len(all_pairs_for_cv)), labels_array)):
-            fold_start_time = time.monotonic()  # MODIFICATION
+            fold_start_time = time.monotonic()
             print(f"\n  --- Fold {fold_num + 1}/{self.config.EVAL_N_FOLDS} for {embedding_name} ---")
 
             train_pairs_fold = [all_pairs_for_cv[i] for i in train_idx]
             val_pairs_fold = [all_pairs_for_cv[i] for i in val_idx]
             print(f"    Train pairs: {len(train_pairs_fold)}, Validation pairs: {len(val_pairs_fold)}")
+
+            # --- ADDED DEBUGGING FOR CLASS DISTRIBUTION ---
+            train_labels_fold = np.array([p[2] for p in train_pairs_fold])
+            val_labels_fold = np.array([p[2] for p in val_pairs_fold])
+            print(f"    Train class distribution: Pos={np.sum(train_labels_fold == 1)}, Neg={np.sum(train_labels_fold == 0)}")
+            print(f"    Validation class distribution: Pos={np.sum(val_labels_fold == 1)}, Neg={np.sum(val_labels_fold == 0)}")
+            # --- END ADDED DEBUGGING ---
+
+            # Calculate class weights for imbalanced datasets
+            # This should be done per fold, based on the training set distribution
+            neg_count = np.sum(train_labels_fold == 0)
+            pos_count = np.sum(train_labels_fold == 1)
+
+            class_weight = None
+            if neg_count > 0 and pos_count > 0:
+                total_count = neg_count + pos_count
+                weight_for_0 = (1 / neg_count) * (total_count / 2.0)
+                weight_for_1 = (1 / pos_count) * (total_count / 2.0)
+                class_weight = {0: weight_for_0, 1: weight_for_1}
+                print(f"    Calculated class weights: {class_weight}")
+            else:
+                print("    Warning: Cannot calculate class weights (one class missing in training data).")
 
             # Calculate steps per epoch
             num_train_batches = (len(train_pairs_fold) + self.config.EVAL_BATCH_SIZE - 1) // self.config.EVAL_BATCH_SIZE
@@ -157,6 +183,7 @@ class PPIPipeline:
                                 steps_per_epoch=num_train_batches,
                                 validation_steps=num_val_batches if num_val_batches > 0 else None,
                                 verbose=1 if self.config.DEBUG_VERBOSE else 0,
+                                class_weight=class_weight,  # ADDED: Pass class_weight here
                                 callbacks=[
                                     tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=self.config.EARLY_STOPPING_PATIENCE, restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else [])
             if fold_num == 0: aggregated_results['history_dict_fold1'] = history.history
@@ -183,6 +210,12 @@ class PPIPipeline:
                 y_pred_proba = np.concatenate(y_pred_proba_list)
                 y_pred_class = (y_pred_proba > 0.5).astype(int)
 
+                # --- ADDED DEBUGGING FOR PREDICTED CLASS DISTRIBUTION ---
+                print(f"    Validation true class distribution (concatenated): Pos={np.sum(y_val_fold_true_np == 1)}, Neg={np.sum(y_val_fold_true_np == 0)}")
+                print(f"    Validation predicted class distribution (concatenated): Pos={np.sum(y_pred_class == 1)}, Neg={np.sum(y_pred_class == 0)}")
+                print(f"    Validation predicted probabilities (min/max/mean): {np.min(y_pred_proba):.4f}/{np.max(y_pred_proba):.4f}/{np.mean(y_pred_proba):.4f}")
+                # --- END ADDED DEBUGGING ---
+
                 current_metrics = {
                     'precision_sklearn': precision_score(y_val_fold_true_np, y_pred_class, zero_division=0),
                     'recall_sklearn': recall_score(y_val_fold_true_np, y_pred_class, zero_division=0),
@@ -206,7 +239,11 @@ class PPIPipeline:
             del model, history, train_ds, val_ds_for_fit, val_ds_eval
             gc.collect()
             tf.keras.backend.clear_session()
-            print(f"    Fold {fold_num + 1} completed in {time.monotonic() - fold_start_time:.2f}s.")  # MODIFICATION
+            print(f"    Fold {fold_num + 1} completed in {time.monotonic() - fold_start_time:.2f}s.")
+
+        # ... (rest of the file) ...
+
+
 
         if fold_metrics_list:
             metrics_keys = fold_metrics_list[0].keys() if fold_metrics_list else []

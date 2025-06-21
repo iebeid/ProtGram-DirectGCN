@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 6.0 (Added diagnostic for part-file line counts before concatenation)
+# VERSION: 6.1 (Reads Dask parts directly, passes n_value to graph constructor)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -11,6 +11,7 @@ import shutil
 import sys
 import time  # Ensure time is imported for time.monotonic()
 from functools import partial
+from pathlib import Path
 from typing import Tuple, Dict, Iterator
 
 import community as community_louvain  # For Louvain community detection
@@ -165,7 +166,7 @@ class GraphBuilder:
             phase1_level_start_time = time.monotonic()
 
             output_ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n_val_loop}.parquet')
-            output_edge_file = os.path.join(self.temp_dir, f'edge_list_n{n_val_loop}.txt')
+            temp_edge_output_dir = os.path.join(self.temp_dir, f'edge_list_n{n_val_loop}_parts')
 
             print(f"  [n={n_val_loop}] Generating n-grams using Dask Bag (source: final_preprocessed_input_bag)...")
             sys.stdout.flush()
@@ -187,7 +188,6 @@ class GraphBuilder:
                     unique_ngrams_df = pd.DataFrame(sorted(unique_ngrams_list), columns=['ngram'])
             except MemoryError as e_mem_distinct_ngrams:
                 print(f"  [n={n_val_loop}] MEMORY ERROR during Dask compute for distinct n-grams: {e_mem_distinct_ngrams}")
-                print("  The number of unique n-grams might be too large to fit in memory even after using distinct().")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
                 continue
@@ -210,7 +210,7 @@ class GraphBuilder:
                 continue
 
             if unique_ngrams_df.empty:
-                open(output_edge_file, 'w').close()
+                os.makedirs(temp_edge_output_dir, exist_ok=True) # Create empty dir so Phase 2 doesn't fail
                 print(f"  [n={n_val_loop}] No n-grams, so no edges will be generated.")
                 print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.")
                 continue
@@ -233,93 +233,25 @@ class GraphBuilder:
                                             ngram_to_id_map=ngram_to_id_map)
             all_edges_str_bag_flattened = final_preprocessed_input_bag.map(extract_edges_partial).flatten()
 
-            if n_val_loop == 1 and self.config.DEBUG_VERBOSE:  # Keep this for n=1
-                try:
-                    print(f"    DEBUG: Attempting to count items in all_edges_str_bag_flattened for n={n_val_loop} before to_textfiles...")
-                    intermediate_edge_count = all_edges_str_bag_flattened.count().compute(scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
-                    print(f"    DEBUG: Count from all_edges_str_bag_flattened for n={n_val_loop}: {intermediate_edge_count}")
-                except Exception as e_dbg_count:
-                    print(f"    DEBUG: Error counting intermediate edge bag for n={n_val_loop}: {e_dbg_count}")
-
-            temp_edge_output_dir = os.path.join(self.temp_dir, f'edge_list_n{n_val_loop}_parts')
             if os.path.exists(temp_edge_output_dir):
                 shutil.rmtree(temp_edge_output_dir)
 
-            scheduler_for_to_textfiles = 'sync'  # Keep 'sync' for to_textfiles for diagnostic stability
-            print(f"    Writing edge strings to directory: {temp_edge_output_dir} using Dask scheduler: '{scheduler_for_to_textfiles}' (DIAGNOSTIC)...")
+            scheduler_for_to_textfiles = 'sync'
+            print(f"    Writing edge strings to directory: {temp_edge_output_dir} using Dask scheduler: '{scheduler_for_to_textfiles}'...")
 
-            edge_count_from_concatenation = 0  # Renamed to avoid conflict with any prior edge_count
             try:
                 all_edges_str_bag_flattened.to_textfiles(
                     os.path.join(temp_edge_output_dir, 'part-*.txt'),
                     compute=True,
                     scheduler=scheduler_for_to_textfiles,
-                    num_workers=effective_dask_workers if scheduler_for_to_textfiles != 'sync' else None
+                    num_workers=None
                 )
                 print(f"    Edge parts saved to directory {temp_edge_output_dir}.")
-
-                # *** ADDED DIAGNOSTIC FOR PART FILES (APPLIES TO ALL N) ***
-                if self.config.DEBUG_VERBOSE and os.path.exists(temp_edge_output_dir):
-                    part_files_check = sorted([  # Sort for consistent order if it matters for debugging
-                        os.path.join(temp_edge_output_dir, f)
-                        for f in os.listdir(temp_edge_output_dir)
-                        if f.startswith('part-') and f.endswith('.txt')
-                    ])
-                    print(f"    DEBUG (n={n_val_loop}): Found {len(part_files_check)} part-files in {temp_edge_output_dir}.")
-                    total_lines_in_parts = 0
-                    for i_part, pf_path in enumerate(part_files_check):
-                        try:
-                            with open(pf_path, 'r', encoding='utf-8') as temp_pf:  # Added encoding
-                                lines_in_this_part = sum(1 for _ in temp_pf)
-                                total_lines_in_parts += lines_in_this_part
-                                if i_part < 3 or (len(part_files_check) > 5 and i_part > len(part_files_check) - 3):  # Print for first/last few parts
-                                    print(f"      DEBUG (n={n_val_loop}): Part-file '{os.path.basename(pf_path)}' has {lines_in_this_part} lines.")
-                        except Exception as e_pf_read:
-                            print(f"      DEBUG (n={n_val_loop}): Error reading part-file {pf_path}: {e_pf_read}")
-                    print(f"    DEBUG (n={n_val_loop}): Total lines counted across all part-files: {total_lines_in_parts}")
-                # *** END ADDED DIAGNOSTIC ***
-
-                print(f"    Concatenating edge parts into {os.path.basename(output_edge_file)}...")
-                edge_count_from_concatenation = 0  # Reset before this specific loop
-                if not os.path.exists(temp_edge_output_dir):
-                    print(f"    Warning: Dask did not create the edge parts directory: {temp_edge_output_dir}. Assuming no edges were generated.")
-                    open(output_edge_file, 'w').close()
-                else:
-                    # Use the already sorted list if available from diagnostic, else re-list and sort
-                    part_files_for_concat = part_files_check if 'part_files_check' in locals() and self.config.DEBUG_VERBOSE else sorted([
-                        os.path.join(temp_edge_output_dir, f)
-                        for f in os.listdir(temp_edge_output_dir)
-                        if f.startswith('part-') and f.endswith('.txt')
-                    ])
-
-                    if not part_files_for_concat:
-                        print(f"    Warning: No edge part-files found in {temp_edge_output_dir} for concatenation. Output edge file will be empty.")
-
-                    with open(output_edge_file, 'w', encoding='utf-8') as outfile:  # Added encoding
-                        for part_file_name in tqdm(part_files_for_concat, desc=f"    Concatenating parts (n={n_val_loop})", leave=False, disable=not self.config.DEBUG_VERBOSE):
-                            with open(part_file_name, 'r', encoding='utf-8') as infile:  # Added encoding
-                                for line in infile:
-                                    outfile.write(line)
-                                    edge_count_from_concatenation += 1
-                print(f"    Successfully wrote {edge_count_from_concatenation} raw edge transitions to {os.path.basename(output_edge_file)}.")
-                if os.path.exists(temp_edge_output_dir):
-                    shutil.rmtree(temp_edge_output_dir)
-
-            except MemoryError as e_mem:
-                print(f"  [n={n_val_loop}] MEMORY ERROR during edge string computation or writing (to_textfiles): {e_mem}")
-                print("  This can happen if even a single partition's result is too large for a worker, or during Dask's internal operations for to_textfiles.")
-                import traceback
-                traceback.print_exc(file=sys.stderr)
-                open(output_edge_file, 'w').close()
-                print(f"  Created empty edge file for n={n_val_loop} due to memory error.")
-                if "Killed" in str(e_mem) or "Cannot allocate memory" in str(e_mem):
-                    print(f"  OOM likely killed a Dask worker or the process at n={n_val_loop} during edge processing. Further processing for this n-level may be unreliable.")
             except Exception as e_write_edges:
-                print(f"  [n={n_val_loop}] ERROR writing edge list file or during edge computation: {e_write_edges}")
+                print(f"  [n={n_val_loop}] ERROR writing edge list parts: {e_write_edges}")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
-                open(output_edge_file, 'w').close()
-                print(f"  Created empty edge file for n={n_val_loop} due to error.")
+                os.makedirs(temp_edge_output_dir, exist_ok=True) # Ensure dir exists even on failure
 
             del ngram_to_id_map
             gc.collect()
@@ -337,20 +269,17 @@ class GraphBuilder:
         for n in n_values:
             print(f"\n--- Processing n = {n} for final graph object ---")
             ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
-            edge_file = os.path.join(self.temp_dir, f'edge_list_n{n}.txt')
+            edge_parts_dir = os.path.join(self.temp_dir, f'edge_list_n{n}_parts')
 
-            if not os.path.exists(ngram_map_file) or not os.path.exists(edge_file):
-                print(f"  Warning: Intermediate files for n={n} not found (likely due to error in Phase 1). Skipping graph generation for this level.")
+            if not os.path.exists(ngram_map_file):
+                print(f"  Warning: N-gram map for n={n} not found. Skipping graph generation.")
                 continue
             try:
                 table_read = pq.read_table(ngram_map_file, columns=['id', 'ngram'])
                 nodes_df = table_read.to_pandas()
                 del table_read
-            except pyarrow.lib.ArrowInvalid as e:
-                print(f"  ❌ Error: Could not read Parquet file for n={n} at: {ngram_map_file}. Details: {e}. Skipping.")
-                continue
             except Exception as e_parquet:
-                print(f"  ❌ Error: General error reading Parquet file for n={n} at: {ngram_map_file}. Details: {e_parquet}. Skipping.")
+                print(f"  ❌ Error: General error reading Parquet file for n={n}: {e_parquet}. Skipping.")
                 continue
 
             if nodes_df.empty:
@@ -360,17 +289,17 @@ class GraphBuilder:
             idx_to_node = nodes_df.set_index('id')['ngram'].to_dict()
             del nodes_df
 
-            print(f"  Loading and aggregating raw edges for n={n} using Dask DataFrame...")
+            print(f"  Loading and aggregating raw edges for n={n} using Dask DataFrame from parts...")
             weighted_edge_df_computed = pd.DataFrame(columns=['source', 'target', 'weight'])
-            raw_edge_file_was_empty = False
+            raw_edge_files_exist = False
             try:
-                if not os.path.exists(edge_file) or os.path.getsize(edge_file) == 0:
-                    print(f"  ℹ️ Info: Edge file for n={n} is empty or not found. Creating graph with no edges.")
-                    raw_edge_file_was_empty = True
-                else:
-                    ddf = dd.read_csv(edge_file, sep=' ', header=None, names=['source', 'target'], dtype=int,
-                                      on_bad_lines='skip', blocksize='128MB')  # Added on_bad_lines
-                    print(f"    Dask DataFrame created for n={n} with {ddf.npartitions} partitions.")
+                edge_parts_glob = os.path.join(edge_parts_dir, 'part-*.txt')
+                # Check if the directory and any part files exist
+                if os.path.exists(edge_parts_dir) and any(Path(edge_parts_dir).glob('part-*.txt')):
+                    raw_edge_files_exist = True
+                    ddf = dd.read_csv(edge_parts_glob, sep=' ', header=None, names=['source', 'target'], dtype=int,
+                                      on_bad_lines='skip', blocksize='128MB')
+                    print(f"    Dask DataFrame created for n={n} from part-files with {ddf.npartitions} partitions.")
 
                     weighted_ddf_series = ddf.groupby(['source', 'target']).size()
                     weighted_ddf = weighted_ddf_series.to_frame(name='weight').reset_index()
@@ -378,43 +307,34 @@ class GraphBuilder:
                     print(f"    Computing aggregated weighted edges for n={n}...")
                     weighted_edge_df_computed = weighted_ddf.compute(scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
                     print(f"    Finished computing aggregated weighted edges for n={n}.")
+                else:
+                    print(f"  ℹ️ Info: Edge parts directory for n={n} is empty or not found. Creating graph with no edges.")
 
-                if weighted_edge_df_computed.empty and not raw_edge_file_was_empty:
-                    print(f"  Warning: Dask DataFrame aggregation resulted in empty weighted edges for n={n}, though raw edge file was not empty.")
-
-            except FileNotFoundError:
-                print(f"  ❌ Error: Edge file not found for n={n} at: {edge_file} (during Dask DF load). Assuming no edges.")
-                raw_edge_file_was_empty = True
             except Exception as e_ddf:
                 print(f"  ❌ Error: Dask DataFrame processing error for edges n={n}: {e_ddf}. Assuming no edges.")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
-                raw_edge_file_was_empty = True
 
             weighted_edge_list_tuples = []
-            if weighted_edge_df_computed.empty:
-                if not raw_edge_file_was_empty:  # Only print if raw file wasn't empty but aggregation is
-                    print(f"  ℹ️ Info: No unique edges found after aggregation for n={n}.")
-            else:
+            if not weighted_edge_df_computed.empty:
                 if self.config.DEBUG_VERBOSE:
                     print(f"  [DEBUG] Weighted edge_df (from Dask DF) for n={n}:")
                     print(weighted_edge_df_computed.head())
-                # The Dask DataFrame aggregation now gives the count of unique weighted edges.
-                # The number of raw transitions processed by Dask DF would be weighted_edge_df_computed['weight'].sum()
-                # if we wanted to report that, but the log from Phase 1 (edge_count_from_concatenation)
-                # already gives the number of lines in the concatenated file.
                 print(f"  Aggregated raw transitions into {len(weighted_edge_df_computed)} unique weighted edges for n={n}.")
                 weighted_edge_list_tuples = [tuple(x) for x in weighted_edge_df_computed[['source', 'target', 'weight']].to_numpy()]
+            elif raw_edge_files_exist:
+                print(f"  ℹ️ Info: No unique edges found after aggregation for n={n}, though raw edge files were present.")
 
             del weighted_edge_df_computed
             gc.collect()
 
-            if self.config.DEBUG_VERBOSE:
-                print(f"  [DEBUG] weighted_edge_list_tuples (sample): {weighted_edge_list_tuples[:5] if weighted_edge_list_tuples else 'Empty'}")
-
             print(f"  Instantiating DirectedNgramGraph object for n={n}...")
-            graph_object = DirectedNgramGraph(nodes=idx_to_node, edges=weighted_edge_list_tuples, epsilon_propagation=self.gcn_propagation_epsilon)
-            graph_object.n_value = n
+            graph_object = DirectedNgramGraph(
+                nodes=idx_to_node,
+                edges=weighted_edge_list_tuples,
+                epsilon_propagation=self.gcn_propagation_epsilon,
+                n_value=n  # Pass n_value to constructor
+            )
             output_path = os.path.join(self.output_dir, f'ngram_graph_n{n}.pkl')
             DataUtils.save_object(graph_object, output_path)
             print(f"  Graph for n={n} saved to {output_path}")

@@ -2,7 +2,7 @@
 # MODULE: utils/models_utils.py
 # PURPOSE: Contains tools for loading and post-processing embeddings, such as PCA,
 #          normalization, pooling, GCN node extraction, and edge feature creation.
-# VERSION: 3.6 (Implement batch-wise edge feature generation and float16 loading)
+# VERSION: 3.7 (Added fast, inverted-index based pooling method)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -205,6 +205,61 @@ class EmbeddingProcessor:
             pooled_embedding = np.mean(ngram_embeddings[valid_indices].astype(np.float32), axis=0)
             return original_id, pooled_embedding.astype(ngram_embeddings.dtype)
         return original_id, None
+
+    @staticmethod
+    def pool_ngram_embeddings_for_protein_fast(
+            protein_sequences: List[Tuple[str, str]],
+            n_val: int,
+            ngram_map: Dict[str, int],
+            ngram_embeddings: np.ndarray
+    ) -> Dict[str, np.ndarray]:
+        """
+        A fast, array-based method for pooling n-gram embeddings to the protein level
+        using an inverted index approach.
+        """
+        print("  Starting fast protein-level pooling using inverted index method...")
+        if not protein_sequences:
+            return {}
+
+        num_proteins = len(protein_sequences)
+        embedding_dim = ngram_embeddings.shape[1]
+        protein_id_to_idx = {protein_data[0]: i for i, protein_data in enumerate(protein_sequences)}
+        protein_ids_ordered = [protein_data[0] for protein_data in protein_sequences]
+
+        # Initialize arrays for aggregation
+        protein_embedding_sums = np.zeros((num_proteins, embedding_dim), dtype=np.float32)
+        protein_ngram_counts = np.zeros(num_proteins, dtype=np.int32)
+
+        print("    Step 1/3: Building inverted index (n-gram -> proteins)...")
+        ngram_idx_to_protein_indices = [[] for _ in range(len(ngram_embeddings))]
+        for prot_idx, (_, seq) in enumerate(tqdm(protein_sequences, desc="    Building inverted index", leave=False)):
+            if len(seq) >= n_val:
+                for i in range(len(seq) - n_val + 1):
+                    ngram_str = "".join(seq[i:i + n_val])
+                    ngram_idx = ngram_map.get(ngram_str)
+                    if ngram_idx is not None:
+                        ngram_idx_to_protein_indices[ngram_idx].append(prot_idx)
+
+        print("    Step 2/3: Aggregating n-gram embeddings to proteins...")
+        for ngram_idx, prot_indices in enumerate(tqdm(ngram_idx_to_protein_indices, desc="    Aggregating embeddings", leave=False)):
+            if prot_indices:
+                ngram_emb = ngram_embeddings[ngram_idx].astype(np.float32)
+                # Use numpy's advanced indexing to add the embedding to all relevant proteins at once
+                protein_embedding_sums[prot_indices] += ngram_emb
+                protein_ngram_counts[prot_indices] += 1
+
+        print("    Step 3/3: Finalizing mean-pooled embeddings...")
+        # Avoid division by zero for proteins that had no valid n-grams
+        valid_counts_mask = protein_ngram_counts > 0
+        protein_embedding_sums[valid_counts_mask] /= protein_ngram_counts[valid_counts_mask, np.newaxis]
+
+        # Create the final dictionary
+        pooled_embeddings = {
+            protein_ids_ordered[i]: protein_embedding_sums[i].astype(ngram_embeddings.dtype)
+            for i in range(num_proteins) if valid_counts_mask[i]
+        }
+        print(f"  Fast pooling complete. Generated {len(pooled_embeddings)} protein embeddings.")
+        return pooled_embeddings
 
     @staticmethod
     def extract_gcn_node_embeddings(model: 'ProtGramDirectGCN',

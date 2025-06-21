@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: utils/graph_utils.py
 # PURPOSE: Contains robust classes for n-gram graph representation.
-# VERSION: 7.2 (Added debug prints for sparse tensor nnz/memory in propagation calc)
+# VERSION: 7.3 (Added n_value to constructor to fix logging bug)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -126,11 +126,12 @@ class Graph:
 
 
 class DirectedNgramGraph(Graph):
-    def __init__(self, nodes: Dict[int, Any], edges: List[Tuple], epsilon_propagation: float = 1e-9):
+    def __init__(self, nodes: Dict[int, Any], edges: List[Tuple],
+                 epsilon_propagation: float = 1e-9, n_value: Optional[int] = None):
         super().__init__(nodes=nodes, edges=edges)
 
         self.epsilon_propagation = epsilon_propagation
-        self.n_value: Optional[int] = None
+        self.n_value: Optional[int] = n_value  # Set n_value from constructor
 
         # A_out_w and A_in_w are sparse torch.Tensor
         self.A_out_w: torch.Tensor

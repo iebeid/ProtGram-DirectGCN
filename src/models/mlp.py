@@ -44,7 +44,7 @@ class MLP:
             tf.keras.Model: The compiled Keras model.
         """
         model = Sequential([
-            InputLayer(input_shape=(self.input_shape,)),
+            InputLayer(shape=(self.input_shape,)),
             Dense(
                 self.mlp_params['dense1_units'],
                 activation='relu',

@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 4.0 (Handles sparse mathcal_A from graph_utils, removed fai/fao)
+# VERSION: 4.1 (Uses fast inverted-index pooling method)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -284,32 +284,29 @@ class ProtGramDirectGCNTrainer:
                 loaded_data = DataUtils.load_object(graph_path)
                 if isinstance(loaded_data, DirectedNgramGraph):
                     graph_obj = loaded_data
+                    graph_obj.n_value = n_val # Set n_value immediately after loading
                     # Re-initialize propagation matrices as they are not pickled with sparse tensors well by default
                     # and to ensure correct device placement if loaded object was on CPU.
                     if graph_obj.number_of_nodes > 0:
                         # Ensure A_out_w and A_in_w are on the correct device before recomputing mathcal_A
-                        # This assumes _create_raw_weighted_adj_matrices_torch sets them to CPU or a default device
-                        # If they are already torch tensors, move them.
                         if hasattr(graph_obj, 'A_out_w') and isinstance(graph_obj.A_out_w, torch.Tensor):
                             graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
                         if hasattr(graph_obj, 'A_in_w') and isinstance(graph_obj.A_in_w, torch.Tensor):
                             graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
 
-                        # If A_out_w/A_in_w were not properly initialized or are not sparse tensors,
-                        # re-run _create_raw_weighted_adj_matrices_torch.
-                        # This is a safeguard. Ideally, the pickled object should be consistent.
+                        # Safeguard if A_out_w/A_in_w are not sparse (e.g. from older pickle)
                         if not (hasattr(graph_obj, 'A_out_w') and graph_obj.A_out_w.is_sparse) or \
                                 not (hasattr(graph_obj, 'A_in_w') and graph_obj.A_in_w.is_sparse):
-                            print("    Re-creating raw weighted adjacency matrices for loaded graph object...")
-                            graph_obj._create_raw_weighted_adj_matrices_torch()  # This will use self.device internally if A_out_w is created new
+                            print("    Re-creating raw weighted adjacency matrices for loaded graph object (ensuring sparse)...")
+                            graph_obj._create_raw_weighted_adj_matrices_torch()
+                            graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
+                            graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
 
                         # Always re-create propagation matrices after loading
                         print("    Re-creating propagation matrices for loaded graph object...")
                         graph_obj._create_propagation_matrices_for_gcn()
                 else:
                     raise TypeError(f"Loaded graph object is not of type DirectedNgramGraph, but {type(loaded_data)}.")
-
-                if graph_obj: graph_obj.n_value = n_val
 
             except FileNotFoundError:
                 print(f"  ERROR: Graph object not found at {graph_path}. Skipping n={n_val}.")
@@ -361,18 +358,12 @@ class ProtGramDirectGCNTrainer:
                     prefix_idx = prev_level_ngram_to_idx_map.get(prefix_constituent_ngram)
                     if prefix_idx is not None and prefix_idx < len(prev_level_embeds_np):
                         constituent_embeddings_to_pool.append(prev_level_embeds_np[prefix_idx])
-                    # elif self.config.DEBUG_VERBOSE:
-                    # print(f"    Warning: Prefix '{prefix_constituent_ngram}' not found in prev (n={n_val - 1}) level map for current_ngram '{current_ngram_str}'.")
                     suffix_idx = prev_level_ngram_to_idx_map.get(suffix_constituent_ngram)
                     if suffix_idx is not None and suffix_idx < len(prev_level_embeds_np):
                         constituent_embeddings_to_pool.append(prev_level_embeds_np[suffix_idx])
-                    # elif self.config.DEBUG_VERBOSE:
-                    # print(f"    Warning: Suffix '{suffix_constituent_ngram}' not found in prev (n={n_val - 1}) level map for current_ngram '{current_ngram_str}'.")
                     if constituent_embeddings_to_pool:
                         pooled_embedding_np = np.mean(np.array(constituent_embeddings_to_pool, dtype=np.float32), axis=0)
                         x[current_node_idx] = torch.from_numpy(pooled_embedding_np).to(self.device)
-                    # elif self.config.DEBUG_VERBOSE:
-                    # print(f"    Warning: No constituent (n-1)-gram embeddings found for n-gram '{current_ngram_str}' (idx {current_node_idx}). Initialized to zeros.")
 
             print(f"  Initial node feature dimension for n={n_val}: {num_initial_features}")
 
@@ -406,14 +397,11 @@ class ProtGramDirectGCNTrainer:
                     print(f"      Shape of labels tensor: {labels.shape}")
                     print(f"      Unique labels passed to Data object: {labels.unique().tolist() if labels.numel() > 0 else '[]'}")
 
-            # mathcal_A_out and mathcal_A_in are now sparse torch.Tensor
-            # Their indices and values are directly used for PyG Data object
             edge_index_in = graph_obj.mathcal_A_in.indices().to(self.device)
             edge_weight_in = graph_obj.mathcal_A_in.values().to(self.device)
             edge_index_out = graph_obj.mathcal_A_out.indices().to(self.device)
             edge_weight_out = graph_obj.mathcal_A_out.values().to(self.device)
 
-            # fai and fao are removed
             data = Data(x=x.to(self.device),
                         y=labels.to(self.device),
                         edge_index_in=edge_index_in,
@@ -458,27 +446,22 @@ class ProtGramDirectGCNTrainer:
         final_ngram_map = level_ngram_to_idx[final_n_val]
         protein_sequences_path = str(self.config.GCN_INPUT_FASTA_PATH)
         protein_sequences = list(DataLoader.parse_sequences(protein_sequences_path))
-        pool_func = partial(EmbeddingProcessor.pool_ngram_embeddings_for_protein, n_val=final_n_val, ngram_map=final_ngram_map, ngram_embeddings=final_ngram_embeds)
-        pooled_embeddings = {}
-        num_pooling_workers = self.config.POOLING_WORKERS if self.config.POOLING_WORKERS is not None else os.cpu_count()
-        if num_pooling_workers is None or num_pooling_workers < 1: num_pooling_workers = 1
 
-        # Limit pooling workers if num_sequences is small to avoid overhead
-        effective_pooling_workers = min(num_pooling_workers, len(protein_sequences)) if len(protein_sequences) > 0 else 1
+        # Use the new, fast pooling method
+        pooled_embeddings = EmbeddingProcessor.pool_ngram_embeddings_for_protein_fast(
+            protein_sequences=protein_sequences,
+            n_val=final_n_val,
+            ngram_map=final_ngram_map,
+            ngram_embeddings=final_ngram_embeds
+        )
 
-        if effective_pooling_workers > 1 and len(protein_sequences) > effective_pooling_workers:  # Only use Pool if beneficial
-            with Pool(processes=effective_pooling_workers) as pool:
-                for original_id, vec in tqdm(pool.imap_unordered(pool_func, protein_sequences), total=len(protein_sequences), desc="  Pooling Protein Embeddings (Parallel)", disable=not self.config.DEBUG_VERBOSE):
-                    if vec is not None:
-                        final_key = self.id_map.get(original_id, original_id)
-                        pooled_embeddings[final_key] = vec
-        else:  # Sequential pooling for small number of sequences or if workers=1
-            print(f"  Using sequential pooling (workers: {effective_pooling_workers}, sequences: {len(protein_sequences)}).")
-            for seq_data in tqdm(protein_sequences, desc="  Pooling Protein Embeddings (Sequential)", disable=not self.config.DEBUG_VERBOSE):
-                original_id, vec = pool_func(seq_data)
-                if vec is not None:
-                    final_key = self.id_map.get(original_id, original_id)
-                    pooled_embeddings[final_key] = vec
+        # Map original FASTA IDs to final keys if id_map is present
+        if self.id_map:
+            final_pooled_embeddings = {}
+            for original_id, vec in pooled_embeddings.items():
+                final_key = self.id_map.get(original_id, original_id)
+                final_pooled_embeddings[final_key] = vec
+            pooled_embeddings = final_pooled_embeddings
 
         if not pooled_embeddings: print("  Warning: No protein embeddings after pooling.")
 
