@@ -2,7 +2,7 @@
 # ==============================================================================
 # MODULE: models/protgram_directgcn.py
 # PURPOSE: Contains the PyTorch class definitions for the custom GCN model.
-# VERSION: 7.7 (Modified to support Cluster-GCN style training on subgraphs)
+# VERSION: 7.8 (Made forward pass robust to missing edge_weight attributes)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -80,7 +80,6 @@ class DirectGCNLayer(MessagePassing):
         h_shared_out_propagated = self.propagate(edge_index_out, x=h_shared_for_out, edge_weight=edge_weight_out)
         oc_combined = (h_main_out_propagated + self.bias_main_out) + (h_shared_out_propagated + self.bias_shared_out)
 
-        # MODIFIED: Select coefficients based on original indices if provided (for subgraphs)
         if self.use_vector_coeffs and original_indices is not None:
             c_in = self.C_in_vec[original_indices]
             c_out = self.C_out_vec[original_indices]
@@ -130,7 +129,7 @@ class ProtGramDirectGCN(nn.Module):
             self.res_projs.append(nn.Linear(in_dim, out_dim) if in_dim != out_dim else nn.Identity())
 
         final_embedding_dim = layer_dims[-1]
-        decoder_hidden_dim = final_embedding_dim // 2
+        decoder_hidden_dim = final_embedding_dim // 2 if final_embedding_dim > 1 else 1
         self.decoder_fc = nn.Sequential(
             nn.Linear(final_embedding_dim, decoder_hidden_dim),
             nn.ReLU(),
@@ -152,15 +151,24 @@ class ProtGramDirectGCN(nn.Module):
         return x
 
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
-        x, ei_in, ew_in, ei_out, ew_out = data.x, data.edge_index_in, data.edge_weight_in, data.edge_index_out, data.edge_weight_out
-        original_indices = getattr(data, 'original_indices', None) # MODIFIED: Get original indices if present
+        # --- MODIFIED: Safely get attributes, defaulting to None if they don't exist ---
+        x = data.x
+        ei_in = getattr(data, 'edge_index_in', None)
+        ew_in = getattr(data, 'edge_weight_in', None)
+        ei_out = getattr(data, 'edge_index_out', None)
+        ew_out = getattr(data, 'edge_weight_out', None)
+        original_indices = getattr(data, 'original_indices', None)
+        # --- END MODIFIED ---
+
+        # Ensure required attributes are present
+        if ei_in is None or ei_out is None:
+            raise ValueError("ProtGramDirectGCN requires 'edge_index_in' and 'edge_index_out' in the Data object.")
 
         h = self._apply_pe(x)
 
         for i in range(len(self.convs)):
             h_res = h
             gcn_layer, res_layer = self.convs[i], self.res_projs[i]
-            # MODIFIED: Pass original_indices to the layer
             gcn_output = gcn_layer(h_res, ei_in, ew_in, ei_out, ew_out, original_indices)
             residual_output = res_layer(h_res)
             h = F.tanh(gcn_output + residual_output)
