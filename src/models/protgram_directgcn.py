@@ -2,7 +2,7 @@
 # ==============================================================================
 # MODULE: models/protgram_directgcn.py
 # PURPOSE: Contains the PyTorch class definitions for the custom GCN model.
-# VERSION: 8.1 (Fixed inconsistent naming of shared linear layers and biases)
+# VERSION: 8.2 (Implemented hierarchical gating and dual-path transformations)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -19,8 +19,8 @@ from src.utils.models_utils import EmbeddingProcessor
 
 class DirectGCNLayer(MessagePassing):
     """
-    The custom directed GCN layer, now with an additional path for
-    undirected structural information and a learnable node-specific constant.
+    A highly expressive GCN layer with separate and shared transformations for
+    directed and undirected paths, combined via a hierarchical gating mechanism.
     """
 
     def __init__(self, in_channels: int, out_channels: int, num_nodes: int, use_vector_coeffs: bool = True):
@@ -30,48 +30,48 @@ class DirectGCNLayer(MessagePassing):
         self.num_nodes = num_nodes
         self.use_vector_coeffs = use_vector_coeffs
 
-        # --- Components for Directed Paths (Incoming and Outgoing) ---
+        # --- Path-Specific Components ---
         self.lin_main_in = nn.Linear(in_channels, out_channels, bias=False)
         self.lin_main_out = nn.Linear(in_channels, out_channels, bias=False)
+        self.lin_undirected = nn.Linear(in_channels, out_channels, bias=False)
         self.bias_main_in = nn.Parameter(torch.Tensor(out_channels))
         self.bias_main_out = nn.Parameter(torch.Tensor(out_channels))
+        self.bias_undirected = nn.Parameter(torch.Tensor(out_channels))
 
-        # --- Components for Shared Directed Paths ---
-        self.lin_directed_shared = nn.Linear(in_channels, out_channels, bias=False)  # Corrected name
-        self.bias_directed_shared_in = nn.Parameter(torch.Tensor(out_channels))  # Corrected name
-        self.bias_directed_shared_out = nn.Parameter(torch.Tensor(out_channels))  # Corrected name
+        # --- Shared Components (used by all paths) ---
+        self.lin_shared = nn.Linear(in_channels, out_channels, bias=False)
+        self.bias_directed_shared_in = nn.Parameter(torch.Tensor(out_channels))
+        self.bias_directed_shared_out = nn.Parameter(torch.Tensor(out_channels))
+        self.bias_undirected_shared = nn.Parameter(torch.Tensor(out_channels))
 
-        # --- Components for Undirected Paths ---
-        self.lin_undirected = nn.Linear(in_channels, out_channels, bias=False)
-        self.bias_undirected = nn.Parameter(torch.Tensor(out_channels))  # Bias for the undirected path
-
-        # --- Learnable Coefficients (c_in, c_out, c_undirected) ---
+        # --- Hierarchical Learnable Coefficients ---
         if self.use_vector_coeffs and self.num_nodes > 0:
             self.C_in_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
             self.C_out_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
-            self.C_directed_vec = nn.Parameter(torch.Tensor(num_nodes, 1))  # NEW
-            self.C_undirected_vec = nn.Parameter(torch.Tensor(num_nodes, 1))  # NEW
+            self.C_directed_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
+            self.C_undirected_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
+            self.C_all_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
         else:
-            self.use_vector_coeffs = False  # Fallback to scalar if num_nodes is invalid
+            self.use_vector_coeffs = False
             self.C_in = nn.Parameter(torch.Tensor(1))
             self.C_out = nn.Parameter(torch.Tensor(1))
-            self.C_directed = nn.Parameter(torch.Tensor(1))  # NEW
-            self.C_undirected = nn.Parameter(torch.Tensor(1))  # NEW
+            self.C_directed = nn.Parameter(torch.Tensor(1))
+            self.C_undirected = nn.Parameter(torch.Tensor(1))
+            self.C_all = nn.Parameter(torch.Tensor(1))
 
         # --- Learnable Node-Specific Constant ---
         if self.num_nodes > 0:
-            self.constant = nn.Parameter(torch.Tensor(num_nodes, out_channels))  # NEW
+            self.constant = nn.Parameter(torch.Tensor(num_nodes, out_channels))
         else:
-            self.constant = None  # No constant if num_nodes is unknown
+            self.constant = None
 
         self.reset_parameters()
 
     def reset_parameters(self):
-        # Corrected: Use lin_directed_shared here
-        for lin in [self.lin_main_in, self.lin_main_out, self.lin_directed_shared, self.lin_undirected]:
+        for lin in [self.lin_main_in, self.lin_main_out, self.lin_shared, self.lin_undirected]:
             nn.init.xavier_uniform_(lin.weight)
-        # Corrected: Use bias_directed_shared_in/out here
-        for bias in [self.bias_main_in, self.bias_main_out, self.bias_directed_shared_in, self.bias_directed_shared_out, self.bias_undirected]:
+        for bias in [self.bias_main_in, self.bias_main_out, self.bias_directed_shared_in,
+                     self.bias_directed_shared_out, self.bias_undirected, self.bias_undirected_shared]:
             nn.init.zeros_(bias)
 
         if self.use_vector_coeffs:
@@ -79,11 +79,13 @@ class DirectGCNLayer(MessagePassing):
             nn.init.ones_(self.C_out_vec)
             nn.init.ones_(self.C_directed_vec)
             nn.init.ones_(self.C_undirected_vec)
+            nn.init.ones_(self.C_all_vec)
         else:
             nn.init.ones_(self.C_in)
             nn.init.ones_(self.C_out)
             nn.init.ones_(self.C_directed)
             nn.init.ones_(self.C_undirected)
+            nn.init.ones_(self.C_all)
 
         if self.constant is not None:
             nn.init.xavier_uniform_(self.constant)
@@ -91,57 +93,44 @@ class DirectGCNLayer(MessagePassing):
     def forward(self, x: torch.Tensor,
                 edge_index_in: torch.Tensor, edge_weight_in: Optional[torch.Tensor],
                 edge_index_out: torch.Tensor, edge_weight_out: Optional[torch.Tensor],
-                edge_index_undirected: torch.Tensor, edge_weight_undirected: Optional[torch.Tensor],  # NEW
+                edge_index_undirected: torch.Tensor, edge_weight_undirected: Optional[torch.Tensor],
                 original_indices: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """Forward pass implementing the new combined layer logic."""
+        """Forward pass implementing the hierarchical, dual-path logic."""
 
         # --- 1. Directed Incoming Path ---
-        h_main_in_transformed = self.lin_main_in(x)
-        h_main_in_propagated = self.propagate(edge_index_in, x=h_main_in_transformed, edge_weight=edge_weight_in)
-        # Corrected: Use lin_directed_shared and bias_directed_shared_in
-        h_shared_for_in = self.lin_directed_shared(x)
-        h_shared_in_propagated = self.propagate(edge_index_in, x=h_shared_for_in, edge_weight=edge_weight_in)
-        ic_combined = (h_main_in_propagated + self.bias_main_in) + (h_shared_in_propagated + self.bias_directed_shared_in)
+        h_main_in = self.propagate(edge_index_in, x=self.lin_main_in(x), edge_weight=edge_weight_in)
+        h_shared_in = self.propagate(edge_index_in, x=self.lin_shared(x), edge_weight=edge_weight_in)
+        ic_combined = (h_main_in + self.bias_main_in) + (h_shared_in + self.bias_directed_shared_in)
 
         # --- 2. Directed Outgoing Path ---
-        h_main_out_transformed = self.lin_main_out(x)
-        h_main_out_propagated = self.propagate(edge_index_out, x=h_main_out_transformed, edge_weight=edge_weight_out)
-        # Corrected: Use lin_directed_shared and bias_directed_shared_out
-        h_shared_for_out = self.lin_directed_shared(x)
-        h_shared_out_propagated = self.propagate(edge_index_out, x=h_shared_for_out, edge_weight=edge_weight_out)
-        oc_combined = (h_main_out_propagated + self.bias_main_out) + (h_shared_out_propagated + self.bias_directed_shared_out)
+        h_main_out = self.propagate(edge_index_out, x=self.lin_main_out(x), edge_weight=edge_weight_out)
+        h_shared_out = self.propagate(edge_index_out, x=self.lin_shared(x), edge_weight=edge_weight_out)
+        oc_combined = (h_main_out + self.bias_main_out) + (h_shared_out + self.bias_directed_shared_out)
 
-        # --- 3. Undirected Structural Path (NEW) ---
-        h_undirected_transformed = self.lin_undirected(x)
-        h_undirected_propagated = self.propagate(edge_index_undirected, x=h_undirected_transformed, edge_weight=edge_weight_undirected)
-        all_c_combined = h_undirected_propagated + self.bias_undirected
+        # --- 3. Undirected Structural Path ---
+        h_main_undir = self.propagate(edge_index_undirected, x=self.lin_undirected(x), edge_weight=edge_weight_undirected)
+        h_shared_undir = self.propagate(edge_index_undirected, x=self.lin_shared(x), edge_weight=edge_weight_undirected)
+        uc_combined = (h_main_undir + self.bias_undirected) + (h_shared_undir + self.bias_undirected_shared)
 
         # --- 4. Get Coefficients and Constant ---
         if self.use_vector_coeffs and original_indices is not None:
-            # Subgraph mode: select the right coefficients and constants
-            c_in = self.C_in_vec[original_indices]
-            c_out = self.C_out_vec[original_indices]
-            c_directed = self.C_directed_vec[original_indices]
-            c_undirected = self.C_undirected_vec[original_indices]  # Corrected name
+            c_in, c_out = self.C_in_vec[original_indices], self.C_out_vec[original_indices]
+            c_directed, c_undirected = self.C_directed_vec[original_indices], self.C_undirected_vec[original_indices]
+            c_all = self.C_all_vec[original_indices]
             constant_term = self.constant[original_indices] if self.constant is not None else 0
         elif self.use_vector_coeffs:
-            # Full graph mode
-            c_in = self.C_in_vec
-            c_out = self.C_out_vec
-            c_directed = self.C_directed_vec
-            c_undirected = self.C_undirected_vec  # Corrected name
+            c_in, c_out = self.C_in_vec, self.C_out_vec
+            c_directed, c_undirected = self.C_directed_vec, self.C_undirected_vec
+            c_all = self.C_all_vec
             constant_term = self.constant if self.constant is not None else 0
         else:
-            # Scalar mode
-            c_in = self.C_in
-            c_out = self.C_out
-            c_directed = self.C_directed
-            c_undirected = self.C_undirected  # Corrected name
-            constant_term = 0  # Constant is only per-node, so not applicable in scalar mode
+            c_in, c_out, c_directed, c_undirected, c_all = self.C_in, self.C_out, self.C_directed, self.C_undirected, self.C_all
+            constant_term = 0
 
-        # --- 5. Final Combination ---
-        # Corrected: Use c_undirected here
-        final_combination = (c_undirected * all_c_combined) + (c_directed * ((c_in * ic_combined) + (c_out * oc_combined))) + constant_term
+        # --- 5. Final Hierarchical Combination ---
+        directed_signal = c_directed * ((c_in * ic_combined) + (c_out * oc_combined))
+        undirected_signal = c_undirected * uc_combined
+        final_combination = (c_all * (undirected_signal + directed_signal)) + constant_term
 
         return final_combination
 
@@ -191,7 +180,6 @@ class ProtGramDirectGCN(nn.Module):
         )
 
     def _apply_pe(self, x: torch.Tensor) -> torch.Tensor:
-        # This method remains unchanged
         if self.pe_layer is None: return x
         if self.n_gram_len > 0 and self.one_gram_dim > 0 and x.shape[1] == self.n_gram_len * self.one_gram_dim:
             x_with_pe = x.clone()
@@ -205,26 +193,23 @@ class ProtGramDirectGCN(nn.Module):
         return x
 
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
-        # Safely get all attributes, defaulting to None if they don't exist
-        x = data.x
+        x = getattr(data, 'x', None)
         ei_in = getattr(data, 'edge_index_in', None)
         ew_in = getattr(data, 'edge_weight_in', None)
         ei_out = getattr(data, 'edge_index_out', None)
         ew_out = getattr(data, 'edge_weight_out', None)
-        ei_undir = getattr(data, 'edge_index_undirected_norm', None)  # NEW
-        ew_undir = getattr(data, 'edge_weight_undirected_norm', None)  # NEW
+        ei_undir = getattr(data, 'edge_index_undirected_norm', None)
+        ew_undir = getattr(data, 'edge_weight_undirected_norm', None)
         original_indices = getattr(data, 'original_indices', None)
 
-        # Ensure required attributes are present
-        if ei_in is None or ei_out is None or ei_undir is None:
-            raise ValueError("ProtGramDirectGCN requires 'edge_index_in', 'edge_index_out', and 'edge_index_undirected_norm' in the Data object.")
+        if x is None or ei_in is None or ei_out is None or ei_undir is None:
+            raise ValueError("ProtGramDirectGCN requires 'x', 'edge_index_in', 'edge_index_out', and 'edge_index_undirected_norm' in the Data object.")
 
         h = self._apply_pe(x)
 
         for i in range(len(self.convs)):
             h_res = h
             gcn_layer, res_layer = self.convs[i], self.res_projs[i]
-            # Pass all edge information to the layer
             gcn_output = gcn_layer(h_res, ei_in, ew_in, ei_out, ew_out, ei_undir, ew_undir, original_indices)
             residual_output = res_layer(h_res)
             h = F.leaky_relu(gcn_output + residual_output)
