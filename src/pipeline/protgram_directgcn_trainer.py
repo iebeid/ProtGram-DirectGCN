@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 4.15 (Integrates new undirected matrix from graph_obj into Data object)
+# VERSION: 4.16 (Removed 'verbose' from ReduceLROnPlateau for compatibility)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -80,7 +80,8 @@ class ProtGramDirectGCNTrainer:
         data = data.to(self.device)
         scheduler = None
         if self.config.GCN_USE_LR_SCHEDULER:
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE, factor=self.config.GCN_LR_SCHEDULER_FACTOR, verbose=self.config.DEBUG_VERBOSE)
+            # FIX: Removed the 'verbose' argument for backward compatibility
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE, factor=self.config.GCN_LR_SCHEDULER_FACTOR)
         early_stopper = None
         if self.config.GCN_USE_EARLY_STOPPING:
             early_stopper = EarlyStopper(patience=self.config.GCN_EARLY_STOPPING_PATIENCE, min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA)
@@ -113,7 +114,8 @@ class ProtGramDirectGCNTrainer:
         model.to(self.device)
         scheduler = None
         if self.config.GCN_USE_LR_SCHEDULER:
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE, factor=self.config.GCN_LR_SCHEDULER_FACTOR, verbose=self.config.DEBUG_VERBOSE)
+            # FIX: Removed the 'verbose' argument for backward compatibility
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE, factor=self.config.GCN_LR_SCHEDULER_FACTOR)
         early_stopper = None
         if self.config.GCN_USE_EARLY_STOPPING:
             early_stopper = EarlyStopper(patience=self.config.GCN_EARLY_STOPPING_PATIENCE, min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA)
@@ -165,7 +167,7 @@ class ProtGramDirectGCNTrainer:
         except (ImportError, ModuleNotFoundError):
             import community as community_louvain
             print("  METIS not found. Falling back to Louvain for clustering (slower)...")
-            partition = community_louvain.best_partition(g_nx, random_state=self.config.RANDOM_STATE)
+            partition = community_louvain.best_partition(g_nx, random_state=self.config.RANDOM_STATE, weight='edge_attr')
 
         clusters = collections.defaultdict(list)
         for node, cluster_id in partition.items():
