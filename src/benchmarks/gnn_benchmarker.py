@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: gnn_benchmarker.py
 # PURPOSE: To benchmark various GNN models on standard datasets.
-# VERSION: 3.4.15 (Fixed mask assignment and robust undirected edge handling)
+# VERSION: 3.4.16 (Robust Data object construction in _get_dataset)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -68,36 +68,59 @@ class GNNBenchmarker:
             print(f"ERROR: Dataset '{name}' loader not implemented.")
             return None, None, None, None
 
-        data_obj = dataset_obj[0]
+        # Get the raw Data object from the dataset
+        raw_data_obj = dataset_obj[0]
+
+        # Extract core attributes and ensure they are on CPU initially
+        # Handle cases where x or y might be None or have unexpected shapes
+        x = raw_data_obj.x.cpu() if raw_data_obj.x is not None else torch.empty(raw_data_obj.num_nodes, dataset_obj.num_features)
+        edge_index = raw_data_obj.edge_index.cpu()
+        y = raw_data_obj.y.cpu() if raw_data_obj.y is not None else torch.empty(raw_data_obj.num_nodes, dtype=torch.long)
+        num_nodes = raw_data_obj.num_nodes
+
+        # Handle undirected conversion if requested
         if make_undirected:
-            data_obj.edge_index = to_undirected(data_obj.edge_index, num_nodes=data_obj.num_nodes)
+            edge_index = to_undirected(edge_index, num_nodes=num_nodes)
 
-        # --- FIX: Create and assign masks BEFORE applying T.ToDevice transform ---
-        has_standard_masks = hasattr(data_obj, 'train_mask') and data_obj.train_mask.ndim == 1
-        if not has_standard_masks:
+        # Create masks on CPU
+        train_mask = torch.zeros(num_nodes, dtype=torch.bool)
+        val_mask = torch.zeros(num_nodes, dtype=torch.bool)
+        test_mask = torch.zeros(num_nodes, dtype=torch.bool)
+
+        # Populate masks based on existing or custom split
+        # Check if raw_data_obj already has standard masks and they are 1D
+        if hasattr(raw_data_obj, 'train_mask') and raw_data_obj.train_mask.ndim == 1:
+            train_mask = raw_data_obj.train_mask.cpu()
+            val_mask = raw_data_obj.val_mask.cpu()
+            test_mask = raw_data_obj.test_mask.cpu()
+            print(f"  Using existing standard masks for {name}.")
+        else:
             g = torch.Generator().manual_seed(self.config.RANDOM_STATE)
-            indices = torch.randperm(data_obj.num_nodes, generator=g)
-            num_train = int(self.config.BENCHMARK_SPLIT_RATIOS['train'] * data_obj.num_nodes)
-            num_val = int(self.config.BENCHMARK_SPLIT_RATIOS['val'] * data_obj.num_nodes)
+            indices = torch.randperm(num_nodes, generator=g)
+            num_train = int(self.config.BENCHMARK_SPLIT_RATIOS['train'] * num_nodes)
+            num_val = int(self.config.BENCHMARK_SPLIT_RATIOS['val'] * num_nodes)
 
-            # Assign masks directly to data_obj (they will be moved to device by T.ToDevice)
-            data_obj.train_mask = torch.zeros(data_obj.num_nodes, dtype=torch.bool)
-            data_obj.val_mask = torch.zeros(data_obj.num_nodes, dtype=torch.bool)
-            data_obj.test_mask = torch.zeros(data_obj.num_nodes, dtype=torch.bool)
+            train_mask[indices[:num_train]] = True
+            val_mask[indices[num_train:num_train + num_val]] = True
+            test_mask[indices[num_train + num_val:]] = True
+            print(f"  Applied custom seeded split to {name}. Train: {train_mask.sum()}, Val: {val_mask.sum()}, Test: {test_mask.sum()}")
 
-            data_obj.train_mask[indices[:num_train]] = True
-            data_obj.val_mask[indices[num_train:num_train + num_val]] = True
-            data_obj.test_mask[indices[num_train + num_val:]] = True
-            print(f"  Applied custom seeded split to {name}. Train: {data_obj.train_mask.sum()}, Val: {data_obj.val_mask.sum()}, Test: {data_obj.test_mask.sum()}")
-        # --- END FIX ---
+        # Create a brand new Data object with all attributes explicitly passed
+        # This ensures all attributes are properly registered in the _store
+        final_data_obj = Data(x=x, edge_index=edge_index, y=y,
+                              train_mask=train_mask, val_mask=val_mask, test_mask=test_mask,
+                              num_nodes=num_nodes) # Explicitly pass num_nodes for clarity
 
-        # Now apply the ToDevice transform
+        # Now apply the ToDevice transform to the fully constructed Data object
         transform_compose = T.Compose([T.ToDevice(self.device)])
-        data_obj = transform_compose(data_obj)
+        final_data_obj = transform_compose(final_data_obj)
 
-        print(f"  {name} loaded: Nodes: {data_obj.num_nodes}, Edges: {data_obj.num_edges}, Features: {dataset_obj.num_features}, Classes: {dataset_obj.num_classes}")
+        print(f"  {name} loaded: Nodes: {final_data_obj.num_nodes}, Edges: {final_data_obj.num_edges}, Features: {dataset_obj.num_features}, Classes: {dataset_obj.num_classes}")
+        print(f"  DEBUG: final_data_obj.train_mask device: {final_data_obj.train_mask.device}")
+        print(f"  DEBUG: final_data_obj.val_mask device: {final_data_obj.val_mask.device}")
+        print(f"  DEBUG: final_data_obj.test_mask device: {final_data_obj.test_mask.device}")
 
-        return data_obj, data_obj, data_obj, 'single-label-node'
+        return final_data_obj, final_data_obj, final_data_obj, 'single-label-node'
 
     def _get_undirected_normalized_edges(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
         num_nodes = data.num_nodes
@@ -281,6 +304,7 @@ class GNNBenchmarker:
         pgd_train_data, pgd_val_data, pgd_test_data = None, None, None
         try:
             print(f"\n--- Pre-processing data for ProtGramDirectGCN on {dataset_name}{graph_variant_suffix} ---")
+            # Clone the data objects to avoid modifying the original ones passed to other models
             pgd_train_data, pgd_val_data, pgd_test_data = [d.clone() for d in [train_data, val_data, test_data]]
             for d in [pgd_train_data, pgd_val_data, pgd_test_data]:
                 d.edge_index_out = d.edge_index
@@ -309,7 +333,7 @@ class GNNBenchmarker:
 
                     layer_dims = [num_features] + self.config.GCN_HIDDEN_LAYER_DIMS + [num_classes]
                     model_instance = ProtGramDirectGCN(
-                        layer_dims=layer_dims, num_graph_nodes=train_data.num_nodes,
+                        layer_dims=layer_dims, num_graph_nodes=train_data.num_nodes, # Use original train_data.num_nodes for model init
                         task_num_output_classes=num_classes, n_gram_len=0, one_gram_dim=0, max_pe_len=0,
                         dropout=self.config.GCN_DROPOUT_RATE, use_vector_coeffs=self.config.GCN_USE_VECTOR_COEFFS
                     ).to(self.device)
@@ -367,7 +391,7 @@ class GNNBenchmarker:
                 print(f"Skipping dataset {dataset_name} (original) due to loading error.")
                 continue
 
-            num_features = train_data_orig.num_features
+            num_features = train_data_orig.x.shape[1] # Use x.shape[1] for features
             num_classes = train_data_orig.y.max().item() + 1 if train_data_orig.y is not None and train_data_orig.y.numel() > 0 else 1
 
             model_zoo_cfg = {
