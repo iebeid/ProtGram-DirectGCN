@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: gnn_benchmarker.py
 # PURPOSE: To benchmark various GNN models on standard datasets.
-# VERSION: 3.4.17 (Definitive fix for mask attribute and data loading)
+# VERSION: 3.4.18 (Definitive fix for mask attribute and data loading)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -68,6 +68,7 @@ class GNNBenchmarker:
 
         raw_data_obj = dataset_obj[0]
 
+        # Extract core attributes and ensure they are on CPU initially
         x = raw_data_obj.x.cpu() if raw_data_obj.x is not None else torch.empty(raw_data_obj.num_nodes, dataset_obj.num_features)
         edge_index = raw_data_obj.edge_index.cpu()
         y = raw_data_obj.y.cpu() if raw_data_obj.y is not None else torch.empty(raw_data_obj.num_nodes, dtype=torch.long)
@@ -77,9 +78,13 @@ class GNNBenchmarker:
             edge_index = to_undirected(edge_index, num_nodes=num_nodes)
 
         # --- DEFINITIVE FIX for AttributeError: Check for ALL masks before using them ---
-        if (hasattr(raw_data_obj, 'train_mask') and hasattr(raw_data_obj, 'val_mask') and hasattr(raw_data_obj, 'test_mask') and
-                raw_data_obj.train_mask is not None and raw_data_obj.val_mask is not None and raw_data_obj.test_mask is not None and
-                raw_data_obj.train_mask.ndim == 1):
+        use_existing_masks = (
+            hasattr(raw_data_obj, 'train_mask') and hasattr(raw_data_obj, 'val_mask') and hasattr(raw_data_obj, 'test_mask') and
+            raw_data_obj.train_mask is not None and raw_data_obj.val_mask is not None and raw_data_obj.test_mask is not None and
+            raw_data_obj.train_mask.ndim == 1
+        )
+
+        if use_existing_masks:
             print(f"  Using existing standard masks for {name}.")
             train_mask = raw_data_obj.train_mask.cpu()
             val_mask = raw_data_obj.val_mask.cpu()
@@ -101,10 +106,12 @@ class GNNBenchmarker:
             print(f"  Applied custom seeded split. Train: {train_mask.sum()}, Val: {val_mask.sum()}, Test: {test_mask.sum()}")
         # --- END FIX ---
 
+        # Create a brand new Data object with all attributes explicitly passed
         final_data_obj = Data(x=x, edge_index=edge_index, y=y,
                               train_mask=train_mask, val_mask=val_mask, test_mask=test_mask,
                               num_nodes=num_nodes)
 
+        # Now apply the ToDevice transform to the fully constructed Data object
         transform_compose = T.Compose([T.ToDevice(self.device)])
         final_data_obj = transform_compose(final_data_obj)
 
