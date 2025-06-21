@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: gnn_benchmarker.py
 # PURPOSE: To benchmark various GNN models on standard datasets.
-# VERSION: 3.4.2 (Correctly sets edge_index_in as transpose for ProtGramDirectGCN)
+# VERSION: 3.4.3 (Fixed deprecated 'transpose' import)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -14,7 +14,7 @@ from sklearn.metrics import f1_score, accuracy_score
 from torch_geometric.datasets import (KarateClub, Planetoid)
 from torch_geometric.loader import DataLoader as PyGDataLoader
 import torch_geometric.transforms as T
-from torch_geometric.utils import to_undirected, transpose
+from torch_geometric.utils import to_undirected  # Removed 'transpose'
 import h5py
 import numpy as np
 import torch
@@ -126,7 +126,9 @@ class GNNBenchmarker:
                     # If data_for_emb is the original PyG Data object, we need to adapt it here too
                     pg_data_for_emb = data_for_emb.clone()
                     pg_data_for_emb.edge_index_out = pg_data_for_emb.edge_index
-                    pg_data_for_emb.edge_index_in = transpose(pg_data_for_emb.edge_index, pg_data_for_emb.num_nodes)
+                    # --- MODIFIED: Use modern syntax for transpose ---
+                    pg_data_for_emb.edge_index_in = pg_data_for_emb.edge_index[[1, 0]]
+                    # --- END MODIFIED ---
                     pg_data_for_emb.edge_weight_out = getattr(pg_data_for_emb, 'edge_attr', None)
                     pg_data_for_emb.edge_weight_in = getattr(pg_data_for_emb, 'edge_attr', None)  # Assuming symmetric weights for transpose
 
@@ -240,7 +242,9 @@ class GNNBenchmarker:
                 # edge_index_in is the transpose of the original edge_index (target -> source)
                 adapted_data = current_train_data.clone()
                 adapted_data.edge_index_out = adapted_data.edge_index
-                adapted_data.edge_index_in = transpose(adapted_data.edge_index, adapted_data.num_nodes)
+                # --- MODIFIED: Use modern syntax for transpose ---
+                adapted_data.edge_index_in = adapted_data.edge_index[[1, 0]]
+                # --- END MODIFIED ---
                 adapted_data.edge_weight_out = getattr(adapted_data, 'edge_attr', None)
                 adapted_data.edge_weight_in = getattr(adapted_data, 'edge_attr', None)  # Assuming symmetric weights for transpose
                 current_train_data = adapted_data.to(self.device)
@@ -289,7 +293,9 @@ class GNNBenchmarker:
                 if model_name_str == "ProtGramDirectGCN":
                     adapted_data_val = current_val_data.clone()
                     adapted_data_val.edge_index_out = adapted_data_val.edge_index
-                    adapted_data_val.edge_index_in = transpose(adapted_data_val.edge_index, adapted_data_val.num_nodes)
+                    # --- MODIFIED: Use modern syntax for transpose ---
+                    adapted_data_val.edge_index_in = adapted_data_val.edge_index[[1, 0]]
+                    # --- END MODIFIED ---
                     adapted_data_val.edge_weight_out = getattr(adapted_data_val, 'edge_attr', None)
                     adapted_data_val.edge_weight_in = getattr(adapted_data_val, 'edge_attr', None)
                     current_val_data = adapted_data_val.to(self.device)
@@ -335,7 +341,9 @@ class GNNBenchmarker:
                 if model_name_str == "ProtGramDirectGCN":
                     adapted_data_test = current_test_data.clone()
                     adapted_data_test.edge_index_out = adapted_data_test.edge_index
-                    adapted_data_test.edge_index_in = transpose(adapted_data_test.edge_index, adapted_data_test.num_nodes)
+                    # --- MODIFIED: Use modern syntax for transpose ---
+                    adapted_data_test.edge_index_in = adapted_data_test.edge_index[[1, 0]]
+                    # --- END MODIFIED ---
                     adapted_data_test.edge_weight_out = getattr(adapted_data_test, 'edge_attr', None)
                     adapted_data_test.edge_weight_in = getattr(adapted_data_test, 'edge_attr', None)
                     current_test_data = adapted_data_test.to(self.device)
