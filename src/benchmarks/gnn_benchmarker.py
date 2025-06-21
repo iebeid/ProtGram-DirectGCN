@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: gnn_benchmarker.py
 # PURPOSE: To benchmark various GNN models on standard datasets.
-# VERSION: 3.4.10 (Improved robustness for _get_undirected_normalized_edges)
+# VERSION: 3.4.11 (Fixed device mismatch and improved robustness in _get_undirected_normalized_edges)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -242,19 +242,20 @@ class GNNBenchmarker:
 
         # 1. Ensure undirectedness
         # to_undirected expects edge_index to be (2, N)
-        undir_edge_index, _ = to_undirected(edge_index, num_nodes=num_nodes)
+        undir_edge_index_raw, _ = to_undirected(edge_index, num_nodes=num_nodes)
 
         # --- CRITICAL FIX: Ensure undir_edge_index is always (2, N) ---
         # If to_undirected returns an unexpected shape (e.g., 1D tensor like torch.Size([156])),
         # attempt to reshape it if it's a valid flattened edge list, otherwise return empty.
-        if undir_edge_index.ndim != 2 or undir_edge_index.shape[0] != 2:
-            if undir_edge_index.ndim == 1 and undir_edge_index.numel() > 0 and undir_edge_index.numel() % 2 == 0:
-                print(f"WARNING: to_undirected returned unexpected 1D shape {undir_edge_index.shape}. Attempting to reshape to (2, N/2).")
-                undir_edge_index = undir_edge_index.reshape(2, -1)
+        if undir_edge_index_raw.ndim != 2 or undir_edge_index_raw.shape[0] != 2:
+            if undir_edge_index_raw.ndim == 1 and undir_edge_index_raw.numel() > 0 and undir_edge_index_raw.numel() % 2 == 0:
+                print(f"WARNING: to_undirected returned unexpected 1D shape {undir_edge_index_raw.shape}. Attempting to reshape to (2, N/2).")
+                undir_edge_index = undir_edge_index_raw.reshape(2, -1)
             else:
-                print(f"WARNING: to_undirected returned unexpected shape {undir_edge_index.shape}. Converting to (2, 0) empty tensor.")
+                print(f"WARNING: to_undirected returned unexpected shape {undir_edge_index_raw.shape}. Converting to (2, 0) empty tensor.")
                 undir_edge_index = torch.empty((2, 0), dtype=torch.long, device=self.device)
-        # --- END CRITICAL FIX ---
+        else:
+            undir_edge_index = undir_edge_index_raw
 
         # Add self-loops
         # This will add self-loops for all nodes if undir_edge_index is (2,0) and num_nodes > 0
@@ -264,18 +265,17 @@ class GNNBenchmarker:
         # Check if undir_edge_index is empty before calling .size(1)
         if undir_edge_index.numel() == 0:
             edge_weight = torch.empty((0,), dtype=torch.float32, device=self.device)
+            norm_values = torch.empty((0,), dtype=torch.float32, device=self.device)
         else:
             # Create edge_weight directly on the correct device
             edge_weight = torch.ones(undir_edge_index.size(1), dtype=torch.float32, device=self.device)
 
-        # 3. Calculate symmetric normalization: D^(-0.5) * A * D^(-0.5)
-        # Only proceed if there are edges to normalize
-        if undir_edge_index.numel() == 0:
-            norm_values = torch.empty((0,), dtype=torch.float32, device=self.device)
-        else:
+            # 3. Calculate symmetric normalization: D^(-0.5) * A * D^(-0.5)
             row, col = undir_edge_index
             # Ensure deg is computed on the correct device
-            deg = degree(col, num_nodes, dtype=edge_weight.dtype)
+            # Convert num_nodes to a tensor on the correct device for degree calculation
+            num_nodes_tensor = torch.tensor(num_nodes, device=self.device)
+            deg = degree(col, num_nodes=num_nodes_tensor, dtype=edge_weight.dtype)
             deg_inv_sqrt = deg.pow(-0.5)
             deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0  # Handle nodes with degree 0
             norm_values = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
