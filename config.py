@@ -22,7 +22,7 @@ class Config:
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = False
         self.RUN_MAIN_PPI_EVALUATION = True
-        self.RUN_DUMMY_TEST = True
+        self.RUN_DUMMY_TEST = False
         self.CLEANUP_DUMMY_DATA = True
 
         # --- PATH CONFIGURATION ---
