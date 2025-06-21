@@ -22,7 +22,7 @@ class Config:
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = False
         self.RUN_MAIN_PPI_EVALUATION = False
-        self.RUN_DUMMY_TEST = True
+        self.RUN_DUMMY_TEST = False
         self.CLEANUP_DUMMY_DATA = True
 
         # --- PATH CONFIGURATION ---
@@ -68,7 +68,7 @@ class Config:
         self.API_MAPPING_TO_DB = "UniProtKB"
 
         self.GCN_1GRAM_INIT_DIM = 512
-        self.GCN_EPOCHS_PER_LEVEL = 150  # Can be higher now that training is faster
+        self.GCN_EPOCHS_PER_LEVEL = 200  # Can be higher now that training is faster
         self.GCN_LR = 0.001
         self.GCN_DROPOUT_RATE = 0.5
         self.GCN_WEIGHT_DECAY = 1e-4
@@ -88,8 +88,8 @@ class Config:
 
         # --- NEW: Cluster-GCN Training Strategy ---
         self.GCN_USE_CLUSTER_TRAINING = True
-        self.GCN_CLUSTER_TRAINING_THRESHOLD_NODES = 50000  # Apply clustering for graphs with > 50k nodes
-        self.GCN_NUM_CLUSTERS = 150  # Number of clusters to partition the large graph into
+        self.GCN_CLUSTER_TRAINING_THRESHOLD_NODES = 10000  # Apply clustering for graphs with > 50k nodes
+        self.GCN_NUM_CLUSTERS = 50  # Number of clusters to partition the large graph into
 
         self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
         self.APPLY_PCA_TO_GCN = True
