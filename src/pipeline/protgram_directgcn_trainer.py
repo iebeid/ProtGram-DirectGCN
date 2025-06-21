@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 4.8 (Fixed device mismatch in subgraph creation)
+# VERSION: 4.9 (Automated cluster count based on target nodes per cluster)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -11,6 +11,7 @@ import collections
 import gc
 import os
 import random
+import math  # Import math for ceil function
 from typing import Dict, Tuple, Optional, List
 
 import h5py
@@ -99,8 +100,13 @@ class ProtGramDirectGCNTrainer:
 
     def _create_clustered_subgraphs(self, graph: DirectedNgramGraph, full_data: Data) -> List[Data]:
         """Partitions the graph into subgraphs using METIS or Louvain."""
-        num_clusters = self.config.GCN_NUM_CLUSTERS
-        print(f"  Partitioning graph with {graph.number_of_nodes} nodes into {num_clusters} clusters...")
+
+        # Dynamically determine num_clusters based on graph size and target nodes per cluster
+        num_clusters_calculated = math.ceil(graph.number_of_nodes / self.config.GCN_TARGET_NODES_PER_CLUSTER)
+        num_clusters = max(self.config.GCN_MIN_CLUSTERS, num_clusters_calculated)
+        num_clusters = min(num_clusters, self.config.GCN_MAX_CLUSTERS)
+
+        print(f"  Partitioning graph with {graph.number_of_nodes} nodes into {num_clusters} clusters (target nodes/cluster: {self.config.GCN_TARGET_NODES_PER_CLUSTER})...")
 
         # Use the undirected version of the original graph for clustering
         g_nx = to_networkx(Data(edge_index=graph.A_out_w.indices().cpu(), num_nodes=graph.number_of_nodes), to_undirected=True)

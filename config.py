@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: config.py
 # PURPOSE: Centralized configuration for the entire PPI pipeline.
-# VERSION: 1.12 (Added Cluster-GCN training strategy for large graphs)
+# VERSION: 1.13 (Automated cluster count based on target nodes per cluster)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -57,8 +57,7 @@ class Config:
         self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8}
 
         # --- 2. GCN PIPELINE PARAMETERS (Your custom GCN) ---
-        self.GCN_NGRAM_MAX_N = 3
-        # self.DASK_CHUNK_SIZE = 2000000
+        self.GCN_NGRAM_MAX_N = 5
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
 
         self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]
@@ -68,7 +67,7 @@ class Config:
         self.API_MAPPING_TO_DB = "UniProtKB"
 
         self.GCN_1GRAM_INIT_DIM = 512
-        self.GCN_EPOCHS_PER_LEVEL = 200  # Can be higher now that training is faster
+        self.GCN_EPOCHS_PER_LEVEL = 500  # Can be higher now that training is faster
         self.GCN_LR = 0.001
         self.GCN_DROPOUT_RATE = 0.5
         self.GCN_WEIGHT_DECAY = 1e-4
@@ -81,15 +80,21 @@ class Config:
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
             1: "next_node",
             2: "closest_aa",
-            3: "community"
+            3: "community",
+            4: "community",
+            5: "community"
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
 
         # --- NEW: Cluster-GCN Training Strategy ---
         self.GCN_USE_CLUSTER_TRAINING = True
-        self.GCN_CLUSTER_TRAINING_THRESHOLD_NODES = 10000  # Apply clustering for graphs with > 50k nodes
-        self.GCN_NUM_CLUSTERS = 50  # Number of clusters to partition the large graph into
+        self.GCN_CLUSTER_TRAINING_THRESHOLD_NODES = 10000  # Apply clustering for graphs with > 10k nodes
+
+        # New parameters for automatic cluster count
+        self.GCN_TARGET_NODES_PER_CLUSTER = 500  # Aim for 500 nodes per cluster
+        self.GCN_MIN_CLUSTERS = 2  # Ensure at least 2 clusters if clustering is enabled
+        self.GCN_MAX_CLUSTERS = 500  # Cap the number of clusters to avoid excessive fragmentation
 
         self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
         self.APPLY_PCA_TO_GCN = True
