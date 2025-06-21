@@ -57,7 +57,7 @@ class Config:
         self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8}
 
         # --- 2. GCN PIPELINE PARAMETERS (Your custom GCN) ---
-        self.GCN_NGRAM_MAX_N = 5
+        self.GCN_NGRAM_MAX_N = 3
         self.DASK_CHUNK_SIZE = 2000000
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
 
@@ -81,9 +81,7 @@ class Config:
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
             1: "next_node",
             2: "closest_aa",
-            3: "closest_aa",
-            4: "community",  # We can use community again, as it will be on smaller subgraphs
-            5: "community"
+            3: "community"
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
