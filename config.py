@@ -84,14 +84,14 @@ class Config:
 
         self.GCN_PROPAGATION_EPSILON = 1e-9
         self.GCN_MAX_PE_LEN = 512
-        self.GCN_USE_VECTOR_COEFFS = False
+        self.GCN_USE_VECTOR_COEFFS = True
 
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
             1: "next_node",
             2: "next_node",
             3: "next_node"
         }
-        self.GCN_DEFAULT_TASK_TYPE: str = "next_node"
+        self.GCN_DEFAULT_TASK_TYPE: str = "community"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
 
         # --- NEW: Cluster-GCN Training Strategy ---
