@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 6.1 (Reads Dask parts directly, passes n_value to graph constructor)
+# VERSION: 6.3 (Added missing numpy import)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -18,10 +18,10 @@ import community as community_louvain  # For Louvain community detection
 import dask.bag as db
 import dask.dataframe as dd  # Import Dask DataFrame
 import networkx as nx
+import numpy as np  # <-- FIXED: Added missing import
 import pandas as pd
 import pyarrow
 import pyarrow.parquet as pq
-from tqdm.auto import tqdm  # Import tqdm for progress bar during concatenation
 
 from config import Config
 from src.utils.data_utils import DataUtils, DataLoader
@@ -210,7 +210,7 @@ class GraphBuilder:
                 continue
 
             if unique_ngrams_df.empty:
-                os.makedirs(temp_edge_output_dir, exist_ok=True) # Create empty dir so Phase 2 doesn't fail
+                os.makedirs(temp_edge_output_dir, exist_ok=True)  # Create empty dir so Phase 2 doesn't fail
                 print(f"  [n={n_val_loop}] No n-grams, so no edges will be generated.")
                 print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.")
                 continue
@@ -251,7 +251,7 @@ class GraphBuilder:
                 print(f"  [n={n_val_loop}] ERROR writing edge list parts: {e_write_edges}")
                 import traceback
                 traceback.print_exc(file=sys.stderr)
-                os.makedirs(temp_edge_output_dir, exist_ok=True) # Ensure dir exists even on failure
+                os.makedirs(temp_edge_output_dir, exist_ok=True)  # Ensure dir exists even on failure
 
             del ngram_to_id_map
             gc.collect()
@@ -315,13 +315,21 @@ class GraphBuilder:
                 import traceback
                 traceback.print_exc(file=sys.stderr)
 
-            weighted_edge_list_tuples = []
+            # Prepare NumPy arrays for the DirectedNgramGraph constructor
+            source_indices_np = np.array([], dtype=int)
+            target_indices_np = np.array([], dtype=int)
+            weights_np = np.array([], dtype=float)
+
             if not weighted_edge_df_computed.empty:
                 if self.config.DEBUG_VERBOSE:
                     print(f"  [DEBUG] Weighted edge_df (from Dask DF) for n={n}:")
                     print(weighted_edge_df_computed.head())
                 print(f"  Aggregated raw transitions into {len(weighted_edge_df_computed)} unique weighted edges for n={n}.")
-                weighted_edge_list_tuples = [tuple(x) for x in weighted_edge_df_computed[['source', 'target', 'weight']].to_numpy()]
+
+                # Extract directly to NumPy arrays
+                source_indices_np = weighted_edge_df_computed['source'].to_numpy()
+                target_indices_np = weighted_edge_df_computed['target'].to_numpy()
+                weights_np = weighted_edge_df_computed['weight'].to_numpy()
             elif raw_edge_files_exist:
                 print(f"  ℹ️ Info: No unique edges found after aggregation for n={n}, though raw edge files were present.")
 
@@ -329,9 +337,12 @@ class GraphBuilder:
             gc.collect()
 
             print(f"  Instantiating DirectedNgramGraph object for n={n}...")
+            # Pass NumPy arrays directly to the constructor
             graph_object = DirectedNgramGraph(
                 nodes=idx_to_node,
-                edges=weighted_edge_list_tuples,
+                source_indices=source_indices_np,
+                target_indices=target_indices_np,
+                weights=weights_np,
                 epsilon_propagation=self.gcn_propagation_epsilon,
                 n_value=n  # Pass n_value to constructor
             )
@@ -359,8 +370,14 @@ class GraphBuilder:
             if num_nodes > 0:
                 G_nx = nx.DiGraph()
                 G_nx.add_nodes_from(range(num_nodes))
-                edges_for_nx = [(u, v, {'weight': w}) for u, v, w in graph_object.edges]
-                G_nx.add_edges_from(edges_for_nx)
+                # Reconstruct edges for NetworkX from the NumPy arrays for statistics
+                # This is a bit inefficient but only done for stats.
+                # A more direct way would be to pass the numpy arrays to nx.add_weighted_edges_from
+                # but this requires a different format. This is clear and works.
+                if source_indices_np.size > 0:
+                    edges_for_nx = list(zip(source_indices_np, target_indices_np, weights_np))
+                    G_nx.add_weighted_edges_from(edges_for_nx)
+
                 num_wcc = nx.number_weakly_connected_components(G_nx)
                 print(f"      Weakly Connected Components: {num_wcc}")
                 if num_edges > 0:
@@ -390,7 +407,8 @@ class GraphBuilder:
                 else:
                     print("      Avg. Degree Centrality: N/A (graph has <= 1 node)")
             print(f"    --- End of Graph Statistics for n={n} ---\n")
-            del graph_object, idx_to_node, weighted_edge_list_tuples, G_nx
+
+            del graph_object, idx_to_node, source_indices_np, target_indices_np, weights_np, G_nx
             gc.collect()
 
         print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.")
