@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: gnn_benchmarker.py
 # PURPOSE: To benchmark various GNN models on standard datasets.
-# VERSION: 3.4.3 (Fixed deprecated 'transpose' import)
+# VERSION: 3.4.4 (Reduced per-epoch print verbosity)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -14,7 +14,7 @@ from sklearn.metrics import f1_score, accuracy_score
 from torch_geometric.datasets import (KarateClub, Planetoid)
 from torch_geometric.loader import DataLoader as PyGDataLoader
 import torch_geometric.transforms as T
-from torch_geometric.utils import to_undirected  # Removed 'transpose'
+from torch_geometric.utils import to_undirected
 import h5py
 import numpy as np
 import torch
@@ -328,8 +328,10 @@ class GNNBenchmarker:
                     raise TypeError(f"val_data_or_loader type {type(current_val_data)} not supported.")
 
             epoch_duration = time.monotonic() - epoch_start_time
-            if self.config.DEBUG_VERBOSE or epoch % (max(1, num_epochs // 10)) == 0 or epoch == num_epochs - 1:
+            # --- MODIFIED: Reduced print verbosity ---
+            if epoch == num_epochs - 1: # Only print for the last epoch
                 print(f"    Epoch {epoch:03d}, Loss: {avg_loss:.4f}, Val {metric_name}: {val_metric:.4f}, Time: {epoch_duration:.2f}s")
+            # --- END MODIFIED ---
             history.append({'epoch': epoch, 'loss': avg_loss, f'val_{metric_name.lower().replace(" ", "_")}': val_metric})
 
             if val_metric >= best_val_metric:
