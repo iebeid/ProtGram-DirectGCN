@@ -2,7 +2,7 @@
 # ==============================================================================
 # MODULE: models/protgram_directgcn.py
 # PURPOSE: Contains the PyTorch class definitions for the custom GCN model.
-# VERSION: 8.0 (Implemented undirected structural path and learnable constant)
+# VERSION: 8.1 (Fixed inconsistent naming of shared linear layers and biases)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -37,15 +37,15 @@ class DirectGCNLayer(MessagePassing):
         self.bias_main_out = nn.Parameter(torch.Tensor(out_channels))
 
         # --- Components for Shared Directed Paths ---
-        self.lin_directed_shared = nn.Linear(in_channels, out_channels, bias=False)
-        self.bias_directed_shared_in = nn.Parameter(torch.Tensor(out_channels))
-        self.bias_directed_shared_out = nn.Parameter(torch.Tensor(out_channels))
+        self.lin_directed_shared = nn.Linear(in_channels, out_channels, bias=False)  # Corrected name
+        self.bias_directed_shared_in = nn.Parameter(torch.Tensor(out_channels))  # Corrected name
+        self.bias_directed_shared_out = nn.Parameter(torch.Tensor(out_channels))  # Corrected name
 
         # --- Components for Undirected Paths ---
         self.lin_undirected = nn.Linear(in_channels, out_channels, bias=False)
         self.bias_undirected = nn.Parameter(torch.Tensor(out_channels))  # Bias for the undirected path
 
-        # --- Learnable Coefficients (c_in, c_out, c_all) ---
+        # --- Learnable Coefficients (c_in, c_out, c_undirected) ---
         if self.use_vector_coeffs and self.num_nodes > 0:
             self.C_in_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
             self.C_out_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
@@ -65,8 +65,10 @@ class DirectGCNLayer(MessagePassing):
         self.reset_parameters()
 
     def reset_parameters(self):
+        # Corrected: Use lin_directed_shared here
         for lin in [self.lin_main_in, self.lin_main_out, self.lin_directed_shared, self.lin_undirected]:
             nn.init.xavier_uniform_(lin.weight)
+        # Corrected: Use bias_directed_shared_in/out here
         for bias in [self.bias_main_in, self.bias_main_out, self.bias_directed_shared_in, self.bias_directed_shared_out, self.bias_undirected]:
             nn.init.zeros_(bias)
 
@@ -92,19 +94,20 @@ class DirectGCNLayer(MessagePassing):
         # --- 1. Directed Incoming Path ---
         h_main_in_transformed = self.lin_main_in(x)
         h_main_in_propagated = self.propagate(edge_index_in, x=h_main_in_transformed, edge_weight=edge_weight_in)
-        h_shared_for_in = self.lin_shared(x)
+        # Corrected: Use lin_directed_shared and bias_directed_shared_in
+        h_shared_for_in = self.lin_directed_shared(x)
         h_shared_in_propagated = self.propagate(edge_index_in, x=h_shared_for_in, edge_weight=edge_weight_in)
-        ic_combined = (h_main_in_propagated + self.bias_main_in) + (h_shared_in_propagated + self.bias_shared_in)
+        ic_combined = (h_main_in_propagated + self.bias_main_in) + (h_shared_in_propagated + self.bias_directed_shared_in)
 
         # --- 2. Directed Outgoing Path ---
         h_main_out_transformed = self.lin_main_out(x)
         h_main_out_propagated = self.propagate(edge_index_out, x=h_main_out_transformed, edge_weight=edge_weight_out)
-        h_shared_for_out = self.lin_shared(x)
+        # Corrected: Use lin_directed_shared and bias_directed_shared_out
+        h_shared_for_out = self.lin_directed_shared(x)
         h_shared_out_propagated = self.propagate(edge_index_out, x=h_shared_for_out, edge_weight=edge_weight_out)
-        oc_combined = (h_main_out_propagated + self.bias_main_out) + (h_shared_out_propagated + self.bias_shared_out)
+        oc_combined = (h_main_out_propagated + self.bias_main_out) + (h_shared_out_propagated + self.bias_directed_shared_out)
 
         # --- 3. Undirected Structural Path (NEW) ---
-        # We reuse h_shared_for_out as per the request's spirit of a shared structural understanding
         h_undirected_transformed = self.lin_undirected(x)
         h_undirected_propagated = self.propagate(edge_index_undirected, x=h_undirected_transformed, edge_weight=edge_weight_undirected)
         all_c_combined = h_undirected_propagated + self.bias_undirected
@@ -114,23 +117,24 @@ class DirectGCNLayer(MessagePassing):
             # Subgraph mode: select the right coefficients and constants
             c_in = self.C_in_vec[original_indices]
             c_out = self.C_out_vec[original_indices]
-            c_all = self.C_all_vec[original_indices]
+            c_undirected = self.C_undirected_vec[original_indices]  # Corrected name
             constant_term = self.constant[original_indices] if self.constant is not None else 0
         elif self.use_vector_coeffs:
             # Full graph mode
             c_in = self.C_in_vec
             c_out = self.C_out_vec
-            c_all = self.C_all_vec
+            c_undirected = self.C_undirected_vec  # Corrected name
             constant_term = self.constant if self.constant is not None else 0
         else:
             # Scalar mode
             c_in = self.C_in
             c_out = self.C_out
-            c_all = self.C_all
+            c_undirected = self.C_undirected  # Corrected name
             constant_term = 0  # Constant is only per-node, so not applicable in scalar mode
 
         # --- 5. Final Combination ---
-        final_combination = (c_all * all_c_combined) + (c_in * ic_combined) + (c_out * oc_combined) + constant_term
+        # Corrected: Use c_undirected here
+        final_combination = (c_undirected * all_c_combined) + (c_in * ic_combined) + (c_out * oc_combined) + constant_term
 
         return final_combination
 
