@@ -129,9 +129,9 @@ class Config:
         # Ensure these paths are correct for your generated embeddings
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
             {"name": "ProtT5-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
-            {"name": "ProtGramDirectGCN-UniProt-PCA64-Old", "path": self.GCN_EMBEDDINGS_DIR / f"protgram_directgcn_1.h5"},
-            {"name": "ProtGramDirectGCN-UniProt-PCA64-New", "path": self.GCN_EMBEDDINGS_DIR / f"protgram_directgcn_2.h5"},
-            {"name": "Word2Vec-UniProt-PCA64", "path": self.WORD2VEC_EMBEDDINGS_DIR / f"word2vec.h5"}
+            {"name": "ProtGramDirectGCN-UniProt-PCA64-Old", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_1.h5"},
+            {"name": "ProtGramDirectGCN-UniProt-PCA64-New", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_2.h5"},
+            {"name": "Word2Vec-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / f"word2vec.h5"}
         ]
 
         # --- 6. MLFLOW & EXPERIMENT TRACKING ---
@@ -149,7 +149,7 @@ class Config:
         self.EVAL_MLP_DENSE2_UNITS = 64
         self.EVAL_MLP_DROPOUT2_RATE = 0.4
         self.EVAL_MLP_L2_REG = 1e-5
-        self.EVAL_BATCH_SIZE = 512
+        self.EVAL_BATCH_SIZE = 1024
         self.EVAL_EPOCHS = 5
         self.EVAL_LEARNING_RATE = 0.001
 
