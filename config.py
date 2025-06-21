@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: config.py
 # PURPOSE: Centralized configuration for the entire PPI pipeline.
-# VERSION: 1.8 (Removed PPI from benchmark list, optimized GCN/MLP params)
+# VERSION: 1.12 (Added Cluster-GCN training strategy for large graphs)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -14,7 +14,7 @@ class Config:
     def __init__(self):
         # --- 1. GENERAL & ORCHESTRATION SETTINGS ---
         self.RANDOM_STATE = 42
-        self.DEBUG_VERBOSE = True  # Set to False for less verbose training logs
+        self.DEBUG_VERBOSE = True
 
         # --- Workflow Control Flags ---
         self.RUN_GCN_PIPELINE = True
@@ -46,7 +46,6 @@ class Config:
         self.PPI_EVALUATION_MODELS_DIR = self.BASE_DATA_DIR / "models"
 
         # --- GNN BENCHMARKING PARAMETERS ---
-        # Removed 'PPI' from this list as requested.
         self.BENCHMARK_NODE_CLASSIFICATION_DATASETS = [
             "KarateClub", "Cora", "CiteSeer", "PubMed",
             "Cornell", "Texas", "Wisconsin"
@@ -62,28 +61,37 @@ class Config:
         self.DASK_CHUNK_SIZE = 2000000
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
 
-        # Suggested GCN architecture: shallower and more common regularization values
-        self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]  # A 3-layer GCN after input layer
+        self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]
         self.ID_MAPPING_MODE = 'regex'
         self.ID_MAPPING_OUTPUT_FILE = self.BASE_OUTPUT_DIR / "mappings/gcn_id_mapping.tsv"
         self.API_MAPPING_FROM_DB = "UniRef50"
         self.API_MAPPING_TO_DB = "UniProtKB"
 
         self.GCN_1GRAM_INIT_DIM = 512
-        self.GCN_EPOCHS_PER_LEVEL = 100
-        self.GCN_LR = 0.001  # Lower learning rate for more stable training
+        self.GCN_EPOCHS_PER_LEVEL = 150  # Can be higher now that training is faster
+        self.GCN_LR = 0.001
         self.GCN_DROPOUT_RATE = 0.5
-        self.GCN_WEIGHT_DECAY = 1e-4  # L2 regularization for optimizer (Adam's weight_decay)
-        self.GCN_L2_REG_LAMBDA = 1e-8  # Custom L2 regularization added to loss
+        self.GCN_WEIGHT_DECAY = 1e-4
+        self.GCN_L2_REG_LAMBDA = 1e-7  # Keep L2 low
+
         self.GCN_PROPAGATION_EPSILON = 1e-9
         self.GCN_MAX_PE_LEN = 512
         self.GCN_USE_VECTOR_COEFFS = True
 
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
-            1: "next_node", 2: "next_node", 3: "closest_aa", 4: "closest_aa", 5: "community"
+            1: "next_node",
+            2: "closest_aa",
+            3: "closest_aa",
+            4: "community",  # We can use community again, as it will be on smaller subgraphs
+            5: "community"
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
+
+        # --- NEW: Cluster-GCN Training Strategy ---
+        self.GCN_USE_CLUSTER_TRAINING = True
+        self.GCN_CLUSTER_TRAINING_THRESHOLD_NODES = 50000  # Apply clustering for graphs with > 50k nodes
+        self.GCN_NUM_CLUSTERS = 150  # Number of clusters to partition the large graph into
 
         self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
         self.APPLY_PCA_TO_GCN = True

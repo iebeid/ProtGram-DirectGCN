@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 4.4 (Implemented label generation sampling for large graphs)
+# VERSION: 4.7 (Implemented Cluster-GCN style training and Mixed Precision)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -11,15 +11,15 @@ import collections
 import gc
 import os
 import random
-from functools import partial
-from multiprocessing import Pool
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, List
 
 import h5py
 import numpy as np
 import torch
+import torch.nn.functional as F
 import torch.optim as optim
 from torch_geometric.data import Data
+from torch_geometric.utils import subgraph, to_networkx
 from tqdm import tqdm
 
 from config import Config
@@ -39,502 +39,326 @@ class ProtGramDirectGCNTrainer:
         self.gcn_propagation_epsilon = getattr(config, 'GCN_PROPAGATION_EPSILON', 1e-9)
         DataUtils.print_header("ProtGramDirectGCNEmbedder Initialized")
 
-    def _train_model(self, model: ProtGramDirectGCN, data: Data, optimizer: torch.optim.Optimizer, epochs: int, l2_lambda: float = 0.0, current_n_val_for_diag: Optional[int] = None):
+    def _train_model_full_batch(self, model: ProtGramDirectGCN, data: Data, optimizer: torch.optim.Optimizer, epochs: int,
+                                task_type: str, l2_lambda: float = 0.0):
+        """Original training method for smaller graphs, now with Mixed Precision."""
         model.train()
         model.to(self.device)
         data = data.to(self.device)
-        criterion = torch.nn.NLLLoss()
-        targets = data.y
-        mask = getattr(data, 'train_mask', torch.ones(data.num_nodes, dtype=torch.bool, device=self.device))
+        scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == 'cuda'))
 
-        if mask.sum() == 0:
-            print("  Warning: No valid training samples found based on the mask.")
-            return
+        criterion = F.nll_loss
 
-        print(f"  Starting model training for {epochs} epochs (L2 lambda: {l2_lambda})...")
+        print(f"  Starting full-batch training for {epochs} epochs (Task: {task_type}, L2 lambda: {l2_lambda})...")
         for epoch in range(1, epochs + 1):
             optimizer.zero_grad()
-            log_probs, _ = model(data=data)
+            with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda')):
+                task_output, _ = model(data=data)
+                primary_loss = criterion(task_output, data.y)
+                l2_reg = sum(p.norm(2).pow(2) for p in model.parameters() if p.requires_grad)
+                loss = primary_loss + l2_lambda * l2_reg
 
-            if not hasattr(log_probs, 'size') or log_probs[mask].size(0) == 0:
-                if epoch == 1: print(f"    Warning: Mask resulted in 0 training samples for log_probs in epoch {epoch}.")
-                continue
-            if not hasattr(targets, 'size') or targets[mask].size(0) == 0:
-                if epoch == 1: print(f"    Warning: Mask resulted in 0 training samples for targets in epoch {epoch}.")
-                continue
-            if log_probs[mask].size(0) != targets[mask].size(0):
-                print(f"    Warning: Mismatch in masked log_probs ({log_probs[mask].size(0)}) and targets ({targets[mask].size(0)}) in epoch {epoch}.")
-                continue
-
-            primary_loss = criterion(log_probs[mask], targets[mask].to(log_probs.device).long())
-
-            final_l2_reg_term = torch.tensor(0., device=self.device)
-            if l2_lambda > 0:
-                param_sq_norms = []
-                for param in model.parameters():
-                    if param.requires_grad:
-                        param_sq_norms.append(torch.norm(param, p=2).pow(2))
-                if param_sq_norms:
-                    final_l2_reg_term = torch.stack(param_sq_norms).sum()
-
-            loss = primary_loss + l2_lambda * final_l2_reg_term
-
-            if current_n_val_for_diag == 5 and epoch == 1 and self.config.DEBUG_VERBOSE:
-                print(f"    DIAGNOSTIC (n=5, epoch=1):")
-                print(f"      Primary Loss: {primary_loss.item():.4f}")
-                print(f"      log_probs[mask] shape: {log_probs[mask].shape}")
-                print(f"      targets[mask] shape: {targets[mask].shape}")
-                if log_probs[mask].numel() > 0:
-                    print(f"      Sample log_probs[mask][0]: {log_probs[mask][0]}")
-                    print(f"      Sample targets[mask][0]: {targets[mask][0]}")
-
-            if loss.requires_grad:
-                loss.backward()
-                optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
             if epoch % (max(1, epochs // 10)) == 0 or epoch == epochs:
                 if self.config.DEBUG_VERBOSE:
-                    print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * final_l2_reg_term).item():.4f}")
+                    print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * l2_reg).item():.4f}")
 
-    def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int, torch.Tensor]:
+    def _train_model_clustered(self, model: ProtGramDirectGCN, subgraphs: List[Data], optimizer: torch.optim.Optimizer,
+                               epochs: int, task_type: str, l2_lambda: float = 0.0):
+        """Cluster-GCN style training for large graphs with Mixed Precision."""
+        model.train()
+        model.to(self.device)
+        scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == 'cuda'))
+        criterion = F.nll_loss
+
+        print(f"  Starting Cluster-GCN style training for {epochs} epochs on {len(subgraphs)} subgraphs (Task: {task_type})...")
+        for epoch in range(1, epochs + 1):
+            random.shuffle(subgraphs)
+            epoch_loss = 0.0
+            for batch_data in tqdm(subgraphs, desc=f"  Epoch {epoch}", leave=False, disable=not self.config.DEBUG_VERBOSE):
+                batch_data = batch_data.to(self.device)
+                optimizer.zero_grad()
+                with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda')):
+                    task_output, _ = model(data=batch_data)
+                    primary_loss = criterion(task_output, batch_data.y)
+                    l2_reg = sum(p.norm(2).pow(2) for p in model.parameters() if p.requires_grad)
+                    loss = primary_loss + l2_lambda * l2_reg
+
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+                epoch_loss += loss.item()
+
+            avg_epoch_loss = epoch_loss / len(subgraphs)
+            if epoch % (max(1, epochs // 10)) == 0 or epoch == epochs:
+                if self.config.DEBUG_VERBOSE:
+                    print(f"    Epoch: {epoch:03d}, Avg Batch Loss: {avg_epoch_loss:.4f}")
+
+    def _create_clustered_subgraphs(self, graph: DirectedNgramGraph, full_data: Data) -> List[Data]:
+        """Partitions the graph into subgraphs using METIS or Louvain."""
+        num_clusters = self.config.GCN_NUM_CLUSTERS
+        print(f"  Partitioning graph with {graph.number_of_nodes} nodes into {num_clusters} clusters...")
+
+        # Use the undirected version of the original graph for clustering
+        g_nx = to_networkx(Data(edge_index=graph.A_out_w.indices().cpu(), num_nodes=graph.number_of_nodes), to_undirected=True)
+
+        try:
+            import metis
+            print("  Using METIS for graph partitioning...")
+            _, parts = metis.part_graph(g_nx, num_clusters, seed=self.config.RANDOM_STATE)
+            partition = {node_idx: part_id for node_idx, part_id in enumerate(parts)}
+        except (ImportError, ModuleNotFoundError):
+            import community as community_louvain
+            print("  METIS not found. Falling back to Louvain for clustering (slower)...")
+            partition = community_louvain.best_partition(g_nx, random_state=self.config.RANDOM_STATE)
+
+        clusters = collections.defaultdict(list)
+        for node, cluster_id in partition.items():
+            clusters[cluster_id].append(node)
+
+        cluster_list = list(clusters.values())
+        print(f"  Graph partitioned into {len(cluster_list)} clusters.")
+
+        subgraphs = []
+        for cluster_nodes in tqdm(cluster_list, desc="  Creating subgraphs", leave=False):
+            cluster_nodes_tensor = torch.tensor(cluster_nodes, dtype=torch.long)
+
+            # Create subgraph for both IN and OUT propagation matrices
+            sub_edge_index_in, sub_edge_weight_in = subgraph(cluster_nodes_tensor, graph.mathcal_A_in.indices(), graph.mathcal_A_in.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+            sub_edge_index_out, sub_edge_weight_out = subgraph(cluster_nodes_tensor, graph.mathcal_A_out.indices(), graph.mathcal_A_out.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+
+            subgraph_data = Data(
+                x=full_data.x[cluster_nodes_tensor],
+                y=full_data.y[cluster_nodes_tensor] if full_data.y.numel() > 0 else torch.empty(0),
+                edge_index_in=sub_edge_index_in,
+                edge_weight_in=sub_edge_weight_in,
+                edge_index_out=sub_edge_index_out,
+                edge_weight_out=sub_edge_weight_out,
+                original_indices=cluster_nodes_tensor
+            )
+            subgraphs.append(subgraph_data)
+
+        return subgraphs
+
+    # ... (label generation functions remain the same as v4.5) ...
+    def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
         import networkx as nx
         import community as community_louvain
-
         num_nodes = graph.number_of_nodes
-        if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1, torch.empty(0, dtype=torch.bool)
-
-        labels_for_all_nodes = torch.full((num_nodes,), -1, dtype=torch.long)  # Initialize with -1 (unlabeled)
-        train_mask = torch.zeros(num_nodes, dtype=torch.bool)  # Initialize all to False
-
-        nodes_to_process_indices = list(range(num_nodes))
-        if self.config.GCN_LABEL_GENERATION_SAMPLE_NODES is not None and \
-                num_nodes > self.config.GCN_LABEL_GENERATION_SAMPLE_NODES:
-            print(f"  Warning: Graph too large for full community label generation (Nodes: {num_nodes}). Sampling {self.config.GCN_LABEL_GENERATION_SAMPLE_NODES} nodes.")
-            random.seed(self.config.RANDOM_STATE)  # Ensure reproducibility
-            nodes_to_process_indices = random.sample(nodes_to_process_indices, self.config.GCN_LABEL_GENERATION_SAMPLE_NODES)
-        else:
-            print(f"  Generating community labels for all {num_nodes} nodes.")
-
-        # --- NetworkX-based community detection (potentially slow for large graphs) ---
-        # This part will only run for the sampled nodes, but NetworkX still needs the full graph.
-        # If the full graph is too large for NetworkX, we still need to skip.
-        # The threshold here is for NetworkX itself, not for sampling.
-        if num_nodes > 50000 or graph.number_of_edges > 1000000:  # Thresholds can be tuned
-            print(f"  Warning: Skipping NetworkX-based community detection for large graph (Nodes: {num_nodes}, Edges: {graph.number_of_edges}). Using dummy labels (all in one community) for sampled nodes.")
-            # For sampled nodes, assign them to community 0.
-            for i in nodes_to_process_indices:
-                labels_for_all_nodes[i] = 0
-                train_mask[i] = True
-            return labels_for_all_nodes[train_mask], 1, train_mask
-        # --- END MODIFICATION ---
-
+        if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1
+        print(f"  Generating community labels for all {num_nodes} nodes.")
         A_in_w_cpu_sparse = graph.A_in_w.cpu()
         A_out_w_cpu_sparse = graph.A_out_w.cpu()
-
         combined_adj_sparse_torch = (A_in_w_cpu_sparse + A_out_w_cpu_sparse).coalesce()
-
-        if combined_adj_sparse_torch._nnz() == 0:
-            # If no edges, all nodes are their own community, or if sampled, assign to 0
-            for i in nodes_to_process_indices:
-                labels_for_all_nodes[i] = 0  # Or i if each is its own community
-                train_mask[i] = True
-            return labels_for_all_nodes[train_mask], 1, train_mask  # Assuming 1 class if no edges
-
-        nx_graph = nx.Graph()
-        nx_graph.add_nodes_from(range(num_nodes))  # Add all nodes to NetworkX graph
-        edge_indices = combined_adj_sparse_torch.indices()
-        edge_values = combined_adj_sparse_torch.values()
-
-        for i in range(edge_indices.shape[1]):
-            u, v = edge_indices[0, i].item(), edge_indices[1, i].item()
-            weight = edge_values[i].item()
-            if nx_graph.has_edge(u, v):
-                nx_graph[u][v]['weight'] += weight
-            else:
-                nx_graph.add_edge(u, v, weight=weight)
-
-        if nx_graph.number_of_nodes() == 0: return torch.empty(0, dtype=torch.long), 1, torch.empty(0, dtype=torch.bool)
-        if nx_graph.number_of_edges() == 0:
-            for i in nodes_to_process_indices:
-                labels_for_all_nodes[i] = 0  # All sampled nodes in one community
-                train_mask[i] = True
-            return labels_for_all_nodes[train_mask], 1, train_mask
-
-        # Perform community detection on the full NetworkX graph
-        partition = community_louvain.best_partition(nx_graph, random_state=self.config.RANDOM_STATE, weight='weight')
-
-        # Assign labels only for the sampled nodes
-        for i in nodes_to_process_indices:
-            labels_for_all_nodes[i] = partition.get(i, -1)  # Get community label, -1 if not found (shouldn't happen for existing nodes)
-            train_mask[i] = True
-
-        # Map labels to 0-indexed classes based on the communities found in the full graph
-        unique_labels_from_partition = sorted(list(set(partition.values())))
+        if combined_adj_sparse_torch._nnz() == 0: return torch.zeros(num_nodes, dtype=torch.long), 1
+        nx_graph = to_networkx(Data(edge_index=combined_adj_sparse_torch.indices(), edge_attr=combined_adj_sparse_torch.values(), num_nodes=num_nodes), to_undirected=True, edge_attrs=['edge_attr'])
+        if nx_graph.number_of_edges() == 0: return torch.zeros(num_nodes, dtype=torch.long), 1
+        partition = community_louvain.best_partition(nx_graph, random_state=self.config.RANDOM_STATE, weight='edge_attr')
+        labels_list = [partition.get(i, -1) for i in range(num_nodes)]
+        unique_labels_from_partition = sorted(list(set(labels_list)))
         if not unique_labels_from_partition or (len(unique_labels_from_partition) == 1 and unique_labels_from_partition[0] == -1):
-            num_classes = 1
-            # If only one community or no valid communities, all sampled nodes get label 0
-            for i in nodes_to_process_indices:
-                labels_for_all_nodes[i] = 0
+            return torch.zeros(num_nodes, dtype=torch.long), 1
         else:
             label_map = {lbl: i for i, lbl in enumerate(unique_labels_from_partition)}
-            for i in nodes_to_process_indices:
-                if labels_for_all_nodes[i].item() != -1:  # Only map if a valid community was assigned
-                    labels_for_all_nodes[i] = label_map[labels_for_all_nodes[i].item()]
-            num_classes = len(unique_labels_from_partition)
+            labels = torch.tensor([label_map[lbl] for lbl in labels_list], dtype=torch.long)
+            return labels, len(unique_labels_from_partition)
 
-        if hasattr(graph, 'n_value') and graph.n_value == 5 and self.config.DEBUG_VERBOSE:
-            print(f"    DIAGNOSTIC (n=5 Community Labels):")
-            print(f"      Number of communities detected (num_classes): {num_classes}")
-            print(f"      Unique labels in generated 'labels' tensor (for sampled nodes): {labels_for_all_nodes[train_mask].unique().tolist() if labels_for_all_nodes[train_mask].numel() > 0 else '[]'}")
-
-        return labels_for_all_nodes[train_mask], num_classes, train_mask
-
-    def _generate_next_node_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int, torch.Tensor]:
+    def _generate_next_node_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
         num_nodes = graph.number_of_nodes
-        if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1, torch.empty(0, dtype=torch.bool)
-
-        labels_for_all_nodes = torch.full((num_nodes,), -1, dtype=torch.long)  # Initialize with -1 (unlabeled)
-        train_mask = torch.zeros(num_nodes, dtype=torch.bool)  # Initialize all to False
-
-        nodes_to_process_indices = list(range(num_nodes))
-        if self.config.GCN_LABEL_GENERATION_SAMPLE_NODES is not None and \
-                num_nodes > self.config.GCN_LABEL_GENERATION_SAMPLE_NODES:
-            print(f"  Warning: Graph too large for full next_node label generation (Nodes: {num_nodes}). Sampling {self.config.GCN_LABEL_GENERATION_SAMPLE_NODES} nodes.")
-            random.seed(self.config.RANDOM_STATE)  # Ensure reproducibility
-            nodes_to_process_indices = random.sample(nodes_to_process_indices, self.config.GCN_LABEL_GENERATION_SAMPLE_NODES)
-        else:
-            print(f"  Generating next_node labels for all {num_nodes} nodes.")
-
+        if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1
+        print(f"  Generating next_node labels for all {num_nodes} nodes.")
         adj_out_weighted_sparse = graph.A_out_w
-
-        for i in tqdm(nodes_to_process_indices, desc="  Generating next_node labels", disable=not self.config.DEBUG_VERBOSE):
+        labels_list = [-1] * num_nodes
+        for i in tqdm(range(num_nodes), desc="  Generating next_node labels", disable=not self.config.DEBUG_VERBOSE):
             row_mask = (adj_out_weighted_sparse.indices()[0] == i)
             if not torch.any(row_mask):
-                labels_for_all_nodes[i] = i  # Self-loop as target if no outgoing edges
+                labels_list[i] = i
             else:
-                successors_indices_for_row_i = adj_out_weighted_sparse.indices()[1][row_mask]
-                weights_for_row_i = adj_out_weighted_sparse.values()[row_mask]
-                if successors_indices_for_row_i.numel() > 0:
-                    max_weight = torch.max(weights_for_row_i)
-                    highest_prob_successors = successors_indices_for_row_i[weights_for_row_i == max_weight]
-                    labels_for_all_nodes[i] = random.choice(highest_prob_successors.cpu().tolist())
-                else:
-                    labels_for_all_nodes[i] = i  # Fallback to self-loop
+                successors = adj_out_weighted_sparse.indices()[1][row_mask]
+                weights = adj_out_weighted_sparse.values()[row_mask]
+                max_weight_successors = successors[weights == weights.max()]
+                labels_list[i] = random.choice(max_weight_successors.cpu().tolist())
+        return torch.tensor(labels_list, dtype=torch.long), num_nodes
 
-            train_mask[i] = True  # Mark this node as part of the training set
-
-        final_labels = labels_for_all_nodes[train_mask]  # Only return labels for nodes in mask
-        # num_classes is still num_nodes, as any node can be a target
-        return final_labels, num_nodes, train_mask  # Return mask as well
-
-    def _generate_closest_amino_acid_labels(self, graph: DirectedNgramGraph, k_hops: int) -> Tuple[torch.Tensor, int, torch.Tensor]:
+    def _generate_closest_amino_acid_labels(self, graph: DirectedNgramGraph, k_hops: int) -> Tuple[torch.Tensor, int]:
         num_nodes = graph.number_of_nodes
-        if num_nodes == 0: return torch.empty(0, dtype=torch.long), k_hops + 1, torch.empty(0, dtype=torch.bool)
-
-        labels_for_all_nodes = torch.full((num_nodes,), k_hops, dtype=torch.long)  # Default to max_hops
-        train_mask = torch.zeros(num_nodes, dtype=torch.bool)  # Initialize all to False
-
-        nodes_to_process_indices = list(range(num_nodes))
-        if self.config.GCN_LABEL_GENERATION_SAMPLE_NODES is not None and \
-                num_nodes > self.config.GCN_LABEL_GENERATION_SAMPLE_NODES:
-            print(f"  Warning: Graph too large for full closest_aa label generation (Nodes: {num_nodes}). Sampling {self.config.GCN_LABEL_GENERATION_SAMPLE_NODES} nodes.")
-            random.seed(self.config.RANDOM_STATE)  # Ensure reproducibility
-            nodes_to_process_indices = random.sample(nodes_to_process_indices, self.config.GCN_LABEL_GENERATION_SAMPLE_NODES)
-        else:
-            print(f"  Generating closest_aa labels for all {num_nodes} nodes.")
-
+        if num_nodes == 0: return torch.empty(0, dtype=torch.long), k_hops + 1
+        labels_for_all_nodes = torch.full((num_nodes,), k_hops, dtype=torch.long)
+        print(f"  Generating closest_aa labels for all {num_nodes} nodes.")
         adj_out_sparse = graph.A_out_w
-
-        if not hasattr(graph, 'node_sequences') or not graph.node_sequences:
-            if hasattr(graph, 'idx_to_node') and graph.idx_to_node:
-                graph.node_sequences = [graph.idx_to_node[i] for i in range(num_nodes)]
-            else:
-                raise AttributeError("Graph needs 'node_sequences' or 'idx_to_node' populated with actual n-gram strings.")
         node_sequences = graph.node_sequences
-
-        for start_node_idx in tqdm(nodes_to_process_indices, desc="  Generating closest_aa labels", disable=not self.config.DEBUG_VERBOSE):
+        for start_node_idx in tqdm(range(num_nodes), desc="  Generating closest_aa labels", disable=not self.config.DEBUG_VERBOSE):
             target_aa = random.choice(AMINO_ACID_ALPHABET)
-            current_node_sequence = node_sequences[start_node_idx]
-            if not isinstance(current_node_sequence, str): current_node_sequence = str(current_node_sequence)
-
-            if target_aa in current_node_sequence:
+            if target_aa in str(node_sequences[start_node_idx]):
                 labels_for_all_nodes[start_node_idx] = 0
             elif k_hops > 0:
                 q = collections.deque([(start_node_idx, 0)])
                 visited = {start_node_idx}
-                found_at_hop = -1
-
+                found = False
                 while q:
-                    curr_node_q_idx, hop_level = q.popleft()
-                    if hop_level >= k_hops:
-                        continue
-
-                    row_mask_bfs = (adj_out_sparse.indices()[0] == curr_node_q_idx)
-                    if not torch.any(row_mask_bfs):
-                        continue
-
-                    neighbors_indices_for_curr = adj_out_sparse.indices()[1][row_mask_bfs]
-
-                    for neighbor_node_tensor in neighbors_indices_for_curr:
-                        neighbor_node_idx = neighbor_node_tensor.item()
-                        if neighbor_node_idx not in visited:
-                            visited.add(neighbor_node_idx)
-                            neighbor_node_sequence = node_sequences[neighbor_node_idx]
-                            if not isinstance(neighbor_node_sequence, str): neighbor_node_sequence = str(neighbor_node_sequence)
-
-                            if target_aa in neighbor_node_sequence:
-                                labels_for_all_nodes[start_node_idx] = hop_level + 1
-                                found_at_hop = hop_level + 1
+                    curr, hop = q.popleft()
+                    if hop >= k_hops: continue
+                    row_mask = (adj_out_sparse.indices()[0] == curr)
+                    if not torch.any(row_mask): continue
+                    for neighbor in adj_out_sparse.indices()[1][row_mask]:
+                        n_idx = neighbor.item()
+                        if n_idx not in visited:
+                            visited.add(n_idx)
+                            if target_aa in str(node_sequences[n_idx]):
+                                labels_for_all_nodes[start_node_idx] = hop + 1
+                                found = True
                                 break
-
-                            if hop_level + 1 < k_hops:
-                                q.append((neighbor_node_idx, hop_level + 1))
-
-                    if found_at_hop != -1:
-                        break
-            train_mask[start_node_idx] = True  # Mark this node as part of the training set
-
-        final_labels = labels_for_all_nodes[train_mask]  # Only return labels for nodes in mask
-        num_output_classes = k_hops + 1
-        return final_labels, num_output_classes, train_mask  # Return mask as well
+                            if hop + 1 < k_hops: q.append((n_idx, hop + 1))
+                    if found: break
+        return labels_for_all_nodes, k_hops + 1
 
     def run(self):
         DataUtils.print_header("PIPELINE STEP 2: Training ProtGramDirectGCN & Generating Embeddings")
         os.makedirs(self.config.GCN_EMBEDDINGS_DIR, exist_ok=True)
-
+        # ... (ID mapping logic is the same) ...
         DataUtils.print_header("Step 1: Loading Protein ID Mapping (if configured)")
         if self.config.ID_MAPPING_MODE != 'none':
             id_mapper_instance = DataLoader(config=self.config)
             self.id_map = id_mapper_instance.generate_id_maps()
             print(f"  Loaded {len(self.id_map)} ID mappings.")
         else:
-            print("  ID mapping mode is 'none'. Using original FASTA IDs.")
             self.id_map = {}
-
         print(f"Using device: {self.device}")
-
         level_embeddings: Dict[int, np.ndarray] = {}
         level_ngram_to_idx: Dict[int, Dict[str, int]] = {}
         l2_lambda_val = getattr(self.config, 'GCN_L2_REG_LAMBDA', 0.0)
 
         for n_val in range(1, self.config.GCN_NGRAM_MAX_N + 1):
             DataUtils.print_header(f"Processing N-gram Level: n = {n_val}")
+            # ... (Graph loading logic is the same) ...
             graph_path = os.path.join(self.config.GRAPH_OBJECTS_DIR, f"ngram_graph_n{n_val}.pkl")
-            graph_obj: Optional[DirectedNgramGraph] = None
             try:
-                print(f"  Loading graph object from: {graph_path}")
-                loaded_data = DataUtils.load_object(graph_path)
-                if isinstance(loaded_data, DirectedNgramGraph):
-                    graph_obj = loaded_data
-                    graph_obj.n_value = n_val
-                    if graph_obj.number_of_nodes > 0:
-                        if hasattr(graph_obj, 'A_out_w') and isinstance(graph_obj.A_out_w, torch.Tensor):
-                            graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
-                        if hasattr(graph_obj, 'A_in_w') and isinstance(graph_obj.A_in_w, torch.Tensor):
-                            graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
-
-                        # Safeguard if A_out_w/A_in_w are not sparse (e.g. from older pickle)
-                        # This part is now less critical as graph_utils.py v7.7 ensures sparse on load
-                        # but keeping it as a safeguard for older pickled objects.
-                        if not (hasattr(graph_obj, 'A_out_w') and graph_obj.A_out_w.is_sparse) or \
-                                not (hasattr(graph_obj, 'A_in_w') and graph_obj.A_in_w.is_sparse):
-                            print("    Warning: Adjacency matrices not sparse. Re-creating raw weighted adjacency matrices (ensuring sparse)...")
-                            # This call needs to be updated if _create_raw_weighted_adj_matrices_torch no longer takes no args
-                            # For now, it's safer to assume the graph object from v7.7 will load them correctly.
-                            # If this warning appears, it means an old pickled object was loaded.
-                            pass
-
-                        print("    Re-creating propagation matrices for loaded graph object...")
-                        graph_obj._create_propagation_matrices_for_gcn()
-                else:
-                    raise TypeError(f"Loaded graph object is not of type DirectedNgramGraph, but {type(loaded_data)}.")
-
-            except FileNotFoundError:
-                print(f"  ERROR: Graph object not found at {graph_path}. Skipping n={n_val}.")
-                continue
+                graph_obj = DataUtils.load_object(graph_path)
+                if not isinstance(graph_obj, DirectedNgramGraph): raise TypeError("Loaded object is not a DirectedNgramGraph")
+                graph_obj.n_value = n_val
+                if graph_obj.number_of_nodes > 0:
+                    graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
+                    graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
+                    print("    Re-creating propagation matrices for loaded graph object...")
+                    graph_obj._create_propagation_matrices_for_gcn()
             except Exception as e:
                 print(f"  ERROR: Could not load or process graph for n={n_val}: {e}")
-                import traceback
-                traceback.print_exc()
                 continue
-
-            if not graph_obj or not hasattr(graph_obj, 'number_of_nodes'):
-                print(f"  ERROR: Failed to obtain a valid graph object for n={n_val}. Skipping.")
-                continue
-
-            level_ngram_to_idx[n_val] = graph_obj.node_to_idx
-            if graph_obj.number_of_nodes == 0:
-                print(f"  Skipping n={n_val} (0 nodes).")
+            if not graph_obj or graph_obj.number_of_nodes == 0:
+                print(f"  Skipping n={n_val} (no nodes or failed to load).")
                 level_embeddings[n_val] = np.array([])
                 continue
-
+            level_ngram_to_idx[n_val] = graph_obj.node_to_idx
             print(f"  Graph for n={n_val} loaded. Nodes: {graph_obj.number_of_nodes}")
             current_task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(n_val, self.config.GCN_DEFAULT_TASK_TYPE)
             print(f"  Selected training task for n={n_val}: '{current_task_type}'")
 
+            # ... (Feature initialization logic is the same) ...
             num_initial_features: int
             if n_val == 1:
                 num_initial_features = self.config.GCN_1GRAM_INIT_DIM
-                if num_initial_features <= 0:
-                    num_initial_features = 1 if self.config.GCN_MAX_PE_LEN <= 0 else self.config.GCN_1GRAM_INIT_DIM
-                    if num_initial_features <= 0: num_initial_features = 1
-                    print(f"  Adjusted GCN_1GRAM_INIT_DIM for n=1 to {num_initial_features} based on PE config.")
                 x = torch.randn(graph_obj.number_of_nodes, num_initial_features, device=self.device)
             else:
                 if (n_val - 1) not in level_embeddings or level_embeddings[n_val - 1].size == 0:
-                    print(f"  ERROR: Prev level n={n_val - 1} embeddings missing/empty for n={n_val}. Skipping.")
+                    print(f"  ERROR: Prev level n={n_val - 1} embeddings missing/empty. Skipping.")
                     continue
                 prev_level_embeds_np = level_embeddings[n_val - 1]
                 prev_level_ngram_to_idx_map = level_ngram_to_idx[n_val - 1]
                 num_initial_features = prev_level_embeds_np.shape[1]
                 x = torch.zeros(graph_obj.number_of_nodes, num_initial_features, dtype=torch.float, device=self.device)
                 print(f"  Initializing features for n={n_val} by pooling (n-1)-gram constituent embeddings...")
-                for current_ngram_str, current_node_idx in tqdm(graph_obj.node_to_idx.items(), desc=f"  Initializing n={n_val} features", leave=False, disable=not self.config.DEBUG_VERBOSE):
-                    if len(current_ngram_str) != n_val:
-                        if self.config.DEBUG_VERBOSE: print(f"    Warning: Skipping n-gram '{current_ngram_str}' due to unexpected length for n={n_val}.")
-                        continue
-                    prefix_constituent_ngram = current_ngram_str[:-1]
-                    suffix_constituent_ngram = current_ngram_str[1:]
-                    constituent_embeddings_to_pool = []
-                    prefix_idx = prev_level_ngram_to_idx_map.get(prefix_constituent_ngram)
-                    if prefix_idx is not None and prefix_idx < len(prev_level_embeds_np):
-                        constituent_embeddings_to_pool.append(prev_level_embeds_np[prefix_idx])
-                    suffix_idx = prev_level_ngram_to_idx_map.get(suffix_constituent_ngram)
-                    if suffix_idx is not None and suffix_idx < len(prev_level_embeds_np):
-                        constituent_embeddings_to_pool.append(prev_level_embeds_np[suffix_idx])
-                    if constituent_embeddings_to_pool:
-                        pooled_embedding_np = np.mean(np.array(constituent_embeddings_to_pool, dtype=np.float32), axis=0)
-                        x[current_node_idx] = torch.from_numpy(pooled_embedding_np).to(self.device)
-
+                for ngram_str, idx in tqdm(graph_obj.node_to_idx.items(), desc=f"  Initializing n={n_val} features", leave=False, disable=not self.config.DEBUG_VERBOSE):
+                    prefix, suffix = ngram_str[:-1], ngram_str[1:]
+                    p_idx, s_idx = prev_level_ngram_to_idx_map.get(prefix), prev_level_ngram_to_idx_map.get(suffix)
+                    embeds_to_pool = [prev_level_embeds_np[i] for i in [p_idx, s_idx] if i is not None]
+                    if embeds_to_pool:
+                        x[idx] = torch.from_numpy(np.mean(np.array(embeds_to_pool, dtype=np.float32), axis=0)).to(self.device)
             print(f"  Initial node feature dimension for n={n_val}: {num_initial_features}")
 
-            labels, num_classes, train_mask = None, 0, None  # Initialize train_mask
-
+            # --- Label Generation ---
+            labels, num_classes = None, 0
             if current_task_type == "community":
-                labels, num_classes, train_mask = self._generate_community_labels(graph_obj)
+                labels, num_classes = self._generate_community_labels(graph_obj)
             elif current_task_type == "next_node":
-                labels, num_classes, train_mask = self._generate_next_node_labels(graph_obj)
+                labels, num_classes = self._generate_next_node_labels(graph_obj)
             elif current_task_type == "closest_aa":
-                k_hops_for_task = getattr(self.config, 'GCN_CLOSEST_AA_K_HOPS', 3)
-                labels, num_classes, train_mask = self._generate_closest_amino_acid_labels(graph_obj, k_hops_for_task)
+                labels, num_classes = self._generate_closest_amino_acid_labels(graph_obj, self.config.GCN_CLOSEST_AA_K_HOPS)
             else:
                 raise ValueError(f"Unsupported GCN_TASK_TYPE '{current_task_type}' for n={n_val}.")
 
-            # Handle cases where label generation might result in empty labels or mask
-            if graph_obj.number_of_nodes > 0 and (labels is None or labels.numel() == 0):
-                print(f"  Warning: No labels generated for n={n_val}, task '{current_task_type}'. Using zeros.")
-                if num_classes == 0: num_classes = 1
-                labels = torch.zeros(graph_obj.number_of_nodes, dtype=torch.long)
-                train_mask = torch.ones(graph_obj.number_of_nodes, dtype=torch.bool)  # If labels are dummy, train on all
+            # --- Create Full Data Object ---
+            full_data = Data(x=x, y=labels.to(self.device))
+            full_data.num_nodes = graph_obj.number_of_nodes
 
-            if num_classes == 0 and graph_obj.number_of_nodes > 0:
-                print(f"  Warning: num_classes is 0 for n={n_val}, task '{current_task_type}' despite having nodes. Setting to 1.")
-                num_classes = 1
-                if labels is not None and labels.max() >= num_classes:
-                    labels = torch.zeros_like(labels)
-                if train_mask is None: train_mask = torch.ones(graph_obj.number_of_nodes, dtype=torch.bool)
-
-            if n_val == 5 and current_task_type == "community" and self.config.DEBUG_VERBOSE:
-                print(f"    DIAGNOSTIC (n=5, before model init):")
-                print(f"      Task type: {current_task_type}")
-                print(f"      Number of classes for model: {num_classes}")
-                if labels is not None:
-                    print(f"      Shape of labels tensor: {labels.shape}")
-                    print(f"      Unique labels passed to Data object: {labels.unique().tolist() if labels.numel() > 0 else '[]'}")
-
-            edge_index_in = graph_obj.mathcal_A_in.indices().to(self.device)
-            edge_weight_in = graph_obj.mathcal_A_in.values().to(self.device)
-            edge_index_out = graph_obj.mathcal_A_out.indices().to(self.device)
-            edge_weight_out = graph_obj.mathcal_A_out.values().to(self.device)
-
-            data = Data(x=x.to(self.device),
-                        y=labels.to(self.device),
-                        edge_index_in=edge_index_in,
-                        edge_weight_in=edge_weight_in,
-                        edge_index_out=edge_index_out,
-                        edge_weight_out=edge_weight_out,
-                        train_mask=train_mask.to(self.device))  # Pass the train_mask
-            data.num_nodes = graph_obj.number_of_nodes
-
+            # --- Model and Optimizer Creation ---
             full_layer_dims = [num_initial_features] + self.config.GCN_HIDDEN_LAYER_DIMS
             model = ProtGramDirectGCN(
-                layer_dims=full_layer_dims,
-                num_graph_nodes=graph_obj.number_of_nodes,
-                task_num_output_classes=num_classes,
-                n_gram_len=n_val,
-                one_gram_dim=(self.config.GCN_1GRAM_INIT_DIM if n_val == 1 and self.config.GCN_1GRAM_INIT_DIM > 0 and self.config.GCN_MAX_PE_LEN > 0 else 0),
-                max_pe_len=self.config.GCN_MAX_PE_LEN,
-                dropout=self.config.GCN_DROPOUT_RATE,
-                use_vector_coeffs=getattr(self.config, 'GCN_USE_VECTOR_COEFFS', True)
+                layer_dims=full_layer_dims, num_graph_nodes=graph_obj.number_of_nodes,
+                task_num_output_classes=num_classes, n_gram_len=n_val,
+                one_gram_dim=(self.config.GCN_1GRAM_INIT_DIM if n_val == 1 else 0),
+                max_pe_len=self.config.GCN_MAX_PE_LEN, dropout=self.config.GCN_DROPOUT_RATE,
+                use_vector_coeffs=self.config.GCN_USE_VECTOR_COEFFS
             )
+            optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=self.config.GCN_WEIGHT_DECAY if l2_lambda_val <= 0 else 0.0)
 
-            current_optimizer_weight_decay = self.config.GCN_WEIGHT_DECAY
-            if l2_lambda_val > 0:
-                current_optimizer_weight_decay = 0.0
-            optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=current_optimizer_weight_decay)
+            # --- CHOOSE TRAINING STRATEGY ---
+            if self.config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
+                subgraphs = self._create_clustered_subgraphs(graph_obj, full_data)
+                self._train_model_clustered(model, subgraphs, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, current_task_type, l2_lambda_val)
+            else:
+                # Add the full graph's edge data to the Data object for full-batch training
+                full_data.edge_index_in = graph_obj.mathcal_A_in.indices().to(self.device)
+                full_data.edge_weight_in = graph_obj.mathcal_A_in.values().to(self.device)
+                full_data.edge_index_out = graph_obj.mathcal_A_out.indices().to(self.device)
+                full_data.edge_weight_out = graph_obj.mathcal_A_out.values().to(self.device)
+                self._train_model_full_batch(model, full_data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, current_task_type, l2_lambda_val)
 
-            self._train_model(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, l2_lambda_val, current_n_val_for_diag=n_val)
-            current_level_embeddings = EmbeddingProcessor.extract_gcn_node_embeddings(model, data, self.device)
+            # --- Embedding extraction is always full-batch ---
+            # Add edge info to full_data if it wasn't added before
+            if not hasattr(full_data, 'edge_index_in'):
+                full_data.edge_index_in = graph_obj.mathcal_A_in.indices().to(self.device)
+                full_data.edge_weight_in = graph_obj.mathcal_A_in.values().to(self.device)
+                full_data.edge_index_out = graph_obj.mathcal_A_out.indices().to(self.device)
+                full_data.edge_weight_out = graph_obj.mathcal_A_out.values().to(self.device)
+            current_level_embeddings = EmbeddingProcessor.extract_gcn_node_embeddings(model, full_data, self.device)
             level_embeddings[n_val] = current_level_embeddings
 
-            del model, data, graph_obj, optimizer, x, labels
-            del edge_index_in, edge_weight_in, edge_index_out, edge_weight_out
-            if torch.cuda.is_available(): torch.cuda.empty_cache()
+            del model, full_data, graph_obj, optimizer, x, labels
             gc.collect()
+            if torch.cuda.is_available(): torch.cuda.empty_cache()
 
+        # ... (Pooling, saving, and PCA logic remains the same) ...
         DataUtils.print_header("Step 3: Pooling N-gram Embeddings to Protein Level")
         final_n_val = self.config.GCN_NGRAM_MAX_N
         if final_n_val not in level_embeddings or level_embeddings[final_n_val].size == 0:
             print(f"ERROR: Final n={final_n_val} embeddings missing/empty. Cannot pool.")
             return
-
         final_ngram_embeds = level_embeddings[final_n_val]
         final_ngram_map = level_ngram_to_idx[final_n_val]
-        protein_sequences_path = str(self.config.GCN_INPUT_FASTA_PATH)
-        protein_sequences = list(DataLoader.parse_sequences(protein_sequences_path))
-
+        protein_sequences = list(DataLoader.parse_sequences(str(self.config.GCN_INPUT_FASTA_PATH)))
         pooled_embeddings = EmbeddingProcessor.pool_ngram_embeddings_for_protein_fast(
-            protein_sequences=protein_sequences,
-            n_val=final_n_val,
-            ngram_map=final_ngram_map,
-            ngram_embeddings=final_ngram_embeds
+            protein_sequences=protein_sequences, n_val=final_n_val,
+            ngram_map=final_ngram_map, ngram_embeddings=final_ngram_embeds
         )
-
         if self.id_map:
-            final_pooled_embeddings = {}
-            for original_id, vec in pooled_embeddings.items():
-                final_key = self.id_map.get(original_id, original_id)
-                final_pooled_embeddings[final_key] = vec
-            pooled_embeddings = final_pooled_embeddings
-
-        if not pooled_embeddings: print("  Warning: No protein embeddings after pooling.")
-
+            pooled_embeddings = {self.id_map.get(k, k): v for k, v in pooled_embeddings.items()}
         DataUtils.print_header("Step 4: Saving Generated Embeddings")
         output_h5_path = os.path.join(self.config.GCN_EMBEDDINGS_DIR, f"gcn_n{final_n_val}_embeddings.h5")
         with h5py.File(output_h5_path, 'w') as hf:
-            for key, vector in tqdm(pooled_embeddings.items(), desc="  Writing H5 File", disable=not self.config.DEBUG_VERBOSE):
-                if vector is not None and vector.size > 0:
-                    hf.create_dataset(key, data=vector)
+            for key, vector in tqdm(pooled_embeddings.items(), desc="  Writing H5 File"):
+                if vector is not None: hf.create_dataset(key, data=vector)
         print(f"\nSUCCESS: Primary embeddings saved to: {output_h5_path}")
-
         if self.config.APPLY_PCA_TO_GCN and pooled_embeddings:
             DataUtils.print_header("Step 5: Applying PCA for Dimensionality Reduction")
-            valid_pooled_embeddings = {k: v for k, v in pooled_embeddings.items() if v is not None and v.size > 0}
-            if not valid_pooled_embeddings:
-                print("  Warning: No valid embeddings to apply PCA.")
-            else:
-                pca_embeds = EmbeddingProcessor.apply_pca(valid_pooled_embeddings, self.config.PCA_TARGET_DIMENSION, self.config.RANDOM_STATE)
-                if pca_embeds:
-                    first_valid_pca_emb = next((v for v in pca_embeds.values() if v is not None and v.size > 0), None)
-                    if first_valid_pca_emb is not None:
-                        pca_dim = first_valid_pca_emb.shape[0]
-                        pca_h5_path = os.path.join(self.config.GCN_EMBEDDINGS_DIR, f"gcn_n{final_n_val}_embeddings_pca{pca_dim}.h5")
-                        with h5py.File(pca_h5_path, 'w') as hf:
-                            for key, vector in tqdm(pca_embeds.items(), desc="  Writing PCA H5 File", disable=not self.config.DEBUG_VERBOSE):
-                                if vector is not None and vector.size > 0: hf.create_dataset(key, data=vector)
-                        print(f"  SUCCESS: PCA-reduced embeddings saved to: {pca_h5_path}")
-                    else:
-                        print("  PCA Warning: No valid PCA embeddings to determine dimension for saving.")
-                elif pooled_embeddings:
-                    print("  Warning: PCA was requested but resulted in no embeddings (apply_pca returned None or empty dict).")
+            pca_embeds = EmbeddingProcessor.apply_pca(pooled_embeddings, self.config.PCA_TARGET_DIMENSION, self.config.RANDOM_STATE)
+            if pca_embeds:
+                pca_dim = next(iter(pca_embeds.values())).shape[0]
+                pca_h5_path = os.path.join(self.config.GCN_EMBEDDINGS_DIR, f"gcn_n{final_n_val}_embeddings_pca{pca_dim}.h5")
+                with h5py.File(pca_h5_path, 'w') as hf:
+                    for key, vector in tqdm(pca_embeds.items(), desc="  Writing PCA H5 File"):
+                        if vector is not None: hf.create_dataset(key, data=vector)
+                print(f"  SUCCESS: PCA-reduced embeddings saved to: {pca_h5_path}")
         DataUtils.print_header("ProtGramDirectGCN Embedding PIPELINE STEP FINISHED")
