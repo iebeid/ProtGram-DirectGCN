@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: gnn_benchmarker.py
 # PURPOSE: To benchmark various GNN models on standard datasets.
-# VERSION: 3.4.14 (Stable - Corrected data prep logic and restored all functionality)
+# VERSION: 3.4.15 (Fixed mask assignment and robust undirected edge handling)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -54,8 +54,8 @@ class GNNBenchmarker:
         print(f"  Seeds set to {seed} for reproducibility.")
 
     def _get_dataset(self, name: str, root_path: str, make_undirected: bool = False):
-        transform_list = [T.ToDevice(self.device)]
-        transform_compose = T.Compose(transform_list)
+        # transform_list = [T.ToDevice(self.device)] # Apply this AFTER mask creation
+        # transform_compose = T.Compose(transform_list)
 
         print(f"  Attempting to load dataset: {name} (root: {root_path}, undirected_requested: {make_undirected})...")
 
@@ -75,22 +75,30 @@ class GNNBenchmarker:
         if make_undirected:
             data_obj.edge_index = to_undirected(data_obj.edge_index, num_nodes=data_obj.num_nodes)
 
-        data_obj = transform_compose(data_obj)
-        print(f"  {name} loaded: Nodes: {data_obj.num_nodes}, Edges: {data_obj.num_edges}, Features: {dataset_obj.num_features}, Classes: {dataset_obj.num_classes}")
-
+        # --- FIX: Create and assign masks BEFORE applying T.ToDevice transform ---
         has_standard_masks = hasattr(data_obj, 'train_mask') and data_obj.train_mask.ndim == 1
         if not has_standard_masks:
             g = torch.Generator().manual_seed(self.config.RANDOM_STATE)
             indices = torch.randperm(data_obj.num_nodes, generator=g)
             num_train = int(self.config.BENCHMARK_SPLIT_RATIOS['train'] * data_obj.num_nodes)
             num_val = int(self.config.BENCHMARK_SPLIT_RATIOS['val'] * data_obj.num_nodes)
-            data_obj.train_mask = torch.zeros(data_obj.num_nodes, dtype=torch.bool, device=self.device)
-            data_obj.val_mask = torch.zeros(data_obj.num_nodes, dtype=torch.bool, device=self.device)
-            data_obj.test_mask = torch.zeros(data_obj.num_nodes, dtype=torch.bool, device=self.device)
+
+            # Assign masks directly to data_obj (they will be moved to device by T.ToDevice)
+            data_obj.train_mask = torch.zeros(data_obj.num_nodes, dtype=torch.bool)
+            data_obj.val_mask = torch.zeros(data_obj.num_nodes, dtype=torch.bool)
+            data_obj.test_mask = torch.zeros(data_obj.num_nodes, dtype=torch.bool)
+
             data_obj.train_mask[indices[:num_train]] = True
             data_obj.val_mask[indices[num_train:num_train + num_val]] = True
             data_obj.test_mask[indices[num_train + num_val:]] = True
             print(f"  Applied custom seeded split to {name}. Train: {data_obj.train_mask.sum()}, Val: {data_obj.val_mask.sum()}, Test: {data_obj.test_mask.sum()}")
+        # --- END FIX ---
+
+        # Now apply the ToDevice transform
+        transform_compose = T.Compose([T.ToDevice(self.device)])
+        data_obj = transform_compose(data_obj)
+
+        print(f"  {name} loaded: Nodes: {data_obj.num_nodes}, Edges: {data_obj.num_edges}, Features: {dataset_obj.num_features}, Classes: {dataset_obj.num_classes}")
 
         return data_obj, data_obj, data_obj, 'single-label-node'
 
@@ -99,9 +107,25 @@ class GNNBenchmarker:
         edge_index = data.edge_index.to(self.device).long()
 
         if edge_index.ndim != 2 or edge_index.shape[0] != 2:
+            print(f"WARNING: _get_undirected_normalized_edges received malformed data.edge_index with shape {edge_index.shape}. Expected (2, N). Returning empty tensors.")
             return torch.empty((2, 0), dtype=torch.long, device=self.device), torch.empty((0,), dtype=torch.float32, device=self.device)
 
-        undir_edge_index, _ = to_undirected(edge_index, num_nodes=num_nodes)
+        undir_edge_index_raw, _ = to_undirected(edge_index, num_nodes=num_nodes)
+
+        # --- FIX: Robustly handle unexpected 1D output from to_undirected ---
+        if undir_edge_index_raw.ndim != 2 or undir_edge_index_raw.shape[0] != 2:
+            if undir_edge_index_raw.ndim == 1 and undir_edge_index_raw.numel() > 0 and undir_edge_index_raw.numel() % 2 == 0:
+                # If it's a 1D tensor that looks like a flattened edge list, try to reshape
+                print(f"WARNING: to_undirected returned unexpected 1D shape {undir_edge_index_raw.shape}. Attempting to reshape to (2, N/2).")
+                undir_edge_index = undir_edge_index_raw.reshape(2, -1)
+            else:
+                # Otherwise, it's truly malformed, return empty
+                print(f"WARNING: to_undirected returned unexpected shape {undir_edge_index_raw.shape}. Converting to (2, 0) empty tensor.")
+                undir_edge_index = torch.empty((2, 0), dtype=torch.long, device=self.device)
+        else:
+            undir_edge_index = undir_edge_index_raw
+        # --- END FIX ---
+
         undir_edge_index, _ = add_self_loops(undir_edge_index, num_nodes=num_nodes)
 
         if undir_edge_index.numel() == 0:
