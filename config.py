@@ -57,7 +57,7 @@ class Config:
         self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8}
 
         # --- 2. GCN PIPELINE PARAMETERS (Your custom GCN) ---
-        self.GCN_NGRAM_MAX_N = 4
+        self.GCN_NGRAM_MAX_N = 3
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
 
         self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]
@@ -73,6 +73,15 @@ class Config:
         self.GCN_WEIGHT_DECAY = 1e-4
         self.GCN_L2_REG_LAMBDA = 1e-7  # Keep L2 low
 
+        # --- NEW: LR Scheduler and Early Stopping for GCN Training ---
+        self.GCN_USE_LR_SCHEDULER = True
+        self.GCN_LR_SCHEDULER_PATIENCE = 10  # Epochs to wait for improvement before reducing LR
+        self.GCN_LR_SCHEDULER_FACTOR = 0.5  # Factor by which the learning rate will be reduced
+
+        self.GCN_USE_EARLY_STOPPING = True
+        self.GCN_EARLY_STOPPING_PATIENCE = 25  # Epochs to wait for improvement before stopping
+        self.GCN_EARLY_STOPPING_MIN_DELTA = 1e-5  # Minimum change in the monitored quantity to qualify as an improvement
+
         self.GCN_PROPAGATION_EPSILON = 1e-9
         self.GCN_MAX_PE_LEN = 512
         self.GCN_USE_VECTOR_COEFFS = True
@@ -80,10 +89,9 @@ class Config:
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
             1: "next_node",
             2: "next_node",
-            3: "closest_aa",
-            4: "community",
+            3: "next_node"
         }
-        self.GCN_DEFAULT_TASK_TYPE: str = "community"
+        self.GCN_DEFAULT_TASK_TYPE: str = "next_node"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
 
         # --- NEW: Cluster-GCN Training Strategy ---
@@ -98,6 +106,11 @@ class Config:
         self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
         self.APPLY_PCA_TO_GCN = True
         self.PCA_TARGET_DIMENSION = 64
+
+        # --- NEW: Sanity Check PPI Task ---
+        self.GCN_RUN_SANITY_CHECK_PPI = True
+        self.GCN_SANITY_CHECK_EPOCHS = 10
+        self.GCN_SANITY_CHECK_TEST_SPLIT = 0.2
 
         # --- 3. WORD2VEC PIPELINE PARAMETERS ---
         self.W2V_INPUT_FASTA_DIR = self.GCN_INPUT_FASTA_PATH

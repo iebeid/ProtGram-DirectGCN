@@ -2,11 +2,11 @@
 # MODULE: utils/results_utils.py
 # PURPOSE: Contains all functions for plotting results and writing summary
 #          files for the PPI evaluation pipeline.
-# VERSION: 2.0 (Refactored into EvaluationReporter class)
+# VERSION: 2.1 (Implemented Hits@k and NDCG@k calculation)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
-from pathlib import Path  # Import Path
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 import math
@@ -32,14 +32,67 @@ class EvaluationReporter:
         """
         self.base_output_dir = Path(base_output_dir)
         self.plots_output_dir = self.base_output_dir / "plots"
-        # Summary file will be saved directly in base_output_dir or a specific subdir if preferred
         self.summary_file_output_dir = self.base_output_dir
-
         self.k_vals_table = k_vals_table
-
-        # Ensure directories exist
         self.plots_output_dir.mkdir(parents=True, exist_ok=True)
         self.summary_file_output_dir.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _calculate_ranking_metrics(y_true: np.ndarray, y_score: np.ndarray, k_list: List[int]) -> Dict[str, float]:
+        """
+        Calculates ranking metrics like Hits@k (as Recall@k) and NDCG@k.
+
+        Args:
+            y_true (np.ndarray): The true binary labels.
+            y_score (np.ndarray): The predicted probabilities or scores.
+            k_list (List[int]): A list of k values to calculate metrics for.
+
+        Returns:
+            Dict[str, float]: A dictionary with the calculated metrics.
+        """
+        # Combine scores and true labels, then sort by score descending
+        combined = np.stack([y_score, y_true], axis=1)
+        sorted_combined = combined[np.argsort(combined[:, 0])[::-1]]
+        sorted_true_labels = sorted_combined[:, 1]
+
+        metrics = {}
+        total_positives = np.sum(y_true)
+
+        if total_positives == 0:
+            # If there are no positive samples, all ranking metrics are trivially 0
+            for k in k_list:
+                metrics[f'hits_at_{k}'] = 0.0
+                metrics[f'ndcg_at_{k}'] = 0.0
+            return metrics
+
+        # Create the ideal ranking (all positives at the top) for IDCG calculation
+        ideal_ranking = np.sort(y_true)[::-1]
+
+        for k in k_list:
+            # Ensure k is not larger than the number of items
+            actual_k = min(k, len(sorted_true_labels))
+            if actual_k == 0:
+                metrics[f'hits_at_{k}'] = 0.0
+                metrics[f'ndcg_at_{k}'] = 0.0
+                continue
+
+            # --- Hits@k (defined as Recall@k) ---
+            # How many of the true positives are in the top k predictions?
+            hits_in_top_k = np.sum(sorted_true_labels[:actual_k])
+            metrics[f'hits_at_{k}'] = hits_in_top_k / total_positives
+
+            # --- NDCG@k ---
+            # Calculate DCG for the actual ranking
+            ranks = np.arange(1, actual_k + 1)
+            discounts = np.log2(ranks + 1)
+            dcg = np.sum(sorted_true_labels[:actual_k] / discounts)
+
+            # Calculate IDCG for the ideal ranking
+            idcg = np.sum(ideal_ranking[:actual_k] / discounts)
+
+            metrics[f'ndcg_at_{k}'] = dcg / idcg if idcg > 0 else 0.0
+
+        return metrics
 
     def plot_training_history(self, history_dict: Dict[str, Any], model_name: str) -> Optional[Path]:
         """
@@ -193,7 +246,7 @@ class EvaluationReporter:
                 row = [res.get('embedding_name', 'N/A'), f"{res.get('test_auc_sklearn', 0):.4f}", f"{res.get('test_f1_sklearn', 0):.4f}", f"{res.get('test_precision_sklearn', 0):.4f}",
                        f"{res.get('test_recall_sklearn', 0):.4f}"]
                 for k_val in self.k_vals_table:
-                    row.append(f"{res.get(f'test_hits_at_{k_val}', 0):.0f}")
+                    row.append(f"{res.get(f'test_hits_at_{k_val}', 0):.4f}") # Changed to .4f for recall@k
                     row.append(f"{res.get(f'test_ndcg_at_{k_val}', 0):.4f}")
                 row.append(f"{res.get('test_auc_sklearn_std', 0):.4f}")
                 row.append(f"{res.get('test_f1_sklearn_std', 0):.4f}")
