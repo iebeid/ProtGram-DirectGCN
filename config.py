@@ -70,17 +70,17 @@ class Config:
         self.API_MAPPING_TO_DB = "UniProtKB"
 
         self.GCN_1GRAM_INIT_DIM = 512
-        self.GCN_EPOCHS_PER_LEVEL = 500
+        self.GCN_EPOCHS_PER_LEVEL = 100
         self.GCN_LR = 0.001  # Lower learning rate for more stable training
         self.GCN_DROPOUT_RATE = 0.5
         self.GCN_WEIGHT_DECAY = 1e-4  # L2 regularization for optimizer (Adam's weight_decay)
-        self.GCN_L2_REG_LAMBDA = 1e-5  # Custom L2 regularization added to loss
+        self.GCN_L2_REG_LAMBDA = 1e-8  # Custom L2 regularization added to loss
         self.GCN_PROPAGATION_EPSILON = 1e-9
         self.GCN_MAX_PE_LEN = 512
         self.GCN_USE_VECTOR_COEFFS = True
 
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
-            1: "next_node", 2: "closest_aa", 3: "closest_aa", 4: "community", 5: "community"
+            1: "next_node", 2: "next_node", 3: "closest_aa", 4: "closest_aa", 5: "community"
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3

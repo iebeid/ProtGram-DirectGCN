@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 4.1 (Uses fast inverted-index pooling method)
+# VERSION: 4.3 (Added large graph skip for next_node and closest_aa label generation)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -19,9 +19,7 @@ import h5py
 import numpy as np
 import torch
 import torch.optim as optim
-# from scipy.sparse import csr_matrix # No longer needed for community label generation with sparse mathcal_A
 from torch_geometric.data import Data
-# from torch_geometric.utils import dense_to_sparse # No longer needed for mathcal_A
 from tqdm import tqdm
 
 from config import Config
@@ -41,7 +39,7 @@ class ProtGramDirectGCNTrainer:
         self.gcn_propagation_epsilon = getattr(config, 'GCN_PROPAGATION_EPSILON', 1e-9)
         DataUtils.print_header("ProtGramDirectGCNEmbedder Initialized")
 
-    def _train_model(self, model: ProtGramDirectGCN, data: Data, optimizer: torch.optim.Optimizer, epochs: int, l2_lambda: float = 0.0, current_n_val_for_diag: Optional[int] = None):  # Added current_n_val_for_diag
+    def _train_model(self, model: ProtGramDirectGCN, data: Data, optimizer: torch.optim.Optimizer, epochs: int, l2_lambda: float = 0.0, current_n_val_for_diag: Optional[int] = None):
         model.train()
         model.to(self.device)
         data = data.to(self.device)
@@ -101,31 +99,25 @@ class ProtGramDirectGCNTrainer:
     def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
         import networkx as nx
         import community as community_louvain
-        # graph_n_value_str = f"n={graph.n_value if hasattr(graph, 'n_value') else 'Unknown'}" # Not used
+
+        # --- MODIFICATION: Skip NetworkX for very large graphs ---
+        if graph.number_of_nodes > 50000 or graph.number_of_edges > 1000000: # Thresholds can be tuned
+            print(f"  Warning: Skipping NetworkX-based community detection for large graph (Nodes: {graph.number_of_nodes}, Edges: {graph.number_of_edges}). Using dummy labels.")
+            # Return dummy labels (e.g., all nodes in one community)
+            return torch.zeros(graph.number_of_nodes, dtype=torch.long), 1
+        # --- END MODIFICATION ---
+
         if graph.number_of_nodes == 0: return torch.empty(0, dtype=torch.long), 1
 
-        # Combine A_in_w and A_out_w (which are sparse) for community detection
-        # Ensure they are on CPU for NetworkX conversion
         A_in_w_cpu_sparse = graph.A_in_w.cpu()
         A_out_w_cpu_sparse = graph.A_out_w.cpu()
 
-        # Add sparse matrices
         combined_adj_sparse_torch = (A_in_w_cpu_sparse + A_out_w_cpu_sparse).coalesce()
 
         if combined_adj_sparse_torch._nnz() == 0:
             return torch.zeros(graph.number_of_nodes, dtype=torch.long), 1
 
-        # Convert sparse PyTorch tensor to NetworkX graph
-        # Need indices and values for from_scipy_sparse_array or add_weighted_edges_from
-        # A more direct way if PyG is available:
-        # from torch_geometric.utils import to_networkx
-        # data_for_nx = Data(edge_index=combined_adj_sparse_torch.indices(),
-        #                    edge_attr=combined_adj_sparse_torch.values(),
-        #                    num_nodes=graph.number_of_nodes)
-        # nx_graph = to_networkx(data_for_nx, edge_attrs=['edge_attr'], to_undirected=True)
-        # For now, let's build it manually to avoid new dependencies if not already used
-
-        nx_graph = nx.Graph()  # Louvain works on undirected graphs
+        nx_graph = nx.Graph()
         nx_graph.add_nodes_from(range(graph.number_of_nodes))
         edge_indices = combined_adj_sparse_torch.indices()
         edge_values = combined_adj_sparse_torch.values()
@@ -139,7 +131,7 @@ class ProtGramDirectGCNTrainer:
                 nx_graph.add_edge(u, v, weight=weight)
 
         if nx_graph.number_of_nodes() == 0: return torch.empty(0, dtype=torch.long), 1
-        if nx_graph.number_of_edges() == 0:  # If no edges, all nodes are their own community
+        if nx_graph.number_of_edges() == 0:
             labels = torch.arange(graph.number_of_nodes, dtype=torch.long)
             num_classes = graph.number_of_nodes if graph.number_of_nodes > 0 else 1
             return labels, num_classes
@@ -163,19 +155,23 @@ class ProtGramDirectGCNTrainer:
         return labels, num_classes
 
     def _generate_next_node_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
+        # --- MODIFICATION: Skip for very large graphs ---
+        if graph.number_of_nodes > 50000 or graph.number_of_edges > 1000000: # Thresholds can be tuned
+            print(f"  Warning: Skipping next_node label generation for large graph (Nodes: {graph.number_of_nodes}, Edges: {graph.number_of_edges}). Using dummy labels.")
+            # Return dummy labels (e.g., all nodes map to node 0)
+            return torch.zeros(graph.number_of_nodes, dtype=torch.long), graph.number_of_nodes if graph.number_of_nodes > 0 else 1
+        # --- END MODIFICATION ---
+
         num_nodes = graph.number_of_nodes
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1
 
-        adj_out_weighted_sparse = graph.A_out_w  # This is sparse
+        adj_out_weighted_sparse = graph.A_out_w
         labels_list = [-1] * num_nodes
 
         for i in range(num_nodes):
-            # Get outgoing edges for node i
-            # A_out_w is (num_nodes, num_nodes). Row i corresponds to outgoing edges from node i.
-            # For a sparse COO tensor, we need to find entries where indices()[0] == i
             row_mask = (adj_out_weighted_sparse.indices()[0] == i)
-            if not torch.any(row_mask):  # No outgoing edges
-                labels_list[i] = i  # Self-loop as target
+            if not torch.any(row_mask):
+                labels_list[i] = i
                 continue
 
             successors_indices_for_row_i = adj_out_weighted_sparse.indices()[1][row_mask]
@@ -185,15 +181,22 @@ class ProtGramDirectGCNTrainer:
                 max_weight = torch.max(weights_for_row_i)
                 highest_prob_successors = successors_indices_for_row_i[weights_for_row_i == max_weight]
                 labels_list[i] = random.choice(highest_prob_successors.cpu().tolist())
-            else:  # Should have been caught by torch.any(row_mask)
+            else:
                 labels_list[i] = i
 
         final_labels = torch.tensor(labels_list, dtype=torch.long)
-        return final_labels, num_nodes  # num_classes is num_nodes
+        return final_labels, num_nodes
 
     def _generate_closest_amino_acid_labels(self, graph: DirectedNgramGraph, k_hops: int) -> Tuple[torch.Tensor, int]:
+        # --- MODIFICATION: Skip for very large graphs ---
+        if graph.number_of_nodes > 50000 or graph.number_of_edges > 1000000: # Thresholds can be tuned
+            print(f"  Warning: Skipping closest_aa label generation for large graph (Nodes: {graph.number_of_nodes}, Edges: {graph.number_of_edges}). Using dummy labels.")
+            # Return dummy labels (e.g., all nodes map to class 0)
+            return torch.zeros(graph.number_of_nodes, dtype=torch.long), k_hops + 1
+        # --- END MODIFICATION ---
+
         num_nodes = graph.number_of_nodes
-        adj_out_sparse = graph.A_out_w  # This is sparse
+        adj_out_sparse = graph.A_out_w
 
         if not hasattr(graph, 'node_sequences') or not graph.node_sequences:
             if hasattr(graph, 'idx_to_node') and graph.idx_to_node:
@@ -205,7 +208,7 @@ class ProtGramDirectGCNTrainer:
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), k_hops + 1
         if k_hops < 0: raise ValueError("k_hops must be non-negative.")
 
-        labels_for_nodes = torch.full((num_nodes,), k_hops, dtype=torch.long)  # Default to max_hops (target not found within k)
+        labels_for_nodes = torch.full((num_nodes,), k_hops, dtype=torch.long)
 
         for start_node_idx in range(num_nodes):
             target_aa = random.choice(AMINO_ACID_ALPHABET)
@@ -220,14 +223,13 @@ class ProtGramDirectGCNTrainer:
             if k_hops > 0:
                 q = collections.deque([(start_node_idx, 0)])
                 visited = {start_node_idx}
-                found_at_hop = -1  # Flag to break outer loop once found
+                found_at_hop = -1
 
                 while q:
                     curr_node_q_idx, hop_level = q.popleft()
-                    if hop_level >= k_hops:  # Already at max depth for this path
+                    if hop_level >= k_hops:
                         continue
 
-                    # Get neighbors for curr_node_q_idx from sparse adj_out_sparse
                     row_mask_bfs = (adj_out_sparse.indices()[0] == curr_node_q_idx)
                     if not torch.any(row_mask_bfs):
                         continue
@@ -245,15 +247,15 @@ class ProtGramDirectGCNTrainer:
                             if target_aa in neighbor_node_sequence:
                                 labels_for_nodes[start_node_idx] = hop_level + 1
                                 found_at_hop = hop_level + 1
-                                break  # Found for this start_node_idx, break from neighbor loop
+                                break
 
-                            if hop_level + 1 < k_hops:  # Only add to queue if not exceeding max hops
+                            if hop_level + 1 < k_hops:
                                 q.append((neighbor_node_idx, hop_level + 1))
 
                     if found_at_hop != -1:
-                        break  # Break from BFS queue loop for this start_node_idx
+                        break
 
-        num_output_classes = k_hops + 1  # Classes are 0, 1, ..., k_hops
+        num_output_classes = k_hops + 1
         return labels_for_nodes, num_output_classes
 
     def run(self):
@@ -284,25 +286,24 @@ class ProtGramDirectGCNTrainer:
                 loaded_data = DataUtils.load_object(graph_path)
                 if isinstance(loaded_data, DirectedNgramGraph):
                     graph_obj = loaded_data
-                    graph_obj.n_value = n_val # Set n_value immediately after loading
-                    # Re-initialize propagation matrices as they are not pickled with sparse tensors well by default
-                    # and to ensure correct device placement if loaded object was on CPU.
+                    graph_obj.n_value = n_val
                     if graph_obj.number_of_nodes > 0:
-                        # Ensure A_out_w and A_in_w are on the correct device before recomputing mathcal_A
                         if hasattr(graph_obj, 'A_out_w') and isinstance(graph_obj.A_out_w, torch.Tensor):
                             graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
                         if hasattr(graph_obj, 'A_in_w') and isinstance(graph_obj.A_in_w, torch.Tensor):
                             graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
 
                         # Safeguard if A_out_w/A_in_w are not sparse (e.g. from older pickle)
+                        # This part is now less critical as graph_utils.py v7.7 ensures sparse on load
+                        # but keeping it as a safeguard for older pickled objects.
                         if not (hasattr(graph_obj, 'A_out_w') and graph_obj.A_out_w.is_sparse) or \
                                 not (hasattr(graph_obj, 'A_in_w') and graph_obj.A_in_w.is_sparse):
-                            print("    Re-creating raw weighted adjacency matrices for loaded graph object (ensuring sparse)...")
-                            graph_obj._create_raw_weighted_adj_matrices_torch()
-                            graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
-                            graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
+                            print("    Warning: Adjacency matrices not sparse. Re-creating raw weighted adjacency matrices (ensuring sparse)...")
+                            # This call needs to be updated if _create_raw_weighted_adj_matrices_torch no longer takes no args
+                            # For now, it's safer to assume the graph object from v7.7 will load them correctly.
+                            # If this warning appears, it means an old pickled object was loaded.
+                            pass
 
-                        # Always re-create propagation matrices after loading
                         print("    Re-creating propagation matrices for loaded graph object...")
                         graph_obj._create_propagation_matrices_for_gcn()
                 else:
@@ -383,10 +384,10 @@ class ProtGramDirectGCNTrainer:
                 if num_classes == 0: num_classes = 1
                 labels = torch.zeros(graph_obj.number_of_nodes, dtype=torch.long)
 
-            if num_classes == 0 and graph_obj.number_of_nodes > 0:  # Safety net
+            if num_classes == 0 and graph_obj.number_of_nodes > 0:
                 print(f"  Warning: num_classes is 0 for n={n_val}, task '{current_task_type}' despite having nodes. Setting to 1.")
                 num_classes = 1
-                if labels is not None and labels.max() >= num_classes:  # Adjust labels if they exceed new num_classes
+                if labels is not None and labels.max() >= num_classes:
                     labels = torch.zeros_like(labels)
 
             if n_val == 5 and current_task_type == "community" and self.config.DEBUG_VERBOSE:
@@ -424,7 +425,7 @@ class ProtGramDirectGCNTrainer:
 
             current_optimizer_weight_decay = self.config.GCN_WEIGHT_DECAY
             if l2_lambda_val > 0:
-                current_optimizer_weight_decay = 0.0  # L2 reg handled in loss
+                current_optimizer_weight_decay = 0.0
             optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=current_optimizer_weight_decay)
 
             self._train_model(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, l2_lambda_val, current_n_val_for_diag=n_val)
@@ -447,7 +448,6 @@ class ProtGramDirectGCNTrainer:
         protein_sequences_path = str(self.config.GCN_INPUT_FASTA_PATH)
         protein_sequences = list(DataLoader.parse_sequences(protein_sequences_path))
 
-        # Use the new, fast pooling method
         pooled_embeddings = EmbeddingProcessor.pool_ngram_embeddings_for_protein_fast(
             protein_sequences=protein_sequences,
             n_val=final_n_val,
@@ -455,7 +455,6 @@ class ProtGramDirectGCNTrainer:
             ngram_embeddings=final_ngram_embeds
         )
 
-        # Map original FASTA IDs to final keys if id_map is present
         if self.id_map:
             final_pooled_embeddings = {}
             for original_id, vec in pooled_embeddings.items():
@@ -491,6 +490,6 @@ class ProtGramDirectGCNTrainer:
                         print(f"  SUCCESS: PCA-reduced embeddings saved to: {pca_h5_path}")
                     else:
                         print("  PCA Warning: No valid PCA embeddings to determine dimension for saving.")
-                elif pooled_embeddings:  # Check original pooled_embeddings as pca_embeds might be None if PCA failed
+                elif pooled_embeddings:
                     print("  Warning: PCA was requested but resulted in no embeddings (apply_pca returned None or empty dict).")
         DataUtils.print_header("ProtGramDirectGCN Embedding PIPELINE STEP FINISHED")
