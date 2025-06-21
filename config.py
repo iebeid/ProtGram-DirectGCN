@@ -17,10 +17,10 @@ class Config:
         self.DEBUG_VERBOSE = True
 
         # --- Workflow Control Flags ---
-        self.RUN_GCN_PIPELINE = False
+        self.RUN_GCN_PIPELINE = True
         self.RUN_WORD2VEC_PIPELINE = False
         self.RUN_TRANSFORMER_PIPELINE = False
-        self.RUN_BENCHMARKING_PIPELINE = True
+        self.RUN_BENCHMARKING_PIPELINE = False
         self.RUN_MAIN_PPI_EVALUATION = False
         self.RUN_DUMMY_TEST = False
         self.CLEANUP_DUMMY_DATA = False
