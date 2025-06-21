@@ -49,11 +49,13 @@ class DirectGCNLayer(MessagePassing):
         if self.use_vector_coeffs and self.num_nodes > 0:
             self.C_in_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
             self.C_out_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
+            self.C_directed_vec = nn.Parameter(torch.Tensor(num_nodes, 1))  # NEW
             self.C_undirected_vec = nn.Parameter(torch.Tensor(num_nodes, 1))  # NEW
         else:
             self.use_vector_coeffs = False  # Fallback to scalar if num_nodes is invalid
             self.C_in = nn.Parameter(torch.Tensor(1))
             self.C_out = nn.Parameter(torch.Tensor(1))
+            self.C_directed = nn.Parameter(torch.Tensor(1))  # NEW
             self.C_undirected = nn.Parameter(torch.Tensor(1))  # NEW
 
         # --- Learnable Node-Specific Constant ---
@@ -75,10 +77,12 @@ class DirectGCNLayer(MessagePassing):
         if self.use_vector_coeffs:
             nn.init.ones_(self.C_in_vec)
             nn.init.ones_(self.C_out_vec)
+            nn.init.ones_(self.C_directed_vec)
             nn.init.ones_(self.C_undirected_vec)
         else:
             nn.init.ones_(self.C_in)
             nn.init.ones_(self.C_out)
+            nn.init.ones_(self.C_directed)
             nn.init.ones_(self.C_undirected)
 
         if self.constant is not None:
@@ -117,24 +121,27 @@ class DirectGCNLayer(MessagePassing):
             # Subgraph mode: select the right coefficients and constants
             c_in = self.C_in_vec[original_indices]
             c_out = self.C_out_vec[original_indices]
+            c_directed = self.C_directed_vec[original_indices]
             c_undirected = self.C_undirected_vec[original_indices]  # Corrected name
             constant_term = self.constant[original_indices] if self.constant is not None else 0
         elif self.use_vector_coeffs:
             # Full graph mode
             c_in = self.C_in_vec
             c_out = self.C_out_vec
+            c_directed = self.C_directed_vec
             c_undirected = self.C_undirected_vec  # Corrected name
             constant_term = self.constant if self.constant is not None else 0
         else:
             # Scalar mode
             c_in = self.C_in
             c_out = self.C_out
+            c_directed = self.C_directed
             c_undirected = self.C_undirected  # Corrected name
             constant_term = 0  # Constant is only per-node, so not applicable in scalar mode
 
         # --- 5. Final Combination ---
         # Corrected: Use c_undirected here
-        final_combination = (c_undirected * all_c_combined) + (c_in * ic_combined) + (c_out * oc_combined) + constant_term
+        final_combination = (c_undirected * all_c_combined) + (c_directed * ((c_in * ic_combined) + (c_out * oc_combined))) + constant_term
 
         return final_combination
 
