@@ -58,7 +58,7 @@ class Config:
 
         # --- 2. GCN PIPELINE PARAMETERS (Your custom GCN) ---
         self.GCN_NGRAM_MAX_N = 3
-        self.DASK_CHUNK_SIZE = 2000000
+        # self.DASK_CHUNK_SIZE = 2000000
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
 
         self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]
