@@ -17,11 +17,11 @@ class Config:
         self.DEBUG_VERBOSE = True # Set to False for less verbose training logs
 
         # --- Workflow Control Flags ---
-        self.RUN_GCN_PIPELINE = False
+        self.RUN_GCN_PIPELINE = True
         self.RUN_WORD2VEC_PIPELINE = False
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = False
-        self.RUN_MAIN_PPI_EVALUATION = True
+        self.RUN_MAIN_PPI_EVALUATION = False
         self.RUN_DUMMY_TEST = True
         self.CLEANUP_DUMMY_DATA = True
 
@@ -73,7 +73,7 @@ class Config:
 
         self.GCN_1GRAM_INIT_DIM = 512
         self.GCN_EPOCHS_PER_LEVEL = 500
-        self.GCN_LR = 0.01
+        self.GCN_LR = 0.001
         self.GCN_DROPOUT_RATE = 0.5
         self.GCN_WEIGHT_DECAY = 1e-2
         self.GCN_L2_REG_LAMBDA = 1e-2
@@ -135,15 +135,15 @@ class Config:
 
         # Evaluation MLP Architecture & Training
         self.EVAL_EDGE_EMBEDDING_METHOD = 'concatenate'
-        self.EVAL_N_FOLDS = 2
-        self.EVAL_MLP_DENSE1_UNITS = 64
+        self.EVAL_N_FOLDS = 5
+        self.EVAL_MLP_DENSE1_UNITS = 128
         self.EVAL_MLP_DROPOUT1_RATE = 0.4
-        self.EVAL_MLP_DENSE2_UNITS = 32
+        self.EVAL_MLP_DENSE2_UNITS = 64
         self.EVAL_MLP_DROPOUT2_RATE = 0.4
         self.EVAL_MLP_L2_REG = 0.00001
-        self.EVAL_BATCH_SIZE = 256
-        self.EVAL_EPOCHS = 1
-        self.EVAL_LEARNING_RATE = 0.01
+        self.EVAL_BATCH_SIZE = 512
+        self.EVAL_EPOCHS = 20
+        self.EVAL_LEARNING_RATE = 0.001
 
         # Evaluation Reporting
         self.EVAL_K_VALUES_FOR_TABLE = [50, 100]
