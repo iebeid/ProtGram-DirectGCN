@@ -1,19 +1,15 @@
 # ==============================================================================
 # MODULE: utils/graph_utils.py
 # PURPOSE: Contains robust classes for n-gram graph representation.
-# VERSION: 7.5 (Memory-optimized constructor for DirectedNgramGraph)
+# VERSION: 7.6 (Aggressive memory optimization for initial sparse tensor creation)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
+import gc
 from typing import List, Dict, Tuple, Any, Optional
 
-import numpy as np  # Ensure numpy is imported
+import numpy as np
 import torch
-
-
-# dense_to_sparse is still used by PyG internally, but we won't use it to convert our main matrices
-# from dense to sparse anymore, as they will be computed sparsely.
-# from torch_geometric.utils import dense_to_sparse
 
 
 class Graph:
@@ -129,7 +125,7 @@ class DirectedNgramGraph(Graph):
         self.mathcal_A_out: torch.Tensor
         self.mathcal_A_in: torch.Tensor
 
-        if self.number_of_nodes > 0 and source_indices is not None and target_indices is not None and weights is not None:
+        if self.number_of_nodes > 0 and source_indices is not None and source_indices.size > 0:
             self.number_of_edges = len(source_indices)
             self._create_raw_weighted_adj_matrices_torch(source_indices, target_indices, weights)
             self._create_propagation_matrices_for_gcn()
@@ -146,14 +142,24 @@ class DirectedNgramGraph(Graph):
             self.mathcal_A_in = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
 
     def _create_raw_weighted_adj_matrices_torch(self, source_indices: np.ndarray, target_indices: np.ndarray, weights: np.ndarray):
-        """Creates sparse adjacency matrices directly from numpy arrays."""
+        """Creates sparse adjacency matrices directly from numpy arrays with memory optimization."""
         size = (self.number_of_nodes, self.number_of_nodes)
 
-        # Directly convert numpy arrays to tensors, avoiding intermediate Python lists
-        edge_indices_tensor = torch.from_numpy(np.vstack((source_indices, target_indices))).long()
+        # Convert numpy arrays to tensors one by one and stack to avoid large intermediate np.vstack
+        source_tensor = torch.from_numpy(source_indices)
+        target_tensor = torch.from_numpy(target_indices)
+        edge_indices_tensor = torch.stack([source_tensor, target_tensor]).long()
+        del source_tensor, target_tensor, source_indices, target_indices  # Free memory
+        gc.collect()
+
         edge_weights_tensor = torch.from_numpy(weights).float()
+        del weights  # Free memory
+        gc.collect()
 
         self.A_out_w = torch.sparse_coo_tensor(edge_indices_tensor, edge_weights_tensor, size).coalesce()
+        del edge_indices_tensor, edge_weights_tensor  # Free memory
+        gc.collect()
+
         self.A_in_w = self.A_out_w.t().coalesce()
 
     def _calculate_single_propagation_matrix_for_gcn(self, A_w_torch_sparse: torch.Tensor) -> torch.Tensor:
@@ -245,8 +251,11 @@ class DirectedNgramGraph(Graph):
 
         print(f"  Creating mathcal_A_out for n={self.n_value}...")
         self.mathcal_A_out = self._calculate_single_propagation_matrix_for_gcn(self.A_out_w)
+        gc.collect()  # Force garbage collection between the two large calculations
+
         print(f"  Creating mathcal_A_in for n={self.n_value}...")
         self.mathcal_A_in = self._calculate_single_propagation_matrix_for_gcn(self.A_in_w)
+        gc.collect()
 
 
 def _sparse_identity(size: int, device: torch.device) -> torch.Tensor:
