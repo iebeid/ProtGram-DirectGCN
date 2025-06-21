@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: utils/graph_utils.py
 # PURPOSE: Contains robust classes for n-gram graph representation.
-# VERSION: 7.3 (Added n_value to constructor to fix logging bug)
+# VERSION: 7.4 (Memory-optimized S^2+K^2 calculation in propagation matrix)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -200,8 +200,7 @@ class DirectedNgramGraph(Graph):
     def _calculate_single_propagation_matrix_for_gcn(self, A_w_torch_sparse: torch.Tensor) -> torch.Tensor:
         """
         Calculates the propagation matrix mathcal{A} = sqrt(S^2 + K^2 + epsilon) + I
-        using sparse tensor operations.
-        Input A_w_torch_sparse is expected to be a sparse COO tensor.
+        using sparse tensor operations. This version uses a memory-optimized formula.
         """
 
         # --- Debug Print Function ---
@@ -258,48 +257,44 @@ class DirectedNgramGraph(Graph):
         print_sparse_info(A_n_sparse, "A_n", current_n_val)
         del D_inv_sparse  # Free memory
 
-        # 5. Compute S = (A_n + A_n.t()) / 2.0
-        A_n_t_sparse = A_n_sparse.t().coalesce()
-        # print_sparse_info(A_n_t_sparse, "A_n_transpose (for S)", current_n_val)
-        S_sparse = (A_n_sparse + A_n_t_sparse).coalesce()
-        # print_sparse_info(S_sparse, "S_before_div", current_n_val)
-        S_sparse = torch.sparse_coo_tensor(S_sparse.indices(), S_sparse.values() / 2.0, S_sparse.size()).coalesce()
-        print_sparse_info(S_sparse, "S_final", current_n_val)
-        del A_n_t_sparse
+        # --- OPTIMIZED CALCULATION for S^2 + K^2 ---
+        # This avoids creating S and K matrices, saving significant memory.
+        # It's based on the identity: S^2 + K^2 = 0.5 * (A_n^2 + (A_n.T)^2)
+        print("    Calculating S^2+K^2 using memory-optimized formula...")
 
-        # 6. Compute K = (A_n - A_n.t()) / 2.0
-        A_n_t_sparse_for_K = A_n_sparse.t().coalesce()  # Re-transpose A_n_sparse
-        # print_sparse_info(A_n_t_sparse_for_K, "A_n_transpose (for K)", current_n_val)
-        K_sparse = (A_n_sparse - A_n_t_sparse_for_K).coalesce()
-        # print_sparse_info(K_sparse, "K_before_div", current_n_val)
-        K_sparse = torch.sparse_coo_tensor(K_sparse.indices(), K_sparse.values() / 2.0, K_sparse.size()).coalesce()
-        print_sparse_info(K_sparse, "K_final", current_n_val)
-        del A_n_t_sparse_for_K, A_n_sparse  # A_n_sparse no longer needed
+        # Element-wise square of A_n_sparse values
+        A_n_sq_values = A_n_sparse.values().pow(2)
+        A_n_sq_sparse = torch.sparse_coo_tensor(A_n_sparse.indices(), A_n_sq_values, A_n_sparse.size()).coalesce()
+        print_sparse_info(A_n_sq_sparse, "A_n_squared", current_n_val)
+        del A_n_sq_values  # Free values
 
-        # 7. Compute mathcal_A_base = sqrt(S^2 + K^2 + epsilon) element-wise
-        S_sq_values = S_sparse.values().pow(2)
-        S_sq_sparse = torch.sparse_coo_tensor(S_sparse.indices(), S_sq_values, S_sparse.size()).coalesce()
-        print_sparse_info(S_sq_sparse, "S_squared", current_n_val)
-        del S_sq_values, S_sparse
+        # Transpose of A_n_sq_sparse
+        A_n_sq_t_sparse = A_n_sq_sparse.t().coalesce()
+        # print_sparse_info(A_n_sq_t_sparse, "A_n_squared_transposed", current_n_val) # Uncomment for more detail
 
-        K_sq_values = K_sparse.values().pow(2)
-        K_sq_sparse = torch.sparse_coo_tensor(K_sparse.indices(), K_sq_values, K_sparse.size()).coalesce()
-        print_sparse_info(K_sq_sparse, "K_squared", current_n_val)
-        del K_sq_values, K_sparse
+        # Sum of A_n_sq_sparse and its transpose
+        S_sq_plus_K_sq_sparse = (A_n_sq_sparse + A_n_sq_t_sparse).coalesce()
 
-        S_sq_plus_K_sq_sparse = (S_sq_sparse + K_sq_sparse).coalesce()
+        # Multiply by 0.5 (element-wise on values)
+        S_sq_plus_K_sq_sparse = torch.sparse_coo_tensor(
+            S_sq_plus_K_sq_sparse.indices(),
+            S_sq_plus_K_sq_sparse.values() * 0.5,
+            S_sq_plus_K_sq_sparse.size()
+        ).coalesce()
         print_sparse_info(S_sq_plus_K_sq_sparse, "S_sq_plus_K_sq", current_n_val)
-        del S_sq_sparse, K_sq_sparse
 
+        del A_n_sq_sparse, A_n_sq_t_sparse, A_n_sparse  # Free intermediate squared matrices and A_n_sparse
+        # --- END OF OPTIMIZED CALCULATION ---
+
+        # Step 7 & 8: Finalize mathcal_A (remains the same)
         epsilon_tensor = torch.tensor(self.epsilon_propagation, device=dev, dtype=torch.float32)
         mathcal_A_base_values = torch.sqrt(S_sq_plus_K_sq_sparse.values() + epsilon_tensor)
         mathcal_A_base_sparse = torch.sparse_coo_tensor(S_sq_plus_K_sq_sparse.indices(), mathcal_A_base_values, S_sq_plus_K_sq_sparse.size()).coalesce()
         print_sparse_info(mathcal_A_base_sparse, "mathcal_A_base", current_n_val)
         del S_sq_plus_K_sq_sparse, mathcal_A_base_values
 
-        # 8. Add sparse identity matrix
         identity_sparse = _sparse_identity(num_nodes, device=dev)
-        # print_sparse_info(identity_sparse, "Identity", current_n_val)
+        # print_sparse_info(identity_sparse, "Identity", current_n_val) # Uncomment for more detail
 
         mathcal_A_with_self_loops_sparse = (mathcal_A_base_sparse + identity_sparse).coalesce()
         print_sparse_info(mathcal_A_with_self_loops_sparse, "mathcal_A_final", current_n_val)

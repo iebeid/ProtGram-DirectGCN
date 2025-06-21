@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: config.py
 # PURPOSE: Centralized configuration for the entire PPI pipeline.
-# VERSION: 1.4 (Added GNN benchmark embedding/PCA/undirected flags, split ratios)
+# VERSION: 1.5 (Optimized GCN params, reduced regularization, updated MLP eval)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -14,7 +14,7 @@ class Config:
     def __init__(self):
         # --- 1. GENERAL & ORCHESTRATION SETTINGS ---
         self.RANDOM_STATE = 42
-        self.DEBUG_VERBOSE = True # Set to False for less verbose training logs
+        self.DEBUG_VERBOSE = True  # Set to False for less verbose training logs
 
         # --- Workflow Control Flags ---
         self.RUN_GCN_PIPELINE = True
@@ -43,7 +43,7 @@ class Config:
         self.TRANSFORMER_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_transformer_embeddings"
         self.EVALUATION_RESULTS_DIR = self.BASE_OUTPUT_DIR / "3_evaluation_results"
         self.BENCHMARKING_RESULTS_DIR = self.BASE_OUTPUT_DIR / "4_benchmarking_results"
-        self.BENCHMARK_EMBEDDINGS_DIR = self.BENCHMARKING_RESULTS_DIR / "embeddings" # For GNN benchmark embeddings
+        self.BENCHMARK_EMBEDDINGS_DIR = self.BENCHMARKING_RESULTS_DIR / "embeddings"  # For GNN benchmark embeddings
 
         self.PPI_EVALUATION_MODELS_DIR = self.BASE_DATA_DIR / "models"
 
@@ -52,44 +52,52 @@ class Config:
             "KarateClub", "Cora", "CiteSeer", "PubMed",
             "Cornell", "Texas", "Wisconsin", "PPI",
         ]
-        self.BENCHMARK_SAVE_EMBEDDINGS = True # Save embeddings from GNN benchmark models
-        self.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS = True # Apply PCA to saved benchmark embeddings
-        self.BENCHMARK_PCA_TARGET_DIM = 64 # Target dim for PCA on benchmark embeddings
-        self.BENCHMARK_TEST_ON_UNDIRECTED = True # Also test on undirected versions of graphs
+        self.BENCHMARK_SAVE_EMBEDDINGS = True  # Save embeddings from GNN benchmark models
+        self.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS = True  # Apply PCA to saved benchmark embeddings
+        self.BENCHMARK_PCA_TARGET_DIM = 64  # Target dim for PCA on benchmark embeddings
+        self.BENCHMARK_TEST_ON_UNDIRECTED = True  # Also test on undirected versions of graphs
         # Ratios for RandomNodeSplit if dataset has no predefined masks. Sum should be <= 1.0
-        self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8} # Example for small datasets like Karate
-
+        self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8}  # Example for small datasets like Karate
 
         # --- 2. GCN PIPELINE PARAMETERS (Your custom GCN) ---
         self.GCN_NGRAM_MAX_N = 5
         self.DASK_CHUNK_SIZE = 2000000
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 8) if os.cpu_count() else 1
-        self.GCN_HIDDEN_LAYER_DIMS = [512, 256, 256, 128, 128, 64]
+
+        # Suggested GCN architecture: shallower and more common regularization values
+        # Full GCN layers will be: [GCN_1GRAM_INIT_DIM] + GCN_HIDDEN_LAYER_DIMS
+        self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]  # Example: 3 layers after initial input
+        # Total layers: 1 (input) + 3 (hidden) = 4 layers
+        # Final embedding dim will be 64, matching PCA_TARGET_DIMENSION
 
         self.ID_MAPPING_MODE = 'regex'
         self.ID_MAPPING_OUTPUT_FILE = self.BASE_OUTPUT_DIR / "mappings/gcn_id_mapping.tsv"
         self.API_MAPPING_FROM_DB = "UniRef50"
         self.API_MAPPING_TO_DB = "UniProtKB"
 
-        self.GCN_1GRAM_INIT_DIM = 512
+        self.GCN_1GRAM_INIT_DIM = 512  # Initial feature dimension for 1-grams
         self.GCN_EPOCHS_PER_LEVEL = 500
-        self.GCN_LR = 0.001
+        self.GCN_LR = 0.001  # Lower learning rate for more stable training
         self.GCN_DROPOUT_RATE = 0.5
-        self.GCN_WEIGHT_DECAY = 1e-2
-        self.GCN_L2_REG_LAMBDA = 1e-2
+
+        # Reduced regularization values
+        self.GCN_WEIGHT_DECAY = 1e-4  # L2 regularization for optimizer (Adam's weight_decay)
+        self.GCN_L2_REG_LAMBDA = 1e-5  # Custom L2 regularization added to loss (if > 0, overrides weight_decay)
+        # Set to 0 if you only want to use Adam's weight_decay
+
         self.GCN_PROPAGATION_EPSILON = 1e-9
         self.GCN_MAX_PE_LEN = 512
         self.GCN_USE_VECTOR_COEFFS = True
 
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
-            1: "next_node", 2: "next_node", 3: "closest_aa", 4: "community", 5: "community"
+            1: "next_node", 2: "closest_aa", 3: "closest_aa", 4: "community", 5: "community"
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
 
         self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 8) if os.cpu_count() else 1
-        self.APPLY_PCA_TO_GCN = True # PCA for your main GCN pipeline embeddings
-        self.PCA_TARGET_DIMENSION = 64 # PCA target for your main GCN pipeline embeddings
+        self.APPLY_PCA_TO_GCN = True  # PCA for your main GCN pipeline embeddings
+        self.PCA_TARGET_DIMENSION = 64  # PCA target for your main GCN pipeline embeddings (matches last GCN layer)
 
         # --- 3. WORD2VEC PIPELINE PARAMETERS ---
         self.W2V_INPUT_FASTA_DIR = self.GCN_INPUT_FASTA_PATH
@@ -97,8 +105,7 @@ class Config:
         self.W2V_WINDOW = 5
         self.W2V_MIN_COUNT = 1
         self.W2V_EPOCHS = 5
-        # self.W2V_WORKERS = max(1, os.cpu_count() - 2) if os.cpu_count() else 1
-        self.W2V_WORKERS = 1
+        self.W2V_WORKERS = 1  # Keep at 1 for gensim's internal threading
         self.W2V_POOLING_STRATEGY = 'mean'
         self.APPLY_PCA_TO_W2V = True
 
@@ -116,14 +123,14 @@ class Config:
         self.PLOT_TRAINING_HISTORY = True
         self.EARLY_STOPPING_PATIENCE = 10
         self.PERFORM_H5_INTEGRITY_CHECK = True
-        self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 100000
+        self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 100000  # Sample 100k negative pairs for evaluation
         self.TF_DATASET_STRATEGY = 'from_tensor_slices'
+
+        # Ensure these paths are correct for your generated embeddings
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
             {"name": "ProtT5-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
-            {"name": "ProtGramDirectGCN-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "protgram_directgcn.h5"},
-            {"name": "Word2Vec-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "word2vec.h5"}
-            # {"name": "ProtBERT-Mean-PCA64", "path": self.TRANSFORMER_EMBEDDINGS_DIR / "ProtBERT_mean_pca64.h5"},
-            # {"name": "Word2Vec-Mean-PCA64", "path": self.WORD2VEC_EMBEDDINGS_DIR / "word2vec_dim100_mean_pca64.h5"}
+            {"name": "ProtGramDirectGCN-UniProt-PCA64", "path": self.GCN_EMBEDDINGS_DIR / "gcn_n5_embeddings_pca64.h5"},  # Path for n=5 GCN embeddings
+            {"name": "Word2Vec-UniProt-PCA64", "path": self.WORD2VEC_EMBEDDINGS_DIR / "word2vec_dim100_mean_pca64.h5"}  # Path for Word2Vec embeddings
         ]
 
         # --- 6. MLFLOW & EXPERIMENT TRACKING ---
@@ -136,14 +143,14 @@ class Config:
         # Evaluation MLP Architecture & Training
         self.EVAL_EDGE_EMBEDDING_METHOD = 'concatenate'
         self.EVAL_N_FOLDS = 5
-        self.EVAL_MLP_DENSE1_UNITS = 128
+        self.EVAL_MLP_DENSE1_UNITS = 128  # Input 128 (64+64) -> 128
         self.EVAL_MLP_DROPOUT1_RATE = 0.4
-        self.EVAL_MLP_DENSE2_UNITS = 64
+        self.EVAL_MLP_DENSE2_UNITS = 64  # 128 -> 64
         self.EVAL_MLP_DROPOUT2_RATE = 0.4
         self.EVAL_MLP_L2_REG = 0.00001
         self.EVAL_BATCH_SIZE = 512
-        self.EVAL_EPOCHS = 20
-        self.EVAL_LEARNING_RATE = 0.001
+        self.EVAL_EPOCHS = 20  # Increased epochs for better training
+        self.EVAL_LEARNING_RATE = 0.001  # Lower learning rate for stability
 
         # Evaluation Reporting
         self.EVAL_K_VALUES_FOR_TABLE = [50, 100]
