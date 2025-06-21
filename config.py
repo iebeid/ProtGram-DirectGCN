@@ -141,7 +141,7 @@ class Config:
         self.EVAL_MLP_DENSE2_UNITS = 32
         self.EVAL_MLP_DROPOUT2_RATE = 0.4
         self.EVAL_MLP_L2_REG = 0.00001
-        self.EVAL_BATCH_SIZE = 1
+        self.EVAL_BATCH_SIZE = 8
         self.EVAL_EPOCHS = 1
         self.EVAL_LEARNING_RATE = 0.01
 
