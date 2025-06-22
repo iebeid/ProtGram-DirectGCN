@@ -67,7 +67,7 @@ class Config:
         self.API_MAPPING_TO_DB = "UniProtKB"
 
         self.GCN_1GRAM_INIT_DIM = 512
-        self.GCN_EPOCHS_PER_LEVEL = 500  # Can be higher now that training is faster
+        self.GCN_EPOCHS_PER_LEVEL = 50  # Can be higher now that training is faster
         self.GCN_LR = 0.001
         self.GCN_DROPOUT_RATE = 0.5
         self.GCN_WEIGHT_DECAY = 1e-4
@@ -96,20 +96,20 @@ class Config:
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
 
         # --- NEW: Cluster-GCN Training Strategy ---
-        self.GCN_USE_CLUSTER_TRAINING = True
+        self.GCN_USE_CLUSTER_TRAINING = False
         self.GCN_CLUSTER_TRAINING_THRESHOLD_NODES = 10000  # Apply clustering for graphs with > 10k nodes
 
         # New parameters for automatic cluster count
-        self.GCN_TARGET_NODES_PER_CLUSTER = 50  # Aim for 500 nodes per cluster
+        self.GCN_TARGET_NODES_PER_CLUSTER = 2000  # Aim for 500 nodes per cluster
         self.GCN_MIN_CLUSTERS = 2  # Ensure at least 2 clusters if clustering is enabled
-        self.GCN_MAX_CLUSTERS = 2000  # Cap the number of clusters to avoid excessive fragmentation
+        self.GCN_MAX_CLUSTERS = 500  # Cap the number of clusters to avoid excessive fragmentation
 
         self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
         self.APPLY_PCA_TO_GCN = True
         self.PCA_TARGET_DIMENSION = 64
 
         # --- NEW: Sanity Check PPI Task ---
-        self.GCN_RUN_SANITY_CHECK_PPI = True
+        self.GCN_RUN_SANITY_CHECK_PPI = False
         self.GCN_SANITY_CHECK_EPOCHS = 10
         self.GCN_SANITY_CHECK_TEST_SPLIT = 0.2
 
