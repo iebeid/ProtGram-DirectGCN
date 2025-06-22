@@ -67,7 +67,7 @@ class Config:
         self.API_MAPPING_TO_DB = "UniProtKB"
 
         self.GCN_1GRAM_INIT_DIM = 512
-        self.GCN_EPOCHS_PER_LEVEL = 50  # Can be higher now that training is faster
+        self.GCN_EPOCHS_PER_LEVEL = 300  # Can be higher now that training is faster
         self.GCN_LR = 0.001
         self.GCN_DROPOUT_RATE = 0.5
         self.GCN_WEIGHT_DECAY = 1e-4
