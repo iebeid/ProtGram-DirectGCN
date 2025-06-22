@@ -17,11 +17,11 @@ class Config:
         self.DEBUG_VERBOSE = True
 
         # --- Workflow Control Flags ---
-        self.RUN_GCN_PIPELINE = True
+        self.RUN_GCN_PIPELINE = False
         self.RUN_WORD2VEC_PIPELINE = False
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = False
-        self.RUN_MAIN_PPI_EVALUATION = False
+        self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_DUMMY_TEST = False
         self.CLEANUP_DUMMY_DATA = False
 
@@ -141,11 +141,11 @@ class Config:
 
         # Ensure these paths are correct for your generated embeddings
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
-            {"name": "ProtT5", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
+            # {"name": "ProtT5", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
             # {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-old", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_old.h5"},
             {"name": "ProtGramDirectGCN", "path": self.PPI_EVALUATION_MODELS_DIR / "protgram_directgcn.h5"},
             # {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-new", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_n3_new.h5"},
-            {"name": "Word2Vec", "path": self.PPI_EVALUATION_MODELS_DIR / "word2vec.h5"}
+            # {"name": "Word2Vec", "path": self.PPI_EVALUATION_MODELS_DIR / "word2vec.h5"}
         ]
 
         # --- 6. MLFLOW & EXPERIMENT TRACKING ---
