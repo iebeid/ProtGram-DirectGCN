@@ -141,7 +141,7 @@ class Config:
 
         # Ensure these paths are correct for your generated embeddings
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
-            # {"name": "ProtT5", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
+            {"name": "ProtT5", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
             # {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-old", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_old.h5"},
             {"name": "ProtGramDirectGCN", "path": self.PPI_EVALUATION_MODELS_DIR / "protgram_directgcn.h5"},
             # {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-new", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_n3_new.h5"},
@@ -157,14 +157,14 @@ class Config:
 
         # Evaluation MLP Architecture & Training
         self.EVAL_EDGE_EMBEDDING_METHOD = 'concatenate'
-        self.EVAL_N_FOLDS = 5
+        self.EVAL_N_FOLDS = 3
         self.EVAL_MLP_DENSE1_UNITS = 128
         self.EVAL_MLP_DROPOUT1_RATE = 0.4
         self.EVAL_MLP_DENSE2_UNITS = 64
         self.EVAL_MLP_DROPOUT2_RATE = 0.4
         self.EVAL_MLP_L2_REG = 1e-5
-        self.EVAL_BATCH_SIZE = 1024
-        self.EVAL_EPOCHS = 5
+        self.EVAL_BATCH_SIZE = 2048
+        self.EVAL_EPOCHS = 20
         self.EVAL_LEARNING_RATE = 0.001
 
         # Evaluation Reporting
