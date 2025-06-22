@@ -104,18 +104,18 @@ class DirectGCNLayer(MessagePassing):
 
         # --- 1. Directed Incoming Path ---
         h_main_in = self.propagate(edge_index_in, x=self.lin_main_in(x), edge_weight=edge_weight_in)
-        h_shared_in = self.propagate(edge_index_in, x=self.lin_shared(x), edge_weight=edge_weight_in)
-        ic_combined = (h_main_in + self.bias_main_in) + (h_shared_in + self.bias_shared_in)
+        # h_shared_in = self.propagate(edge_index_in, x=self.lin_shared(x), edge_weight=edge_weight_in)
+        ic_combined = (h_main_in + self.bias_main_in) + (self.lin_shared(x) + self.bias_shared_in)
 
         # --- 2. Directed Outgoing Path ---
         h_main_out = self.propagate(edge_index_out, x=self.lin_main_out(x), edge_weight=edge_weight_out)
-        h_shared_out = self.propagate(edge_index_out, x=self.lin_shared(x), edge_weight=edge_weight_out)
-        oc_combined = (h_main_out + self.bias_main_out) + (h_shared_out + self.bias_shared_out)
+        # h_shared_out = self.propagate(edge_index_out, x=self.lin_shared(x), edge_weight=edge_weight_out)
+        oc_combined = (h_main_out + self.bias_main_out) + (self.lin_shared(x) + self.bias_shared_out)
 
         # --- 3. Undirected Structural Path ---
         h_main_undir = self.propagate(edge_index_undirected, x=self.lin_undirected(x), edge_weight=edge_weight_undirected)
-        h_shared_undir = self.propagate(edge_index_undirected, x=self.lin_shared(x), edge_weight=edge_weight_undirected)
-        uc_combined = (h_main_undir + self.bias_undirected) + (h_shared_undir + self.bias_shared_undir)
+        # h_shared_undir = self.propagate(edge_index_undirected, x=self.lin_shared(x), edge_weight=edge_weight_undirected)
+        uc_combined = (h_main_undir + self.bias_undirected) + (self.lin_shared(x) + self.bias_shared_undir)
 
         # --- 4. Get Coefficients and Constant ---
         if self.use_vector_coeffs and original_indices is not None:
@@ -133,9 +133,10 @@ class DirectGCNLayer(MessagePassing):
             constant_term = 0
 
         # --- 5. Final Hierarchical Combination ---
-        directed_signal = c_directed * ((c_in * ic_combined) + (c_out * oc_combined))
-        undirected_signal = c_undirected * uc_combined
-        final_combination = (c_all * (undirected_signal + directed_signal)) + constant_term
+        # directed_signal = c_directed * ((c_in * ic_combined) + (c_out * oc_combined))
+        # undirected_signal = c_undirected * uc_combined
+        # final_combination = (c_all * (undirected_signal + directed_signal)) + constant_term
+        final_combination = (c_undirected * uc_combined) + (c_in * ic_combined) + (c_out * oc_combined) + constant_term
 
         return final_combination
 
