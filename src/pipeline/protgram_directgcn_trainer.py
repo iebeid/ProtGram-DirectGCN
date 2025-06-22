@@ -3,7 +3,7 @@
 # MODULE: pipeline/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
-# VERSION: 4.17 (Fixed OutOfMemoryError during inference for large graphs)
+# VERSION: 4.18 (Fixed device mismatch error in _create_clustered_subgraphs)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -80,7 +80,6 @@ class ProtGramDirectGCNTrainer:
         data = data.to(self.device)
         scheduler = None
         if self.config.GCN_USE_LR_SCHEDULER:
-            # FIX: Removed the 'verbose' argument for backward compatibility
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE, factor=self.config.GCN_LR_SCHEDULER_FACTOR)
         early_stopper = None
         if self.config.GCN_USE_EARLY_STOPPING:
@@ -114,7 +113,6 @@ class ProtGramDirectGCNTrainer:
         model.to(self.device)
         scheduler = None
         if self.config.GCN_USE_LR_SCHEDULER:
-            # FIX: Removed the 'verbose' argument for backward compatibility
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE, factor=self.config.GCN_LR_SCHEDULER_FACTOR)
         early_stopper = None
         if self.config.GCN_USE_EARLY_STOPPING:
@@ -176,27 +174,32 @@ class ProtGramDirectGCNTrainer:
         cluster_list = list(clusters.values())
         print(f"  Graph partitioned into {len(cluster_list)} clusters.")
 
+        # --- FIX: Ensure full graph matrices are on CPU before looping ---
+        graph_mathcal_A_in_cpu = graph.mathcal_A_in.cpu()
+        graph_mathcal_A_out_cpu = graph.mathcal_A_out.cpu()
+        graph_A_undir_cpu = graph.A_undirected_norm_sparse.cpu()
+        # --- END FIX ---
+
         subgraphs = []
         for cluster_nodes in tqdm(cluster_list, desc="  Creating subgraphs", leave=False):
-            cluster_nodes_tensor = torch.tensor(cluster_nodes, dtype=torch.long).to(self.device)
+            # --- FIX: Create the indexing tensor on the CPU ---
+            cluster_nodes_tensor_cpu = torch.tensor(cluster_nodes, dtype=torch.long, device='cpu')
 
-            # Subgraph all three matrices
-            # Ensure graph matrices are on CPU before subgraphing if they were on GPU
-            sub_edge_index_in, sub_edge_weight_in = subgraph(cluster_nodes_tensor, graph.mathcal_A_in.cpu().indices(), graph.mathcal_A_in.cpu().values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
-            sub_edge_index_out, sub_edge_weight_out = subgraph(cluster_nodes_tensor, graph.mathcal_A_out.cpu().indices(), graph.mathcal_A_out.cpu().values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
-            sub_edge_index_undir, sub_edge_weight_undir = subgraph(cluster_nodes_tensor, graph.A_undirected_norm_sparse.cpu().indices(), graph.A_undirected_norm_sparse.cpu().values(), relabel_nodes=True,
-                                                                   num_nodes=graph.number_of_nodes)
+            # Subgraph all three matrices on the CPU
+            sub_edge_index_in, sub_edge_weight_in = subgraph(cluster_nodes_tensor_cpu, graph_mathcal_A_in_cpu.indices(), graph_mathcal_A_in_cpu.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+            sub_edge_index_out, sub_edge_weight_out = subgraph(cluster_nodes_tensor_cpu, graph_mathcal_A_out_cpu.indices(), graph_mathcal_A_out_cpu.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+            sub_edge_index_undir, sub_edge_weight_undir = subgraph(cluster_nodes_tensor_cpu, graph_A_undir_cpu.indices(), graph_A_undir_cpu.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
 
             subgraph_data = Data(
-                x=full_data.x[cluster_nodes_tensor],  # x is already on device
-                y=full_data.y[cluster_nodes_tensor] if full_data.y.numel() > 0 else torch.empty(0),  # y is already on device
-                edge_index_in=sub_edge_index_in.to(self.device),  # Move to device
-                edge_weight_in=sub_edge_weight_in.to(self.device),  # Move to device
-                edge_index_out=sub_edge_index_out.to(self.device),  # Move to device
-                edge_weight_out=sub_edge_weight_out.to(self.device),  # Move to device
-                edge_index_undirected_norm=sub_edge_index_undir.to(self.device),  # Move to device
-                edge_weight_undirected_norm=sub_edge_weight_undir.to(self.device),  # Move to device
-                original_indices=cluster_nodes_tensor  # This is already on device
+                x=full_data.x[cluster_nodes_tensor_cpu].to(self.device),  # Select on CPU, then move to device
+                y=full_data.y[cluster_nodes_tensor_cpu].to(self.device) if full_data.y.numel() > 0 else torch.empty(0, device=self.device),
+                edge_index_in=sub_edge_index_in.to(self.device),
+                edge_weight_in=sub_edge_weight_in.to(self.device),
+                edge_index_out=sub_edge_index_out.to(self.device),
+                edge_weight_out=sub_edge_weight_out.to(self.device),
+                edge_index_undirected_norm=sub_edge_index_undir.to(self.device),
+                edge_weight_undirected_norm=sub_edge_weight_undir.to(self.device),
+                original_indices=cluster_nodes_tensor_cpu.to(self.device) # Move original indices to device for later use
             )
             subgraphs.append(subgraph_data)
         return subgraphs
@@ -296,10 +299,6 @@ class ProtGramDirectGCNTrainer:
                     raise TypeError("Loaded object is not a DirectedNgramGraph")
                 graph_obj.n_value = n_val
                 if graph_obj.number_of_nodes > 0:
-                    # Ensure graph matrices are on CPU before passing to networkx/subgraph if they were on GPU
-                    # They are loaded on CPU by default in DirectedNgramGraph, so no .cpu() needed here
-                    # But they are moved to device in _create_propagation_matrices_for_gcn()
-                    # So, we need to ensure they are on CPU for _create_clustered_subgraphs
                     graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
                     graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
                     graph_obj.A_undirected_norm_sparse = graph_obj.A_undirected_norm_sparse.to(self.device)
@@ -342,7 +341,6 @@ class ProtGramDirectGCNTrainer:
                         x[idx] = torch.from_numpy(prev_level_embeds_np[p_idx].astype(np.float32)).to(self.device)
                     elif s_idx is not None:
                         x[idx] = torch.from_numpy(prev_level_embeds_np[s_idx].astype(np.float32)).to(self.device)
-                    # else: x[idx] remains zero (or whatever its default init is)
 
             print(f"  Initial node feature dimension for n={n_val}: {num_initial_features}")
 
@@ -374,20 +372,15 @@ class ProtGramDirectGCNTrainer:
                 self._train_model_clustered(model, subgraphs, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, current_task_type, l2_lambda_val,
                                             total_nodes_in_level_graph=graph_obj.number_of_nodes)
             else:
-                # --- MODIFIED: Add all matrices to the full_data object ---
                 full_data.edge_index_in = graph_obj.mathcal_A_in.indices().to(self.device)
                 full_data.edge_weight_in = graph_obj.mathcal_A_in.values().to(self.device)
                 full_data.edge_index_out = graph_obj.mathcal_A_out.indices().to(self.device)
                 full_data.edge_weight_out = graph_obj.mathcal_A_out.values().to(self.device)
                 full_data.edge_index_undirected_norm = graph_obj.A_undirected_norm_sparse.indices().to(self.device)
                 full_data.edge_weight_undirected_norm = graph_obj.A_undirected_norm_sparse.values().to(self.device)
-                # --- END MODIFIED ---
                 self._train_model_full_batch(model, full_data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, current_task_type, l2_lambda_val)
 
-            # Ensure data object has all matrices for embedding extraction
-            # This block is redundant if the 'else' branch above is taken, but harmless.
-            # It's crucial if the 'if' branch (clustered training) was taken.
-            if not hasattr(full_data, 'edge_index_undirected_norm'):  # Check if attributes were added by the 'else' branch
+            if not hasattr(full_data, 'edge_index_undirected_norm'):
                 full_data.edge_index_in = graph_obj.mathcal_A_in.indices().to(self.device)
                 full_data.edge_weight_in = graph_obj.mathcal_A_in.values().to(self.device)
                 full_data.edge_index_out = graph_obj.mathcal_A_out.indices().to(self.device)
@@ -395,14 +388,13 @@ class ProtGramDirectGCNTrainer:
                 full_data.edge_index_undirected_norm = graph_obj.A_undirected_norm_sparse.indices().to(self.device)
                 full_data.edge_weight_undirected_norm = graph_obj.A_undirected_norm_sparse.values().to(self.device)
 
-            # Pass the clustering function and config to the embedding extractor
             current_level_embeddings = EmbeddingProcessor.extract_gcn_node_embeddings(
                 model,
                 full_data,
-                graph_obj,  # Pass graph_obj
-                self.config,  # Pass config
+                graph_obj,
+                self.config,
                 self.device,
-                self._create_clustered_subgraphs  # Pass the method
+                self._create_clustered_subgraphs
             )
             level_embeddings[n_val] = current_level_embeddings
 
@@ -452,7 +444,6 @@ class ProtGramDirectGCNTrainer:
         DataUtils.print_header("ProtGramDirectGCN Embedding PIPELINE STEP FINISHED")
 
     def _run_sanity_check_ppi(self, embedding_path: str):
-        # This method remains unchanged from v4.13
         DataUtils.print_header("Step 6: Running Sanity Check PPI Task")
         if not TENSORFLOW_AVAILABLE:
             print("  Skipping sanity check: TensorFlow is not installed.")
