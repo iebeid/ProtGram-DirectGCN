@@ -57,7 +57,7 @@ class Config:
         self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8}
 
         # --- 2. GCN PIPELINE PARAMETERS (Your custom GCN) ---
-        self.GCN_NGRAM_MAX_N = 4
+        self.GCN_NGRAM_MAX_N = 1
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
 
         self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]
@@ -88,9 +88,9 @@ class Config:
 
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
             1: "next_node",
-            2: "next_node",
-            3: "next_node",
-            4: "next_node"
+            # 2: "next_node",
+            # 3: "next_node",
+            # 4: "next_node"
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
@@ -142,11 +142,11 @@ class Config:
 
         # Ensure these paths are correct for your generated embeddings
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
-            {"name": "ProtT5-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
-            {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-old", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_old.h5"},
+            # {"name": "ProtT5-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
+            # {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-old", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_old.h5"},
             {"name": "ProtGramDirectGCN-UniProt-PCA64-n4-old", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_n4.h5"},
-            {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-new", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_n3_new.h5"},
-            {"name": "Word2Vec-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / f"word2vec.h5"}
+            # {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-new", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_n3_new.h5"},
+            # {"name": "Word2Vec-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / f"word2vec.h5"}
         ]
 
         # --- 6. MLFLOW & EXPERIMENT TRACKING ---
