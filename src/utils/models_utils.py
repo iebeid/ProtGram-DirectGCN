@@ -1,8 +1,9 @@
+# src/utils/models_utils.py
 # ==============================================================================
 # MODULE: utils/models_utils.py
 # PURPOSE: Contains tools for loading and post-processing embeddings, such as PCA,
 #          normalization, pooling, GCN node extraction, and edge feature creation.
-# VERSION: 3.8 (Fixed AttributeError in generate_edge_features_batched)
+# VERSION: 3.9 (Implemented clustered inference for GCN embeddings to avoid OOM)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -21,6 +22,8 @@ from pathlib import Path
 if TYPE_CHECKING:
     from src.models.protgram_directgcn import ProtGramDirectGCN
     from gensim.models import Word2Vec
+    from config import Config  # Import Config for type hinting
+    from src.utils.graph_utils import DirectedNgramGraph  # Import DirectedNgramGraph for type hinting
 
 
 class EmbeddingLoader:
@@ -263,14 +266,43 @@ class EmbeddingProcessor:
 
     @staticmethod
     def extract_gcn_node_embeddings(model: 'ProtGramDirectGCN',
-                                    data: Data,
-                                    device: torch.device) -> np.ndarray:
+                                    full_data: Data,
+                                    graph_obj: 'DirectedNgramGraph',
+                                    config: 'Config',
+                                    device: torch.device,
+                                    create_clustered_subgraphs_func: callable
+                                    ) -> np.ndarray:
         model.eval()
         model.to(device)
-        data = data.to(device)
-        with torch.no_grad():
-            _, embeddings = model(data=data)
-        return embeddings.cpu().numpy()
+
+        if config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
+            print(f"  Extracting embeddings for {graph_obj.number_of_nodes} nodes using clustered inference...")
+
+            # The create_clustered_subgraphs_func already moves subgraph_data.x and subgraph_data.y to device.
+            # It also creates subgraph_data.edge_index_in/out/undirected_norm on device.
+            subgraphs = create_clustered_subgraphs_func(graph_obj, full_data)
+
+            # Initialize a tensor on the device to store all embeddings
+            # The output embedding dimension is `layer_dims[-1]`, which is `model.decoder_fc[0].in_features`
+            all_node_embeddings = torch.zeros(full_data.num_nodes, model.decoder_fc[0].in_features, dtype=torch.float, device=device)
+
+            for subgraph_data in tqdm(subgraphs, desc="  Inference on subgraphs", leave=False):
+                # subgraph_data is already on device from create_clustered_subgraphs_func
+                with torch.no_grad():
+                    _, subgraph_embeddings_normalized = model(data=subgraph_data)
+
+                # Place the embeddings into the correct positions in the full tensor
+                original_indices_in_full_graph = subgraph_data.original_indices
+                all_node_embeddings[original_indices_in_full_graph] = subgraph_embeddings_normalized
+
+            return all_node_embeddings.cpu().numpy()  # Move the final result to CPU before returning
+
+        else:  # For smaller graphs, full-batch inference is fine
+            print(f"  Extracting embeddings for {graph_obj.number_of_nodes} nodes using full-batch inference...")
+            full_data = full_data.to(device)  # Move full data to device here
+            with torch.no_grad():
+                _, embeddings = model(data=full_data)
+            return embeddings.cpu().numpy()
 
     @staticmethod
     def generate_edge_features_batched(

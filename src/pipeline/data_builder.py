@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: pipeline/data_builder.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 6.4 (Saves aggregated edges to file to break memory chain)
+# VERSION: 6.5 (Added check to skip graph building if files already exist)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -68,9 +68,23 @@ class GraphBuilder:
         DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
 
     def run(self):
-        # ... (Phase 1 logic remains the same as v6.3) ...
         overall_start_time = time.monotonic()
         DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs")
+
+        # --- NEW: Check if all final graph objects already exist ---
+        all_graphs_exist = True
+        for n in range(1, self.n_max + 1):
+            expected_graph_file = os.path.join(self.output_dir, f"ngram_graph_n{n}.pkl")
+            if not os.path.exists(expected_graph_file):
+                all_graphs_exist = False
+                print(f"  Info: Graph file for n={n} not found. Will proceed with full build.")
+                break
+
+        if all_graphs_exist:
+            print("\nAll required n-gram graph objects already exist in the output directory.")
+            DataUtils.print_header(f"N-gram Graph Building SKIPPED (Files exist)")
+            return
+        # --- END NEW ---
 
         if os.path.exists(self.temp_dir):
             print(f"Cleaning up existing temporary directory: {self.temp_dir}")

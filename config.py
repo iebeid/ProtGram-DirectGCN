@@ -142,11 +142,11 @@ class Config:
 
         # Ensure these paths are correct for your generated embeddings
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
-            # {"name": "ProtT5-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
+            {"name": "ProtT5", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
             # {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-old", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_old.h5"},
-            {"name": "ProtGramDirectGCN-UniProt-PCA64-n4-old", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_n4.h5"},
+            {"name": "ProtGramDirectGCN", "path": self.PPI_EVALUATION_MODELS_DIR / "protgram_directgcn.h5"},
             # {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-new", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_n3_new.h5"},
-            # {"name": "Word2Vec-UniProt-PCA64", "path": self.PPI_EVALUATION_MODELS_DIR / f"word2vec.h5"}
+            {"name": "Word2Vec", "path": self.PPI_EVALUATION_MODELS_DIR / "word2vec.h5"}
         ]
 
         # --- 6. MLFLOW & EXPERIMENT TRACKING ---
@@ -170,5 +170,5 @@ class Config:
 
         # Evaluation Reporting
         self.EVAL_K_VALUES_FOR_TABLE = [50, 100]
-        self.EVAL_MAIN_EMBEDDING_FOR_STATS = "ProtGramDirectGCN-UniProt-PCA64-New"
+        self.EVAL_MAIN_EMBEDDING_FOR_STATS = "ProtGramDirectGCN"
         self.EVAL_STATISTICAL_TEST_ALPHA = 0.05
