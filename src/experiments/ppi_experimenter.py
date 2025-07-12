@@ -1,9 +1,9 @@
 # ==============================================================================
-# MODULE: pipeline/ppi_main.py
+# MODULE: training/ppi_experimenter.py
 # PURPOSE: Contains the complete workflow for evaluating one or more sets of
 #          protein embeddings on a link prediction task.
-# VERSION: 3.5 (Implemented Hits@k and NDCG@k calculation)
-# AUTHOR: Islam Ebeid
+# VERSION: 4.0 (Integrated automated PCA dimensionality reduction)
+# AUTHOR: Islam Ebeid (Integration by Coding Partner)
 # ==============================================================================
 
 import gc
@@ -12,23 +12,28 @@ import random
 import shutil
 import time
 from contextlib import nullcontext
-from typing import List, Optional, Dict, Any, Tuple
 from functools import partial
+from typing import List, Optional, Dict, Any, Tuple
 
 import h5py
 import mlflow
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+# --- NEW IMPORTS for PCA dimensionality reduction ---
+from sklearn.decomposition import PCA
+from sklearn.impute import SimpleImputer
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score, roc_curve
 from sklearn.model_selection import StratifiedKFold
-from tqdm import tqdm
 
-from config import Config
-from src.models.mlp import MLP
+from config.config import Config
+from src.models.ml.mlp import MLP
 from src.utils.data_utils import DataUtils, GroundTruthLoader
 from src.utils.models_utils import EmbeddingLoader, EmbeddingProcessor
 from src.utils.results_utils import EvaluationReporter
+
+
+# --- End new imports ---
 
 
 class PPIPipeline:
@@ -36,6 +41,86 @@ class PPIPipeline:
         self.config = config
         print("PPIPipeline initialized.")
         DataUtils.print_header("PPI Evaluation Pipeline Initialized")
+
+    @staticmethod
+    def _apply_pca_to_h5(input_h5_path: str, output_h5_path: str, target_dimension: int):
+        """
+        Reads embeddings from an HDF5 file, handles NaN values, applies PCA globally,
+        and saves the transformed embeddings to a new HDF5 file.
+        This is the core logic from the reduce-dim.py script.
+
+        Args:
+            input_h5_path (str): Path to the input HDF5 file.
+            output_h5_path (str): Path for the new HDF5 file with transformed embeddings.
+            target_dimension (int): The desired dimension after PCA.
+        """
+        print(f"Applying PCA to '{os.path.basename(input_h5_path)}'. Target dimension: {target_dimension}")
+        all_embeddings_list = []
+        protein_keys = []
+        original_embedding_dimension = -1
+
+        try:
+            # Step 1: Collect all embeddings
+            print("  Step 1/4: Collecting embeddings...")
+            with h5py.File(input_h5_path, 'r') as infile:
+                for key in infile.keys():
+                    embedding = infile[key][()]
+                    protein_keys.append(key)
+                    if embedding.ndim == 1:
+                        embedding = embedding.reshape(1, -1)
+                    all_embeddings_list.append(embedding)
+
+            if not all_embeddings_list:
+                print(f"  Warning: No embeddings found in '{input_h5_path}'. Skipping PCA.")
+                shutil.copy(input_h5_path, output_h5_path)  # Copy original if empty
+                return
+
+            all_embeddings_np = np.vstack(all_embeddings_list)
+            num_proteins, actual_original_dimension = all_embeddings_np.shape
+            print(f"    Collected {num_proteins} embeddings with original dimension {actual_original_dimension}.")
+
+            if target_dimension >= actual_original_dimension:
+                print(f"  Warning: Target dimension ({target_dimension}) is >= original dimension ({actual_original_dimension}). Skipping PCA and copying original file.")
+                shutil.copy(input_h5_path, output_h5_path)
+                return
+
+            # Step 2: Handle NaN values
+            print("  Step 2/4: Handling NaN values...")
+            nan_count = np.sum(np.isnan(all_embeddings_np))
+            if nan_count > 0:
+                print(f"    Found {nan_count} NaN values. Imputing with mean.")
+                imputer = SimpleImputer(strategy='mean')
+                all_embeddings_imputed = imputer.fit_transform(all_embeddings_np)
+            else:
+                print("    No NaN values found.")
+                all_embeddings_imputed = all_embeddings_np
+
+            # Step 3: Apply PCA
+            print("  Step 3/4: Applying PCA...")
+
+            # Adjust target_dimension if it's larger than the number of samples
+            if target_dimension > num_proteins:
+                print(f"    Warning: Target dimension ({target_dimension}) > number of proteins ({num_proteins}). Adjusting PCA components to {num_proteins}.")
+                n_components = num_proteins
+            else:
+                n_components = target_dimension
+
+            pca = PCA(n_components=n_components)
+            pca_transformed_embeddings = pca.fit_transform(all_embeddings_imputed)
+            explained_variance = np.sum(pca.explained_variance_ratio_)
+            print(f"    PCA applied. New shape: {pca_transformed_embeddings.shape}. Explained variance: {explained_variance:.4f}")
+
+            # Step 4: Save transformed embeddings
+            print(f"  Step 4/4: Saving transformed embeddings...")
+            with h5py.File(output_h5_path, 'w') as outfile:
+                for i, key in enumerate(protein_keys):
+                    outfile.create_dataset(key, data=pca_transformed_embeddings[i])
+            print(f"  Successfully saved to '{os.path.basename(output_h5_path)}'")
+
+        except Exception as e:
+            print(f"  ERROR during PCA processing for '{input_h5_path}': {e}. Copying original file instead.")
+            if os.path.exists(output_h5_path): os.remove(output_h5_path)  # Clean up partial file
+            shutil.copy(input_h5_path, output_h5_path)
 
     @staticmethod
     def _create_dummy_data(base_dir: str, num_proteins: int, embedding_dim: int, num_pos: int, num_neg: int) -> Tuple[str, str, List[Dict[str, Any]]]:
@@ -163,7 +248,8 @@ class PPIPipeline:
                                 validation_steps=num_val_batches if num_val_batches > 0 else None,
                                 verbose=1 if self.config.DEBUG_VERBOSE else 0,
                                 class_weight=class_weight,
-                                callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=self.config.EARLY_STOPPING_PATIENCE, restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else [])
+                                callbacks=[
+                                    tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=self.config.EARLY_STOPPING_PATIENCE, restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else [])
             if fold_num == 0: aggregated_results['history_dict_fold1'] = history.history
             print(f"    Model training finished for fold {fold_num + 1}.")
 
@@ -207,14 +293,12 @@ class PPIPipeline:
                     current_metrics['auc_sklearn'] = 0.5
                     if fold_num == 0: aggregated_results['roc_data_representative'] = (np.array([0, 1]), np.array([0, 1]), 0.5)
 
-                # --- MODIFIED: Calculate and add ranking metrics ---
                 ranking_metrics = EvaluationReporter._calculate_ranking_metrics(
                     y_true=y_val_fold_true_np,
                     y_score=y_pred_proba,
                     k_list=self.config.EVAL_K_VALUES_FOR_TABLE
                 )
                 current_metrics.update(ranking_metrics)
-                # --- END MODIFIED ---
 
             fold_metrics_list.append(current_metrics)
             print(f"    Fold {fold_num + 1} Metrics: {current_metrics}")
@@ -262,6 +346,56 @@ class PPIPipeline:
             if not emb_configs:
                 print("Warning: 'LP_EMBEDDING_FILES_TO_EVALUATE' is empty in config. No evaluation will run.")
                 return
+
+        # --- NEW: Automated Dimensionality Reduction Step ---
+        if not use_dummy_data and getattr(self.config, 'EVAL_ENFORCE_DIMENSIONALITY', False):
+            DataUtils.print_header("Pre-processing: Enforcing Consistent Embedding Dimensionality")
+            target_dim = getattr(self.config, 'EVAL_TARGET_DIMENSION', None)
+            if not target_dim:
+                print("  ERROR: `EVAL_ENFORCE_DIMENSIONALITY` is True but `EVAL_TARGET_DIMENSION` is not set. Skipping.")
+            else:
+                processed_emb_dir = os.path.join(self.config.BASE_OUTPUT_DIR, "pca_processed_embeddings")
+                os.makedirs(processed_emb_dir, exist_ok=True)
+                print(f"  Target dimension set to: {target_dim}")
+                print(f"  Processed files will be stored in: {processed_emb_dir}")
+
+                processed_configs = []
+                for config_item in emb_configs:
+                    original_path = config_item['path']
+                    if not os.path.exists(original_path):
+                        print(f"  Skipping non-existent file: {original_path}")
+                        processed_configs.append(config_item)
+                        continue
+
+                    # Check dimension of the first key
+                    with h5py.File(original_path, 'r') as f:
+                        if not list(f.keys()):
+                            print(f"  Skipping empty H5 file: {original_path}")
+                            processed_configs.append(config_item)
+                            continue
+                        first_key = list(f.keys())[0]
+                        original_dim = f[first_key].shape[0]
+
+                    new_config = config_item.copy()
+                    if original_dim == target_dim:
+                        print(f"  '{config_item['name']}' already has target dimension {target_dim}. No changes needed.")
+                    else:
+                        print(f"  '{config_item['name']}' has dimension {original_dim}. Applying PCA.")
+                        file_basename = os.path.basename(original_path)
+                        new_filename = f"pca_{target_dim}d_{file_basename}"
+                        new_path = os.path.join(processed_emb_dir, new_filename)
+
+                        # Only re-run PCA if the processed file doesn't already exist
+                        if not os.path.exists(new_path):
+                            PPIPipeline._apply_pca_to_h5(original_path, new_path, target_dim)
+                        else:
+                            print(f"  Found existing PCA-processed file. Using '{new_path}'")
+
+                        new_config['path'] = new_path
+                    processed_configs.append(new_config)
+
+                emb_configs = processed_configs  # Use the new list of configs with updated paths
+        # --- END of new step ---
 
         plots_dir = os.path.join(output_dir, "plots")
         os.makedirs(output_dir, exist_ok=True)

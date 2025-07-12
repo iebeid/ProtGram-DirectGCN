@@ -1,6 +1,6 @@
-# src/models/protgram_directgcn.py
+# src/models/directgcn.py
 # ==============================================================================
-# MODULE: models/protgram_directgcn.py
+# MODULE: models/directgcn.py
 # PURPOSE: Contains the PyTorch class definitions for the custom GCN model.
 # VERSION: 8.3 (Stable & Corrected - Cleaned up hierarchical gating and dual-path logic)
 # AUTHOR: Islam Ebeid

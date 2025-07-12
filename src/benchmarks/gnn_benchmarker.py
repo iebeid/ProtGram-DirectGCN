@@ -7,8 +7,7 @@
 
 import os
 import random
-import time
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, Tuple
 
 import h5py
 import numpy as np
@@ -17,15 +16,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.transforms as T
-from sklearn.metrics import f1_score, accuracy_score
+from sklearn.metrics import accuracy_score
 from torch_geometric.data import Data
 from torch_geometric.datasets import (KarateClub, Planetoid)
-from torch_geometric.loader import DataLoader as PyGDataLoader
 from torch_geometric.utils import add_self_loops, degree, to_undirected
 
-from config import Config
-from src.models.gnn_zoo import *
-from src.models.protgram_directgcn import ProtGramDirectGCN
+from config.config import Config
+from src.models.gnn import gcn,gat,graphsage,gin,chebnet,rgcn,tongidigcn,directgcn
+from src.models.gnn.directgcn import ProtGramDirectGCN
 from src.utils.data_utils import DataUtils
 from src.utils.models_utils import EmbeddingProcessor
 
@@ -382,13 +380,13 @@ class GNNBenchmarker:
             num_classes = train_data_orig.y.max().item() + 1 if train_data_orig.y is not None and train_data_orig.y.numel() > 0 else 1
 
             model_zoo_cfg = {
-                "GCN": {"class": GCN, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
-                "GAT": {"class": GAT, "params": {"hidden_channels": 32, "heads": 8, "num_layers": 2, "dropout_rate": 0.6}},
-                "GraphSAGE": {"class": GraphSAGE, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
-                "GIN": {"class": GIN, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
-                "ChebNet": {"class": ChebNet, "params": {"hidden_channels": 256, "K": 3, "num_layers": 2, "dropout_rate": 0.5}},
-                "RGCN_SR": {"class": RGCN, "params": {"hidden_channels": 256, "num_relations": 1, "num_layers": 2, "dropout_rate": 0.5}},
-                "TongDiGCN": {"class": TongDiGCN, "params": {"hidden_channels": 128, "num_layers": 2, "dropout_rate": 0.5}},
+                "GCN": {"class": gcn.GCN, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
+                "GAT": {"class": gat.GAT, "params": {"hidden_channels": 32, "heads": 8, "num_layers": 2, "dropout_rate": 0.6}},
+                "GraphSAGE": {"class": graphsage.GraphSAGE, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
+                "GIN": {"class": gin.GIN, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
+                "ChebNet": {"class": chebnet.ChebNet, "params": {"hidden_channels": 256, "K": 3, "num_layers": 2, "dropout_rate": 0.5}},
+                "RGCN_SR": {"class": rgcn.RGCN, "params": {"hidden_channels": 256, "num_relations": 1, "num_layers": 2, "dropout_rate": 0.5}},
+                "TongDiGCN": {"class": tongidigcn.TongDiGCN, "params": {"hidden_channels": 128, "num_layers": 2, "dropout_rate": 0.5}},
             }
 
             results_orig = self.run_on_dataset_variant(dataset_name, model_zoo_cfg,

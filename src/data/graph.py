@@ -137,6 +137,18 @@ class DirectedNgramGraph(Graph):
         self.mathcal_A_out = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
         self.mathcal_A_in = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
 
+    def _sparse_identity(self, size: int, device: torch.device) -> torch.Tensor:
+        """Creates a sparse identity matrix of given size."""
+        if size <= 0:
+            empty_indices = torch.empty((2, 0), dtype=torch.long, device=device)
+            empty_values = torch.empty(0, dtype=torch.float32, device=device)
+            valid_size = max(0, size)
+            return torch.sparse_coo_tensor(empty_indices, empty_values, (valid_size, valid_size)).coalesce()
+
+        indices = torch.arange(size, device=device).unsqueeze(0).repeat(2, 1)
+        values = torch.ones(size, device=device, dtype=torch.float32)
+        return torch.sparse_coo_tensor(indices, values, (size, size)).coalesce()
+
     def _create_raw_weighted_adj_matrices_torch(self, source_indices: np.ndarray, target_indices: np.ndarray, weights: np.ndarray):
         """Creates sparse adjacency matrices directly from numpy arrays with memory optimization."""
         size = (self.number_of_nodes, self.number_of_nodes)
@@ -265,7 +277,7 @@ class DirectedNgramGraph(Graph):
         print_sparse_info(mathcal_A_base_sparse, "mathcal_A_base", current_n_val)
         del S_sq_plus_K_sq_sparse, mathcal_A_base_values
 
-        identity_sparse = _sparse_identity(num_nodes, device=dev)
+        identity_sparse = self._sparse_identity(num_nodes, device=dev)
         mathcal_A_with_self_loops_sparse = (mathcal_A_base_sparse + identity_sparse).coalesce()
         print_sparse_info(mathcal_A_with_self_loops_sparse, "mathcal_A_final", current_n_val)
         del mathcal_A_base_sparse, identity_sparse
@@ -287,14 +299,3 @@ class DirectedNgramGraph(Graph):
         gc.collect()
 
 
-def _sparse_identity(size: int, device: torch.device) -> torch.Tensor:
-    """Creates a sparse identity matrix of given size."""
-    if size <= 0:
-        empty_indices = torch.empty((2, 0), dtype=torch.long, device=device)
-        empty_values = torch.empty(0, dtype=torch.float32, device=device)
-        valid_size = max(0, size)
-        return torch.sparse_coo_tensor(empty_indices, empty_values, (valid_size, valid_size)).coalesce()
-
-    indices = torch.arange(size, device=device).unsqueeze(0).repeat(2, 1)
-    values = torch.ones(size, device=device, dtype=torch.float32)
-    return torch.sparse_coo_tensor(indices, values, (size, size)).coalesce()

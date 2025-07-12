@@ -13,6 +13,7 @@ from typing import Dict, Optional, List, Tuple, Set, Union, TYPE_CHECKING, Itera
 import h5py
 import numpy as np
 import torch
+import torch.nn as nn
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from torch_geometric.data import Data
@@ -20,11 +21,28 @@ from tqdm.auto import tqdm
 from pathlib import Path
 
 if TYPE_CHECKING:
-    from src.models.protgram_directgcn import ProtGramDirectGCN
+    from src.models.gnn.directgcn import ProtGramDirectGCN
     from gensim.models import Word2Vec
     from config import Config  # Import Config for type hinting
-    from src.utils.graph_utils import DirectedNgramGraph  # Import DirectedNgramGraph for type hinting
+    from src.data.graph import DirectedNgramGraph  # Import DirectedNgramGraph for type hinting
 
+
+class BaseGNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.embedding_output = None
+
+    def get_embeddings(self, data: Data) -> Optional[torch.Tensor]:
+        """
+        A standardized way to get embeddings after a forward pass.
+        Assumes the forward pass stores embeddings in self.embedding_output.
+        """
+        # Ensure forward pass has occurred and stored embeddings
+        if self.embedding_output is None:
+            print(f"Warning: embedding_output is None for {self.__class__.__name__}. Call forward pass first.")
+            # Optionally, could run a forward pass here if data is available and it's safe
+            # self.forward(data) # This might have side effects or require specific mode (eval)
+        return self.embedding_output
 
 class EmbeddingLoader:
     """

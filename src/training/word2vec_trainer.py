@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: pipeline/word2vec_embedder.py
+# MODULE: training/word2vec_trainer.py
 # PURPOSE: Handles Word2Vec model training, embedding generation, and pooling.
 # VERSION: 2.1 (Corrected DataUtils import)
 # AUTHOR: Islam Ebeid
@@ -16,7 +16,7 @@ import pandas as pd
 from gensim.models import Word2Vec
 from tqdm import tqdm
 
-from config import Config
+from config.config import Config
 # Corrected import for DataUtils
 from src.utils.data_utils import DataLoader, DataUtils  # Import DataUtils directly
 from src.utils.models_utils import EmbeddingProcessor
@@ -48,7 +48,7 @@ class Word2VecEmbedder:
             # If no mapping is done by this class, self.id_map remains empty.
             # A more robust solution might involve passing a shared ID map or
             # ensuring each embedder can generate/load its own if necessary.
-            # For now, we'll assume the GCN pipeline (if run) populates a map that
+            # For now, we'll assume the GCN training (if run) populates a map that
             # could be used, or pooling uses original IDs if map is empty.
             # Let's load it similar to how GCN trainer does for consistency:
             if os.path.exists(str(self.config.ID_MAPPING_OUTPUT_FILE)):

@@ -10,17 +10,17 @@ import time
 import mlflow
 
 from src.benchmarks.gnn_benchmarker import GNNBenchmarker
-from config import Config
-from src.pipeline.data_builder import GraphBuilder
-from src.pipeline.ppi_main import PPIPipeline
-from src.pipeline.protgram_directgcn_trainer import ProtGramDirectGCNTrainer
-from src.pipeline.transformer_embedder import TransformerEmbedder
-from src.pipeline.word2vec_embedder import Word2VecEmbedder
+from config.config import Config
+from src.data.protgram import GraphBuilder
+from src.experiments.ppi_experimenter import PPIPipeline
+from src.training.protgram_directgcn_trainer import ProtGramDirectGCNTrainer
+from src.training.prott5_trainer import TransformerEmbedder
+from src.training.word2vec_trainer import Word2VecEmbedder
 from src.utils.data_utils import DataUtils
 
 
 def main():
-    script_start_time = time.time()
+    script_start_time = time.monotonic()
     DataUtils.print_header("Starting Protein-Protein Interaction Pipeline")
 
     config = Config()
@@ -98,7 +98,7 @@ def main():
     else:
         print("\nSkipping all PPI evaluation (Dummy and Main) as per configuration.")
 
-    DataUtils.print_header(f"Full Orchestration Finished in {time.time() - script_start_time:.2f} seconds.")
+    DataUtils.print_header(f"Full Orchestration Finished in {time.monotonic() - script_start_time:.2f} seconds.")
 
 
 if __name__ == '__main__':

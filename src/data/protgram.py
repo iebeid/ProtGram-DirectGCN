@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: pipeline/data_builder.py
+# MODULE: training/protgram.py
 # PURPOSE: Main class to orchestrate the graph building process.
 # VERSION: 6.5 (Added check to skip graph building if files already exist)
 # AUTHOR: Islam Ebeid
@@ -20,9 +20,9 @@ import pandas as pd
 import pyarrow
 import pyarrow.parquet as pq
 
-from config import Config
+from config.config import Config
 from src.utils.data_utils import DataUtils, DataLoader
-from src.utils.graph_utils import DirectedNgramGraph
+from src.data.graph import DirectedNgramGraph
 
 
 # ... (Helper functions _preprocess_sequence_tuple_for_bag, etc. remain the same) ...

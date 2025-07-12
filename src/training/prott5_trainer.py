@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: pipeline/transformer_embedder.py
+# MODULE: training/prott5_trainer.py
 # PURPOSE: Generates per-protein embeddings using pre-trained Transformer
 #          models from Hugging Face.
 # VERSION: 3.1 (Enhanced logging)
@@ -17,7 +17,7 @@ import tensorflow as tf
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
 
-from config import Config
+from config.config import Config
 from src.utils.data_utils import DataUtils, DataLoader
 from src.utils.models_utils import EmbeddingProcessor
 

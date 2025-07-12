@@ -1,6 +1,6 @@
 # ==============================================================================
 # MODULE: utils/data_utils.py
-# PURPOSE: Contains all data loading utilities for the PPI pipeline,
+# PURPOSE: Contains all data loading utilities for the PPI training,
 #          including FASTA parsing, ID mapping, and interaction data loading.
 # VERSION: 2.2 (Integrated _FastaCorpus into DataLoader)
 # AUTHOR: Islam Ebeid
@@ -22,7 +22,7 @@ from tqdm.auto import tqdm
 
 # Assuming your Config class is in src.config
 # This import is for type hinting and accessing config values.
-from config import Config
+from config.config import Config
 
 
 class GroundTruthLoader:

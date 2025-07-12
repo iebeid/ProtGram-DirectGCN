@@ -1,0 +1,31 @@
+from typing import Optional
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn import Sequential, Linear, ReLU
+from torch_geometric.nn import GCNConv, GATConv, SAGEConv, ChebConv, RGCNConv, GINConv
+from torch_geometric.data import Data
+from src.utils.models_utils import BaseGNN
+
+class GraphSAGE(BaseGNN):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers=2, dropout_rate=0.5):
+        super().__init__()
+        self.convs = nn.ModuleList()
+        self.dropout_rate = dropout_rate
+        if num_layers <= 0: raise ValueError("num_layers must be positive")
+
+        current_dim = in_channels
+        for i in range(num_layers - 1):
+            self.convs.append(SAGEConv(current_dim, hidden_channels))
+            current_dim = hidden_channels
+        self.convs.append(SAGEConv(current_dim, out_channels))
+
+    def forward(self, data: Data) -> torch.Tensor:
+        x, edge_index = data.x, data.edge_index # SAGEConv doesn't typically use edge_weight in its basic form
+        for i, conv in enumerate(self.convs):
+            x = conv(x, edge_index)
+            if i < len(self.convs) - 1:
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        self.embedding_output = x
+        return x

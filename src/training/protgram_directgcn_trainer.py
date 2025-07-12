@@ -1,6 +1,6 @@
-# src/pipeline/protgram_directgcn_trainer.py
+# src/training/protgram_directgcn_trainer.py
 # ==============================================================================
-# MODULE: pipeline/protgram_directgcn_trainer.py
+# MODULE: training/protgram_directgcn_trainer.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
 # VERSION: 4.18 (Fixed device mismatch error in _create_clustered_subgraphs)
@@ -12,7 +12,7 @@ import gc
 import os
 import random
 import math
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Tuple, List
 from functools import partial
 
 import h5py
@@ -24,10 +24,10 @@ from torch_geometric.data import Data
 from torch_geometric.utils import subgraph, to_networkx
 from tqdm import tqdm
 
-from config import Config
-from src.models.protgram_directgcn import ProtGramDirectGCN
+from config.config import Config
+from src.models.gnn.directgcn import ProtGramDirectGCN
 from src.utils.data_utils import DataLoader, DataUtils, GroundTruthLoader
-from src.utils.graph_utils import DirectedNgramGraph
+from src.data.graph import DirectedNgramGraph
 from src.utils.models_utils import EmbeddingProcessor, EmbeddingLoader
 
 # --- Optional Imports for Sanity Check PPI Task ---
@@ -35,7 +35,7 @@ try:
     import tensorflow as tf
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_score
-    from src.models.mlp import MLP
+    from src.models.ml.mlp import MLP
 
     TENSORFLOW_AVAILABLE = True
 except ImportError:
@@ -205,7 +205,6 @@ class ProtGramDirectGCNTrainer:
         return subgraphs
 
     def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
-        import networkx as nx
         import community as community_louvain
         num_nodes = graph.number_of_nodes
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1

@@ -1,6 +1,6 @@
 # ==============================================================================
 # MODULE: config.py
-# PURPOSE: Centralized configuration for the entire PPI pipeline.
+# PURPOSE: Centralized configuration for the entire PPI training.
 # VERSION: 1.13 (Automated cluster count based on target nodes per cluster)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
@@ -17,20 +17,20 @@ class Config:
         self.DEBUG_VERBOSE = True
 
         # --- Workflow Control Flags ---
-        self.RUN_GCN_PIPELINE = False
-        self.RUN_WORD2VEC_PIPELINE = False
-        self.RUN_TRANSFORMER_PIPELINE = False
-        self.RUN_BENCHMARKING_PIPELINE = False
+        self.RUN_GCN_PIPELINE = True
+        self.RUN_WORD2VEC_PIPELINE = True
+        self.RUN_TRANSFORMER_PIPELINE = True
+        self.RUN_BENCHMARKING_PIPELINE = True
         self.RUN_MAIN_PPI_EVALUATION = True
-        self.RUN_DUMMY_TEST = False
-        self.CLEANUP_DUMMY_DATA = False
+        self.RUN_DUMMY_TEST = True
+        self.CLEANUP_DUMMY_DATA = True
 
         # --- PATH CONFIGURATION ---
-        self.PROJECT_ROOT = Path(".").resolve()
+        self.PROJECT_ROOT = Path("..").resolve()
         print("PROJECT ROOT IS: " + str(self.PROJECT_ROOT))
         self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
         self.BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
-        self.BASE_OUTPUT_DIR = self.BASE_DATA_DIR / "results"
+        self.BASE_OUTPUT_DIR = self.PROJECT_ROOT / "results"
 
         self.GCN_INPUT_FASTA_PATH = self.BASE_DATA_DIR / "sequences/uniprot_sprot.fasta"
         self.INTERACTIONS_POSITIVE_PATH = self.BASE_DATA_DIR / 'ground_truth/positive_interactions.csv'
@@ -132,7 +132,7 @@ class Config:
         self.TRANSFORMER_POOLING_STRATEGY = 'mean'
         self.APPLY_PCA_TO_TRANSFORMER = True
 
-        # --- 5. EVALUATION PARAMETERS (for ppi_main.py and GNN Benchmarker) ---
+        # --- 5. EVALUATION PARAMETERS (for ppi_experimenter.py and GNN Benchmarker) ---
         self.PLOT_TRAINING_HISTORY = True
         self.EARLY_STOPPING_PATIENCE = 10
         self.PERFORM_H5_INTEGRITY_CHECK = True

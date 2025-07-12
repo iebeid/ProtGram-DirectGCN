@@ -3,6 +3,8 @@
 
 # Virtual Environment
 venv/
+data/
+results/
 
 # Python
 src/__pycache__/
@@ -18,4 +20,4 @@ dist/
 *.log
 
 # Example of a sensitive file (replace with your actual file names)
-config/secrets.py
+#config/startup.sh
