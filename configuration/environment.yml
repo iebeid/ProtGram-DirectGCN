@@ -3,12 +3,11 @@ channels:
   # Add the nvidia channel to find the CUDA toolkit.
   - nvidia
   - conda-forge
-  - defaults
 dependencies:
   # --- Base Environment & Libraries from Conda ---
   - python=3.11
-  # Pin CUDA to a version well-supported by both Torch and TF
-  - cudatoolkit=12.1
+  # Pin CUDA to the specific version available on the nvidia channel to resolve matching issues.
+  - cudatoolkit=12.1.1
   - cudnn
   - dask
   - tqdm
