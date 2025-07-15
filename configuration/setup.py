@@ -72,8 +72,8 @@ if __name__ == "__main__":
 
     # Define versions for consistency
     torch_version = "2.2.0"
-    # Match PyTorch version to CUDA version from environment.yml (12.1)
-    cuda_version_pip_torch = "cu121"
+    # Match PyTorch version to CUDA version from environment.yml (12.5 -> uses cu124)
+    cuda_version_pip_torch = "cu124"
 
     # --- Install PyTorch from its official index ---
     print("\n[STEP 2.1] Installing PyTorch, TorchVision, TorchAudio...")

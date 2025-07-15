@@ -8,7 +8,7 @@ dependencies:
   - python=3.11
   # Pin CUDA to the specific version available on the nvidia channel to resolve matching issues.
   - cudatoolkit=12.1.1
-  - cudnn
+  - cudnn=9.3
   - dask
   - tqdm
   - biopython
