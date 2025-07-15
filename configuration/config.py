@@ -229,8 +229,8 @@ class Config:
                 "checksum": None
             },
             "ID_MAPPING_TSV": {
-                "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/",  # Replace with a real URL
-                "post_process": None,
+                "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/v4/idmapping_selected.tab.gz",
+                "post_process": "ungzip",
                 "checksum": None
             }
         }

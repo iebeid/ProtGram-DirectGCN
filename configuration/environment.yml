@@ -1,8 +1,10 @@
 name: ppi-env # This is a default name, the user can override it.
 channels:
-  - conda-forge # Make conda-forge the highest priority for consistency
+
+  - pytorch
   - pyg
   - nvidia
+  - conda-forge
   - defaults
 dependencies:
   # --- Core Environment & GPU ---
