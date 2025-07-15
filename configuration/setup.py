@@ -68,6 +68,45 @@ if __name__ == "__main__":
     command = ["conda", "env", "create", "--name", env_name, "--file", str(ENV_FILE)]
     run_command(command)
 
+    print("\n--- STAGE 2: Installing ML stack using pip to ensure compatibility ---")
+
+    # Define versions for consistency
+    torch_version = "2.2.0"
+    # Match PyTorch version to CUDA version from environment.yml (12.1)
+    cuda_version_pip_torch = "cu121"
+
+    # --- Install PyTorch from its official index ---
+    print("\n[STEP 2.1] Installing PyTorch, TorchVision, TorchAudio...")
+    torch_install_command = [
+        "conda", "run", "-n", env_name, "pip", "install",
+        f"torch=={torch_version}",
+        f"torchvision==0.17.0",  # Compatible with torch 2.2.0
+        f"torchaudio=={torch_version}",
+        "--index-url", f"https://download.pytorch.org/whl/{cuda_version_pip_torch}"
+    ]
+    run_command(torch_install_command)
+
+    # --- Install PyTorch Geometric and its dependencies ---
+    # PyG dependencies must be installed pointing to the correct torch/cuda version
+    print("\n[STEP 2.2] Installing PyTorch Geometric dependencies...")
+    pyg_deps_install_command = [
+        "conda", "run", "-n", env_name, "pip", "install",
+        "pyg_lib", "torch-scatter", "torch-sparse", "-f",
+        f"https://data.pyg.org/whl/torch-{torch_version}+{cuda_version_pip_torch}.html"
+    ]
+    run_command(pyg_deps_install_command)
+
+    # --- Install TensorFlow, the main PyG package, and other pip packages ---
+    print("\n[STEP 2.3] Installing TensorFlow, PyG, and other packages...")
+    main_ml_install_command = [
+        "conda", "run", "-n", env_name, "pip", "install",
+        "tensorflow",
+        "torch_geometric",
+        "mlflow",
+        "pycuda"
+    ]
+    run_command(main_ml_install_command)
+
     print("\n" + "=" * 60)
     print("--- Environment setup completed successfully! ---")
     print(f"To activate the new environment, run: conda activate {env_name}")
