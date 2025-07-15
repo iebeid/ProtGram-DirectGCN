@@ -3,7 +3,6 @@
 
 # Virtual Environment
 venv/
-data/
 results/
 
 # Python
