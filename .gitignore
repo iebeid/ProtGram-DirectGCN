@@ -3,7 +3,6 @@
 
 # Virtual Environment
 venv/
-results/
 
 # Python
 src/__pycache__/
