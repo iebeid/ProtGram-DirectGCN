@@ -1,20 +1,22 @@
 name: ppi-env # This is a default name, the user can override it.
 channels:
-  - pytorch
+  - conda-forge # Make conda-forge the highest priority for consistency
   - pyg
   - nvidia
-  - conda-forge
   - defaults
 dependencies:
   # --- Core Environment & GPU ---
   - python=3.11
-  # To ensure compatibility, we install PyTorch with its required CUDA version directly.
-  # PyTorch's official channel handles the cudatoolkit dependency correctly.
+  # Let the solver find a compatible CUDA version for both PyTorch and TensorFlow
+  # by requesting the libraries from the same primary channel (conda-forge).
+  - cudatoolkit
+  - cudnn
   - pytorch
   - torchvision
   - torchaudio
-  - pytorch-cuda=12.1
-  - tensorflow-gpu # Get the GPU version from conda-forge
+  # The 'tensorflow' package from conda-forge automatically includes GPU support
+  # if a CUDA toolkit is present in the environment. 'tensorflow-gpu' is legacy.
+  - tensorflow
 
   # --- PyTorch Geometric ---
   - pyg # Official channel for PyTorch Geometric
