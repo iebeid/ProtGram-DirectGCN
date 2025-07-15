@@ -1,6 +1,7 @@
 name: ppi-env # This is a default name, the user can override it.
 channels:
-  # Prioritize conda-forge for a stable, consistent base environment.
+  # Add the nvidia channel to find the CUDA toolkit.
+  - nvidia
   - conda-forge
   - defaults
 dependencies:
@@ -21,6 +22,4 @@ dependencies:
   - matplotlib
   - seaborn
   - python-louvain
-  - cudatoolkit
-  - cudnn
   - pip
