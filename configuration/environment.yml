@@ -1,0 +1,42 @@
+name: ppi-env # This is a default name, the user can override it.
+channels:
+  - pytorch
+  - pyg
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  # --- Core Environment & GPU ---
+  - python=3.11
+  # To ensure compatibility, we install PyTorch with its required CUDA version directly.
+  # PyTorch's official channel handles the cudatoolkit dependency correctly.
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
+  - tensorflow-gpu # Get the GPU version from conda-forge
+
+  # --- PyTorch Geometric ---
+  - pyg # Official channel for PyTorch Geometric
+
+  # --- Core Data Science & Bioinformatics ---
+  - dask
+  - tqdm
+  - biopython
+  - scikit-learn
+  - scipy
+  - gensim
+  - transformers
+  - requests
+  - pyarrow
+
+  # --- Plotting & Utilities ---
+  - matplotlib
+  - seaborn
+  - python-louvain
+
+  # --- Pip-specific packages (use only when not on conda) ---
+  - pip
+  - pip:
+    - mlflow
+    - pycuda

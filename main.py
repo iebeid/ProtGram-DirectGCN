@@ -9,14 +9,15 @@ import time
 
 import mlflow
 
-from src.benchmarks.gnn_benchmarker import GNNBenchmarker
-from config.config import Config
-from src.data.protgram import GraphBuilder
-from src.experiments.ppi_experimenter import PPIPipeline
-from src.training.protgram_directgcn_trainer import ProtGramDirectGCNTrainer
-from src.training.prott5_trainer import TransformerEmbedder
-from src.training.word2vec_trainer import Word2VecEmbedder
-from src.utils.data_utils import DataUtils
+from configuration.config import Config
+from configuration.data import setup_data
+from source.data.protgram import GraphBuilder
+from source.benchmarks.gnn_benchmarker import GNNBenchmarker
+from source.experiments.ppi_experimenter import PPIPipeline
+from source.training.protgram_directgcn_trainer import ProtGramDirectGCNTrainer
+from source.training.prott5_trainer import TransformerEmbedder
+from source.training.word2vec_trainer import Word2VecEmbedder
+from source.utils.data_utils import DataUtils
 
 
 def main():
@@ -30,6 +31,8 @@ def main():
             if not key.startswith("__"):
                 print(f"  {key}: {value}")
         print("--------------------------")
+
+    setup_data(config)
 
     if config.USE_MLFLOW:
         print(f"MLflow tracking URI: {config.MLFLOW_TRACKING_URI}")

@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: config.py
 # PURPOSE: Centralized configuration for the entire PPI training.
-# VERSION: 1.13 (Automated cluster count based on target nodes per cluster)
+# VERSION: 1.13 (Automated cluster count based on target nodes per cluster and automated data download)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -12,16 +12,30 @@ from pathlib import Path
 
 class Config:
     def __init__(self):
-        # --- 1. GENERAL & ORCHESTRATION SETTINGS ---
+        # --- GENERAL & ORCHESTRATION SETTINGS ---
         self.RANDOM_STATE = 42
         self.DEBUG_VERBOSE = True
 
-        # --- Workflow Control Flags ---
-        self.RUN_GCN_PIPELINE = True
-        self.RUN_WORD2VEC_PIPELINE = True
-        self.RUN_TRANSFORMER_PIPELINE = True
+        # --- Main Pipeline Control Flags ---
+        self.RUN_GNN_PIPELINE = True
+        #self.RUN_WORD2VEC = True
+        #self.RUN_BIOBERT = True
+        #self.RUN_PROTT5 = True
+        #self.RUN_HMM = True
+        #self.RUN_RNN = True
+        #self.RUN_LSTM = True
+        self.RUN_WORD2VEC_PIPELINE = False
+        self.RUN_TRANSFORMER_PIPELINE = False
+
+        #self.RUN_GNN_BENCHMARKING_PIPELINE = True
+        #self.RUN_LLM_BENCHMARKING_PIPELINE = True
+        #self.RUN_ML_BENCHMARKING_PIPELINE = True
         self.RUN_BENCHMARKING_PIPELINE = True
+
         self.RUN_MAIN_PPI_EVALUATION = True
+        #self.RUN_GNN_PPI_PIPELINE = True
+        #self.RUN_LLM_PPI_PIPELINE = True
+        #self.RUN_ML_PPI_PIPELINE = True
         self.RUN_DUMMY_TEST = True
         self.CLEANUP_DUMMY_DATA = True
 
@@ -31,10 +45,25 @@ class Config:
         self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
         self.BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.BASE_OUTPUT_DIR = self.PROJECT_ROOT / "results"
+        self.BASE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        self.BASE_SRC_DIR = self.PROJECT_ROOT / "source"
+        self.BASE_CONFIG_DIR = self.PROJECT_ROOT / "configuration"
 
-        self.GCN_INPUT_FASTA_PATH = self.BASE_DATA_DIR / "sequences/uniprot_sprot.fasta"
-        self.INTERACTIONS_POSITIVE_PATH = self.BASE_DATA_DIR / 'ground_truth/positive_interactions.csv'
-        self.INTERACTIONS_NEGATIVE_PATH = self.BASE_DATA_DIR / 'ground_truth/negative_interactions.csv'
+        # --- Define file keys and their relative paths to BASE_DATA_DIR ---
+        # This provides a single source of truth for file locations.
+        self.FILE_KEYS = {
+            "UNIPROT_FASTA": "sequences/uniprot_sprot.fasta",
+            "POS_INTERACTIONS": "ground_truth/positive_interactions.csv",
+            "NEG_INTERACTIONS": "ground_truth/negative_interactions.csv",
+            "PROTT5_MODEL": "models/prott5.h5",
+            "ID_MAPPING_TSV": "mappings/uniref_to_uniprot.tsv",
+            # "WORD2VEC_MODEL": "models/word2vec.h5", # Example for another model
+        }
+
+        # --- Dynamically create path attributes from keys for use in the pipeline ---
+        self.GCN_INPUT_FASTA_PATH = self.BASE_DATA_DIR / self.FILE_KEYS["UNIPROT_FASTA"]
+        self.INTERACTIONS_POSITIVE_PATH = self.BASE_DATA_DIR / self.FILE_KEYS["POS_INTERACTIONS"]
+        self.INTERACTIONS_NEGATIVE_PATH = self.BASE_DATA_DIR / self.FILE_KEYS["NEG_INTERACTIONS"]
 
         self.GRAPH_OBJECTS_DIR = self.BASE_OUTPUT_DIR / "1_graph_objects"
         self.GCN_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_gcn_embeddings"
@@ -56,13 +85,14 @@ class Config:
         self.BENCHMARK_TEST_ON_UNDIRECTED = True
         self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8}
 
-        # --- 2. GCN PIPELINE PARAMETERS (Your custom GCN) ---
+        # --- Direct GCN PIPELINE PARAMETERS ---
         self.GCN_NGRAM_MAX_N = 3
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
 
         self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]
         self.ID_MAPPING_MODE = 'regex'
-        self.ID_MAPPING_OUTPUT_FILE = self.BASE_OUTPUT_DIR / "mappings/gcn_id_mapping.tsv"
+        # This path is now treated as a data dependency. It was renamed from ID_MAPPING_OUTPUT_FILE for clarity.
+        self.ID_MAPPING_FILE = self.BASE_DATA_DIR / self.FILE_KEYS["ID_MAPPING_TSV"]
         self.API_MAPPING_FROM_DB = "UniRef50"
         self.API_MAPPING_TO_DB = "UniProtKB"
 
@@ -141,7 +171,7 @@ class Config:
 
         # Ensure these paths are correct for your generated embeddings
         self.LP_EMBEDDING_FILES_TO_EVALUATE = [
-            {"name": "ProtT5", "path": self.PPI_EVALUATION_MODELS_DIR / "prott5.h5"},
+            {"name": "ProtT5", "path": self.BASE_DATA_DIR / self.FILE_KEYS["PROTT5_MODEL"]},
             # {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-old", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_old.h5"},
             {"name": "ProtGramDirectGCN", "path": self.PPI_EVALUATION_MODELS_DIR / "protgram_directgcn.h5"},
             # {"name": "ProtGramDirectGCN-UniProt-PCA64-n3-new", "path": self.PPI_EVALUATION_MODELS_DIR / f"protgram_directgcn_n3_new.h5"},
@@ -149,7 +179,7 @@ class Config:
         ]
 
         # --- 6. MLFLOW & EXPERIMENT TRACKING ---
-        self.USE_MLFLOW = True
+        self.USE_MLFLOW = False
         mlruns_path = self.BASE_OUTPUT_DIR / "mlruns"
         self.MLFLOW_TRACKING_URI = mlruns_path.resolve().as_uri()
         self.MLFLOW_EXPERIMENT_NAME = "PPI-Link-Prediction"
@@ -171,3 +201,36 @@ class Config:
         self.EVAL_K_VALUES_FOR_TABLE = [50, 100]
         self.EVAL_MAIN_EMBEDDING_FOR_STATS = "ProtGramDirectGCN"
         self.EVAL_STATISTICAL_TEST_ALPHA = 0.05
+
+        # --- 7. DATA SOURCES FOR AUTOMATIC DOWNLOAD ---
+        # The key must match a key in self.FILE_KEYS.
+        # The data manager script will use this to verify and download files.
+        # 'checksum' is optional (e.g., "sha256:your_hash_here").
+        # 'post_process' can be 'ungzip' for .gz files.
+        self.DATA_SOURCES = {
+            "UNIPROT_FASTA": {
+                "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz",
+                "post_process": "ungzip",
+                "checksum": None  # Optional: Add checksum of the final (uncompressed) file if known
+            },
+            "POS_INTERACTIONS": {
+                "url": "https://example.com/data/positive_interactions.csv",  # Replace with a real URL
+                "post_process": None,
+                "checksum": None
+            },
+            "NEG_INTERACTIONS": {
+                "url": "https://example.com/data/negative_interactions.csv",  # Replace with a real URL
+                "post_process": None,
+                "checksum": None
+            },
+            "PROTT5_MODEL": {
+                "url": "https://example.com/models/prott5.h5",  # Replace with a real URL
+                "post_process": None,
+                "checksum": None
+            },
+            "ID_MAPPING_TSV": {
+                "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/",  # Replace with a real URL
+                "post_process": None,
+                "checksum": None
+            }
+        }
