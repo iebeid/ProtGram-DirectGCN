@@ -1,0 +1,125 @@
+\documentclass[utf8]{frontiers_suppmat}
+\usepackage{url,hyperref,lineno,microtype}
+\usepackage[onehalfspacing]{setspace}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{booktabs} % For professional quality tables
+\usepackage{longtable} % For tables that span multiple pages
+
+% Custom command for comments in algorithms
+\newcommand{\procedurecomment}[1]{\Statex \textit{// #1}}
+
+\begin{document}
+	\onecolumn
+	\firstpage{1}
+	\title[Supplementary Material]{{\helveticaitalic{Supplementary Material for ProtGram-DirectGCN}}}
+	\maketitle
+	
+	\section{Appendix A: Algorithms}
+	This section provides the pseudocode for the main components of our proposed pipeline, including the hierarchical graph construction and the forward pass of the $ProtGramDirectGCN$ model.
+	
+	\begin{algorithm}[H]
+		\caption{Hierarchical N-gram Graph Construction}
+		\label{alg:GraphConstruction}
+		\begin{algorithmic}[1]
+			\Statex \Comment{Constructs a hierarchy of n-gram graphs $G_1, \dots, G_{N_{max}}$ from a protein sequence corpus.}
+			\Require Corpus of protein sequences $S_{corpus}$, Maximum n-gram size $N_{max}$
+			\Ensure A set of n-gram graphs $\{G_1, \dots, G_{N_{max}}\}$
+			\Statex
+			\For{$n = 1 \ldots N_{max}$}
+			\State Initialize unique n-gram set $V_n \gets \emptyset$
+			\State Initialize edge counts $\texttt{W\_counts\_n} \gets \text{empty map}$
+			\Statex
+			\procedurecomment{Phase 1: Identify all unique n-grams of length n}
+			\For{each protein sequence $R$ in $S_{corpus}$}
+			\For{$i = 0 \ldots \text{length}(R) - n$}
+			\State $ngram \gets R[i : i+n]$
+			\State Add $ngram$ to $V_n$
+			\EndFor
+			\EndFor
+			\State Create integer mapping $\texttt{node\_to\_idx\_n}$ for all n-grams in $V_n$.
+			\Statex
+			\procedurecomment{Phase 2: Count transitions between n-grams}
+			\For{each protein sequence $R$ in $S_{corpus}$}
+			\For{$i = 0 \ldots \text{length}(R) - n - 1$}
+			\State $u \gets R[i : i+n]$
+			\State $v \gets R[i+1 : i+1+n]$
+			\If{$u \in V_n$ and $v \in V_n$}
+			\State Increment count for edge $(u, v)$ in $\texttt{W\_counts\_n}$
+			\EndIf
+			\EndFor
+			\EndFor
+			\Statex
+			\procedurecomment{Phase 3: Assemble the graph object $G_n$}
+			\State Create edge list $E_n$ from $\texttt{W\_counts\_n}$ using integer IDs from $\texttt{node\_to\_idx\_n}$.
+			\State $G_n \gets \text{InstantiateGraph}(V_n, E_n)$
+			\State Store $G_n$
+			\EndFor
+			\State \Return $\{G_1, \dots, G_{N_{max}}\}$
+		\end{algorithmic}
+	\end{algorithm}
+	
+	
+\begin{algorithm}[H]
+	\caption{$DirectGCNLayer$ - Node-Level Feature Propagation (Per-Dimension View)}
+	\label{alg:DirectGCNLayer_NodeLevel}
+	\begin{algorithmic}[1]
+		\Statex \Comment{Computes output features for all nodes, showing the per-dimension logic.}
+		\Require Node features $H^{(l)}$ ($N \times F_{in}$), Prop. matrices $\mathcal{A}_{in}, \mathcal{A}_{out}, \tilde{A}_{undir}$
+		\Require Layer parameters: $W_{main,*}, b_{main,*}, W_{shared}, b_{shared,*}, C_{*}, b_{const}$
+		\Ensure Pre-activation output features $H^{(l+1)'}$ ($N \times F_{out}$)
+		\Statex
+		\State Initialize $H^{(l+1)'}$ as a zero matrix of shape ($N \times F_{out}$)
+		\For{each node $u = 0 \ldots N-1$}
+		\For{each output dimension $d = 0 \ldots F_{out}-1$}
+		\Statex \procedurecomment{Initialize accumulators for node $u$, dimension $d$}
+		\State $\texttt{agg\_main\_in} \gets 0$, $\texttt{agg\_main\_out} \gets 0$, $\texttt{agg\_main\_undir} \gets 0$
+		\State $\texttt{h\_shared} \gets 0$
+		\Statex
+		\procedurecomment{1. Aggregate messages from neighbors}
+		\For{each input dimension $f = 0 \ldots F_{in}-1$}
+		\For{each neighbor node $v = 0 \ldots N-1$}
+		\State $\texttt{agg\_main\_in} \gets \texttt{agg\_main\_in} + \mathcal{A}_{in,uv} \cdot H^{(l)}_{vf} \cdot W_{main,in,fd}$
+		\State $\texttt{agg\_main\_out} \gets \texttt{agg\_main\_out} + \mathcal{A}_{out,uv} \cdot H^{(l)}_{vf} \cdot W_{main,out,fd}$
+		\State $\texttt{agg\_main\_undir} \gets \texttt{agg\_main\_undir} + \tilde{A}_{undir,uv} \cdot H^{(l)}_{vf} \cdot W_{main,undir,fd}$
+		\EndFor
+		\EndFor
+		\Statex
+		\procedurecomment{2. Compute shared MLP transformation}
+		\For{each input dimension $f = 0 \ldots F_{in}-1$}
+		\State $\texttt{h\_shared} \gets \texttt{h\_shared} + H^{(l)}_{uf} \cdot W_{shared,fd}$
+		\EndFor
+		\Statex
+		\procedurecomment{3. Combine components for each channel}
+		\State $\texttt{H\_in\_d} \gets (\texttt{agg\_main\_in} + b_{main,in,d}) + (\texttt{h\_shared} + b_{shared,in,d})$
+		\State $\texttt{H\_out\_d} \gets (\texttt{agg\_main\_out} + b_{main,out,d}) + (\texttt{h\_shared} + b_{shared,out,d})$
+		\State $\texttt{H\_undir\_d} \gets (\texttt{agg\_main\_undir} + b_{main,undir,d}) + (\texttt{h\_shared} + b_{shared,undir,d})$
+		\Statex
+		\procedurecomment{4. Apply gating and final combination}
+		\State $\texttt{directed\_signal} \gets C_{directed,u} \cdot (C_{in,u} \cdot \texttt{H\_in\_d} + C_{out,u} \cdot \texttt{H\_out\_d})$
+		\State $\texttt{undirected\_signal} \gets C_{undirected,u} \cdot \texttt{H\_undir\_d}$
+		\State $H^{(l+1)'}_{ud} \gets C_{all,u} \cdot (\texttt{directed\_signal} + \texttt{undirected\_signal}) + b_{const,ud}$
+		\EndFor
+		\EndFor
+		\State \Return $H^{(l+1)'}$
+	\end{algorithmic}
+\end{algorithm}
+	
+	
+	\section{A Review of Convolutional Methods for Directed Graphs}
+	
+	Extending Graph Convolutional Networks (GCNs) to directed graphs is a significant challenge, as the standard spectral GCN formulation relies on the symmetric Laplacian of an undirected graph. Research to address this has broadly followed three themes: adapting spectral theory, redesigning spatial convolutions, and leveraging higher-order structures.
+	
+	Spectral approaches aim to redefine the graph Laplacian to handle directedness. An early attempt by \cite{ma_spectral-based_2019} constructed a symmetric Laplacian using the graph's transition matrix and its stationary distribution (the Perron vector), but this is computationally expensive. A more recent innovation is MagNet \cite{zhang_magnet_2021}, which employs a complex Hermitian matrix called the magnetic Laplacian, $L_{N}^{(q)}:=I-(D_{s}^{-1/2}A_{s}D_{s}^{-1/2})\odot \exp(i\Theta^{(q)})$, where directionality is elegantly encoded in the phase of complex entries, guaranteeing real eigenvalues suitable for spectral filtering.
+	
+	A second, more intuitive theme involves spatial approaches that redefine the neighborhood aggregation process. The most common strategy, seen in models like \cite{tong_directed_2020}'s, is to explicitly separate the aggregation of features from in-neighbors and out-neighbors. A generalized form of this operation is $H' = \sigma ( \tilde{A}_{in} H W_{in} + \tilde{A}_{out} H W_{out} )$, where $\tilde{A}_{in}$ and $\tilde{A}_{out}$ are normalized adjacency matrices for incoming and outgoing edges. This method is straightforward to implement and scale but has a localized receptive field.
+	
+	Finally, some research has moved beyond simple edges to consider higher-order connectivity patterns. MotifNet \cite{monti_motifnet_2018}, uses small, recurring directed subgraphs called motifs to define multiple anisotropic views of the graph, allowing the model to capture more complex structural information. Our $ProtGramDirectGCN$ builds upon the principles of spatial methods by explicitly handling incoming, outgoing, and undirected information channels. However, it introduces a unique hybrid GCN-MLP layer architecture with a gating mechanism, allowing the model to learn the relative importance of each information channel and a shared feature transformation for a more expressive aggregation scheme.
+	
+	
+		\bibliographystyle{Frontiers-Harvard}
+	\bibliography{references}
+	
+\end{document}

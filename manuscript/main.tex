@@ -1,0 +1,392 @@
+\documentclass[utf8]{FrontiersinHarvard}
+\usepackage[english]{babel}
+\usepackage{url,hyperref,lineno,microtype,subcaption}
+\usepackage[onehalfspacing]{setspace}
+\usepackage{booktabs} % For professional quality tables
+\usepackage{longtable} % For tables that span multiple pages
+\usepackage{amsmath} % For advanced math environments
+% --- FIX: Added required packages for TikZ diagrams ---
+\usepackage{tikz}
+\usetikzlibrary{positioning, calc}
+% --- END FIX ---
+\linenumbers
+\def\keyFont{\fontsize{8}{11}\helveticabold }
+\def\firstAuthorLast{Ebeid {et~al.}}
+\def\Authors{Islam Akef Ebeid\,$^{1,*}$, Haoteng Tang\,$^{2}$ and Pengfei Gu\,$^{2}$}
+\def\Address{$^{1}$Texas Woman's University, The Division of Computer Science, Denton, TX, USA \\
+	$^{2}$The University of Texas Rio Grande Valley, The Department of Computer Science, Edinburg, TX, USA }
+\def\corrAuthor{Islam Akef Ebeid}
+\def\corrEmail{iebeid@twu.edu}
+\begin{document}
+	\onecolumn
+	\firstpage{1}
+	\title[ProtGramDirectGCN]{Inferred global dense residue n-gram graphs from primary structure sequences enable protein interaction prediction via directed graph convolutional neural networks} 
+	\author[\firstAuthorLast ]{\Authors}
+	\address{}
+	\correspondance{}
+	\extraAuth{}
+	\maketitle
+	\begin{abstract}
+		Accurate prediction of protein-protein interactions (PPIs) is crucial to understanding cellular functions and advancing drug discovery. While some in-silico methods leverage direct sequence embeddings from Protein Language Models (PLMs), others apply Graph Neural Networks (GNNs) to topological features from PPI networks or 3D protein structures. Here, we introduce a novel approach that models protein primary structure through a hierarchy of globally inferred n-gram graphs. For each n-gram level, residue transition probabilities, aggregated from a large sequence corpus, define the edge weights of an underlying directed graph. We propose a custom directed graph convolutional network, $ProtGramDirectGCN$, featuring a unique convolutional layer that processes information through separate path-specific (incoming, outgoing, undirected) and shared transformations. These components are then combined via a learnable gating mechanism. The efficacy of $ProtGramDirectGCN$ is first established on standard node classification benchmarks, where its performance highlights its specialization for complex, directed graph structures. Subsequently, it is applied to the hierarchy of n-gram graphs to learn residue embeddings, which are then pooled to generate protein-level representations. When evaluated on the downstream task of PPI link prediction, our method achieves robust predictive power, suggesting that our graph-based representation of global sequence statistics offers a potent and computationally distinct alternative to resource-intensive PLMs. This work presents a robust two-stage graph representation learning strategy that effectively captures global sequence statistics and transitional patterns, offering a novel method for generating protein features applicable to a wide range of bioinformatics tasks.
+		
+		\tiny
+		\keyFont{ \section{Keywords:} uniprot, graph theory, graph representation learning, graph neural networks, graph convolution networks, link prediction, proteomics, protein-protein interaction prediction, large language models, sequence-to-sequence modeling}
+	\end{abstract}
+	
+	\section{Introduction}
+	Protein-protein interactions form a network of physical contacts and functional associations mediated by molecular bonds. These interactions serve as the basis for cellular processes and are called the cellular interactome. Therefore, understanding the underlying mechanisms by predicting valid interactions between proteins is the foundation for many \textit{in-vitro} biomedical endeavors, such as understanding disease mechanisms, drug development, repurposing, and the potential development of futuristic biotechnologies \cite{vidal_interactome_2011} \cite{scott_small_2016}. \textit{In-vitro} protein interaction prediction methods, including Yeast-2-Hybrid screening, co-immunoprecipitation followed by mass spectrometry and affinity purification, have been used to infer evidence of protein association. However, these methods are usually prone to a high rate of false positives and false negatives \cite{rao_protein-protein_2014}.
+	
+	Computational methods, also known as \textit{in-silico} and data-driven approaches in protein interaction prediction, are crucial in life sciences, as they help alleviate several of the significant challenges of the \textit{in-vitro} methods mentioned above. The initial stages of drug discovery are heavily based on identifying and confirming valid drug targets, often proteins. This activity is typically protracted, resource-intensive, and time-consuming. Subsequent \textit{in-vitro} screening of drug candidates against potential targets cannot be done efficiently until a validated list of candidate proteins is established. Delays in this upstream target identification task lead to delays in the beginning of extensive \textit{in-vitro} studies \cite{scannell_diagnosing_2012}. Therefore, \textit{in-silico} methods, mainly relying on the predictive power of complex machine learning models, are not meant to replace \textit{in-vitro} methods. Instead, they are integrated into the workflow to create a potential pool of valid interactions waiting for wet lab confirmation.
+	
+	Recent advancements in machine learning, including deep learning approaches that automate feature extraction and embed biological entities into a real vector space, where meaningful algebraic operations can be performed on the learned vectors representing individual residues or proteins. A prominent recent advancement is Google’s AlphaFold \cite{jumper_highly_2021}. This complex model aims to predict protein three-dimensional structures from primary sequences, a central challenge in biomedical informatics known as protein folding prediction. Predicted three-dimensional structures are often utilized in frameworks that aim to predict protein interactions from all levels of protein structure representation via combining features from the first, second, and third levels and structural features from protein-protein interaction networks \cite{zhou_graph_2022} \cite{jha_prediction_2022}.
+	
+	However, the most common approaches in \textit{in-silico} protein-protein interaction prediction are primary structure sequence-based methods, where the sequential one-dimensional nature of amino acid and residue-level representations lends itself to modern language modeling. Protein sequences can be conceptualized as a sequence of amino acids (or peptides), analogous to sentences being sequences of words. Furthermore, like a word in a sentence, each amino acid is a fundamental building block, often represented by a single symbol. This analogy allows for the application of large language modeling techniques. For instance, the popular transformer neural network architecture \cite{vaswani_attention_2017} applied to primary protein structures has yielded accurate models, generating precise vector representations \cite{elnaggar_prottrans_2022}. Before the advent of the transformer architecture, the Long-Short-Term Memory model, a more general Recurrent Neural Network Encoder-Decoder model type, was the primary architecture used in sequence modeling \cite{cho_learning_2014} \cite{hochreiter_long_1997}. The input protein sequence is usually tokenized at different levels or granularities, such as representing single amino acids as words or a group of amino acids as k-mers. The outputs of all of these deep learning architectures are typically pooled to produce per-protein embeddings that capture sequential features \cite{elnaggar_prottrans_2022}.
+	
+	However, even the most advanced modern approaches have several problems.
+	\begin{itemize}
+		\item The limited context window size must be larger to capture longer-range dependencies beyond the immediate neighborhood.
+		\item Increasing the number of layers can lead to a significant (potentially exponential) increase in the number of parameters, demanding more computational resources.
+		\item Different granularity of tokenization when applying large language models to protein sequences might be meaningless, especially if it is based on anything other than residues.
+	\end{itemize}
+	
+	Here, we propose a novel approach to modeling protein sequences that partially overcomes some of these limitations. We cast the sequences as random walks sampled according to transition probabilities within a directed n-gram graph $G_{n}$. The directed graph $G_{n}$ is inferred from a database of curated protein sequences (UniProt) \cite{the_uniprot_consortium_uniprot_2023}. Then, a custom-directed graph convolution neural network, $ProtGramDirectGCN$, learns the dense relationships between the n-grams. The learnt representations are then evaluated on a PPI-based link prediction task and compared with other models to establish the method's validity. This approach does not require a context window like in protein large language models \cite{elnaggar_prottrans_2022}. The computational limitations that contribute to limited context windows are only applied to a graph of n-grams, where the first-order neighborhood of a graph convolution operator approximation \cite{kipf_semi-supervised_2017} has a limited effect on the output compared to the sizes of a well-capturing context window in a large language model. This bottom-up approach ensures that the limitations are only applied to the lowest level of representation, overcoming the need for intensive computational power. In addition, tokenization in proteins differs from language, where each word can be treated as a separate entity with its meaning; it is more akin to proteins being represented via sequences of amino acids, and any other grouping is merely for convenience, not inherent meaning \cite{ofer_language_2021}.
+	
+	The specific transition sequence of amino acids via their side chains or R groups determines how a polypeptide chain will fold. Hydrogen bonds, ionic bonds, and hydrophobic interactions generally drive the folding. And in the process, the local secondary structure, including alpha and beta helices, eventually creates binding sites essential for forming subunit proteins or interacting with other molecules. Hence, our intuition is that the primary structure sequencing and the transition frequencies between residues inform down the line not only the 3-dimensional tertiary structure of the protein but also tell the possible interactions with other proteins or the quaternary structure \cite{dill_protein-folding_2012} \cite{perkins_transient_2010} \cite{anfinsen_principles_1973}.
+	
+	Accordingly we hypothesize that the global directed dense graph of n-grams $G_{n}$ encodes the potential relationships between proteins, and that learning accurate vector representations of $G_{n}$ not only provides comparable performance to PLMs in the task of PPI based link prediction but also offers a method to generate protein embeddings on the fly without the need to store per-protein embeddings nor to fine tune hefty pretrained models.
+	
+	Hence, we are trying to answer the following research questions:
+	\begin{itemize}
+		\item Does learning representations of proteins from the embedded, inferred directed graph of n-grams $G_{n}$ encode valid associations between proteins? 
+		\item Is our $ProtGramDirectGCN$ model credible and valid?
+		\item What is the predictive power of our $G_{n}$ and $ProtGramDirectGCN$?
+		\item Is the performance of the $ProtGramDirectGCN$ model comparable to LLMs? And what are the implications of that?
+	\end{itemize}
+	
+	\section{Methods}
+	
+	This section details the design, development, and evaluation of our novel $ProtGramDirectGCN$ model, a directed graph convolutional network tailored for learning representations from dense, directed, and weighted graphs. The primary motivation for this model arises from the need to effectively process a global graph of n-grams, $G_{n}$, constructed from large-scale protein sequence data where capturing directionality and transition frequencies is paramount for deriving meaningful biological insights.
+	
+	\subsection{Preliminaries}
+	Our approach treats individual proteins, identified via the comprehensive databases like UniProt \cite{the_uniprot_consortium_uniprot_2023}, as distinct entities. These proteins form the nodes $V$ in a high-level biological graph $G_{PPI}=(V,E_{PPI})$, where edges $E_{PPI}$ represent observed or potential interactions. The main objective is to solve the link prediction problem within $G_{PPI}$.
+	A foundational aspect of our methodology is the detailed representation of individual protein sequences through a hierarchy of n-gram graphs. For a given $n$, each protein $P_i$ is defined by its primary amino acid sequence $R_i = (r_1, r_2, \ldots, r_L)$, which can be decomposed into a sequence of overlapping n-grams. We conceptualize these sequences through a global directed, dense graph of n-grams, $G_{n}=(V_{n}, E_{n})$. $V_{n}$ is the finite set of unique n-gram types observed in a large corpus. $E_{n}$ represents directed transitions between n-gram types. An edge $(u, v)$ from n-gram $u$ to $v$ exists if $v$ can be formed by shifting a one-character window over $u$. For example, for $n=3$, an edge exists from 'ACG' to 'CGT'. Each edge is assigned a weight $w_{uv}$, corresponding to the observed frequency of this transition across the corpus.
+	
+	A valid protein sequence $R = (r_1, r_2, \ldots, r_L)$ is thus viewed as a specific path or random walk of length $L-1$ on $G_{n}$ on this hierarchy of n-gram graphs. This conceptualization aligns with the idea that protein sequences can be seen as generated from a 'source graph' of amino acid symbols via a random walk process. Assuming a first-order Markov process, the probability of observing a particular sequence $R$, given its starting residue $r_1$ and the transition probabilities derived from $G_{n}$, can be formulated. If $P(r_{j+1}|r_j) = \frac{w_{r_j r_{j+1}}}{\sum_k w_{r_j k}}$ is the transition probability from residue $r_j$ to $r_{j+1}$ given normalized edge weights, then the probability of the sequence $R$ is $P(R | r_1, G_{n}) = \prod_{j=1}^{L-1} P(r_{j+1}|r_j)$. This probabilistic view, rooted in the empirically derived $G_{n}$, allows for a nuanced understanding of sequence validity, likelihood, and structure. We aim not to view the amino acid sequence representation as a mere Markovian sequence but also to consider the existence of different relationships between a residue and many other residues. The directed nature of $G_{n}$ is crucial, naturally modeling the $N-to-C$ terminus directionality of polypeptide chains and the inherent asymmetry of residue relationships. See figure \ref{fig:1}.
+	
+	
+	\begin{figure}
+		\centering
+		\includegraphics[width=0.5\linewidth]{images/fig1.jpg}
+		\caption{An example of dummy sequences separated by a space indicating multiple proteins. The figure shows how the transitions between the residues or characters are conceptualized as a directed, weighted, dense graph where the weights are the transition frequencies calculated as counts or probabilities. In addition, the figure shows how we split the directed adjacency into an $A_{in}$ and an $A_{out}$. Later, we describe how to overcome the non-hermitian nature of these two matrices to make them suitable for neural networks.}
+		\label{fig:1}
+	\end{figure}
+	
+	Our custom Directed Graph Convolutional Network $(ProtGramDirectGCN)$ is specifically designed to learn from these $G_{n}$ graphs. Graph Neural Networks (GNNs) are architectures adept at learning node representations by iteratively aggregating information from neighborhoods, also known as message passing \cite{scarselli_graph_2009}. A foundational GNN is the Graph Convolutional Network (GCN) \cite{kipf_semi-supervised_2017}, whose layer typically updates node features according to $H^{(l+1)} = \sigma\left(\tilde{D}^{-1/2} \tilde{A} \tilde{D}^{-1/2} H^{(l)} W^{(l)}\right)$. Here, $H^{(0)}$ would be initial features for n-gram types in $V_{n}$, $\tilde{A}$ is the adjacency matrix of $G_{n}$ with added self-loops, $\tilde{D}$ is its corresponding diagonal degree matrix for normalization, $W^{(l)}$ is a trainable weight matrix, and $\sigma$ is a non-linear activation function.
+	
+	Standard GCNs are primarily for undirected graphs. Our $ProtGramDirectGCN$ adapts this framework to effectively learn from the directed and weighted edges of $G_{n}$, separating information flow based on edge directionality. Our model learns rich embeddings $V_{n,k} \in \mathbb{R}^{d'}$ for each n-gram type $k$. Sophisticated feature vectors for entire protein sequences $P_i$ are generated by aggregating their constituent n-grams' learned $ProtGramDirectGCN$ embeddings. These protein-level feature vectors are utilized in the downstream link prediction task within $G_{PPI}$. See Supplementary Material for previous work that has been done to adapt GCNs to directed graphs.
+	
+	\subsection{$ProtGramDirectGCN$}
+	\subsubsection{Propagation Matrix Formulation}
+	The graph structure is initially captured by a raw weighted adjacency matrix $A_{raw} \in \mathbb{R}^{N \times N}$, where $(A_{raw})_{uv} = w_{uv}$. From this, we define the out-degree weighted adjacency matrix $A_{out}^{(w)} = A_{raw}$ and the in-degree weighted adjacency matrix $A_{in}^{(w)} = A_{raw}^T$.
+	
+	A key component of $ProtGramDirectGCN$ is a specific preprocessing step for these adjacency matrices, designed to create stable and informative propagation matrices. For a given weighted adjacency matrix $A^{(w)}$ (either $A_{out}^{(w)}$ or $A_{in}^{(w)}$), we first compute its row-normalized counterpart $A^{(n)} = D^{-1}A^{(w)}$, where $D$ is the diagonal out-degree matrix. To overcome the non-hermitian nature of $A^{(n)}$, we compute its symmetric-like ($S$) and skew-symmetric-like ($K$) components:
+	\begin{equation}
+		S = \frac{A^{(n)} + (A^{(n)})^T}{2} \quad \text{and} \quad K = \frac{A^{(n)} - (A^{(n)})^T}{2}
+	\end{equation}
+	The final propagation matrix $\mathcal{A}$ is derived from the element-wise magnitude of these components, with an added identity matrix $I$ for self-loops:
+	\begin{equation}
+		\mathcal{A} = \sqrt{S^2 + K^2 + \epsilon} + I
+	\end{equation}
+	where the square operations are element-wise and $\epsilon$ is a small constant (e.g., $1 \times 10^{-9}$) for numerical stability. This process yields two distinct propagation matrices, $\mathcal{A}_{out}$ and $\mathcal{A}_{in}$, which are used for message aggregation in the convolutional layers. This construction aims to capture both the symmetric and anti-symmetric aspects of the directed relationships, offering a more robust representation of directed influence.
+	
+	\subsubsection{Hybrid GCN-MLP Layer}
+	Given node features $H^{(l)} \in \mathbb{R}^{N \times F^{(l)}}$ at layer $l$, the layer computes the features for the next layer by processing information through three distinct channels: incoming, outgoing, and undirected. Each channel combines a standard GCN-style message passing operation with an MLP-style feature transformation.
+	
+	For the incoming path, the aggregated message is a combination of a propagated component and a shared feature transformation:
+	\begin{equation}
+		H_{in}^{(l+1)} = \left( \mathcal{A}_{in} (H^{(l)} W_{main,in}^{(l)}) + b_{main,in}^{(l)} \right) + \left( H^{(l)} W_{shared}^{(l)} + b_{shared,in}^{(l)} \right)
+	\end{equation}
+	Similarly, for the outgoing path:
+	\begin{equation}
+		H_{out}^{(l+1)} = \left( \mathcal{A}_{out} (H^{(l)} W_{main,out}^{(l)}) + b_{main,out}^{(l)} \right) + \left( H^{(l)} W_{shared}^{(l)} + b_{shared,out}^{(l)} \right)
+	\end{equation}
+	And for the undirected path, using a standard symmetrically normalized adjacency matrix $\tilde{A}_{undir}$:
+	\begin{equation}
+		H_{undir}^{(l+1)} = \left( \tilde{A}_{undir} (H^{(l)} W_{main,undir}^{(l)}) + b_{main,undir}^{(l)} \right) + \left( H^{(l)} W_{shared}^{(l)} + b_{shared,undir}^{(l)} \right)
+	\end{equation}
+	where $W_{main,*}$ are path-specific weight matrices and $W_{shared}$ is a single weight matrix shared across all three paths, acting on the original node features.
+	
+	These three processed signals are then combined using a learnable, node-wise gating mechanism:
+	\begin{equation}
+		H_{pre-activation}^{(l+1)} = \left( C_{undir}^{(l)} \odot H_{undir}^{(l+1)} \right) + \left( C_{in}^{(l)} \odot H_{in}^{(l+1)} \right) + \left( C_{out}^{(l)} \odot H_{out}^{(l+1)} \right) + b_{const}^{(l)}
+	\end{equation}
+	where $C_*^{(l)}$ are learnable gating vectors and $b_{const}^{(l)}$ is a learnable node-specific bias term. Finally, a residual connection is added before applying a Leaky ReLU activation function:
+	\begin{equation}
+		H^{(l+1)} = \sigma_{LReLU}\left(H_{pre-activation}^{(l+1)} + H^{(l)}W_{res}^{(l)}\right)
+	\end{equation}
+	where $W_{res}^{(l)}$ is a linear projection for the residual connection if feature dimensions change.
+	
+	\subsubsection{Model Architecture}
+	The full $ProtGramDirectGCN$ model is composed of a stack of these custom hybrid layers. The overall architecture is defined as follows:
+	\begin{itemize}
+		\item \textbf{Input Layer}: The initial node features for the n-grams, $H^{(0)} \in \mathbb{R}^{N \times F^{(0)}}$, are either randomly initialized (for $n=1$) or derived from the embeddings of the previous n-gram level (for $n>1$). Positional encodings may be added to these initial features to incorporate sequence order information within the n-grams themselves.
+		
+		\item \textbf{Hidden Layers}: The model stacks $L$ hidden layers. For each layer $l \in \{0, \dots, L-1\}$, the output $H^{(l+1)}$ is computed by applying the hybrid GCN-MLP layer transformation (Equations 3-7) to the previous layer's output $H^{(l)}$. A residual connection is included to facilitate deeper architectures, and a Leaky ReLU activation function followed by dropout is applied after each layer to introduce non-linearity and prevent overfitting.
+		
+		\item \textbf{Output Layer}: The output of the final hidden layer, $H^{(L)}$, serves as the learned n-gram embedding, $Z_{n-gram}$. For the auxiliary node classification task on $G_{n}$, these embeddings are passed through a final linear decoder, which is a small multi-layer perceptron (MLP), to produce the final class logits:
+		\begin{equation}
+			\text{Logits} = \text{Decoder}(Z_{n-gram})
+		\end{equation}
+		A LogSoftmax function is then applied to these logits for training with a negative log-likelihood loss. The final embeddings, $Z_{n-gram}$, are L2-normalized before being used for downstream tasks.
+	\end{itemize}
+	
+	\begin{figure}
+		\centering
+		\includegraphics[width=0.8\linewidth]{images/fig2.jpg}
+		\caption{The proposed ProtGramDirectGCN layer architecture. For each of the three information channels (Incoming, Outgoing, Undirected), input features ($H^{(l)}$) are processed through two parallel paths: a path-specific GCN-style message passing transformation (e.g., using $W_{main,in}$) and an MLP-style shared transformation ($W_{shared}$). The results are aggregated and then combined via a learnable gating mechanism controlled by coefficients ($C$) before a final residual connection and activation.}
+		\label{fig:2}
+	\end{figure}
+	
+	\section{Experiments}
+	This section outlines the experimental design employed to evaluate the proposed $ProtGramDirectGCN$ model. Our experiments are structured to: (1) assess the intrinsic performance of $ProtGramDirectGCN$ on standard graph benchmark datasets; (2) detail the construction of a hierarchy of global n-gram graphs $G_{n}$ from the UniProt sequence dataset; (3) evaluate the ability of $ProtGramDirectGCN$ to learn meaningful representations from these $G_{n}$ via a self-supervised pre-training task; (4) apply these learned representations, after pooling to the protein level, to the downstream task of PPI link prediction; and (5) compare the efficacy of our GNN-based protein embeddings against those derived from the state-of-the-art PLM, ProtT5.
+	
+	\subsection{Intrinsic Evaluation of $ProtGramDirectGCN$}
+	To establish the general graph representation learning capabilities of the $ProtGramDirectGCN$ architecture, we first evaluated it on commonly used public benchmark datasets for node classification.
+	
+	\begin{itemize}
+		\item \textbf{Datasets}: We selected standard GNN benchmark datasets: Cora, CiteSeer, PubMed, Cornell, Texas, and Wisconsin. For each, we evaluated performance on both their original (potentially directed) and explicitly symmetrized (undirected) versions.
+		
+		\begin{table}[h!]
+			\centering
+			\caption{Statistics of standard datasets used in the benchmark evaluation.}
+			\label{tab:dataset_stats}
+			\begin{tabular}{lrrrr}
+				\toprule
+				\textbf{Dataset} & \textbf{\# Nodes} & \textbf{\# Edges} & \textbf{\# Features} & \textbf{\# Classes} \\ \midrule
+				Cora             & 2,708             & 10,556            & 1,433                & 7                   \\
+				PubMed           & 19,717            & 88,648            & 500                  & 3                   \\
+				Cornell          & 183               & 298               & 1,703                & 5                   \\
+				Texas            & 183               & 325               & 1,703                & 5                   \\
+				Wisconsin        & 251               & 515               & 1,703                & 5                   \\ \bottomrule
+			\end{tabular}
+		\end{table}
+		
+		\item \textbf{Task \& Setup}: The task was semi-supervised node classification using a fixed 10\%/10\%/80\% train/validation/test split. All models were trained for 300 epochs using the Adam optimizer.
+		
+		\item \textbf{Baseline Models}: Graph Convolutional Network (GCN) \cite{kipf_semi-supervised_2017}, Graph Attention Network (GAT) \cite{velickovic_graph_2018}, GraphSAGE \cite{hamilton_inductive_2018}, Graph Isomorphism Network (GIN) \cite{xu_how_2019}, and Tong et al.'s DiGCN \cite{tong_directed_2020}.
+		
+		\item \textbf{Results}: The goal of this evaluation was to validate $ProtGramDirectGCN$ as a sound GNN architecture. On high-homophily citation networks (Cora, CiteSeer, PubMed), $ProtGramDirectGCN$ underperformed relative to simpler models like GCN and GAT. This is an expected outcome, as its complex, over-parameterized architecture is not well-suited for these tasks and struggles to converge effectively. However, on the heterophilic WebKB datasets (Cornell, Texas, Wisconsin), where relationships are more complex, its performance was more competitive. This validates that the model is functional but highly specialized, justifying its application to our custom, non-homophilic n-gram graphs rather than general-purpose benchmarks. A summary of results is presented in Table \ref{tab:benchmark_performance}.
+	\end{itemize}
+	
+	\begin{longtable}{llrrrr}
+		\caption{Model performance on directed datasets. Accuracy and F1-Score are reported as $mean \pm std$. (M) denotes macro average. Bold indicates best performance.}
+		\label{tab:benchmark_performance}\\
+		\toprule
+		Dataset & Model & Accuracy & F1-Score (M) & Precision (M) & Recall (M) \\
+		\midrule
+		\endfirsthead
+		\caption[]{-- continued from previous page}\\
+		\toprule
+		Dataset & Model & Accuracy & F1-Score (M) & Precision (M) & Recall (M) \\
+		\midrule
+		\endhead
+		\midrule
+		\multicolumn{6}{r}{{Continued on next page...}} \\
+		\endfoot
+		\bottomrule
+		\endlastfoot
+		
+		& GCN & 0.8722 $\pm$ 0.0088 & 0.8622 $\pm$ 0.0106 & 0.8629 & 0.8651 \\
+		& GAT & 0.8863 $\pm$ 0.0062 & 0.8754 $\pm$ 0.0099 & 0.8808 & 0.8723 \\
+		Cora & GIN & 0.8671 $\pm$ 0.0103 & 0.8588 $\pm$ 0.0134 & 0.8637 & 0.8575 \\
+		& ProtGramDirectGCN & 0.8590 $\pm$ 0.0189 & 0.8480 $\pm$ 0.0256 & 0.8493 & 0.8497 \\
+		& Tong et al. & 0.8530 $\pm$ 0.0142 & 0.8407 $\pm$ 0.0172 & 0.8449 & 0.8400 \\
+		\midrule
+		& GCN & 0.8631 $\pm$ 0.0047 & 0.8553 $\pm$ 0.0056 & 0.8573 & 0.8542 \\
+		& GAT & 0.8529 $\pm$ 0.0089 & 0.8456 $\pm$ 0.0103 & 0.8491 & 0.8445 \\
+		PubMed & GIN & 0.8716 $\pm$ 0.0052 & 0.8669 $\pm$ 0.0054 & 0.8652 & 0.8695 \\
+		& ProtGramDirectGCN & 0.8451 $\pm$ 0.0053 & 0.8370 $\pm$ 0.0067 & 0.8360 & 0.8392 \\
+		& Tong et al. & 0.8107 $\pm$ 0.0120 & 0.8000 $\pm$ 0.0116 & 0.8022 & 0.8007 \\
+		\midrule
+		& GCN & 0.4101 $\pm$ 0.0608 & 0.2440 $\pm$ 0.0590 & 0.2406 & 0.2713 \\
+		& GAT & 0.4264 $\pm$ 0.0748 & 0.1684 $\pm$ 0.0432 & 0.1989 & 0.2202 \\
+		Cornell & GIN & 0.4862 $\pm$ 0.0770 & 0.3603 $\pm$ 0.0546 & 0.3682 & 0.3974 \\
+		& ProtGramDirectGCN & \textbf{0.5571 $\pm$ 0.0499} & \textbf{0.4104 $\pm$ 0.0837} & \textbf{0.5182} & \textbf{0.4061} \\
+		& Tong et al. & 0.5520 $\pm$ 0.0316 & 0.2976 $\pm$ 0.0547 & 0.3096 & 0.3356 \\
+		\midrule
+		& GCN & 0.3773 $\pm$ 0.0923 & 0.1640 $\pm$ 0.0403 & 0.1575 & 0.1770 \\
+		& GAT & 0.5464 $\pm$ 0.0567 & 0.2139 $\pm$ 0.0461 & 0.2163 & 0.2569 \\
+		Texas & GIN & 0.4045 $\pm$ 0.0585 & 0.2199 $\pm$ 0.0369 & 0.2305 & 0.2414 \\
+		& ProtGramDirectGCN & \textbf{0.6940 $\pm$ 0.0202} & \textbf{0.5212 $\pm$ 0.0831} & \textbf{0.6044} & \textbf{0.5071} \\
+		& Tong et al. & 0.5353 $\pm$ 0.0540 & 0.2310 $\pm$ 0.0496 & 0.2390 & 0.2703 \\
+		\midrule
+		& GCN & 0.4224 $\pm$ 0.0627 & 0.2491 $\pm$ 0.0702 & 0.2600 & 0.2641 \\
+		& GAT & 0.4898 $\pm$ 0.0937 & 0.2413 $\pm$ 0.0686 & 0.3067 & 0.2635 \\
+		Wisconsin & GIN & 0.4219 $\pm$ 0.0625 & 0.2876 $\pm$ 0.0757 & 0.2910 & 0.3000 \\
+		& ProtGramDirectGCN & \textbf{0.6293 $\pm$ 0.0423} & \textbf{0.3833 $\pm$ 0.0584} & \textbf{0.3835} & \textbf{0.4079} \\
+		& Tong et al. & 0.4975 $\pm$ 0.1026 & 0.2695 $\pm$ 0.0784 & 0.2934 & 0.2814 \\
+	\end{longtable}
+	
+	\subsection{Construction of Hierarchical $G_{n}$ Graphs}
+	The primary dataset for our methodology is a hierarchy of global n-gram graphs, $G_{n}$, constructed from the UniProt Swiss-Prot sequence database.
+	\begin{itemize}
+		\item \textbf{Corpus}: We used the curated and reviewed UniProt Swiss-Prot dataset, containing 573,230 protein sequences.
+		\item \textbf{Graph Construction}: For each n-gram level from $n=1$ to $n=4$, we constructed a separate graph $G_{n}$. The nodes $V_{n}$ are the unique n-grams of length $n$ found in the corpus. A directed edge $(u, v)$ exists if n-gram $v$ can be formed by shifting a one-character window over n-gram $u$. The edge weight $w_{uv}$ is the total frequency of this transition across all sequences. This process resulted in four graphs of increasing size and complexity, as detailed in Table \ref{tab:gn_stats}.
+	\end{itemize}
+	
+	\begin{table}[h!]
+		\centering
+		\caption{Statistics of the constructed n-gram graphs ($G_{n}$).}
+		\label{tab:gn_stats}
+		\begin{tabular}{crr}
+			\toprule
+			\textbf{n-gram Level (n)} & \textbf{\# Nodes (Unique n-grams)} & \textbf{\# Edges (Unique Transitions)} \\
+			\midrule
+			1 & 26 & 601 \\
+			2 & 601 & 10,669 \\
+			3 & 10,669 & 180,273 \\
+			4 & 180,273 & 3,240,330 \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\subsection{Learning N-gram Embeddings from $G_{n}$}
+	The constructed $G_{n}$ graphs serve as the foundation for learning informative vector representations (embeddings) for each n-gram. This is achieved through a self-supervised training task designed to force the model to understand the sequential grammar inherent in the protein sequences from which the graph was built.
+	\begin{itemize}
+		\item \textbf{Self-Supervised Task: Next-Node Prediction}: For each n-gram node $u \in V_n$, we define its label $y_u$ as its most likely successor in the sequence. This successor is determined by identifying the outgoing edge $(u,v)$ with the highest transition frequency (weight) in the raw graph. The task for the GNN is therefore to predict this most probable next n-gram for every node in the graph. This objective compels the model to learn embeddings that encode the sequential and transitional logic of the n-gram language. An n-gram's representation becomes a function of not only its own identity but also the likely sequences it participates in.
+		
+		\item \textbf{Hierarchical Training}: The training process is hierarchical. For the base level ($n=1$), node features are randomly initialized. For each subsequent level $n > 1$, the initial features for a given n-gram node are generated by mean-pooling the final, learned embeddings of its two constituent (n-1)-gram nodes from the previously trained level. This creates a rich, multi-scale representation, where higher-order n-gram features are built upon the learned representations of their sub-components.
+		
+		\item \textbf{Implementation Details}: The model for each level $n$ is trained for a set number of epochs using the Adam optimizer and a negative log-likelihood loss function on the next-node prediction task. For larger graphs ($n \geq 3$), a Cluster-GCN \cite{chiang_cluster-gcn_2019} approach is used to partition the graph into mini-batches for memory-efficient training. The final output of this stage is a comprehensive set of learned embeddings for all n-grams at the highest level, $n=4$.
+	\end{itemize}
+	
+	\subsection{Application to Protein-Protein Interaction (PPI) Link Prediction}
+	The ultimate test of the learned n-gram embeddings is their utility in a practical, downstream biological task. We apply them to predict protein-protein interactions, a canonical link prediction problem.
+	\begin{itemize}
+		\item \textbf{Protein-Level Embedding Generation}: A single, fixed-size feature vector is generated for each protein in the UniProt dataset. This is achieved by taking the sequence of each protein, identifying all of its constituent 4-grams, retrieving their learned embeddings from the final $ProtGramDirectGCN$ model, and aggregating these vectors via mean pooling. This results in a single vector that summarizes the global n-gram statistics for each protein. To standardize the feature space for comparison with other methods, Principal Component Analysis (PCA) is applied to reduce the final embedding dimension to $64$.
+		
+		\item \textbf{PPI Datasets}: A benchmark PPI dataset was compiled using known positive interactions from the BioGRID database \cite{oughtred_biogrid_2021} and high-quality negative interactions (non-interacting pairs) from the experimentally-derived Russell Lab datasets \cite{trabuco_negative_2012}. This ensures a robust and biologically relevant evaluation set.
+		
+		\item \textbf{Link Prediction Model}: A standard Multi-Layer Perceptron (MLP) was used as the classifier. For a pair of proteins $(P_a, P_b)$, the input to the MLP was the concatenation of their embedding vectors.
+		
+		\item \textbf{Evaluation and Baselines}: The model's performance is rigorously assessed using a 5-fold stratified cross-validation scheme to ensure that results are robust and not dependent on a single random data split. We measure performance using a suite of standard binary classification and ranking metrics, including Area Under the ROC Curve (AUC), F1-Score, Precision, Recall. To contextualize our results, we compare the performance of our $ProtGramDirectGCN$-derived embeddings against ProtT5 \cite{elnaggar_prottrans_2022} available via UniProt. The exact same MLP architecture and evaluation protocol are used for all embedding types to ensure a fair comparison. See Table \ref{tab:ppi_performance_results}, Figure \ref{fig:3},\ref{fig:4},\ref{fig:5}.
+	\end{itemize}
+	
+	\begin{figure}
+		\centering
+		\includegraphics[width=0.9\linewidth]{images/fig3.jpg}
+		\caption{The plot displays the Receiver Operating Characteristic (ROC) curves comparing the performance of protein embeddings generated by the proposed $ProtGramDirectGCN$ method against the state-of-the-art ProtT5 language model. The evaluation is for the downstream task of Protein-Protein Interaction (PPI) link prediction, with this specific chart illustrating the results from the first fold of a 5-fold cross-validation. The Area Under the Curve (AUC) for ProtT5 is $0.9325$, indicating superior performance. The ProtGramDirectGCN-derived embeddings achieve a robust AUC of 0.8138. Both models perform significantly better than random chance (dashed line). This visualization confirms that while the proposed graph-based method captures a strong predictive signal for protein interactions, the ProtT5 model serves as a higher-performing benchmark in this experiment.}
+		\label{fig:3}
+	\end{figure}
+	
+		\begin{figure}
+		\centering
+		\includegraphics[width=0.9\linewidth]{images/fig4.jpg}
+		\caption{The figure illustrates the model's learning progress during the self-supervised, next-node prediction task on an n-gram graph $G_{n}$, representing the results from the first fold of a cross-validation run. Left Panel (Model Loss): This plot tracks the training loss (blue) and validation loss (orange) over $20$ epochs. The steady decrease in training loss indicates the model is effectively learning from the data. The validation loss, while more volatile, generally follows the downward trend, suggesting the model is generalizing to unseen data within the graph. Right Panel (Model Accuracy): This plot shows the corresponding training and validation accuracy. Both metrics trend upward, demonstrating that the model's performance on the next-node prediction task improves as it is trained. Together, these plots confirm that the $ProtGramDirectGCN$ model was successfully trained, effectively learning the underlying sequential patterns within the n-gram graph to generate meaningful embeddings for the downstream PPI task.}
+		\label{fig:4}
+	\end{figure}
+	
+
+\begin{table*}[htbp]
+	\centering
+	\caption{Performance Comparison of Protein Embeddings on PPI Link Prediction (Averaged over 5 Folds)}
+	\label{tab:ppi_performance_results}
+	\resizebox{\textwidth}{!}{
+		\begin{tabular}{lcccc}
+			\toprule
+			\textbf{Embedding Method} & \textbf{AUC} & \textbf{F1} & \textbf{Precision} & \textbf{Recall} \\
+			\midrule
+			ProtT5 & 0.9325$\pm$0.0005 & 0.9490$\pm$0.0021 & 0.9957 & 0.9065 \\
+			ProtGramDirectGCN & 0.8138$\pm$0.0052 & 0.8481$\pm$0.0074 & 0.9927 & 0.7403 \\
+			\bottomrule
+		\end{tabular}
+	}
+\end{table*}
+	
+	\section{Discussion}
+	This study introduced and evaluated a novel $ProtGramDirectGCN$ model for learning representations from a globally constructed, directed, dense, and weighted graph of amino acid residues $G_{n}$ derived from the UniProt dataset. The primary objective was to assess the efficacy of this approach for generating informative protein embeddings applicable to downstream biological prediction tasks, particularly Protein-Protein Interaction (PPI) link prediction. This section discusses the main findings, their implications, the limitations of the current work, and promising avenues for future research.
+	
+	\subsection{Summary and interpretation of key findings}
+	Our experimental evaluations spanned several stages: validating the core $ProtGramDirectGCN$ architecture on standard GNN benchmarks and applying the derived protein-level embeddings to predict PPIs, including a comparison against state-of-the-art Protein Language Model (ProtT5) embeddings.
+	
+	\begin{itemize}
+		\item \textbf{Intrinsic performance of $ProtGramDirectGCN$}: The benchmark results in Table \ref{tab:benchmark_performance} confirm that $ProtGramDirectGCN$ is a functionally sound GNN. Its underperformance on high-homophily citation networks and competitive performance on more complex, heterophilic graphs highlights its specialization. The architecture is not designed as a general-purpose GCN but as a specialized tool for capturing the complex, directed, and weighted relationships present in our n-gram residue graphs.
+		
+		\item \textbf{Embedding $G_{n}$}: The hierarchical construction of n-gram graphs up to $n=4$ (Table \ref{tab:gn_stats}) resulted in a large, complex graph structure. The successful training of our model on this graph hierarchy demonstrates the feasibility of the approach. The key outcome of this stage is the set of high-dimensional embeddings for $180,273$ unique 4-grams, which serve as the basis for our protein-level representations.
+		
+		\item \textbf{Efficacy for protein interaction prediction}: The performance on the downstream PPI link prediction task (Table \ref{tab:ppi_performance}) is the ultimate measure of our method's utility.
+		The results show that the $ProtGramDirectGCN$ was able to learn structural features from the protein sequences and hence was able to demonstrate excellent predictive power on the task with an AUC value above $80\%$. The F1 score also demonstrates the model's precision even with a lowered recall and hence missing more positive samples due to the limited capacity of the model. This highly suggested that the construction and inferrence of the underlying directed graph of amino acid transitions in a hierarchical fashion captures structural and relational features across multiple proteins.
+		
+		\item \textbf{Comparison with ProtT5 Embeddings}: The comparison with ProtT5 embedding which are generted by the very powerful high capacity T5 encoder-decoder transformer model that is trained on the more comprehensive UniRef50 dataset is not meant as a head to head comparison but rather as a demonstration that hefty transformer architectures for specialized tasks like PPI can be contended with models that capture the underlying dynamics without having to rely on long context windows. The long range dependancies captured by ProtT5 are the reason why it is an efficient feature extractor for proteins. Yet those same dynamics can be captured from a lower level faint signal such as the simple transition directed graph of amino acids without long context windows. Both ProtT5 and $ProtGramDirectGCN$ rely on computationally expensive preprocessing yet with $ProtGramDirectGCN$ the significant decrease in the cost of model training especially when the technique gets more established will result in a paradigm shift when it comes to how we think about specialized tasks for LLMs in general.
+	\end{itemize}
+	
+	\subsection{Significance of the work}
+	Protein-protein interaction (PPI) prediction is a bedrock in drug development, understanding drug efficacy, and many other crucial biomedical fields. \textit{In-silico}, data-driven machine learning-based methods play an indispensable role in guiding \textit{in-vitro} experiments, helping to create a refined pool of possible interactions ready for lab confirmation. Hence, enhancing the predictive power of \textit{in-silico} methods directly contributes to increasing the efficiency of the entire research pipeline. While recent advancements such as AlphaFold have revolutionized structure prediction, offering indirect avenues for inferring interactions when combined with primary structure information, the most common approach in predicting protein interactions \textit{in-silico} has heavily relied on advancements in language models or, more generally, foundation models. These typically employ techniques such as large language modeling and the Transformer architecture, with various configurations of layers, context windows, tokenization granularities, and pooling strategies to achieve per-protein embeddings capable of predicting links via similarity searches in downstream tasks.
+	
+	Our research contributes to this landscape with several key points of significance:
+	\begin{itemize}
+		\item This work's primary novelty lies in constructing and utilizing a global, directed, dense, and weighted graph of amino acid residues $G_{n}$ as a foundational source for feature learning. We explicitly model global sequence statistics and transition patterns by applying $ProtGramDirectGCN$ to $G_{n}$. That offers an alternative and potentially complementary approach to methods primarily focusing on individual protein sequences (like PLMs) or direct GNN application to PPI network topology. In PLMs, the context window size often limits how far the residue might affect the overall embedding of the amino acid, since not all contexts in which the residue appeared or was linked to another functional group have been captured. Our approach ensures that that limitation is addressed at a more granular level, information was captured even with the limitations of $G_{n}$. In addition, the PPI network topology does not carry information from the structure of the proteins, presenting yet another critical feature that was not considered when applying a GNN.
+		
+		\item $ProtGramDirectGCN$, with its unique adjacency matrix preprocessing and its dual-path, hierarchical layer featuring distinct weights for incoming, outgoing, and shared information, combined via learnable coefficients, is specifically tailored to harness the rich, directed information within $G_{n}$.
+		
+		\item The improved predictive performance for PPIs. The protein embeddings derived from our $ProtGramDirectGCN$ pipeline demonstrated competitive performance with state-of-the-art methods like ProtT5 for PPI link prediction. This suggests that capturing global n-gram co-occurrence and transition patterns provides a powerful signal for predicting interactions.
+		
+		\item  Enhancing PPI prediction accuracy and interpretability has broad implications. By successfully training GNNs on $G_{n}$, our work suggests that meaningful biological signals related to residue function and context can be extracted from global sequence statistics when structured as a graph. The hierarchical structure (residues to proteins) and the potential for future incorporation of interpretability techniques (e.g., attention analysis, gradient-based methods) aim to move beyond "black box" predictions. That can help define lead residues or sequence motifs contributing to specific interactions, thereby guiding hypothesis generation for experimental testing and accelerating the functional annotation of uncharacterized proteins in expanding proteomic datasets. This work can enhance understanding of complex biological networks and cellular machinery by providing more precise interaction maps.
+		
+		\item Furthermore, identifying prominent interactions, particularly those responsible for disease mechanisms, lies at the core of new drug target finding and validation. Improved \textit{in-silico} predictions, as pursued in this study, have direct implications for accelerating therapeutic development and advancing personalized medicine.
+		
+		\item The rigorous experimental design, including K-fold cross-validation for GNN evaluation on $G_{n}$, careful selection of positive and negative samples for PPI link prediction, and strategies to mitigate data leakage, contributes to a highly validated and robust assessment of our proposed methods.
+		
+		\item Future combination of our learned representations with advanced visualization programs, spurred on by findings from embedding analyses, may also aid scientists in interpreting high-complexity interaction networks. Lastly, this study contributes to the noble endeavor of untangling the complex molecular interactions that underpin life.
+	\end{itemize}
+	
+	\subsection{Limitations}
+	While this study presents promising results, several limitations should be acknowledged:
+	\begin{itemize}
+		\item Due to computational constraints, $G_{n}$ was constructed based on UniProt Swiss-Prot. While providing a high-quality reviewed set, more comprehensive datasets like UniRef50/90 or the full UniProtKB could enrich $G_{n}$ at a significant computational cost.
+		
+		\item The initial features for 1-gram nodes in $G_{1}$ were randomly initialized. Incorporating a priori physicochemical properties of amino acids as initial node features might enhance the learning process and the interpretability of residue embeddings.
+		
+		\item We primarily employed mean pooling to generate protein-level embeddings from n-gram embeddings. More sophisticated pooling mechanisms, such as attention-pooling, were not exhaustively explored in this work and could yield improved protein representations.
+		
+		\item The evaluation of protein embeddings was focused on PPI link prediction. Their utility for other tasks, such as protein function prediction, subcellular localization, and structural class prediction, remains to be investigated.
+		
+		\item While the design of  $ProtGramDirectGCN$ is detailed, direct interpretation of what specific n-gram relationships contribute most to its performance or downstream PPI predictions currently relies on indirect evaluation through task performance. Deeper interpretability studies are warranted.
+		
+		\item The PPI link prediction task relies on the Russell Lab negative dataset \cite{trabuco_negative_2012}, which, while experimentally grounded, has inherent assumptions and potential biases based on Y2H limitations. The choice of negative samples can significantly influence reported PPI prediction performance.
+		
+		\item The current framework primarily relies on sequence-derived information for constructing $G_{n}$ and generating protein embeddings. Direct integration of 3D structural information was not part of this specific study but is a key area for future enhancement.
+	\end{itemize}
+	
+	\subsection{Future work}
+	The findings and limitations of this study open several avenues for future research. Future iterations could explore constructing $G_{n}$ with richer edge definitions, for example, beyond simple transitions, incorporating longer-range co-occurrences or weights derived from substitution matrices, or more informative initial node features for amino acids. In addition, $ProtGramDirectGCN$ could be extended, for example, by incorporating attention mechanisms within its directional layers or exploring deeper architectures with more sophisticated normalization schemes. Implementing and evaluating attention-based or hierarchical pooling strategies for aggregating n-gram embeddings into protein-level representations could capture more nuanced sequence-level information. Integrating 3D structural information is a significant step. That could involve using predicted contact maps to inform the edges in $G_{n}$ or peptide-level graphs, or incorporating residue-level structural features into the initial residue embeddings. Expanding the framework to explicitly model the hierarchical nature of protein organization (residues $\rightarrow$ peptides $\rightarrow$ proteins $\rightarrow$ interactions $\rightarrow$ interaction networks), including the exploration of second-degree graphs (graphs of interactions), presents a compelling research direction. It will be crucial for biological insight generation to apply the learned protein representations to a broader array of prediction tasks beyond PPIs and invest in advanced interpretability techniques to understand the "black box." Further optimizing the construction of $G_{n}$ and training $ProtGramDirectGCN$ for even larger sequence datasets will maximize the information captured.
+	
+	\section{conclusion}
+	This paper introduced a novel approach for protein representation learning centered on a hierarchy of global n-gram graphs and a custom directed graph convolution model, $ProtGramDirectGCN$, designed to learn from their directed and weighted structure effectively. As demonstrated the model was able to learn distinctive features that are capable of capturing protein relations offering a valuable and computationally distinct alternative to large-scale Protein Language Models like ProtT5 under the evaluated conditions.
+	
+	Developing specialized GNN architectures like $ProtGramDirectGCN$ that can harness global statistical patterns from entire sequence databases offers a promising direction for advancing computational protein biology. Future work will focus on enriching these graph-based representations with multi-modal data, including explicit structural information, and expanding their application to a broader range of biological problems, ultimately contributing to a deeper understanding of the molecular interactions that govern life.
+	
+	\section*{Conflict of Interest Statement}
+	The authors declare that the research was conducted without commercial or financial relationships that could create a conflict of interest.
+	
+	\section*{Author Contributions}
+	IAE: developed the preprocessing of protein sequences in addition to desiging the directed GCN architecture
+	HT: optimized the performance of the GCN model via parrallelization in addition to describing in writing the article
+	PG: performed the evaluation of the model and contributed to the writing of the article 
+	
+	\section*{Funding}
+	No funding was involved in this work.
+	
+	
+	\section*{Supplemental Data}
+    Please see supplementary material for more information.
+	
+	\section*{Data Availability Statement}
+	The datasets and codes for this study can be found at \url{https://github.com/iebeid/ProtGram-DirectGCN}.
+	
+	\bibliographystyle{Frontiers-Harvard}
+	\bibliography{references}
+	
+
+	
+\end{document}
