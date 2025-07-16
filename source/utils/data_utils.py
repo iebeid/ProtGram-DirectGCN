@@ -162,8 +162,8 @@ class DataLoader:
         self.config = config
         if config:
             # Attributes for ID mapping
-            self.fasta_path_for_mapping = str(config.GCN_INPUT_FASTA_PATH)
-            self.mapping_output_file = str(config.ID_MAPPING_OUTPUT_FILE)
+            self.fasta_path_for_mapping = str(config.UNIPROT_FASTA_PATH)
+            self.mapping_output_file = str(config.ID_MAPPING_PATH)
             self.api_from_db = config.API_MAPPING_FROM_DB
             self.api_to_db = config.API_MAPPING_TO_DB
             self.random_seed_for_mapping = config.RANDOM_STATE
