@@ -1,4 +1,3 @@
-# src/utils/graph_utils.py
 # ==============================================================================
 # MODULE: utils/graph_utils.py
 # PURPOSE: Contains robust classes for n-gram graph representation.

@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: trainers/ppi_1.py
+# MODULE: experiments/ppi_1.py
 # PURPOSE: Contains the complete workflow for evaluating one or more sets of
 #          protein embeddings on a link prediction task.
 # VERSION: 4.0 (Integrated automated PCA dimensionality reduction)

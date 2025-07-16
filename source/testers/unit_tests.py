@@ -29,7 +29,7 @@ from source.benchmarkers.gnns import GNNBenchmarker
 from source.data_builders.protgram import GraphBuilder
 from source.experiments.ppi_1 import PPIPipeline
 from source.models.ml.mlp import MLP
-from source.trainers.prott5 import TransformerEmbedder
+from source.trainers.transformers import TransformerEmbedder
 from source.trainers.word2vec import Word2VecEmbedder
 from source.utils.data import DataLoader
 from source.utils.data import DataUtils
