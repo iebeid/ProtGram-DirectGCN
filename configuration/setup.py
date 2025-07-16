@@ -122,8 +122,8 @@ if __name__ == "__main__":
         # 2. Install primary packages with Conda.
         #    This includes the C++ compiler needed for some pip packages.
         (f"conda install -y -c conda-forge python={PYTHON_VERSION} "
-         f"cudatoolkit={CUDA_TOOLKIT_VERSION} cudnn={CUDNN_VERSION} gxx_linux-64 "
-         "dask tqdm biopython matplotlib scipy scikit-learn transformers gensim"),
+         f"cudatoolkit={CUDA_TOOLKIT_VERSION} cudnn={CUDNN_VERSION} gxx_linux-64 pycuda "
+         "dask tqdm biopython matplotlib scipy scikit-learn transformers gensim python-louvain"),
 
         # 3. Install GPU frameworks and PyG with pip for better compatibility with pre-built wheels.
         (f"pip install --upgrade pip"),
@@ -135,7 +135,7 @@ if __name__ == "__main__":
          f"https://data.pyg.org/whl/torch-{PYTORCH_VERSION}+{PYTORCH_CUDA_SUFFIX}.html"),
 
         # 4. Install remaining python packages
-        "pip install torch_geometric mlflow seaborn pycuda python-louvain",
+        "pip install torch_geometric mlflow seaborn",
 
         # 5. Verify GPU detection for both frameworks
         'python -c "import torch; print(f\'PyTorch CUDA available: {torch.cuda.is_available()}\')"',
