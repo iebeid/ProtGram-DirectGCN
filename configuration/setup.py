@@ -6,13 +6,14 @@ import argparse
 
 # --- Configuration ---
 PYTHON_VERSION = "3.11"
-CUDA_TOOLKIT_VERSION = "12.2"
-CUDNN_VERSION = "8.9"
+CUDA_TOOLKIT_VERSION = "12.5"  # Updated based on working environment.yml
+CUDNN_VERSION = "9.3"       # Updated based on working environment.yml
+TENSORFLOW_VERSION = "2.17.0"  # Updated based on working environment.yml
 
 # Define PyTorch versions to align with the CUDA toolkit
-PYTORCH_VERSION = "2.3.0"
-TORCHVISION_VERSION = "0.18.0"
-PYTORCH_CUDA_SUFFIX = "cu121"
+PYTORCH_VERSION = "2.4.0"      # Latest stable release
+TORCHVISION_VERSION = "0.19.0"   # Corresponds to PyTorch 2.4.0
+PYTORCH_CUDA_SUFFIX = "cu124"  # Corresponds to CUDA 12.4, compatible with 12.5 toolkit
 
 
 # --- End Configuration ---
@@ -119,7 +120,7 @@ if __name__ == "__main__":
         # 2. Install all conda-based packages in a single command for efficiency.
         #    This includes GPU libraries, TensorFlow, and other data_builders science packages.
         (f"conda install -y -c nvidia -c conda-forge python={PYTHON_VERSION} "
-         f"cuda-toolkit={CUDA_TOOLKIT_VERSION} cudnn={CUDNN_VERSION} tensorflow=2.16.1 "
+         f"cuda-toolkit={CUDA_TOOLKIT_VERSION} cudnn={CUDNN_VERSION} tensorflow={TENSORFLOW_VERSION} "
          "dask tqdm biopython matplotlib scipy scikit-learn transformers gensim"),
 
         # 3. Verify TensorFlow GPU detection
