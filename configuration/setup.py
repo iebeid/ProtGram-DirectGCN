@@ -9,6 +9,12 @@ PYTHON_VERSION = "3.11"
 CUDA_TOOLKIT_VERSION = "12.5"
 CUDNN_VERSION = "9.3"
 
+# Define PyTorch versions to align with the CUDA toolkit
+# For CUDA 12.5 from conda, PyTorch uses the cu124 wheels.
+PYTORCH_VERSION = "2.4.0" # A recent version compatible with CUDA 12.x
+TORCHVISION_VERSION = "0.19.0"
+PYTORCH_CUDA_SUFFIX = "cu124"
+
 
 # --- End Configuration ---
 
@@ -119,8 +125,9 @@ if __name__ == "__main__":
         "conda install -c conda-forge tensorflow -y",
         'python -c "import tensorflow as tf; print(\'Num GPUs Available: \', len(tf.config.list_physical_devices(\'GPU\')))"',
 
-        # Install and verify PyTorch
-        "pip3 install torch torchvision torchaudio",
+        # Install PyTorch using a specific index to match the conda-installed CUDA version. This is more robust.
+        (f"pip install torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio "
+         f"--index-url https://download.pytorch.org/whl/{PYTORCH_CUDA_SUFFIX}"),
         'python -c "import torch; print(f\'PyTorch CUDA available: {torch.cuda.is_available()}\')"',
 
         # Final cleanup
@@ -131,7 +138,9 @@ if __name__ == "__main__":
         "conda install -c conda-forge dask -y",
         "conda install -c conda-forge tqdm -y",
         "conda install -c conda-forge biopython -y",
-        "pip install torch_geometric",
+        # Install PyG dependencies pointing to the correct torch/cuda version
+        (f"pip install pyg_lib torch-scatter torch-sparse -f "
+         f"https://data.pyg.org/whl/torch-{PYTORCH_VERSION}+{PYTORCH_CUDA_SUFFIX}.html"),
         "conda install -c conda-forge matplotlib -y",
         "conda install -c conda-forge scipy -y",
         "conda install -c conda-forge scikit-learn -y",
@@ -139,6 +148,7 @@ if __name__ == "__main__":
         "conda install -c conda-forge transformers -y",
         "conda install -c conda-forge gensim -y",
         "conda install -c conda-forge python-louvain -y",
+        "pip install torch_geometric", # Now install the main package
         "pip install seaborn",
         "pip install pycuda"
     ]
