@@ -418,7 +418,8 @@ class ProtGramXGCNTrainer:
             print(f"  Loaded {len(id_map)} ID mappings.")
         return id_map
 
-    def _pool_lower_level_embeddings(self, graph_obj: DirectedNgramGraph, prev_level_embeddings: np.ndarray, prev_level_map: Dict[str, int]) -> Optional[torch.Tensor]:
+    @staticmethod
+    def _pool_lower_level_embeddings(graph_obj: DirectedNgramGraph, prev_level_embeddings: np.ndarray, prev_level_map: Dict[str, int]) -> Optional[torch.Tensor]:
         """Pools embeddings from level n-1 to initialize features for level n."""
         print(f"  Initializing features for n={graph_obj.n_value} by pooling (n-1)-gram constituent embeddings...")
         num_current_nodes = graph_obj.number_of_nodes
@@ -483,7 +484,8 @@ class ProtGramXGCNTrainer:
                     output_paths[f"{model_type}_pca"] = str(pca_output_path)
         return output_paths
 
-    def _write_h5(self, embeddings_dict: Dict, path: Path, desc: str):
+    @staticmethod
+    def _write_h5(embeddings_dict: Dict, path: Path, desc: str):
         """Helper function to write a dictionary of embeddings to an HDF5 file."""
         path.parent.mkdir(parents=True, exist_ok=True)
         with h5py.File(path, 'w') as hf:

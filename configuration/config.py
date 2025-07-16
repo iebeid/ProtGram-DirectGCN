@@ -49,7 +49,7 @@ class Config:
     def _setup_paths(self):
         """Sets up all base, data_builders, and results paths for the project."""
         # Base Paths
-        self.PROJECT_ROOT = (Path(__file__).parent.parent).resolve()
+        self.PROJECT_ROOT = Path(__file__).parent.parent.resolve()
         self.BASE_CONFIG_DIR = self.PROJECT_ROOT / "configuration"
         self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
         self.BASE_SOURCE_DIR = self.PROJECT_ROOT / "source"
@@ -77,8 +77,8 @@ class Config:
         self.SEQUENCE_FILE_PATHS = [
             self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta"
         ]
-        # Path for the temporary, possibly downsampled, sequence file used by the pipeline
-        self.RUNTIME_SEQUENCE_FILE_PATH = self.DATA_SEQUENCES_DIR / "runtime_sequences.fasta"
+        # Directory for temporary, downsampled FASTA files created at runtime
+        self.TEMP_SAMPLED_DIR = self.DATA_SEQUENCES_DIR / "temp_sampled"
         self.POS_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "positive_interactions.csv"
         self.NEG_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "negative_interactions.csv"
         self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "idmapping_selected.tab"

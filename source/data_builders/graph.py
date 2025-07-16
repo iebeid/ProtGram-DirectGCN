@@ -136,7 +136,8 @@ class DirectedNgramGraph(Graph):
         self.mathcal_A_out = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
         self.mathcal_A_in = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
 
-    def _sparse_identity(self, size: int, device: torch.device) -> torch.Tensor:
+    @staticmethod
+    def _sparse_identity(size: int, device: torch.device) -> torch.Tensor:
         """Creates a sparse identity matrix of given size."""
         if size <= 0:
             empty_indices = torch.empty((2, 0), dtype=torch.long, device=device)

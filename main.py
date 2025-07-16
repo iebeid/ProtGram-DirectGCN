@@ -10,6 +10,7 @@ import mlflow
 import random
 import os
 import copy
+import shutil
 from pathlib import Path
 
 from configuration.config import Config
@@ -18,10 +19,11 @@ from source.data_builders.protgram import GraphBuilder
 from source.benchmarkers.gnns import GNNBenchmarker
 from source.benchmarkers.nes import NetworkEmbeddingBenchmarker
 from source.experiments.ppi_1 import PPIPipeline
-from source.trainers.protgram_trainer import ProtGramTrainer
+from source.trainers.protgram_xgcn import ProtGramXGCNTrainer
 from source.trainers.lstm import LSTMBasedEmbedder
-from source.trainers.prott5 import TransformerEmbedder
+from source.trainers.transformers import TransformerEmbedder
 from source.trainers.word2vec import Word2VecEmbedder
+from source.utils.data import DataLoader
 from source.testers.unit_tests import run_all_tests
 from source.utils.data import DataUtils
 from source.utils.logging import start_logging, stop_logging
@@ -148,13 +150,42 @@ def main():
             with mlflow.start_run(run_name="NE_Benchmark_Suite") as run:
                 NetworkEmbeddingBenchmarker(base_config).run()
 
-        # --- 4. Main Experimental Loop: Iterate over each FASTA file ---
-        original_sequence_files = base_config.SEQUENCE_FILE_PATHS.copy()
-        if not original_sequence_files:
+        # --- 4. Setup for Main Experimental Loop: Handle Downsampling ---
+        should_downsample = base_config.SEQUENCE_DOWNSAMPLE_FRACTION and 0 < base_config.SEQUENCE_DOWNSAMPLE_FRACTION < 1.0
+        files_to_process = []
+
+        if should_downsample:
+            DataUtils.print_header(f"Downsampling FASTA files ({base_config.SEQUENCE_DOWNSAMPLE_FRACTION:.1%})")
+            temp_dir = base_config.TEMP_SAMPLED_DIR
+            if temp_dir.exists(): shutil.rmtree(temp_dir)
+            temp_dir.mkdir(parents=True)
+            random.seed(base_config.RANDOM_STATE)
+
+            for original_path in base_config.SEQUENCE_FILE_PATHS:
+                sequences_from_file = list(DataLoader.parse_sequences([original_path]))
+                if not sequences_from_file:
+                    print(f"  - WARNING: No sequences found in {original_path.name}. Skipping.")
+                    continue
+                sample_size = int(len(sequences_from_file) * base_config.SEQUENCE_DOWNSAMPLE_FRACTION)
+                print(f"  - Sampling {sample_size} of {len(sequences_from_file)} sequences from {original_path.name}")
+
+                sampled_sequences = random.sample(sequences_from_file, sample_size)
+
+                temp_fasta_path = temp_dir / f"{original_path.stem}_sampled.fasta"
+                with open(temp_fasta_path, "w") as f:
+                    for seq_id, sequence in sampled_sequences:
+                        f.write(f">{seq_id}\n{sequence}\n")
+                files_to_process.append(temp_fasta_path)
+        else:
+            print("\nNo downsampling requested. Using original FASTA files for experiments.")
+            files_to_process = base_config.SEQUENCE_FILE_PATHS.copy()
+
+        # --- 5. Main Experimental Loop: Iterate over each dataset (original or sampled) ---
+        if not files_to_process:
             print("\nERROR: No sequence files defined in config.SEQUENCE_FILE_PATHS. Cannot run experiments.")
         else:
-            print(f"\nFound {len(original_sequence_files)} dataset(s) to process.")
-            for fasta_file_path in original_sequence_files:
+            print(f"\nFound {len(files_to_process)} dataset(s) to process.")
+            for fasta_file_path in files_to_process:
                 run_pipeline_for_dataset(base_config, fasta_file_path)
 
         DataUtils.print_header(f"Full Orchestration Finished in {time.monotonic() - script_start_time:.2f} seconds.")
@@ -168,6 +199,10 @@ def main():
     finally:
         # This block will always run, even if an error occurs,
         # ensuring that logging is properly stopped.
+        if should_downsample and base_config.TEMP_SAMPLED_DIR.exists():
+            print(f"Cleaning up temporary downsampled FASTA directory: {base_config.TEMP_SAMPLED_DIR}")
+            shutil.rmtree(base_config.TEMP_SAMPLED_DIR)
+
         if base_config.ENABLE_FILE_LOGGING:
             stop_logging()
 

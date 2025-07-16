@@ -130,7 +130,8 @@ class LSTMBasedEmbedder:
         print(f"\nSUCCESS: LSTM embeddings saved to: {output_path}")
         return str(output_path)
 
-    def _write_h5(self, embeddings_dict, path, desc):
+    @staticmethod
+    def _write_h5(embeddings_dict, path, desc):
         """Helper to write embeddings to HDF5."""
         path.parent.mkdir(parents=True, exist_ok=True)
         import h5py

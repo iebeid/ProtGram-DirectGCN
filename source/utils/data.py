@@ -162,7 +162,7 @@ class DataLoader:
         self.config = config
         if config:
             # Attributes for ID mapping
-            self.fasta_path_for_mapping = str(config.UNIPROT_FASTA_PATH)
+            self.fasta_files_for_mapping = config.SEQUENCE_FILE_PATHS
             self.mapping_output_file = str(config.ID_MAPPING_PATH)
             self.api_from_db = config.API_MAPPING_FROM_DB
             self.api_to_db = config.API_MAPPING_TO_DB
@@ -170,7 +170,7 @@ class DataLoader:
             self.mapping_mode = config.ID_MAPPING_MODE
             self.api_sample_size: Optional[int] = getattr(config, 'API_MAPPING_SAMPLE_SIZE', None)
         else:
-            self.fasta_path_for_mapping = None
+            self.fasta_files_for_mapping = []
             self.mapping_output_file = None
             self.api_from_db = None
             self.api_to_db = None
@@ -179,15 +179,17 @@ class DataLoader:
             self.api_sample_size = None
 
     @staticmethod
-    def parse_sequences(fasta_filepath: str) -> Iterator[Tuple[str, str]]:
+    def parse_sequences(fasta_filepaths: List[str]) -> Iterator[Tuple[str, str]]:
         """
-        An efficient FASTA parser that reads one sequence at a time, yielding an ID and sequence.
+        An efficient FASTA parser that reads one or more FASTA files, yielding an ID and sequence for each record.
         """
-        fasta_filepath = os.path.normpath(fasta_filepath)
+        # Normalize all paths first
+        normalized_paths = [os.path.normpath(p) for p in fasta_filepaths]
+
         protein_id: Optional[str] = None
         sequence_parts: List[str] = []
         try:
-            with open(fasta_filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(normalized_paths, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -208,9 +210,9 @@ class DataLoader:
             if protein_id and sequence_parts:
                 yield protein_id, "".join(sequence_parts)
         except FileNotFoundError:
-            print(f"Error: FASTA file not found at {fasta_filepath}")
+            print(f"Error: FASTA file not found at {normalized_paths}")
         except Exception as e:
-            print(f"Error parsing FASTA file {fasta_filepath}: {e}")
+            print(f"Error parsing FASTA file {normalized_paths}: {e}")
 
     class _FastaCorpus:  # Moved _FastaCorpus here as a nested class
         """A memory-efficient corpus for Word2Vec that reads from FASTA files."""
@@ -226,24 +228,28 @@ class DataLoader:
                         yield list(sequence)
 
     def _extract_candidate_ids_from_fasta_for_mapping(self) -> Set[str]:
-        if not self.fasta_path_for_mapping:
-            print("ERROR: FASTA path for mapping is not configured.")
+        if not self.fasta_files_for_mapping:
+            print("ERROR: FASTA files for mapping are not configured.")
             return set()
         candidate_ids = set()
-        print(f"Extracting candidate IDs from: {os.path.basename(self.fasta_path_for_mapping)}...")
-        try:
-            with open(self.fasta_path_for_mapping, 'r', encoding='utf-8', errors='ignore') as f:
-                for line in tqdm(f, desc="Scanning FASTA headers for mapping", leave=False):
-                    if line.startswith('>'):
-                        header = line[1:].strip()
-                        parts = header.split('|')
-                        if len(parts) > 1 and parts[1]:
-                            candidate_ids.add(parts[1].strip())
-                            continue
-                        candidate_ids.add(header.split()[0].strip())
-        except FileNotFoundError:
-            print(f"ERROR: FASTA file not found at {self.fasta_path_for_mapping}")
-            return set()
+        print(f"Extracting candidate IDs from: {[p.name for p in self.fasta_files_for_mapping]}...")
+
+        for fasta_file in self.fasta_files_for_mapping:
+            try:
+                with open(fasta_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line in tqdm(f, desc=f"Scanning {fasta_file.name}", leave=False):
+                        if line.startswith('>'):
+                            header = line[1:].strip()
+                            parts = header.split('|')
+                            if len(parts) > 1 and parts[1]:
+                                candidate_ids.add(parts[1].strip())
+                                continue
+                            candidate_ids.add(header.split()[0].strip())
+            except FileNotFoundError:
+                print(f"ERROR: FASTA file not found at {fasta_file}")
+            except Exception as e:
+                print(f"ERROR reading FASTA {fasta_file}: {e}")
+
         print(f"Found {len(candidate_ids)} unique candidate IDs for API mapping.")
         return candidate_ids
 
@@ -330,28 +336,54 @@ class DataLoader:
         if plain_match_strict: return "UniProt (assumed)", plain_match_strict.group(1)
         return "Unknown", hid.split()[0]
 
-    def _perform_regex_mapping(self) -> Dict[str, str]:
-        if not self.fasta_path_for_mapping:
-            print("ERROR: FASTA path for mapping is not configured.")
+    def _load_mapping_from_file(self) -> Dict[str, str]:
+        """Loads a pre-existing ID mapping file."""
+        if not self.mapping_output_file or not os.path.exists(self.mapping_output_file):
+            print(f"ERROR: Mapping file not found at {self.mapping_output_file}. Cannot perform file-based mapping.")
+            print("Ensure the file exists. It can be downloaded by setting 'ID_MAPPING_TSV' in DATA_SOURCES.")
             return {}
-        print(f"Starting Regex ID mapping for: {os.path.basename(self.fasta_path_for_mapping)}...")
+
+        print(f"Loading ID mappings from: {os.path.basename(self.mapping_output_file)}")
         id_map = {}
         try:
-            for record in tqdm(SeqIO.parse(self.fasta_path_for_mapping, "fasta"), desc="Parsing FASTA with Regex for Mapping"):
-                original_id_from_record = record.id
-                full_header = record.description
-                _, canonical_id = self._extract_canonical_id_and_type_from_header(full_header)
-                if canonical_id and canonical_id != original_id_from_record:
-                    id_map[original_id_from_record] = canonical_id
-                first_word_full_header = full_header.split()[0]
-                if canonical_id and first_word_full_header != canonical_id and first_word_full_header not in id_map:
-                    id_map[first_word_full_header] = canonical_id
-                if canonical_id and original_id_from_record != canonical_id and original_id_from_record not in id_map:
-                    id_map[original_id_from_record] = canonical_id
-        except FileNotFoundError:
-            print(f"ERROR: FASTA file not found at {self.fasta_path_for_mapping}")
+            # The official UniProt mapping files are tab-separated: from_id -> to_id
+            with open(self.mapping_output_file, 'r', encoding='utf-8') as f:
+                for line in tqdm(f, desc="Parsing mapping file", leave=False):
+                    parts = line.strip().split('\t')
+                    if len(parts) >= 2:  # Use >= 2 to handle files with more columns
+                        original_id, mapped_id = parts[0], parts[1]
+                        if original_id and mapped_id:
+                            id_map[original_id] = mapped_id
         except Exception as e:
-            print(f"An error occurred during regex mapping: {e}")
+            print(f"An error occurred while reading the mapping file: {e}")
+            return {}
+
+        print(f"File-based mapping complete. Loaded {len(id_map)} mappings.")
+        return id_map
+
+    def _perform_regex_mapping(self) -> Dict[str, str]:
+        if not self.fasta_files_for_mapping:
+            print("ERROR: FASTA files for mapping are not configured.")
+            return {}
+        print(f"Starting Regex ID mapping for: {[p.name for p in self.fasta_files_for_mapping]}...")
+        id_map = {}
+        for fasta_file in self.fasta_files_for_mapping:
+            try:
+                for record in tqdm(SeqIO.parse(fasta_file, "fasta"), desc=f"Parsing {fasta_file.name} with Regex"):
+                    original_id_from_record = record.id
+                    full_header = record.description
+                    _, canonical_id = self._extract_canonical_id_and_type_from_header(full_header)
+                    if canonical_id and canonical_id != original_id_from_record:
+                        id_map[original_id_from_record] = canonical_id
+                    first_word_full_header = full_header.split()[0]
+                    if canonical_id and first_word_full_header != canonical_id and first_word_full_header not in id_map:
+                        id_map[first_word_full_header] = canonical_id
+                    if canonical_id and original_id_from_record != canonical_id and original_id_from_record not in id_map:
+                        id_map[original_id_from_record] = canonical_id
+            except FileNotFoundError:
+                print(f"ERROR: FASTA file not found at {fasta_file}")
+            except Exception as e:
+                print(f"An error occurred during regex mapping on {fasta_file}: {e}")
         print(f"Regex mapping complete. Found {len(id_map)} potential mappings.")
         return id_map
 
@@ -362,10 +394,18 @@ class DataLoader:
         if not self.mapping_output_file:
             print("ERROR: Mapping output file is not configured.")
             return {}
+
+        # Handle file-based lookup first
+        if self.mapping_mode == 'file':
+            DataUtils.print_header("Loading Protein ID Mapping from File")
+            return self._load_mapping_from_file()
+
+        # Logic for generating a new mapping file
         DataUtils.print_header("Generating Protein ID Mapping")
         output_dir = os.path.dirname(self.mapping_output_file)
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
+
         id_map: Dict[str, str] = {}
         if self.mapping_mode == 'api':
             print("Mode: API Mapping")
@@ -375,8 +415,12 @@ class DataLoader:
             id_map = self._perform_regex_mapping()
         elif self.mapping_mode == 'none':
             print("ID mapping mode is 'none'. No mapping will be performed.")
+            return {}
         else:
             print(f"Warning: Unknown ID_MAPPING_MODE '{self.mapping_mode}'. No mapping performed.")
+            return {}
+
+        # Save the newly generated map
         if id_map:
             try:
                 with open(self.mapping_output_file, 'w', encoding='utf-8') as f:
@@ -385,8 +429,9 @@ class DataLoader:
                 print(f"ID mapping saved to {self.mapping_output_file}")
             except IOError as e:
                 print(f"ERROR: Could not write ID mapping file to {self.mapping_output_file}: {e}")
-        elif self.mapping_mode not in ['none', 'unknown']:
-            print("No ID mappings were generated or an error occurred.")
+        else:
+            print("No ID mappings were generated or an error occurred during generation.")
+
         print("--- Protein ID Mapping Finished ---")
         return id_map
 
