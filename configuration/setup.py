@@ -115,28 +115,29 @@ if __name__ == "__main__":
     # ecosystem from the same source).
     command_sequence = [
         # 1. Initial cleanup
-        "conda clean --all -y",
+        "conda clean --all -y && pip cache purge",
 
-        # 2. Install all conda-based packages in a single command for efficiency.
-        #    This includes GPU libraries, TensorFlow, and other data_builders science packages.
+        # 2. Install low-level system libraries and compilers with Conda.
+        #    This provides a stable base for the GPU drivers and C++ compiler.
         (f"conda install -y -c nvidia -c conda-forge python={PYTHON_VERSION} "
-         f"cuda-toolkit={CUDA_TOOLKIT_VERSION} cudnn={CUDNN_VERSION} tensorflow={TENSORFLOW_VERSION} gxx_linux-64 "
-         "dask tqdm biopython matplotlib scipy scikit-learn transformers gensim"),
+         f"cuda-toolkit={CUDA_TOOLKIT_VERSION} cudnn={CUDNN_VERSION} gxx_linux-64"),
 
-        # 3. Verify TensorFlow GPU detection
-        'python -c "import tensorflow as tf; print(\'Num GPUs Available: \', len(tf.config.list_physical_devices(\'GPU\')))"',
+        # 3. Install all Python packages with pip. Pip is generally more reliable for
+        #    the complex dependencies of PyTorch and TensorFlow GPU builds.
+        (f"pip install --upgrade pip"),
+        (f"pip install "
+         # Install TF with CUDA support. The [and-cuda] extra handles dependencies.
+         f"tensorflow[{TENSORFLOW_VERSION}] "
+         # Install PyTorch stack targeting the correct CUDA version.
+         f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio --index-url https://download.pytorch.org/whl/{PYTORCH_CUDA_SUFFIX} "
+         # Install PyG stack from its specific wheelhouse.
+         f"pyg_lib torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}+{PYTORCH_CUDA_SUFFIX}.html "
+         # Install all other packages.
+         f"torch_geometric mlflow seaborn pycuda python-louvain dask tqdm biopython matplotlib scipy scikit-learn transformers==4.43.3 gensim"),
 
-        # 4. Install PyTorch stack using pip, targeting the correct CUDA version for robustness
-        (f"pip install torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio "
-         f"--index-url https://download.pytorch.org/whl/{PYTORCH_CUDA_SUFFIX}"),
-
-        # 5. Verify PyTorch GPU detection
+        # 4. Verify GPU detection for both frameworks
         'python -c "import torch; print(f\'PyTorch CUDA available: {torch.cuda.is_available()}\')"',
-
-        # 6. Install all remaining pip packages together
-        (f"pip install pyg_lib torch-scatter torch-sparse -f "
-         f"https://data.pyg.org/whl/torch-{PYTORCH_VERSION}+{PYTORCH_CUDA_SUFFIX}.html"),
-        "pip install torch_geometric mlflow seaborn pycuda python-louvain",
+        'python -c "import tensorflow as tf; print(f\'TensorFlow Num GPUs Available: {len(tf.config.list_physical_devices(\\\'GPU\\\'))}\')"',
 
         # 7. Final cleanup
         "conda clean --all -y",
