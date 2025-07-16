@@ -43,9 +43,9 @@ class Config:
         self.PROJECT_ROOT = Path("..").resolve()
         print("PROJECT ROOT IS: " + str(self.PROJECT_ROOT))
         self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
-        self.BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        # self.BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.BASE_OUTPUT_DIR = self.PROJECT_ROOT / "results"
-        self.BASE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        # self.BASE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         self.BASE_SRC_DIR = self.PROJECT_ROOT / "source"
         self.BASE_CONFIG_DIR = self.PROJECT_ROOT / "configuration"
 
