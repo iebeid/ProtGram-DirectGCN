@@ -67,13 +67,11 @@ class Config:
         self.GCN_INPUT_FASTA_PATH = self.BASE_DATA_DIR / self.FILE_KEYS["UNIPROT_FASTA"]
         self.INTERACTIONS_POSITIVE_PATH = self.BASE_DATA_DIR / self.FILE_KEYS["POS_INTERACTIONS"]
         self.INTERACTIONS_NEGATIVE_PATH = self.BASE_DATA_DIR / self.FILE_KEYS["NEG_INTERACTIONS"]
-        self.ID_MAPPING_PATH = self.BASE_DATA_DIR / self.FILE_KEYS["ID_MAPPING_TSV"]
 
         self.GRAPH_OBJECTS_DIR = self.BASE_OUTPUT_DIR / "1_graph_objects"
         self.GCN_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_gcn_embeddings"
         self.WORD2VEC_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_word2vec_embeddings"
         self.TRANSFORMER_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_transformer_embeddings"
-        self.EVALUATION_RESULTS_DIR = self.BASE_OUTPUT_DIR / "3_evaluation_results"
         self.BENCHMARKING_RESULTS_DIR = self.BASE_OUTPUT_DIR / "4_benchmarking_results"
         self.BENCHMARK_EMBEDDINGS_DIR = self.BENCHMARKING_RESULTS_DIR / "embeddings"
         self.PPI_EVALUATION_MODELS_DIR = self.BASE_DATA_DIR / "models"
@@ -95,8 +93,8 @@ class Config:
 
         self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]
         self.ID_MAPPING_MODE = 'regex'
-        # This path is now treated as a data dependency. It was renamed from ID_MAPPING_OUTPUT_FILE for clarity.
-        self.ID_MAPPING_FILE = self.BASE_DATA_DIR / self.FILE_KEYS["ID_MAPPING_TSV"]
+        # This path is used by the DataLoader to process ID mappings.
+        self.ID_MAPPING_OUTPUT_FILE = self.BASE_DATA_DIR / self.FILE_KEYS["ID_MAPPING_TSV"]
         self.API_MAPPING_FROM_DB = "UniRef50"
         self.API_MAPPING_TO_DB = "UniProtKB"
 
