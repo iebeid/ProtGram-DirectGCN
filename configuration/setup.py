@@ -1,17 +1,90 @@
 import os
+import platform
 import subprocess
 import sys
 import argparse
-from pathlib import Path
 
 # --- Configuration ---
-CONFIG_DIR = Path(__file__).parent.resolve()
-ENV_FILE = CONFIG_DIR / "environment.yml"
+PYTHON_VERSION = "3.11"
+CUDA_TOOLKIT_VERSION = "12.5"
+CUDNN_VERSION = "9.3"
+
+
+# --- End Configuration ---
+
+def create_setup_script(commands):
+    """Creates a platform-specific shell script from a list of commands."""
+    is_windows = platform.system() == "Windows"
+    script_extension = ".bat" if is_windows else ".sh"
+    script_filename = f"setup_script{script_extension}"
+
+    with open(script_filename, "w") as f:
+        if not is_windows:
+            # Add shebang for Linux/macOS
+            f.write("#!/bin/bash\n")
+            # Exit on any error
+            f.write("set -e\n")
+
+        # Add commands to the script
+        for command in commands:
+            f.write(command + "\n")
+
+    # Make the script executable on non-Windows systems
+    if not is_windows:
+        os.chmod(script_filename, 0o755)
+
+    return script_filename
+
+
+def run_script(script_filename):
+    """Executes the setup script."""
+    is_windows = platform.system() == "Windows"
+
+    print(f"--- Starting Environment Setup using '{script_filename}' ---")
+
+    try:
+        # For Windows, use 'cmd /c', for others, execute directly
+        executor = ['cmd', '/c'] if is_windows else []
+
+        process = subprocess.Popen(
+            executor + ([script_filename] if is_windows else [f"./{script_filename}"]),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+
+        # Stream the output in real-time
+        if process.stdout:
+            for line in process.stdout:
+                print(line, end='')
+
+        process.wait()
+
+        if process.returncode != 0:
+            print(f"\n--- Script failed with exit code {process.returncode} ---")
+            sys.exit(process.returncode)
+        else:
+            print("\n--- Environment setup completed successfully! ---")
+
+    except FileNotFoundError:
+        print(f"Error: Could not find '{script_filename}'. Please ensure it was created correctly.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        sys.exit(1)
+    finally:
+        # Clean up the generated script file
+        if os.path.exists(script_filename):
+            os.remove(script_filename)
+            print(f"--- Cleaned up temporary script file: {script_filename} ---")
+
 
 def check_conda_installed():
     """Checks if conda is installed and available in the system's PATH."""
     try:
-        subprocess.run(["conda", "--version"], check=True, capture_output=True, text=True)
+        subprocess.run(["conda", "--version"], check=True, capture_output=True, text=True, shell=False)
         print("--- Conda is installed. ---")
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -20,94 +93,64 @@ def check_conda_installed():
         print("Installation instructions: https://docs.conda.io/projects/miniconda/en/latest/")
         return False
 
-def run_command(command: list):
-    """Executes a command and streams its output."""
-    try:
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            universal_newlines=True
-        )
-        if process.stdout:
-            for line in process.stdout:
-                print(line, end='')
-        process.wait()
-
-        if process.returncode != 0:
-            print(f"\n--- Command failed with exit code {process.returncode} ---")
-            sys.exit(process.returncode)
-
-    except Exception as e:
-        print(f"An unexpected error occurred while running command: {e}")
-        sys.exit(1)
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Create or update a Conda environment from the environment.yml file."
-    )
+    # Set up argument parser to accept the environment name
+    parser = argparse.ArgumentParser(description="Create a Conda environment with specified packages.")
     parser.add_argument("env_name", type=str, help="The name for the new Conda environment.")
     args = parser.parse_args()
+
+    # The environment name is now taken from the command-line argument
     env_name = args.env_name
+    print(f"--- Target Environment Name: {env_name} ---")
 
     if not check_conda_installed():
         sys.exit(1)
 
-    if not ENV_FILE.exists():
-        print(f"--- ERROR: Environment definition file not found at '{ENV_FILE}' ---")
-        sys.exit(1)
+    # The list of commands in the exact sequence you provided
+    command_sequence = [
+        # Initial cleanup and update
+        "conda clean --all -y",
+        "conda update --all -y",
+        "conda clean --all -y",
 
-    print(f"--- Creating/Updating Conda environment '{env_name}' from '{ENV_FILE}' ---")
-    print("This may take several minutes...")
+        # Create and activate the new environment using the provided name
+        f"conda create -n {env_name} python={PYTHON_VERSION} -y",
+        f"conda activate {env_name}",
 
-    # Using 'conda env create' is idempotent and safe.
-    # If the env exists, it will fail, so we can try to update. A more robust script could check first.
-    # For simplicity, we just create. Users can remove old envs if needed.
-    command = ["conda", "env", "create", "--name", env_name, "--file", str(ENV_FILE)]
-    run_command(command)
+        # Install core GPU libraries (CUDA, cuDNN)
+        f"conda install -c nvidia cuda-toolkit={CUDA_TOOLKIT_VERSION} -y",
+        f"conda install -c nvidia cudnn={CUDNN_VERSION} -y",
 
-    print("\n--- STAGE 2: Installing ML stack using pip to ensure compatibility ---")
+        # Install and verify TensorFlow
+        "conda install -c conda-forge tensorflow -y",
+        'python -c "import tensorflow as tf; print(\'Num GPUs Available: \', len(tf.config.list_physical_devices(\'GPU\')))"',
 
-    # Define versions for consistency
-    torch_version = "2.2.0"
-    # Match PyTorch version to CUDA version from environment.yml (12.5 -> uses cu124)
-    cuda_version_pip_torch = "cu124"
+        # Install and verify PyTorch
+        "pip3 install torch torchvision torchaudio",
+        'python -c "import torch; print(f\'PyTorch CUDA available: {torch.cuda.is_available()}\')"',
 
-    # --- Install PyTorch from its official index ---
-    print("\n[STEP 2.1] Installing PyTorch, TorchVision, TorchAudio...")
-    torch_install_command = [
-        "conda", "run", "-n", env_name, "pip", "install",
-        f"torch=={torch_version}",
-        f"torchvision==0.17.0",  # Compatible with torch 2.2.0
-        f"torchaudio=={torch_version}",
-        "--index-url", f"https://download.pytorch.org/whl/{cuda_version_pip_torch}"
+        # Final cleanup
+        "conda clean --all -y",
+        "pip cache purge",
+
+        # Install remaining data science and ML libraries
+        "conda install -c conda-forge dask -y",
+        "conda install -c conda-forge tqdm -y",
+        "conda install -c conda-forge biopython -y",
+        "pip install torch_geometric",
+        "conda install -c conda-forge matplotlib -y",
+        "conda install -c conda-forge scipy -y",
+        "conda install -c conda-forge scikit-learn -y",
+        "pip install mlflow",
+        "conda install -c conda-forge transformers -y",
+        "conda install -c conda-forge gensim -y",
+        "conda install -c conda-forge python-louvain -y",
+        "pip install seaborn",
+        "pip install pycuda"
     ]
-    run_command(torch_install_command)
 
-    # --- Install PyTorch Geometric and its dependencies ---
-    # PyG dependencies must be installed pointing to the correct torch/cuda version
-    print("\n[STEP 2.2] Installing PyTorch Geometric dependencies...")
-    pyg_deps_install_command = [
-        "conda", "run", "-n", env_name, "pip", "install",
-        "pyg_lib", "torch-scatter", "torch-sparse", "-f",
-        f"https://data.pyg.org/whl/torch-{torch_version}+{cuda_version_pip_torch}.html"
-    ]
-    run_command(pyg_deps_install_command)
+    # Create the platform-specific script
+    script_file = create_setup_script(command_sequence)
 
-    # --- Install TensorFlow, the main PyG package, and other pip packages ---
-    print("\n[STEP 2.3] Installing TensorFlow, PyG, and other packages...")
-    main_ml_install_command = [
-        "conda", "run", "-n", env_name, "pip", "install",
-        "tensorflow",
-        "torch_geometric",
-        "mlflow",
-        "pycuda"
-    ]
-    run_command(main_ml_install_command)
-
-    print("\n" + "=" * 60)
-    print("--- Environment setup completed successfully! ---")
-    print(f"To activate the new environment, run: conda activate {env_name}")
-    print("=" * 60)
+    # Execute the script
+    run_script(script_file)
