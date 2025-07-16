@@ -11,15 +11,15 @@ import mlflow
 
 from configuration.config import Config
 from configuration.data import setup_data
-from source.data.protgram import GraphBuilder
-from source.benchmarks.gnn_benchmarker import GNNBenchmarker
-from source.experiments.ppi_experimenter import PPIPipeline
-from source.training.protgram_directgcn_trainer import ProtGramDirectGCNTrainer
-from source.training.prott5_trainer import TransformerEmbedder
-from source.training.word2vec_trainer import Word2VecEmbedder
-from source.tests.tester import run_all_tests
-from source.utils.data_utils import DataUtils
-from source.utils.logging_utils import start_logging, stop_logging
+from source.data_builders.protgram import GraphBuilder
+from source.benchmarkers.gnns import GNNBenchmarker
+from source.experiments.ppi_1 import PPIPipeline
+from source.trainers.protgram_directgcn import ProtGramDirectGCNTrainer
+from source.trainers.prott5 import TransformerEmbedder
+from source.trainers.word2vec import Word2VecEmbedder
+from source.testers.unit_tests import run_all_tests
+from source.utils.data import DataUtils
+from source.utils.logging import start_logging, stop_logging
 
 
 def main():

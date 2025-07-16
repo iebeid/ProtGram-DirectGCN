@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import MessagePassing
 
-from source.utils.models_utils import EmbeddingProcessor
+from source.utils.models import EmbeddingProcessor
 
 
 class DirectGCNLayer(MessagePassing):
@@ -121,21 +121,16 @@ class DirectGCNLayer(MessagePassing):
         if self.use_vector_coeffs and original_indices is not None:
             c_in, c_out = self.C_in_vec[original_indices], self.C_out_vec[original_indices]
             c_directed, c_undirected = self.C_directed_vec[original_indices], self.C_undirected_vec[original_indices]
-            c_all = self.C_all_vec[original_indices]
             constant_term = self.constant[original_indices] if self.constant is not None else 0
         elif self.use_vector_coeffs:
             c_in, c_out = self.C_in_vec, self.C_out_vec
             c_directed, c_undirected = self.C_directed_vec, self.C_undirected_vec
-            c_all = self.C_all_vec
             constant_term = self.constant if self.constant is not None else 0
         else:
-            c_in, c_out, c_directed, c_undirected, c_all = self.C_in, self.C_out, self.C_directed, self.C_undirected, self.C_all
+            c_in, c_out, c_directed, c_undirected = self.C_in, self.C_out, self.C_directed, self.C_undirected
             constant_term = 0
 
         # --- 5. Final Hierarchical Combination ---
-        # directed_signal = c_directed * ((c_in * ic_combined) + (c_out * oc_combined))
-        # undirected_signal = c_undirected * uc_combined
-        # final_combination = (c_all * (undirected_signal + directed_signal)) + constant_term
         final_combination = (c_undirected * uc_combined) + (c_in * ic_combined) + (c_out * oc_combined) + constant_term
 
         return final_combination

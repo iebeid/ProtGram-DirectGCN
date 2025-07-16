@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: integrated_tests.py
-# PURPOSE: A unified script for all environment checks, unit tests,
-#          and pipeline smoke tests for the ProtGram-DirectGCN project.
+# PURPOSE: A unified script for all environment checks, unit testers,
+#          and pipeline smoke testers for the ProtGram-DirectGCN project.
 # VERSION: 1.1 (Fixes test isolation and API versioning issues)
 # AUTHOR: Your Name (Integrated by Coding Partner)
 # ==============================================================================
@@ -24,14 +24,14 @@ import torch
 
 # --- Local Application Imports ---
 from configuration.config import Config
-from source.benchmarks.gnn_benchmarker import GNNBenchmarker
-from source.data.protgram import GraphBuilder
-from source.experiments.ppi_experimenter import PPIPipeline
+from source.benchmarkers.gnns import GNNBenchmarker
+from source.data_builders.protgram import GraphBuilder
+from source.experiments.ppi_1 import PPIPipeline
 from source.models.ml.mlp import MLP
-from source.utils.data_utils import DataLoader
-from source.utils.data_utils import DataUtils
-from source.utils.models_utils import EmbeddingLoader
-from source.utils.results_utils import EvaluationReporter
+from source.utils.data import DataLoader
+from source.utils.data import DataUtils
+from source.utils.models import EmbeddingLoader
+from source.utils.results import EvaluationReporter
 
 
 # ==============================================================================
@@ -95,7 +95,7 @@ def verify_cuda_with_pycuda():
 def verify_cudnn_with_pycuda_lib():
     """
     Verifies that the nvidia-cudnn-python library is installed and accessible.
-    The functional verification of cuDNN is implicitly handled by the PyTorch and TensorFlow tests.
+    The functional verification of cuDNN is implicitly handled by the PyTorch and TensorFlow testers.
     """
     print("\n" + "=" * 80)
     DataUtils.print_header("cuDNN Library Verification (nvidia-cudnn-python)")
@@ -482,80 +482,75 @@ class TestGraphBuilderSmoke(unittest.TestCase):
 # ==============================================================================
 
 def test_word2vec_pipeline_run():
-    print("\n" + "=" * 80)
-    DataUtils.print_header("Word2Vec Pipeline Smoke Test")
-    print("=" * 80)
-    config = Config()
-    dummy_fasta_dir = "./temp_test_w2v_fasta_input"
-    if os.path.exists(dummy_fasta_dir): shutil.rmtree(dummy_fasta_dir)
-    _create_dummy_fasta_for_testing(dummy_fasta_dir, "w2v_test.fasta")
+     print("\n" + "=" * 80)
+     DataUtils.print_header("Word2Vec Pipeline Smoke Test")
+     print("=" * 80)
+     config = Config()
+     base_test_dir = tempfile.mkdtemp()
+     dummy_fasta_path = _create_dummy_fasta_for_testing(os.path.join(base_test_dir, "input"), "w2v_test.fasta")
 
-    # This test is not currently maintained as the attributes do not exist in Config
-    print("  Skipping Word2Vec smoke test as it appears to be deprecated (config attributes missing).")
-    if os.path.exists(dummy_fasta_dir): shutil.rmtree(dummy_fasta_dir)
-    return
+     # Store original paths and settings
+     original_fasta_path = config.UNIPROT_FASTA_PATH
+     original_w2v_output_dir = config.RESULTS_W2V_EMBEDDINGS_DIR
+     original_epochs = config.W2V_EPOCHS
 
-    # original_fasta_dir = config.W2V_INPUT_FASTA_DIR
-    # config.W2V_INPUT_FASTA_DIR = Path(dummy_fasta_dir)
-    # config.APPLY_PCA_TO_W2V = False
-    # config.W2V_EPOCHS = 1
-    #
-    # test_w2v_output_dir = Path(config.BASE_OUTPUT_DIR) / "test_w2v_embeddings"
-    # if os.path.exists(test_w2v_output_dir): shutil.rmtree(test_w2v_output_dir)
-    # original_w2v_output_dir = config.WORD2VEC_EMBEDDINGS_DIR
-    # config.WORD2VEC_EMBEDDINGS_DIR = test_w2v_output_dir
-    #
-    # try:
-    #     embedder = Word2VecEmbedder(config)
-    #     embedder.run()
-    #     print("\n  Word2VecEmbedder smoke test ran successfully.")
-    # except Exception as e:
-    #     print(f"\n  Word2VecEmbedder smoke test FAILED: {e}")
-    #     raise
-    # finally:
-    #     config.W2V_INPUT_FASTA_DIR = original_fasta_dir
-    #     config.WORD2VEC_EMBEDDINGS_DIR = original_w2v_output_dir
-    #     if os.path.exists(dummy_fasta_dir): shutil.rmtree(dummy_fasta_dir)
-    #     if os.path.exists(test_w2v_output_dir): shutil.rmtree(test_w2v_output_dir)
-    # print("--- Word2Vec Pipeline Smoke Test Complete ---")
+     # Override with temporary test settings
+     config.UNIPROT_FASTA_PATH = Path(dummy_fasta_path)
+     config.RESULTS_W2V_EMBEDDINGS_DIR = Path(base_test_dir) / "test_w2v_embeddings"
+     config.W2V_EPOCHS = 1
+     config.APPLY_PCA_TO_W2V = False # Keep it fast for a smoke test
+
+     try:
+         from source.trainers.word2vec import Word2VecEmbedder
+         embedder = Word2VecEmbedder(config)
+         embedder.run()
+         print("\n  Word2VecEmbedder smoke test ran successfully.")
+     except Exception as e:
+         print(f"\n  Word2VecEmbedder smoke test FAILED: {e}")
+         raise
+     finally:
+         # Restore original settings
+         config.UNIPROT_FASTA_PATH = original_fasta_path
+         config.RESULTS_W2V_EMBEDDINGS_DIR = original_w2v_output_dir
+         config.W2V_EPOCHS = original_epochs
+         # Clean up temporary files
+         if os.path.exists(base_test_dir):
+             shutil.rmtree(base_test_dir)
+     print("--- Word2Vec Pipeline Smoke Test Complete ---")
 
 
 def test_transformer_embedder_pipeline_run():
-    print("\n" + "=" * 80)
-    DataUtils.print_header("Transformer Embedder Pipeline Smoke Test")
-    print("=" * 80)
-    # This test is not currently maintained as the attributes do not exist in Config
-    print("  Skipping Transformer Embedder smoke test as it appears to be deprecated (config attributes missing).")
-    return
+     print("\n" + "=" * 80)
+     DataUtils.print_header("Transformer Embedder Pipeline Smoke Test")
+     print("=" * 80)
+     config = Config()
+     base_test_dir = tempfile.mkdtemp()
+     dummy_fasta_path = _create_dummy_fasta_for_testing(os.path.join(base_test_dir, "input"), "transformer_test.fasta", num_seqs=2)
 
-    # config = Config()
-    # dummy_fasta_dir = "./temp_test_transformer_fasta_input"
-    # if os.path.exists(dummy_fasta_dir): shutil.rmtree(dummy_fasta_dir)
-    # _create_dummy_fasta_for_testing(dummy_fasta_dir, "transformer_test.fasta", num_seqs=2)
-    #
-    # original_fasta_dir = config.TRANSFORMER_INPUT_FASTA_DIR
-    # config.TRANSFORMER_INPUT_FASTA_DIR = Path(dummy_fasta_dir)
-    # config.APPLY_PCA_TO_TRANSFORMER = False
-    # config.TRANSFORMER_BASE_BATCH_SIZE = 1
-    #
-    # test_transformer_output_dir = Path(config.BASE_OUTPUT_DIR) / "test_transformer_embeddings"
-    # if os.path.exists(test_transformer_output_dir): shutil.rmtree(test_transformer_output_dir)
-    # original_transformer_output_dir = config.TRANSFORMER_EMBEDDINGS_DIR
-    # config.TRANSFORMER_EMBEDDINGS_DIR = test_transformer_output_dir
-    #
-    # try:
-    #     embedder = TransformerEmbedder(config)
-    #     embedder.run()
-    #     print("\n  TransformerEmbedder smoke test ran successfully.")
-    # except Exception as e:
-    #     print(f"\n  TransformerEmbedder smoke test FAILED: {e}")
-    #     raise
-    # finally:
-    #     config.TRANSFORMER_INPUT_FASTA_DIR = original_fasta_dir
-    #     config.TRANSFORMER_EMBEDDINGS_DIR = original_transformer_output_dir
-    #     if os.path.exists(dummy_fasta_dir): shutil.rmtree(dummy_fasta_dir)
-    #     if os.path.exists(test_transformer_output_dir): shutil.rmtree(test_transformer_output_dir)
-    # print("--- Transformer Embedder Pipeline Smoke Test Complete ---")
+     # Store and override settings
+     original_fasta_path = config.UNIPROT_FASTA_PATH
+     original_transformer_output_dir = config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR
+     config.UNIPROT_FASTA_PATH = Path(dummy_fasta_path)
+     config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = Path(base_test_dir) / "test_transformer_embeddings"
+     config.APPLY_PCA_TO_TRANSFORMER = False
+     config.TRANSFORMER_BASE_BATCH_SIZE = 1
+
+     try:
+         from source.trainers.prott5 import TransformerEmbedder
+         embedder = TransformerEmbedder(config)
+         embedder.run()
+         print("\n  TransformerEmbedder smoke test ran successfully.")
+     except Exception as e:
+         print(f"\n  TransformerEmbedder smoke test FAILED: {e}")
+         raise
+     finally:
+         # Restore original settings
+         config.UNIPROT_FASTA_PATH = original_fasta_path
+         config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = original_transformer_output_dir
+         # Clean up temporary files
+         if os.path.exists(base_test_dir):
+             shutil.rmtree(base_test_dir)
+     print("--- Transformer Embedder Pipeline Smoke Test Complete ---")
 
 
 def test_gnn_benchmarker_run():
@@ -641,7 +636,7 @@ def test_ppi_pipeline_run():
 
 def run_all_tests():
     """
-    Runs the full suite of verification, unit, and smoke tests.
+    Runs the full suite of verification, unit, and smoke testers.
     """
     print("\n" + "#" * 100)
     print("### Starting All Integrated Tests... ###")
@@ -675,8 +670,8 @@ def run_all_tests():
 
     # Phase 4: Full Pipeline Smoke Tests
     # Note: These are designed to be quick. You can comment out any that you don't need to run every time.
-    # test_word2vec_pipeline_run()
-    # test_transformer_embedder_pipeline_run()
+    test_word2vec_pipeline_run()
+    test_transformer_embedder_pipeline_run()
     test_gnn_benchmarker_run()
     test_ppi_pipeline_run()
 

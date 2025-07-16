@@ -1,6 +1,6 @@
 # ==============================================================================
-# MODULE: training/word2vec_trainer.py
-# PURPOSE: Handles Word2Vec model training, embedding generation, and pooling.
+# MODULE: trainers/word2vec.py
+# PURPOSE: Handles Word2Vec model trainers, embedding generation, and pooling.
 # VERSION: 2.1 (Corrected DataUtils import)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
@@ -18,8 +18,8 @@ from tqdm import tqdm
 
 from configuration.config import Config
 # Corrected import for DataUtils
-from source.utils.data_utils import DataLoader, DataUtils  # Import DataUtils directly
-from source.utils.models_utils import EmbeddingProcessor
+from source.utils.data import DataLoader, DataUtils  # Import DataUtils directly
+from source.utils.models import EmbeddingProcessor
 
 
 class Word2VecEmbedder:
@@ -30,7 +30,7 @@ class Word2VecEmbedder:
 
     def run(self):
         DataUtils.print_header("PIPELINE STEP: Training Word2Vec & Generating Embeddings")
-        os.makedirs(str(self.config.WORD2VEC_EMBEDDINGS_DIR), exist_ok=True)
+        os.makedirs(str(self.config.RESULTS_W2V_EMBEDDINGS_DIR), exist_ok=True)
 
         # This line was causing the error:
         # DataUtils = DataLoader.DataUtils
@@ -48,7 +48,7 @@ class Word2VecEmbedder:
             # If no mapping is done by this class, self.id_map remains empty.
             # A more robust solution might involve passing a shared ID map or
             # ensuring each embedder can generate/load its own if necessary.
-            # For now, we'll assume the GCN training (if run) populates a map that
+            # For now, we'll assume the GCN trainers (if run) populates a map that
             # could be used, or pooling uses original IDs if map is empty.
             # Let's load it similar to how GCN trainer does for consistency:
             if os.path.exists(str(self.config.ID_MAPPING_PATH)):
@@ -77,7 +77,7 @@ class Word2VecEmbedder:
             return
 
         if not fasta_files:
-            print("ERROR: No FASTA files found for Word2Vec training.")
+            print("ERROR: No FASTA files found for Word2Vec trainers.")
             return
 
         print(f"  Found {len(fasta_files)} FASTA file(s) for corpus.")
@@ -98,7 +98,7 @@ class Word2VecEmbedder:
             negative=5,  # Number of negative samples
             seed=self.config.RANDOM_STATE
         )
-        print(f"  Word2Vec model training finished in {time.time() - model_train_start_time:.2f}s.")
+        print(f"  Word2Vec model trainers finished in {time.time() - model_train_start_time:.2f}s.")
         model_path = str(self.config.RESULTS_W2V_EMBEDDINGS_DIR / f"word2vec_model_dim{self.config.W2V_VECTOR_SIZE}.model")
         w2v_model.save(model_path)
         print(f"  Word2Vec model saved to: {model_path}")

@@ -1,6 +1,6 @@
-# src/training/protgram_directgcn_trainer.py
+# src/trainers/protgram_directgcn.py
 # ==============================================================================
-# MODULE: training/protgram_directgcn_trainer.py
+# MODULE: trainers/protgram_directgcn.py
 # PURPOSE: Trains the ProtGramDirectGCN model, saves embeddings, and optionally
 #          applies PCA for dimensionality reduction.
 # VERSION: 4.18 (Fixed device mismatch error in _create_clustered_subgraphs)
@@ -26,9 +26,9 @@ from tqdm import tqdm
 
 from configuration.config import Config
 from source.models.gnn.directgcn import ProtGramDirectGCN
-from source.utils.data_utils import DataLoader, DataUtils, GroundTruthLoader
-from source.data.graph import DirectedNgramGraph
-from source.utils.models_utils import EmbeddingProcessor, EmbeddingLoader
+from source.utils.data import DataLoader, DataUtils, GroundTruthLoader
+from source.data_builders.graph import DirectedNgramGraph
+from source.utils.models import EmbeddingProcessor, EmbeddingLoader
 
 # --- Optional Imports for Sanity Check PPI Task ---
 try:
@@ -46,7 +46,7 @@ AMINO_ACID_ALPHABET = list("ACDEFGHIKLMNPQRSTVWY")
 
 
 class EarlyStopper:
-    """A simple early stopper to monitor loss and stop training when it stops improving."""
+    """A simple early stopper to monitor loss and stop trainers when it stops improving."""
 
     def __init__(self, patience: int = 1, min_delta: float = 0):
         self.patience = patience
@@ -86,7 +86,7 @@ class ProtGramDirectGCNTrainer:
             early_stopper = EarlyStopper(patience=self.config.GCN_EARLY_STOPPING_PATIENCE, min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA)
         scaler = torch.amp.GradScaler('cuda', enabled=(self.device.type == 'cuda'))
         criterion = F.nll_loss
-        print(f"  Starting full-batch training for up to {epochs} epochs (Task: {task_type}, L2 lambda: {l2_lambda})...")
+        print(f"  Starting full-batch trainers for up to {epochs} epochs (Task: {task_type}, L2 lambda: {l2_lambda})...")
         for epoch in range(1, epochs + 1):
             optimizer.zero_grad()
             with torch.amp.autocast('cuda', enabled=(self.device.type == 'cuda')):
@@ -119,7 +119,7 @@ class ProtGramDirectGCNTrainer:
             early_stopper = EarlyStopper(patience=self.config.GCN_EARLY_STOPPING_PATIENCE, min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA)
         scaler = torch.amp.GradScaler('cuda', enabled=(self.device.type == 'cuda'))
         criterion = F.nll_loss
-        print(f"  Starting Cluster-GCN style training for up to {epochs} epochs on {len(subgraphs)} subgraphs (Task: {task_type})...")
+        print(f"  Starting Cluster-GCN style trainers for up to {epochs} epochs on {len(subgraphs)} subgraphs (Task: {task_type})...")
         for epoch in range(1, epochs + 1):
             random.shuffle(subgraphs)
             epoch_loss = 0.0
@@ -313,7 +313,7 @@ class ProtGramDirectGCNTrainer:
             level_ngram_to_idx[n_val] = graph_obj.node_to_idx
             print(f"  Graph for n={n_val} loaded. Nodes: {graph_obj.number_of_nodes}")
             current_task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(n_val, self.config.GCN_DEFAULT_TASK_TYPE)
-            print(f"  Selected training task for n={n_val}: '{current_task_type}'")
+            print(f"  Selected trainers task for n={n_val}: '{current_task_type}'")
 
             num_initial_features: int
             if n_val == 1:
@@ -493,7 +493,7 @@ class ProtGramDirectGCNTrainer:
                 y_true_list.append(y_batch.numpy())
                 y_pred_list.append(model.predict_on_batch(x_batch).flatten())
             if not y_true_list:
-                print("  Evaluation failed: No data in test set.")
+                print("  Evaluation failed: No data_builders in test set.")
                 return
             y_true = np.concatenate(y_true_list)
             y_pred_proba = np.concatenate(y_pred_list)

@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: training/protgram.py
+# MODULE: trainers/protgram.py
 # PURPOSE: Main class to orchestrate the graph building process.
 # VERSION: 6.5 (Added check to skip graph building if files already exist)
 # AUTHOR: Islam Ebeid
@@ -21,8 +21,8 @@ import pyarrow
 import pyarrow.parquet as pq
 
 from configuration.config import Config
-from source.utils.data_utils import DataUtils, DataLoader
-from source.data.graph import DirectedNgramGraph
+from source.utils.data import DataUtils, DataLoader
+from source.data_builders.graph import DirectedNgramGraph
 
 
 # ... (Helper functions _preprocess_sequence_tuple_for_bag, etc. remain the same) ...

@@ -80,11 +80,11 @@ def run_script(script_filename):
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         sys.exit(1)
-    finally:
-        # Clean up the generated script file
-        if os.path.exists(script_filename):
-            os.remove(script_filename)
-            print(f"--- Cleaned up temporary script file: {script_filename} ---")
+
+    # Clean up the generated script file
+    if os.path.exists(script_filename):
+        os.remove(script_filename)
+        print(f"--- Cleaned up temporary script file: {script_filename} ---")
 
 
 def check_conda_installed():
@@ -118,7 +118,7 @@ if __name__ == "__main__":
         "conda clean --all -y",
 
         # 2. Install all conda-based packages in a single command for efficiency.
-        #    This includes GPU libraries, TensorFlow, and other data science packages.
+        #    This includes GPU libraries, TensorFlow, and other data_builders science packages.
         (f"conda install -y -c nvidia -c conda-forge "
          f"cuda-toolkit={CUDA_TOOLKIT_VERSION} cudnn={CUDNN_VERSION} tensorflow "
          "dask tqdm biopython matplotlib scipy scikit-learn transformers gensim"),

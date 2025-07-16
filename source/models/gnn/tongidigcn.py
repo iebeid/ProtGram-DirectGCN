@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.data import Data
-from source.utils.models_utils import BaseGNN
+from source.utils.models import BaseGNN
 from source.models.gnn.gcn import GCN
 
 class TongDiGCN(BaseGNN):
@@ -27,8 +27,8 @@ class TongDiGCN(BaseGNN):
             data_bwd.edge_attr = data.edge_attr # Assuming edge_attr is symmetric or handled by GCN
         # Copy other necessary attributes if your GCN model uses them
         # for attr_name in ['batch', 'ptr', 'num_nodes']: # Example attributes
-        #     if hasattr(data, attr_name):
-        #         setattr(data_bwd, attr_name, getattr(data, attr_name))
+        #     if hasattr(data_builders, attr_name):
+        #         setattr(data_bwd, attr_name, getattr(data_builders, attr_name))
 
         x_bwd = self.gcn_backward(data_bwd)
 

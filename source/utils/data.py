@@ -1,7 +1,7 @@
 # ==============================================================================
-# MODULE: utils/data_utils.py
-# PURPOSE: Contains all data loading utilities for the PPI training,
-#          including FASTA parsing, ID mapping, and interaction data loading.
+# MODULE: utils/data.py
+# PURPOSE: Contains all data_builders loading utilities for the PPI trainers,
+#          including FASTA parsing, ID mapping, and interaction data_builders loading.
 # VERSION: 2.2 (Integrated _FastaCorpus into DataLoader)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
@@ -27,7 +27,7 @@ from configuration.config import Config
 
 class GroundTruthLoader:
     """
-    Handles loading and processing of protein interaction data from files.
+    Handles loading and processing of protein interaction data_builders from files.
     """
 
     @staticmethod
@@ -393,7 +393,7 @@ class DataLoader:
 
 class DataUtils:
     """
-    General data utility functions.
+    General data_builders utility functions.
     """
 
     @staticmethod

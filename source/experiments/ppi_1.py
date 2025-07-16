@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: training/ppi_experimenter.py
+# MODULE: trainers/ppi_1.py
 # PURPOSE: Contains the complete workflow for evaluating one or more sets of
 #          protein embeddings on a link prediction task.
 # VERSION: 4.0 (Integrated automated PCA dimensionality reduction)
@@ -28,9 +28,9 @@ from sklearn.model_selection import StratifiedKFold
 
 from configuration.config import Config
 from source.models.ml.mlp import MLP
-from source.utils.data_utils import DataUtils, GroundTruthLoader
-from source.utils.models_utils import EmbeddingLoader, EmbeddingProcessor
-from source.utils.results_utils import EvaluationReporter
+from source.utils.data import DataUtils, GroundTruthLoader
+from source.utils.models import EmbeddingLoader, EmbeddingProcessor
+from source.utils.results import EvaluationReporter
 
 
 # --- End new imports ---
@@ -127,7 +127,7 @@ class PPIPipeline:
         dummy_data_dir = os.path.join(base_dir, "dummy_data_temp")
         if os.path.exists(dummy_data_dir): shutil.rmtree(dummy_data_dir)
         os.makedirs(dummy_data_dir, exist_ok=True)
-        print(f"Creating dummy data in: {dummy_data_dir} (Proteins: {num_proteins}, Dim: {embedding_dim}, Pos: {num_pos}, Neg: {num_neg})")
+        print(f"Creating dummy data_builders in: {dummy_data_dir} (Proteins: {num_proteins}, Dim: {embedding_dim}, Pos: {num_pos}, Neg: {num_neg})")
         protein_ids = [f"DUMMY_P{i:04d}" for i in range(num_proteins)]
 
         dummy_emb_file = os.path.join(dummy_data_dir, "dummy_embeddings.h5")
@@ -206,7 +206,7 @@ class PPIPipeline:
                 class_weight = {0: weight_for_0, 1: weight_for_1}
                 print(f"    Calculated class weights: {class_weight}")
             else:
-                print("    Warning: Cannot calculate class weights (one class missing in training data).")
+                print("    Warning: Cannot calculate class weights (one class missing in trainers data_builders).")
 
             num_train_batches = (len(train_pairs_fold) + self.config.EVAL_BATCH_SIZE - 1) // self.config.EVAL_BATCH_SIZE
             num_val_batches = (len(val_pairs_fold) + self.config.EVAL_BATCH_SIZE - 1) // self.config.EVAL_BATCH_SIZE
@@ -241,7 +241,7 @@ class PPIPipeline:
             model = model_builder.build()
             print(f"    MLP model built with input shape: {edge_feature_dim}")
 
-            print(f"    Starting model training for {self.config.EVAL_EPOCHS} epochs (train_steps: {num_train_batches}, val_steps: {num_val_batches})...")
+            print(f"    Starting model trainers for {self.config.EVAL_EPOCHS} epochs (train_steps: {num_train_batches}, val_steps: {num_val_batches})...")
             history = model.fit(train_ds, epochs=self.config.EVAL_EPOCHS,
                                 validation_data=val_ds_for_fit,
                                 steps_per_epoch=num_train_batches,
@@ -251,7 +251,7 @@ class PPIPipeline:
                                 callbacks=[
                                     tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=self.config.EARLY_STOPPING_PATIENCE, restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else [])
             if fold_num == 0: aggregated_results['history_dict_fold1'] = history.history
-            print(f"    Model training finished for fold {fold_num + 1}.")
+            print(f"    Model trainers finished for fold {fold_num + 1}.")
 
             print("    Evaluating model on validation set...")
             y_val_fold_true_np_list = []
@@ -265,7 +265,7 @@ class PPIPipeline:
                 y_pred_proba_list.append(model.predict_on_batch(x_batch_val).flatten())
 
             if not y_val_fold_true_np_list:
-                print(f"    Warning: No data yielded by validation generator for fold {fold_num + 1}. Skipping metrics.")
+                print(f"    Warning: No data_builders yielded by validation generator for fold {fold_num + 1}. Skipping metrics.")
                 current_metrics = {'precision_sklearn': np.nan, 'recall_sklearn': np.nan, 'f1_sklearn': np.nan, 'auc_sklearn': np.nan}
                 for k_val_table in self.config.EVAL_K_VALUES_FOR_TABLE:
                     current_metrics[f'hits_at_{k_val_table}'] = np.nan
@@ -541,9 +541,9 @@ class PPIPipeline:
             if os.path.exists(dummy_dir_to_clean):
                 try:
                     shutil.rmtree(dummy_dir_to_clean)
-                    print(f"Cleaned up dummy data directory: {dummy_dir_to_clean}")
+                    print(f"Cleaned up dummy data_builders directory: {dummy_dir_to_clean}")
                 except Exception as e:
-                    print(f"Error cleaning up dummy data directory {dummy_dir_to_clean}: {e}")
+                    print(f"Error cleaning up dummy data_builders directory {dummy_dir_to_clean}: {e}")
             else:
-                print(f"Dummy data directory {dummy_dir_to_clean} not found for cleanup.")
+                print(f"Dummy data_builders directory {dummy_dir_to_clean} not found for cleanup.")
         DataUtils.print_header(f"PPI Evaluation Pipeline ({run_type}) FINISHED in {time.monotonic() - pipeline_start_time:.2f}s")

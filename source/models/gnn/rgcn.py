@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import RGCNConv
 from torch_geometric.data import Data
-from source.utils.models_utils import BaseGNN
+from source.utils.models import BaseGNN
 
 
 class RGCN(BaseGNN):

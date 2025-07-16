@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: training/prott5_trainer.py
+# MODULE: trainers/prott5.py
 # PURPOSE: Generates per-protein embeddings using pre-trained Transformer
 #          models from Hugging Face.
 # VERSION: 3.1 (Enhanced logging)
@@ -18,8 +18,8 @@ from tqdm.auto import tqdm
 from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
 
 from configuration.config import Config
-from source.utils.data_utils import DataUtils, DataLoader
-from source.utils.models_utils import EmbeddingProcessor
+from source.utils.data import DataUtils, DataLoader
+from source.utils.models import EmbeddingProcessor
 
 
 class TransformerEmbedder:
@@ -148,7 +148,7 @@ class TransformerEmbedder:
 
             output_filename_base = f"{model_name}_{self.config.TRANSFORMER_POOLING_STRATEGY}"
             output_filename = f"{output_filename_base}{output_filename_suffix}.h5"
-            output_path = os.path.join(str(self.config.TRANSFORMER_EMBEDDINGS_DIR), output_filename)
+            output_path = os.path.join(str(self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR), output_filename)
 
             print(f"  Saving final embeddings to: {output_path}")
             if final_embeddings_to_save:

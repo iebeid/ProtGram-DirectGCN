@@ -1,7 +1,7 @@
 # ==============================================================================
-# MODULE: gnn_benchmarker.py
+# MODULE: gnns.py
 # PURPOSE: To benchmark various GNN models on standard datasets.
-# VERSION: 3.4.18 (Definitive fix for mask attribute and data loading)
+# VERSION: 3.4.18 (Definitive fix for mask attribute and data_builders loading)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -22,10 +22,10 @@ from torch_geometric.datasets import (KarateClub, Planetoid)
 from torch_geometric.utils import add_self_loops, degree, to_undirected
 
 from configuration.config import Config
-from source.models.gnn import gcn,gat,graphsage,gin,chebnet,rgcn,tongidigcn,directgcn
+from source.models.gnn import gcn,gat,graphsage,gin,chebnet,rgcn,tongidigcn
 from source.models.gnn.directgcn import ProtGramDirectGCN
-from source.utils.data_utils import DataUtils
-from source.utils.models_utils import EmbeddingProcessor
+from source.utils.data import DataUtils
+from source.utils.models import EmbeddingProcessor
 
 
 class GNNBenchmarker:

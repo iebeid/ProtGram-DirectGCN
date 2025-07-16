@@ -1,6 +1,6 @@
 # ==============================================================================
-# MODULE: data.py
-# PURPOSE: Handles verification and automatic download of required data files.
+# MODULE: data_builders.py
+# PURPOSE: Handles verification and automatic download of required data_builders files.
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -17,7 +17,7 @@ from configuration.config import Config
 
 class DataManager:
     """
-    Verifies that all required data files defined in the config are present,
+    Verifies that all required data_builders files defined in the config are present,
     and downloads them if they are missing or corrupt.
     """
 
@@ -25,7 +25,8 @@ class DataManager:
         self.config = config
         self.base_data_dir = config.BASE_DATA_DIR
 
-    def _calculate_sha256(self, file_path: Path) -> str:
+    @staticmethod
+    def _calculate_sha256(file_path: Path) -> str:
         """Calculates the SHA256 checksum of a file."""
         sha256_hash = hashlib.sha256()
         with open(file_path, "rb") as f:
@@ -51,7 +52,8 @@ class DataManager:
             print(f"  - Got:      {actual_hash}")
             return False
 
-    def _download_file(self, url: str, dest_path: Path):
+    @staticmethod
+    def _download_file(url: str, dest_path: Path):
         """Downloads a file with a progress bar."""
         print(f"Downloading from {url} to {dest_path}...")
         dest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,8 +72,8 @@ class DataManager:
             if dest_path.exists():
                 dest_path.unlink()  # Clean up partial download
             raise
-
-    def _post_process_file(self, downloaded_path: Path, final_path: Path, method: str):
+    @staticmethod
+    def _post_process_file(downloaded_path: Path, final_path: Path, method: str):
         """Applies post-processing like unzipping."""
         if not method:
             return
@@ -98,7 +100,7 @@ class DataManager:
         for key, source_info in self.config.DATA_SOURCES.items():
             final_path = source_info.get('path')
             if not final_path:
-                print(f"Warning: No 'path' defined for data source '{key}'. Skipping.")
+                print(f"Warning: No 'path' defined for data_builders source '{key}'. Skipping.")
                 continue
 
             checksum = source_info.get('checksum')
@@ -135,6 +137,6 @@ class DataManager:
 
 
 def setup_data(config: Config):
-    """Convenience function to instantiate and run the data manager."""
+    """Convenience function to instantiate and run the data_builders manager."""
     manager = DataManager(config)
     manager.run_check()

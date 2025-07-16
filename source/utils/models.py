@@ -1,6 +1,6 @@
-# src/utils/models_utils.py
+# src/utils/models.py
 # ==============================================================================
-# MODULE: utils/models_utils.py
+# MODULE: utils/models.py
 # PURPOSE: Contains tools for loading and post-processing embeddings, such as PCA,
 #          normalization, pooling, GCN node extraction, and edge feature creation.
 # VERSION: 3.9 (Implemented clustered inference for GCN embeddings to avoid OOM)
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from source.models.gnn.directgcn import ProtGramDirectGCN
     from gensim.models import Word2Vec
     from configuration.config import Config  # Import Config for type hinting
-    from source.data.graph import DirectedNgramGraph  # Import DirectedNgramGraph for type hinting
+    from source.data_builders.graph import DirectedNgramGraph  # Import DirectedNgramGraph for type hinting
 
 
 class BaseGNN(nn.Module):
@@ -40,8 +40,8 @@ class BaseGNN(nn.Module):
         # Ensure forward pass has occurred and stored embeddings
         if self.embedding_output is None:
             print(f"Warning: embedding_output is None for {self.__class__.__name__}. Call forward pass first.")
-            # Optionally, could run a forward pass here if data is available and it's safe
-            # self.forward(data) # This might have side effects or require specific mode (eval)
+            # Optionally, could run a forward pass here if data_builders is available and it's safe
+            # self.forward(data_builders) # This might have side effects or require specific mode (eval)
         return self.embedding_output
 
 class EmbeddingLoader:
@@ -317,7 +317,7 @@ class EmbeddingProcessor:
 
         else:  # For smaller graphs, full-batch inference is fine
             print(f"  Extracting embeddings for {graph_obj.number_of_nodes} nodes using full-batch inference...")
-            full_data = full_data.to(device)  # Move full data to device here
+            full_data = full_data.to(device)  # Move full data_builders to device here
             with torch.no_grad():
                 _, embeddings = model(data=full_data)
             return embeddings.cpu().numpy()

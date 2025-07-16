@@ -1,7 +1,7 @@
 # ==============================================================================
-# MODULE: utils/results_utils.py
+# MODULE: utils/results.py
 # PURPOSE: Contains all functions for plotting results and writing summary
-#          files for the PPI evaluation training.
+#          files for the PPI evaluation trainers.
 # VERSION: 3.0 (Integrated t-SNE visualization)
 # AUTHOR: Islam Ebeid (Integration by Coding Partner)
 # ==============================================================================
@@ -93,10 +93,10 @@ class EvaluationReporter:
 
     def plot_training_history(self, history_dict: Dict[str, Any], model_name: str) -> Optional[Path]:
         """
-        Plots the training and validation loss/accuracy from a Keras history object.
+        Plots the trainers and validation loss/accuracy from a Keras history object.
         """
         if not history_dict:
-            print(f"Plotting: No history data for {model_name} to plot.")
+            print(f"Plotting: No history data_builders for {model_name} to plot.")
             return None
 
         plot_filename = self.plots_output_dir / f"history_{model_name.replace(' ', '_')}.png"
@@ -129,7 +129,7 @@ class EvaluationReporter:
         plt.tight_layout(rect=[0, 0, 1, 0.95])
         try:
             plt.savefig(plot_filename)
-            print(f"  Saved training history plot to {plot_filename}")
+            print(f"  Saved trainers history plot to {plot_filename}")
         except Exception as e:
             print(f"  Error saving plot {plot_filename}: {e}")
         plt.close()
@@ -151,7 +151,7 @@ class EvaluationReporter:
                 plotted_anything = True
 
         if not plotted_anything:
-            print("Plotting: No valid ROC data available for any model.")
+            print("Plotting: No valid ROC data_builders available for any model.")
             plt.close()
             return None
 
@@ -177,7 +177,7 @@ class EvaluationReporter:
         Generates a set of bar charts comparing key performance metrics across all models.
         """
         if not results_list:
-            print("Plotting: No results data provided for comparison charts.")
+            print("Plotting: No results data_builders provided for comparison charts.")
             return None
 
         plot_filename = self.plots_output_dir / "comparison_metrics_barchart.png"
@@ -221,7 +221,7 @@ class EvaluationReporter:
         Writes a formatted summary table and statistical test results to a text file.
         """
         if not results_list:
-            print("Reporting: No results data provided for summary file.")
+            print("Reporting: No results data_builders provided for summary file.")
             return None
 
         filepath = self.summary_file_output_dir / "evaluation_summary.txt"

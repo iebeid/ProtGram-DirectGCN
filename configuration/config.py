@@ -1,12 +1,12 @@
 # ==============================================================================
 # MODULE: config.py
-# PURPOSE: Centralized configuration for the entire PPI training.
-# VERSION: 1.13 (Automated cluster count based on target nodes per cluster and automated data download)
+# PURPOSE: Centralized configuration for the entire PPI trainers.
+# VERSION: 1.13 (Automated cluster count based on target nodes per cluster and automated data_builders download)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict
 from pathlib import Path
 
 
@@ -44,10 +44,10 @@ class Config:
         self._setup_mlflow_params()
 
     def _setup_paths(self):
-        """Sets up all base, data, and results paths for the project."""
+        """Sets up all base, data_builders, and results paths for the project."""
         # Base Paths
         self.PROJECT_ROOT = (Path(__file__).parent.parent).resolve()
-        self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
+        self.BASE_DATA_DIR = self.PROJECT_ROOT / "data_builders"
         self.BASE_OUTPUT_DIR = self.PROJECT_ROOT / "results"
         self.LOG_DIR = self.BASE_OUTPUT_DIR / "logs"
 
@@ -81,14 +81,14 @@ class Config:
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = True
         self.RUN_MAIN_PPI_EVALUATION = True
-        self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification tests from tester.py
-        self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data
+        self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers from unit_tests.py
+        self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data_builders
         self.CLEANUP_DUMMY_DATA = True
         self.ENABLE_FILE_LOGGING = True
 
     def _setup_data_sources(self):
         """
-        Defines the data sources for automatic download.
+        Defines the data_builders sources for automatic download.
         The key is a unique identifier, and 'path' is the final destination.
         """
         self.DATA_SOURCES = {

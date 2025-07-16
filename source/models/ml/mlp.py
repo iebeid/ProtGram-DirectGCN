@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: models/mlp.py
 # PURPOSE: Contains the definition for the Multi-Layer Perceptron (MLP) used
-#          for link prediction in the evaluation training.
+#          for link prediction in the evaluation trainers.
 # VERSION: 2.0 (Refactored into MLPModelBuilder class)
 # AUTHOR: Islam Ebeid
 # ==============================================================================

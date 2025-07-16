@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: logging_utils.py
+# MODULE: logging.py
 # PURPOSE: Provides a simple utility to redirect stdout/stderr to a log file.
 # AUTHOR: Islam Ebeid
 # ==============================================================================
