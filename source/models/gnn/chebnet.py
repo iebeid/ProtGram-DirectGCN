@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import ChebConv
 from torch_geometric.data import Data
-from src.utils.models_utils import BaseGNN
+from source.utils.models_utils import BaseGNN
 
 
 class ChebNet(BaseGNN):

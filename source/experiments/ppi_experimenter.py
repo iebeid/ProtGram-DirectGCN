@@ -26,11 +26,11 @@ from sklearn.impute import SimpleImputer
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score, roc_curve
 from sklearn.model_selection import StratifiedKFold
 
-from config.config import Config
-from src.models.ml.mlp import MLP
-from src.utils.data_utils import DataUtils, GroundTruthLoader
-from src.utils.models_utils import EmbeddingLoader, EmbeddingProcessor
-from src.utils.results_utils import EvaluationReporter
+from configuration.config import Config
+from source.models.ml.mlp import MLP
+from source.utils.data_utils import DataUtils, GroundTruthLoader
+from source.utils.models_utils import EmbeddingLoader, EmbeddingProcessor
+from source.utils.results_utils import EvaluationReporter
 
 
 # --- End new imports ---

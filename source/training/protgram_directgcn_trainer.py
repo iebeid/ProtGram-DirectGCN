@@ -24,11 +24,11 @@ from torch_geometric.data import Data
 from torch_geometric.utils import subgraph, to_networkx
 from tqdm import tqdm
 
-from config.config import Config
-from src.models.gnn.directgcn import ProtGramDirectGCN
-from src.utils.data_utils import DataLoader, DataUtils, GroundTruthLoader
-from src.data.graph import DirectedNgramGraph
-from src.utils.models_utils import EmbeddingProcessor, EmbeddingLoader
+from configuration.config import Config
+from source.models.gnn.directgcn import ProtGramDirectGCN
+from source.utils.data_utils import DataLoader, DataUtils, GroundTruthLoader
+from source.data.graph import DirectedNgramGraph
+from source.utils.models_utils import EmbeddingProcessor, EmbeddingLoader
 
 # --- Optional Imports for Sanity Check PPI Task ---
 try:

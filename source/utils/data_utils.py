@@ -22,7 +22,7 @@ from tqdm.auto import tqdm
 
 # Assuming your Config class is in src.config
 # This import is for type hinting and accessing config values.
-from config.config import Config
+from configuration.config import Config
 
 
 class GroundTruthLoader:

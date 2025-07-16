@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.data import Data
-from src.utils.models_utils import BaseGNN
-from src.models.gnn.gcn import GCN
+from source.utils.models_utils import BaseGNN
+from source.models.gnn.gcn import GCN
 
 class TongDiGCN(BaseGNN):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers=2, dropout_rate=0.5):

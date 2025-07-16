@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import MessagePassing
 
-from src.utils.models_utils import EmbeddingProcessor
+from source.utils.models_utils import EmbeddingProcessor
 
 
 class DirectGCNLayer(MessagePassing):

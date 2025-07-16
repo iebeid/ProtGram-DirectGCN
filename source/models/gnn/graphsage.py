@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch.nn import Sequential, Linear, ReLU
 from torch_geometric.nn import GCNConv, GATConv, SAGEConv, ChebConv, RGCNConv, GINConv
 from torch_geometric.data import Data
-from src.utils.models_utils import BaseGNN
+from source.utils.models_utils import BaseGNN
 
 class GraphSAGE(BaseGNN):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers=2, dropout_rate=0.5):

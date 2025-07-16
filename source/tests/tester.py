@@ -26,17 +26,17 @@ import torch
 # These assume the script is run from a location where 'src' and 'config' are accessible.
 # You may need to adjust the Python path if running from a different directory.
 # Example: sys.path.append(str(Path(__file__).resolve().parents[1]))
-from config.config import Config
-from src.benchmarks.gnn_benchmarker import GNNBenchmarker
-from src.data.protgram import GraphBuilder
-from src.experiments.ppi_experimenter import PPIPipeline
-from src.models.ml.mlp import MLP
-from src.training.prott5_trainer import TransformerEmbedder
-from src.training.word2vec_trainer import Word2VecEmbedder
-from src.utils.data_utils import DataLoader
-from src.utils.data_utils import DataUtils
-from src.utils.models_utils import EmbeddingLoader
-from src.utils.results_utils import EvaluationReporter
+from configuration.config import Config
+from source.benchmarks.gnn_benchmarker import GNNBenchmarker
+from source.data.protgram import GraphBuilder
+from source.experiments.ppi_experimenter import PPIPipeline
+from source.models.ml.mlp import MLP
+from source.training.prott5_trainer import TransformerEmbedder
+from source.training.word2vec_trainer import Word2VecEmbedder
+from source.utils.data_utils import DataLoader
+from source.utils.data_utils import DataUtils
+from source.utils.models_utils import EmbeddingLoader
+from source.utils.results_utils import EvaluationReporter
 
 
 # --- Dependencies from verify_cuda_cudnn.py ---

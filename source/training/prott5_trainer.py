@@ -17,9 +17,9 @@ import tensorflow as tf
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
 
-from config.config import Config
-from src.utils.data_utils import DataUtils, DataLoader
-from src.utils.models_utils import EmbeddingProcessor
+from configuration.config import Config
+from source.utils.data_utils import DataUtils, DataLoader
+from source.utils.models_utils import EmbeddingProcessor
 
 
 class TransformerEmbedder:

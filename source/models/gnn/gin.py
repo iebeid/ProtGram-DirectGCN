@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.nn import Sequential, Linear, ReLU
 from torch_geometric.nn import GINConv
 from torch_geometric.data import Data
-from src.utils.models_utils import BaseGNN
+from source.utils.models_utils import BaseGNN
 
 
 class GIN(BaseGNN):

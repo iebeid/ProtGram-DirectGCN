@@ -16,10 +16,10 @@ import pandas as pd
 from gensim.models import Word2Vec
 from tqdm import tqdm
 
-from config.config import Config
+from configuration.config import Config
 # Corrected import for DataUtils
-from src.utils.data_utils import DataLoader, DataUtils  # Import DataUtils directly
-from src.utils.models_utils import EmbeddingProcessor
+from source.utils.data_utils import DataLoader, DataUtils  # Import DataUtils directly
+from source.utils.models_utils import EmbeddingProcessor
 
 
 class Word2VecEmbedder:
