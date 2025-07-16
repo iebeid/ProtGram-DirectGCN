@@ -391,6 +391,35 @@ class DataLoader:
         return id_map
 
 
+    @staticmethod
+    def _preprocess_sequence_tuple_for_bag(seq_tuple: Tuple[str, str], add_initial_space: bool) -> Tuple[str, str]:
+        pid, seq_text = seq_tuple
+        modified_seq_text = str(seq_text)
+        if add_initial_space:
+            modified_seq_text = " " + modified_seq_text
+        modified_seq_text = modified_seq_text + " "
+        return pid, modified_seq_text
+
+    @staticmethod
+    def _extract_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int) -> Iterator[str]:
+        _, processed_seq_text = seq_tuple
+        if len(processed_seq_text) >= n_val:
+            for i in range(len(processed_seq_text) - n_val + 1):
+                yield processed_seq_text[i:i + n_val]
+
+    @staticmethod
+    def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int, ngram_to_id_map: Dict[str, int]) -> Iterator[str]:
+        _, processed_seq_text = seq_tuple
+        if len(processed_seq_text) >= n_val + 1:
+            for i in range(len(processed_seq_text) - n_val):
+                source_ngram = processed_seq_text[i:i + n_val]
+                target_ngram = processed_seq_text[i + 1:i + 1 + n_val]
+                source_id = ngram_to_id_map.get(source_ngram)
+                target_id = ngram_to_id_map.get(target_ngram)
+                if source_id is not None and target_id is not None:
+                    yield f"{source_id} {target_id}\n"
+
+
 class DataUtils:
     """
     General data_builders utility functions.

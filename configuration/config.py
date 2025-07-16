@@ -37,10 +37,13 @@ class Config:
         # --- 8. TRANSFORMER PIPELINE PARAMETERS ---
         self._setup_transformer_params()
 
-        # --- 9. PPI EVALUATION PARAMETERS ---
+        # --- 9. LSTM PIPELINE PARAMETERS ---
+        self._setup_lstm_params()
+
+        # --- 10. PPI EVALUATION PARAMETERS ---
         self._setup_evaluation_params()
 
-        # --- 10. MLFLOW & EXPERIMENT TRACKING ---
+        # --- 11. MLFLOW & EXPERIMENT TRACKING ---
         self._setup_mlflow_params()
 
     def _setup_paths(self):
@@ -64,13 +67,16 @@ class Config:
         self.RESULTS_GRAPH_OBJECTS_DIR = self.BASE_OUTPUT_DIR / "1_graph_objects"
         self.RESULTS_GCN_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_gcn_embeddings"
         self.RESULTS_W2V_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_word2vec_embeddings"
+        self.RESULTS_LSTM_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_lstm_embeddings"
         self.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_transformer_embeddings"
         self.RESULTS_EVALUATION_DIR = self.BASE_OUTPUT_DIR / "3_evaluation_results"
         self.RESULTS_BENCHMARKING_DIR = self.BASE_OUTPUT_DIR / "4_benchmarking_results"
         self.RESULTS_BENCHMARK_EMBEDDINGS_DIR = self.RESULTS_BENCHMARKING_DIR / "embeddings"
 
-        # Key File Paths
-        self.UNIPROT_FASTA_PATH = self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta"
+        # Key File Paths - can now be a list for sequences
+        self.SEQUENCE_FILE_PATHS = [
+            self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta"
+        ]
         self.POS_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "positive_interactions.csv"
         self.NEG_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "negative_interactions.csv"
         self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "idmapping_selected.tab"
@@ -79,9 +85,11 @@ class Config:
     def _setup_pipeline_flags(self):
         """Sets flags to control which parts of the main pipeline are executed."""
         self.RUN_GCN_PIPELINE = True
-        self.RUN_WORD2VEC_PIPELINE = False
-        self.RUN_TRANSFORMER_PIPELINE = False
+        self.RUN_LSTM_PIPELINE = True
+        self.RUN_WORD2VEC_PIPELINE = True
+        self.RUN_TRANSFORMER_PIPELINE = True
         self.RUN_BENCHMARKING_PIPELINE = True
+        self.RUN_NETWORK_EMBEDDING_BENCHMARKING = True
         self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers from unit_tests.py
         self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data_builders
@@ -93,10 +101,10 @@ class Config:
         Defines the data_builders sources for automatic download.
         The key is a unique identifier, and 'path' is the final destination.
         """
-        self.DATA_SOURCES = {
-            "UNIPROT_FASTA": {
+        self.DATA_SOURCES: Dict[str, Dict] = {
+            "UNIPROT_SPROT_FASTA": {
                 "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz",
-                "path": self.UNIPROT_FASTA_PATH,
+                "path": self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta",
                 "post_process": "ungzip",
                 "checksum": None
             },
@@ -137,6 +145,10 @@ class Config:
         self.BENCHMARK_TEST_ON_UNDIRECTED = True
         self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8}
         self.BENCHMARK_PCA_TARGET_DIM = 64
+        self.BENCHMARK_NE_MODELS_TO_RUN = ["Node2Vec", "DeepWalk"]
+        self.BENCHMARK_NE_EMBEDDING_DIM = 128
+        self.BENCHMARK_NE_WALK_LENGTH = 20
+        self.BENCHMARK_NE_CONTEXT_SIZE = 10
 
     def _setup_gcn_params(self):
         """Sets parameters for the main ProtGram-DirectGCN pipeline."""
@@ -144,10 +156,16 @@ class Config:
         self.GCN_NGRAM_MAX_N = 3
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
 
+
         # ID Mapping
         self.ID_MAPPING_MODE = 'regex'
         self.API_MAPPING_FROM_DB = "UniRef50"
         self.API_MAPPING_TO_DB = "UniProtKB"
+
+        # Model Selection for ProtGram
+        # Options: 'directgcn', 'rgcn', 'tongdigcn'
+        # 'rgcn' treats in/out edges as 2 relations.
+        self.PROTGRAM_MODELS_TO_TRAIN = ['directgcn', 'rgcn', 'tongdigcn']
 
         # Model Architecture
         self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]
@@ -191,7 +209,7 @@ class Config:
         self.PCA_TARGET_DIMENSION = 64
 
         # Sanity Check
-        self.GCN_RUN_SANITY_CHECK_PPI = False
+        self.GCN_RUN_SANITY_CHECK_PPI = True
         self.GCN_SANITY_CHECK_EPOCHS = 5
         self.GCN_SANITY_CHECK_TEST_SPLIT = 0.2
         self.GCN_SANITY_CHECK_SAMPLE_SIZE = 2000
@@ -216,6 +234,15 @@ class Config:
         self.TRANSFORMER_POOLING_STRATEGY = 'mean'
         self.APPLY_PCA_TO_TRANSFORMER = True
 
+    def _setup_lstm_params(self):
+        """Sets parameters for the LSTM embedding pipeline."""
+        self.LSTM_EMBEDDING_DIM = 100
+        self.LSTM_HIDDEN_DIM = 256
+        self.LSTM_NUM_LAYERS = 2
+        self.LSTM_EPOCHS = 5
+        self.LSTM_BATCH_SIZE = 64
+        self.LSTM_LEARNING_RATE = 0.001
+
     def _setup_evaluation_params(self):
         """Sets parameters for the final PPI evaluation pipeline."""
         # General
@@ -225,10 +252,10 @@ class Config:
         self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 100000
         self.TF_DATASET_STRATEGY = 'from_tensor_slices'
 
-        # Embedding Files for Evaluation
-        self.LP_EMBEDDING_FILES_TO_EVALUATE = [
+        # List of pre-existing or external embedding files to include in evaluation.
+        # Embeddings generated during the pipeline run will be added automatically.
+        self.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE = [
             {"name": "ProtT5", "path": self.PROTT5_MODEL_PATH},
-            {"name": "ProtGramDirectGCN", "path": self.RESULTS_GCN_EMBEDDINGS_DIR / f"gcn_n{self.GCN_NGRAM_MAX_N}_embeddings_pca{self.PCA_TARGET_DIMENSION}.h5"},
         ]
 
         # MLP Architecture & Training
@@ -250,8 +277,9 @@ class Config:
 
     def _setup_mlflow_params(self):
         """Sets parameters for MLflow experiment tracking."""
-        self.USE_MLFLOW = False
+        self.USE_MLFLOW = True
         mlruns_path = self.BASE_OUTPUT_DIR / "mlruns"
         self.MLFLOW_TRACKING_URI = mlruns_path.resolve().as_uri()
         self.MLFLOW_EXPERIMENT_NAME = "PPI-Link-Prediction"
         self.MLFLOW_BENCHMARK_EXPERIMENT_NAME = "GNN-Benchmarking"
+        self.MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME = "Network_Embedding_Benchmarking"

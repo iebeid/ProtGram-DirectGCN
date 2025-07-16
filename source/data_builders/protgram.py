@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: trainers/protgram.py
+# MODULE: data_builders/protgram.py
 # PURPOSE: Main class to orchestrate the graph building process.
 # VERSION: 6.5 (Added check to skip graph building if files already exist)
 # AUTHOR: Islam Ebeid
@@ -25,39 +25,10 @@ from source.utils.data import DataUtils, DataLoader
 from source.data_builders.graph import DirectedNgramGraph
 
 
-# ... (Helper functions _preprocess_sequence_tuple_for_bag, etc. remain the same) ...
-def _preprocess_sequence_tuple_for_bag(seq_tuple: Tuple[str, str], add_initial_space: bool) -> Tuple[str, str]:
-    pid, seq_text = seq_tuple
-    modified_seq_text = str(seq_text)
-    if add_initial_space:
-        modified_seq_text = " " + modified_seq_text
-    modified_seq_text = modified_seq_text + " "
-    return pid, modified_seq_text
-
-
-def _extract_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int) -> Iterator[str]:
-    _, processed_seq_text = seq_tuple
-    if len(processed_seq_text) >= n_val:
-        for i in range(len(processed_seq_text) - n_val + 1):
-            yield processed_seq_text[i:i + n_val]
-
-
-def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int, ngram_to_id_map: Dict[str, int]) -> Iterator[str]:
-    _, processed_seq_text = seq_tuple
-    if len(processed_seq_text) >= n_val + 1:
-        for i in range(len(processed_seq_text) - n_val):
-            source_ngram = processed_seq_text[i:i + n_val]
-            target_ngram = processed_seq_text[i + 1:i + 1 + n_val]
-            source_id = ngram_to_id_map.get(source_ngram)
-            target_id = ngram_to_id_map.get(target_ngram)
-            if source_id is not None and target_id is not None:
-                yield f"{source_id} {target_id}\n"
-
-
 class GraphBuilder:
     def __init__(self, config: Config):
         self.config = config
-        self.protein_sequence_file = str(config.UNIPROT_FASTA_PATH)
+        self.protein_sequence_files = [str(p) for p in config.SEQUENCE_FILE_PATHS]
         self.output_dir = str(config.RESULTS_GRAPH_OBJECTS_DIR)
         self.n_max = config.GCN_NGRAM_MAX_N
         self.num_workers_config = config.GRAPH_BUILDER_WORKERS if config.GRAPH_BUILDER_WORKERS is not None else 1
@@ -110,7 +81,7 @@ class GraphBuilder:
 
         def get_preprocessed_sequence_stream() -> Iterator[Tuple[Tuple[str, str], bool]]:
             first_sequence = True
-            for seq_tuple in DataLoader.parse_sequences(self.protein_sequence_file):
+            for seq_tuple in DataLoader.parse_sequences(self.protein_sequence_files):
                 yield seq_tuple, first_sequence
                 if first_sequence:
                     first_sequence = False
@@ -122,7 +93,7 @@ class GraphBuilder:
                 return
             print(f"  Loaded {len(sequence_stream_list)} sequences from FASTA.")
         except FileNotFoundError:
-            print(f"ERROR: FASTA file not found at {self.protein_sequence_file}")
+            print(f"ERROR: One or more FASTA files not found in {self.protein_sequence_files}")
             return
         except MemoryError as e_mem_seq_list:
             print(f"ERROR: Memory error creating sequence list from FASTA: {e_mem_seq_list}.")
@@ -130,7 +101,7 @@ class GraphBuilder:
 
         num_partitions_for_bag = effective_dask_workers if effective_dask_workers > 1 else 1
         raw_sequence_bag_with_flag = db.from_sequence(sequence_stream_list, npartitions=num_partitions_for_bag)
-        preprocessed_sequence_bag_unpersisted = raw_sequence_bag_with_flag.starmap(_preprocess_sequence_tuple_for_bag)
+        preprocessed_sequence_bag_unpersisted = raw_sequence_bag_with_flag.starmap(DataLoader._preprocess_sequence_tuple_for_bag)
 
         final_preprocessed_input_bag = preprocessed_sequence_bag_unpersisted
         if dask_scheduler_general != 'sync':
@@ -162,7 +133,7 @@ class GraphBuilder:
             print(f"  [n={n_val_loop}] Generating n-grams using Dask Bag (source: final_preprocessed_input_bag)...")
             sys.stdout.flush()
 
-            extract_ngrams_partial = partial(_extract_ngrams_from_sequence_tuple, n_val=n_val_loop)
+            extract_ngrams_partial = partial(DataLoader._extract_ngrams_from_sequence_tuple, n_val=n_val_loop)
             all_ngrams_bag_flattened = final_preprocessed_input_bag.map(extract_ngrams_partial).flatten()
 
             print(f"    Computing unique n-grams using Dask Bag's distinct()...")
@@ -214,7 +185,7 @@ class GraphBuilder:
             print(f"  [n={n_val_loop}] Generating edge strings using Dask Bag (source: final_preprocessed_input_bag)...")
             sys.stdout.flush()
 
-            extract_edges_partial = partial(_extract_edges_from_sequence_tuple,
+            extract_edges_partial = partial(DataLoader._extract_edges_from_sequence_tuple,
                                             n_val=n_val_loop,
                                             ngram_to_id_map=ngram_to_id_map)
             all_edges_str_bag_flattened = final_preprocessed_input_bag.map(extract_edges_partial).flatten()

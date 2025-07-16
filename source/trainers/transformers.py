@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: trainers/prott5.py
+# MODULE: trainers/transformers.py
 # PURPOSE: Generates per-protein embeddings using pre-trained Transformer
 #          models from Hugging Face.
 # VERSION: 3.1 (Enhanced logging)

@@ -13,9 +13,10 @@ from configuration.config import Config
 from configuration.data import setup_data
 from source.data_builders.protgram import GraphBuilder
 from source.benchmarkers.gnns import GNNBenchmarker
+from source.benchmarkers.nes import NetworkEmbeddingBenchmarker
 from source.experiments.ppi_1 import PPIPipeline
-from source.trainers.protgram_directgcn import ProtGramDirectGCNTrainer
-from source.trainers.prott5 import TransformerEmbedder
+from source.trainers.transformers import TransformerEmbedder
+from source.trainers.protgram_xgcn import ProtGramXGCNTrainer
 from source.trainers.word2vec import Word2VecEmbedder
 from source.testers.unit_tests import run_all_tests
 from source.utils.data import DataUtils
@@ -33,6 +34,9 @@ def main():
             if not key.startswith("__"):
                 print(f"  {key}: {value}")
         print("--------------------------")
+
+    # List to hold paths of embeddings generated during this run
+    generated_embedding_files = []
 
     # Start logging at the very beginning of your script
     if config.ENABLE_FILE_LOGGING:
@@ -66,22 +70,46 @@ def main():
                 benchmarker = GNNBenchmarker(config)
                 benchmarker.run()
 
+        if config.RUN_NETWORK_EMBEDDING_BENCHMARKING:
+            if config.USE_MLFLOW:
+                mlflow.set_experiment(config.MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME)
+                with mlflow.start_run(run_name="NE_Benchmark_Suite_Parent") as ne_parent_run:
+                    mlflow.set_tag("suite_type", "Network Embedding Benchmarking")
+                    print(f"MLflow Parent Run for NE Benchmarking: {ne_parent_run.info.run_id}")
+                    ne_benchmarker = NetworkEmbeddingBenchmarker(config)
+                    ne_benchmarker.run()
+            else:
+                ne_benchmarker = NetworkEmbeddingBenchmarker(config)
+                ne_benchmarker.run()
+
         if config.RUN_GCN_PIPELINE:
             graph_builder = GraphBuilder(config)
             graph_builder.run()
-            gcn_trainer = ProtGramDirectGCNTrainer(config)
-            gcn_trainer.run()
+            gcn_trainer = ProtGramXGCNTrainer(config)
+            gcn_embedding_paths = gcn_trainer.run()
+            if gcn_embedding_paths:
+                for model_name, path in gcn_embedding_paths.items():
+                    generated_embedding_files.append({"name": f"{model_name}-ProtGram", "path": path})
 
         if config.RUN_WORD2VEC_PIPELINE:
             word2vec_embedder = Word2VecEmbedder(config)
-            word2vec_embedder.run()
+            w2v_embedding_path = word2vec_embedder.run()
+            if w2v_embedding_path:
+                generated_embedding_files.append({"name": "Word2Vec-Generated", "path": w2v_embedding_path})
 
         if config.RUN_TRANSFORMER_PIPELINE:
             transformer_embedder = TransformerEmbedder(config)
-            transformer_embedder.run()
+            transformer_embedding_paths = transformer_embedder.run()
+            if transformer_embedding_paths:
+                for model_name, path in transformer_embedding_paths.items():
+                    generated_embedding_files.append({"name": f"{model_name}-Generated", "path": path})
 
         # Determine if any evaluation (dummy or main) should be set up
         should_setup_ppi_evaluator = config.RUN_DUMMY_TEST or config.RUN_MAIN_PPI_EVALUATION
+
+        # Combine external embeddings with newly generated ones for the main evaluation
+        final_evaluation_list = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_embedding_files
+        config.LP_EMBEDDING_FILES_TO_EVALUATE = final_evaluation_list  # Override the config
 
         if should_setup_ppi_evaluator:
             if config.USE_MLFLOW:
