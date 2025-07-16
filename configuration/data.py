@@ -106,11 +106,14 @@ def setup_data(config: Config):
                     f.write(chunk)
                     pbar.update(len(chunk))
 
-            # Recursively call setup_data to handle the post-processing of the newly downloaded file
-            setup_data({key: source_info})
+            # After a successful download, handle any post-processing
+            if source_info.get('post_process') == 'ungzip':
+                print(f"Decompressing {download_path.name} to {final_path.name}...")
+                with gzip.open(download_path, 'rb') as f_in, open(final_path, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+                print(f"✔ Successfully acquired: {final_path.relative_to(config.PROJECT_ROOT)}")
 
         except requests.exceptions.RequestException as e:
             print(f"Error downloading {url}: {e}")
             print(f"Failed to acquire file for '{key}'. Error: {e}")
-
     print("--- Data Verification Complete ---")

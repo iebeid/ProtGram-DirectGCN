@@ -401,8 +401,8 @@ def test_data_utilities():
 
         print("\nTesting DataLoader ID mapping:")
         dummy_fasta_path = os.path.join(temp_test_dir_base, "dummy_id_map.fasta")
-        # Override the correct config attribute for the FASTA path
-        config_instance.UNIPROT_FASTA_PATH = Path(dummy_fasta_path)
+        # Override the sequence file paths to point to our dummy file
+        config_instance.SEQUENCE_FILE_PATHS = [Path(dummy_fasta_path)]
         # Use a temporary file for the mapping output to ensure isolation
         config_instance.ID_MAPPING_PATH = Path(os.path.join(temp_test_dir_base, "dummy_id_map.tsv"))
         config_instance.ID_MAPPING_MODE = 'regex'
@@ -471,8 +471,8 @@ def run_graph_builder_full_test():
     config = Config()
     # Isolate ALL paths by overriding the base directory first
     config.BASE_OUTPUT_DIR = Path(base_test_dir) / "test_pipeline_output"
-    # Override the correct FASTA path attribute
-    config.UNIPROT_FASTA_PATH = Path(fasta_path)
+    # Override the sequence file paths to point to our dummy file
+    config.SEQUENCE_FILE_PATHS = [Path(fasta_path)]
     # Now that the base is overridden, regenerate all derived paths
     config._setup_paths()
 
@@ -481,7 +481,7 @@ def run_graph_builder_full_test():
     config.GRAPH_BUILDER_WORKERS = 1  # Force synchronous
 
     print(f"--- Running GraphBuilder instance for n_max={config.GCN_NGRAM_MAX_N} ---")
-    print(f"  Input FASTA: {config.UNIPROT_FASTA_PATH}")
+    print(f"  Input FASTA from list: {config.SEQUENCE_FILE_PATHS[0]}")
     print(f"  GraphBuilder output will be within: {config.BASE_OUTPUT_DIR.name}")
 
     try:
@@ -538,13 +538,13 @@ class TestGraphBuilderSmoke(unittest.TestCase):
             config = Config()
             # FIX: Properly isolate all paths used by GraphBuilder
             config.BASE_OUTPUT_DIR = Path(self.temp_output_dir)
-            config.UNIPROT_FASTA_PATH = Path(self.fasta_path)
+            config.SEQUENCE_FILE_PATHS = [Path(self.fasta_path)]
             config._setup_paths()  # Regenerate derived paths like RESULTS_GRAPH_OBJECTS_DIR
 
             config.GCN_NGRAM_MAX_N = 1
             config.GRAPH_BUILDER_WORKERS = 1
 
-            print(f"  Running GraphBuilder with FASTA: {config.UNIPROT_FASTA_PATH}")
+            print(f"  Running GraphBuilder with FASTA: {config.SEQUENCE_FILE_PATHS[0]}")
             print(f"  Outputting to: {config.BASE_OUTPUT_DIR.name}")
             print(f"  N_max: {config.GCN_NGRAM_MAX_N}, Workers: {config.GRAPH_BUILDER_WORKERS}")
 
@@ -576,12 +576,12 @@ def test_word2vec_pipeline_run():
      dummy_fasta_path = _create_dummy_fasta_for_testing(os.path.join(base_test_dir, "input"), "w2v_test.fasta")
 
      # Store original paths and settings
-     original_fasta_path = config.UNIPROT_FASTA_PATH
+     original_fasta_paths = config.SEQUENCE_FILE_PATHS
      original_w2v_output_dir = config.RESULTS_W2V_EMBEDDINGS_DIR
      original_epochs = config.W2V_EPOCHS
 
      # Override with temporary test settings
-     config.UNIPROT_FASTA_PATH = Path(dummy_fasta_path)
+     config.SEQUENCE_FILE_PATHS = [Path(dummy_fasta_path)]
      config.RESULTS_W2V_EMBEDDINGS_DIR = Path(base_test_dir) / "test_w2v_embeddings"
      config.W2V_EPOCHS = 1
      config.APPLY_PCA_TO_W2V = False # Keep it fast for a smoke test
@@ -595,7 +595,7 @@ def test_word2vec_pipeline_run():
          raise
      finally:
          # Restore original settings
-         config.UNIPROT_FASTA_PATH = original_fasta_path
+         config.SEQUENCE_FILE_PATHS = original_fasta_paths
          config.RESULTS_W2V_EMBEDDINGS_DIR = original_w2v_output_dir
          config.W2V_EPOCHS = original_epochs
          # Clean up temporary files

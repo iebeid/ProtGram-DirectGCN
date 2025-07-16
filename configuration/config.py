@@ -73,10 +73,12 @@ class Config:
         self.RESULTS_BENCHMARKING_DIR = self.BASE_OUTPUT_DIR / "4_benchmarking_results"
         self.RESULTS_BENCHMARK_EMBEDDINGS_DIR = self.RESULTS_BENCHMARKING_DIR / "embeddings"
 
-        # Key File Paths - can now be a list for sequences
+        # Key File Paths
         self.SEQUENCE_FILE_PATHS = [
             self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta"
         ]
+        # Path for the temporary, possibly downsampled, sequence file used by the pipeline
+        self.RUNTIME_SEQUENCE_FILE_PATH = self.DATA_SEQUENCES_DIR / "runtime_sequences.fasta"
         self.POS_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "positive_interactions.csv"
         self.NEG_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "negative_interactions.csv"
         self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "idmapping_selected.tab"
@@ -91,8 +93,9 @@ class Config:
         self.RUN_BENCHMARKING_PIPELINE = True
         self.RUN_NETWORK_EMBEDDING_BENCHMARKING = True
         self.RUN_MAIN_PPI_EVALUATION = True
-        self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers from unit_tests.py
+        self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers
         self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data_builders
+        self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = 0.1  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
         self.CLEANUP_DUMMY_DATA = True
         self.ENABLE_FILE_LOGGING = True
 
