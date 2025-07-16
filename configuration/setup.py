@@ -94,28 +94,22 @@ def check_conda_installed():
         return False
 
 if __name__ == "__main__":
-    # Set up argument parser to accept the environment name
-    parser = argparse.ArgumentParser(description="Create a Conda environment with specified packages.")
-    parser.add_argument("env_name", type=str, help="The name for the new Conda environment.")
-    args = parser.parse_args()
-
-    # The environment name is now taken from the command-line argument
-    env_name = args.env_name
-    print(f"--- Target Environment Name: {env_name} ---")
+    parser = argparse.ArgumentParser(
+        description="Install required project packages into the currently active Conda environment. "
+                    "Please ensure you have created and activated a suitable environment first (e.g., 'conda activate my-env')."
+    )
+    parser.parse_args()  # No arguments needed, but this allows for --help
+    print("--- Starting package installation into the currently active Conda environment. ---")
 
     if not check_conda_installed():
         sys.exit(1)
 
-    # The list of commands in the exact sequence you provided
+    # This command sequence will install all packages into the active environment.
     command_sequence = [
-        # Initial cleanup and update
+        # Initial cleanup and update of the active environment
         "conda clean --all -y",
         "conda update --all -y",
         "conda clean --all -y",
-
-        # Create and activate the new environment using the provided name
-        f"conda create -n {env_name} python={PYTHON_VERSION} -y",
-        f"conda activate {env_name}",
 
         # Install core GPU libraries (CUDA, cuDNN)
         f"conda install -c nvidia cuda-toolkit={CUDA_TOOLKIT_VERSION} -y",
