@@ -57,7 +57,7 @@ def run_pipeline_for_dataset(base_config: Config, fasta_path: Path):
     if config.RUN_GCN_PIPELINE:
         graph_builder = GraphBuilder(config)
         graph_builder.run()
-        gcn_trainer = ProtGramTrainer(config)
+        gcn_trainer = ProtGramXGCNTrainer(config)
         gcn_embedding_paths = gcn_trainer.run()
         if gcn_embedding_paths:
             for model_name, path in gcn_embedding_paths.items():

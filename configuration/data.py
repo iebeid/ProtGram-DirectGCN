@@ -2,7 +2,7 @@
 # MODULE: configuration/data.py
 # PURPOSE: Handles the verification and acquisition of all external data files.
 # VERSION: 1.0
-# AUTHOR: Your Name (Integrated by Coding Partner)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import gzip
@@ -27,7 +27,7 @@ def _is_file_valid(file_path: Path) -> bool:
 
     # Check for HTML content, a common issue with bad downloads
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8-sig') as f:  # Use utf-8-sig to handle potential BOM
             first_chunk = f.read(1024)
             if first_chunk.strip().lower().startswith(('<!doctype html', '<html')):
                 print(f"  - Validation failed for {file_path.name}: File appears to be an HTML document.")
@@ -40,7 +40,7 @@ def _is_file_valid(file_path: Path) -> bool:
     # FASTA-specific check
     if file_type == '.fasta':
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, 'r', encoding='utf-8-sig') as f:  # Use utf-8-sig to handle potential BOM
                 for line in f:
                     stripped_line = line.strip()
                     if stripped_line:  # Find first non-empty line
