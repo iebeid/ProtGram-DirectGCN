@@ -17,7 +17,7 @@ class Config:
         self.DEBUG_VERBOSE = True
 
         # --- Main Pipeline Control Flags ---
-        self.RUN_GNN_PIPELINE = True
+        self.RUN_GCN_PIPELINE = True
         #self.RUN_WORD2VEC = True
         #self.RUN_BIOBERT = True
         #self.RUN_PROTT5 = True
