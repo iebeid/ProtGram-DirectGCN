@@ -6,14 +6,16 @@ import argparse
 
 # --- Configuration ---
 PYTHON_VERSION = "3.11"
-CUDA_TOOLKIT_VERSION = "12.5"  # Updated based on working environment.yml
-CUDNN_VERSION = "9.3"       # Updated based on working environment.yml
-TENSORFLOW_VERSION = "2.17.0"  # Updated based on working environment.yml
+# Using older CUDA versions that have broader support in conda-forge for TensorFlow
+CUDA_TOOLKIT_VERSION = "12.3"
+CUDNN_VERSION = "8.9"
+TENSORFLOW_VERSION = "2.17.0"
 
 # Define PyTorch versions to align with the CUDA toolkit
-PYTORCH_VERSION = "2.4.0"      # Latest stable release
-TORCHVISION_VERSION = "0.19.0"   # Corresponds to PyTorch 2.4.0
-PYTORCH_CUDA_SUFFIX = "cu124"  # Corresponds to CUDA 12.4, compatible with 12.5 toolkit
+PYTORCH_VERSION = "2.4.0"
+TORCHVISION_VERSION = "0.19.0"
+# NOTE: PyTorch's pre-built wheels for CUDA 12.1 are compatible with the CUDA 12.3 toolkit
+PYTORCH_CUDA_SUFFIX = "cu121"
 
 
 # --- End Configuration ---
@@ -111,37 +113,36 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # This command sequence installs all packages. Commands are grouped for efficiency
-    # and to ensure dependency compatibility (e.g., installing PyTorch and its
-    # ecosystem from the same source).
+    # and to ensure dependency compatibility.
     command_sequence = [
         # 1. Initial cleanup
-        "conda clean --all -y && pip cache purge",
+        "conda clean --all -y",
+        "pip cache purge",
 
-        # 2. Install low-level system libraries and compilers with Conda.
-        #    This provides a stable base for the GPU drivers and C++ compiler.
-        (f"conda install -y -c nvidia -c conda-forge python={PYTHON_VERSION} "
-         f"cuda-toolkit={CUDA_TOOLKIT_VERSION} cudnn={CUDNN_VERSION} gxx_linux-64"),
+        # 2. Install primary packages with Conda.
+        #    This includes the C++ compiler needed for some pip packages.
+        (f"conda install -y -c conda-forge python={PYTHON_VERSION} "
+         f"cudatoolkit={CUDA_TOOLKIT_VERSION} cudnn={CUDNN_VERSION} gxx_linux-64 "
+         "dask tqdm biopython matplotlib scipy scikit-learn transformers gensim"),
 
-        # 3. Install all Python packages with pip. Pip is generally more reliable for
-        #    the complex dependencies of PyTorch and TensorFlow GPU builds.
+        # 3. Install GPU frameworks and PyG with pip for better compatibility with pre-built wheels.
         (f"pip install --upgrade pip"),
-        (f"pip install "
-         # Install TF with CUDA support. The [and-cuda] extra handles dependencies.
-         f"tensorflow[{TENSORFLOW_VERSION}] "
-         # Install PyTorch stack targeting the correct CUDA version.
-         f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio --index-url https://download.pytorch.org/whl/{PYTORCH_CUDA_SUFFIX} "
-         # Install PyG stack from its specific wheelhouse.
-         f"pyg_lib torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}+{PYTORCH_CUDA_SUFFIX}.html "
-         # Install all other packages.
-         f"torch_geometric mlflow seaborn pycuda python-louvain dask tqdm biopython matplotlib scipy scikit-learn transformers==4.43.3 gensim"),
+        (f"pip install tensorflow=={TENSORFLOW_VERSION}"),
+        (f"pip install torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio "
+         f"--index-url https://download.pytorch.org/whl/{PYTORCH_CUDA_SUFFIX}"),
 
-        # 4. Verify GPU detection for both frameworks
+        (f"pip install pyg_lib torch-scatter torch-sparse -f "
+         f"https://data.pyg.org/whl/torch-{PYTORCH_VERSION}+{PYTORCH_CUDA_SUFFIX}.html"),
+
+        # 4. Install remaining python packages
+        "pip install torch_geometric mlflow seaborn pycuda python-louvain",
+
+        # 5. Verify GPU detection for both frameworks
         'python -c "import torch; print(f\'PyTorch CUDA available: {torch.cuda.is_available()}\')"',
         'python -c "import tensorflow as tf; print(f\'TensorFlow Num GPUs Available: {len(tf.config.list_physical_devices(\\\'GPU\\\'))}\')"',
 
-        # 7. Final cleanup
+        # 6. Final cleanup
         "conda clean --all -y",
-        "pip cache purge"
     ]
 
     # Create the platform-specific script
