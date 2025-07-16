@@ -450,7 +450,15 @@ class ProtGramDirectGCNTrainer:
         if not os.path.exists(embedding_path):
             print(f"  Skipping sanity check: Embedding file not found at {embedding_path}")
             return
+
+        sample_size = getattr(self.config, 'GCN_SANITY_CHECK_SAMPLE_SIZE', None)
+
         pos_pairs = GroundTruthLoader.load_interaction_pairs(str(self.config.INTERACTIONS_POSITIVE_PATH), 1)
+
+        if sample_size and len(pos_pairs) > sample_size:
+            print(f"  Subsampling positive pairs to {sample_size} for a faster sanity check.")
+            pos_pairs = random.sample(pos_pairs, sample_size)
+
         neg_pairs = GroundTruthLoader.load_interaction_pairs(str(self.config.INTERACTIONS_NEGATIVE_PATH), 0, sample_n=len(pos_pairs), random_state=self.config.RANDOM_STATE)
         all_pairs = pos_pairs + neg_pairs
         random.shuffle(all_pairs)

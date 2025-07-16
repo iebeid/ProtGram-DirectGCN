@@ -40,12 +40,11 @@ class Config:
         self.CLEANUP_DUMMY_DATA = True
 
         # --- PATH CONFIGURATION ---
-        self.PROJECT_ROOT = Path("..").resolve()
-        print("PROJECT ROOT IS: " + str(self.PROJECT_ROOT))
+        # Set the project root to be the parent directory of this file's location (the 'configuration' directory).
+        # This is more robust than using a relative path like ".." which depends on the current working directory.
+        self.PROJECT_ROOT = (Path(__file__).parent.parent).resolve()
         self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
-        # self.BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.BASE_OUTPUT_DIR = self.PROJECT_ROOT / "results"
-        # self.BASE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         self.BASE_SRC_DIR = self.PROJECT_ROOT / "source"
         self.BASE_CONFIG_DIR = self.PROJECT_ROOT / "configuration"
 
@@ -139,8 +138,9 @@ class Config:
 
         # --- NEW: Sanity Check PPI Task ---
         self.GCN_RUN_SANITY_CHECK_PPI = False
-        self.GCN_SANITY_CHECK_EPOCHS = 10
+        self.GCN_SANITY_CHECK_EPOCHS = 5  # Reduced for a faster check
         self.GCN_SANITY_CHECK_TEST_SPLIT = 0.2
+        self.GCN_SANITY_CHECK_SAMPLE_SIZE = 2000  # NEW: Use only N positive pairs for a quick check.
 
         # --- 3. WORD2VEC PIPELINE PARAMETERS ---
         self.W2V_INPUT_FASTA_DIR = self.GCN_INPUT_FASTA_PATH
