@@ -73,8 +73,8 @@ def verify_cuda_with_pycuda():
 
     # 3. Create two large random matrices on the CPU using NumPy
     print("\nCreating two large random matrices on the CPU (NumPy)...")
-    matrix_a_cpu = np.random.randn(2000, 3000).astype(np.float32)
-    matrix_b_cpu = np.random.randn(3000, 2500).astype(np.float32)
+    matrix_a_cpu = np.random.randn(512, 1024).astype(np.float32)
+    matrix_b_cpu = np.random.randn(1024, 256).astype(np.float32)
     print(f"Matrix A shape: {matrix_a_cpu.shape} (on CPU)")
     print(f"Matrix B shape: {matrix_b_cpu.shape} (on CPU)")
 
