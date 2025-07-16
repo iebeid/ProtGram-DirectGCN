@@ -2,7 +2,7 @@
 # MODULE: integrated_tests.py
 # PURPOSE: A unified script for all environment checks, unit testers,
 #          and pipeline smoke testers for the ProtGram-DirectGCN project.
-# VERSION: 1.1 (Fixes test isolation and API versioning issues)
+# VERSION: 1.2 (Corrects test isolation and data type issues)
 # AUTHOR: Your Name (Integrated by Coding Partner)
 # ==============================================================================
 
@@ -12,8 +12,9 @@ import sys
 import tempfile
 import time
 import unittest
+from functools import partial
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 # --- Dependencies from unit_tests.py ---
 import h5py
@@ -28,9 +29,11 @@ from source.benchmarkers.gnns import GNNBenchmarker
 from source.data_builders.protgram import GraphBuilder
 from source.experiments.ppi_1 import PPIPipeline
 from source.models.ml.mlp import MLP
+from source.trainers.prott5 import TransformerEmbedder
+from source.trainers.word2vec import Word2VecEmbedder
 from source.utils.data import DataLoader
 from source.utils.data import DataUtils
-from source.utils.models import EmbeddingLoader
+from source.utils.models import EmbeddingLoader, EmbeddingProcessor
 from source.utils.results import EvaluationReporter
 
 
@@ -288,7 +291,7 @@ def test_reporter():
         reporter.plot_roc_curves(results_data)
         reporter.plot_comparison_charts(results_data)
         reporter.write_summary_file(results_data, main_emb_name='Model_A', test_metric='test_auc_sklearn', alpha=0.05)
-        print(f"  Example reporting complete. Check '{test_output_dir}' directory.")
+        print(f"  Example reporting complete. Check './{os.path.basename(test_output_dir)}' directory.")
     finally:
         if os.path.exists(test_output_dir): shutil.rmtree(test_output_dir)
     print(f"--- EvaluationReporter Test Complete ---")
@@ -315,10 +318,10 @@ def test_data_utilities():
 
         print("\nTesting DataLoader ID mapping:")
         dummy_fasta_path = os.path.join(temp_test_dir_base, "dummy_id_map.fasta")
-        # FIX: Override the correct config attribute for the FASTA path
-        config_instance.UNIPROT_FASTA_PATH = dummy_fasta_path
+        # Override the correct config attribute for the FASTA path
+        config_instance.UNIPROT_FASTA_PATH = Path(dummy_fasta_path)
         # Use a temporary file for the mapping output to ensure isolation
-        config_instance.ID_MAPPING_PATH = os.path.join(temp_test_dir_base, "dummy_id_map.tsv")
+        config_instance.ID_MAPPING_PATH = Path(os.path.join(temp_test_dir_base, "dummy_id_map.tsv"))
         config_instance.ID_MAPPING_MODE = 'regex'
         with open(dummy_fasta_path, 'w') as f:
             f.write(">sp|P12345|TEST_HUMAN Test protein\nACDEFGHIKLMNPQRSTVWY\n")
@@ -383,11 +386,11 @@ def run_graph_builder_full_test():
         f.write(fasta_content)
 
     config = Config()
-    # FIX: Isolate ALL paths by overriding the base directory first
+    # Isolate ALL paths by overriding the base directory first
     config.BASE_OUTPUT_DIR = Path(base_test_dir) / "test_pipeline_output"
-    # FIX: Override the correct FASTA path attribute
+    # Override the correct FASTA path attribute
     config.UNIPROT_FASTA_PATH = Path(fasta_path)
-    # FIX: Now that the base is overridden, regenerate all derived paths
+    # Now that the base is overridden, regenerate all derived paths
     config._setup_paths()
 
     config.DEBUG_VERBOSE = True
@@ -501,7 +504,6 @@ def test_word2vec_pipeline_run():
      config.APPLY_PCA_TO_W2V = False # Keep it fast for a smoke test
 
      try:
-         from source.trainers.word2vec import Word2VecEmbedder
          embedder = Word2VecEmbedder(config)
          embedder.run()
          print("\n  Word2VecEmbedder smoke test ran successfully.")
@@ -525,18 +527,22 @@ def test_transformer_embedder_pipeline_run():
      print("=" * 80)
      config = Config()
      base_test_dir = tempfile.mkdtemp()
-     dummy_fasta_path = _create_dummy_fasta_for_testing(os.path.join(base_test_dir, "input"), "transformer_test.fasta", num_seqs=2)
+     # FIX: The input directory for the test should be where the dummy FASTA is, not the output dir.
+     dummy_input_dir = Path(base_test_dir) / "input"
+     dummy_input_dir.mkdir()
+     _create_dummy_fasta_for_testing(str(dummy_input_dir), "transformer_test.fasta", num_seqs=2)
 
      # Store and override settings
-     original_fasta_path = config.UNIPROT_FASTA_PATH
+     original_transformer_input_dir = config.DATA_SEQUENCES_DIR
      original_transformer_output_dir = config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR
-     config.UNIPROT_FASTA_PATH = Path(dummy_fasta_path)
+
+     # Point the trainer to the temporary input directory
+     config.DATA_SEQUENCES_DIR = dummy_input_dir
      config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = Path(base_test_dir) / "test_transformer_embeddings"
      config.APPLY_PCA_TO_TRANSFORMER = False
      config.TRANSFORMER_BASE_BATCH_SIZE = 1
 
      try:
-         from source.trainers.prott5 import TransformerEmbedder
          embedder = TransformerEmbedder(config)
          embedder.run()
          print("\n  TransformerEmbedder smoke test ran successfully.")
@@ -545,7 +551,7 @@ def test_transformer_embedder_pipeline_run():
          raise
      finally:
          # Restore original settings
-         config.UNIPROT_FASTA_PATH = original_fasta_path
+         config.DATA_SEQUENCES_DIR = original_transformer_input_dir
          config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = original_transformer_output_dir
          # Clean up temporary files
          if os.path.exists(base_test_dir):
@@ -678,7 +684,3 @@ def run_all_tests():
     print("\n" + "#" * 100)
     print("### All Integrated Tests Finished. ###")
     print("#" * 100)
-
-
-if __name__ == "__main__":
-    run_all_tests()

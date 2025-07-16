@@ -47,7 +47,7 @@ class Config:
         """Sets up all base, data_builders, and results paths for the project."""
         # Base Paths
         self.PROJECT_ROOT = (Path(__file__).parent.parent).resolve()
-        self.BASE_DATA_DIR = self.PROJECT_ROOT / "data_builders"
+        self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
         self.BASE_OUTPUT_DIR = self.PROJECT_ROOT / "results"
         self.LOG_DIR = self.BASE_OUTPUT_DIR / "logs"
 
@@ -117,7 +117,7 @@ class Config:
                 "checksum": None
             },
             "ID_MAPPING_TSV": {
-                "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/v4/idmapping_selected.tab.gz",
+                "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping_selected.tab.gz",
                 "path": self.ID_MAPPING_PATH,
                 "post_process": "ungzip",
                 "checksum": None
