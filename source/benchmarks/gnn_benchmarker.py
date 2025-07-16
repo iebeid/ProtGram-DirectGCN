@@ -347,7 +347,7 @@ class GNNBenchmarker:
 
                 self._save_node_embeddings(model_instance, test_d, model_name, dataset_name, graph_variant_suffix)
 
-                reports_dir = str(self.config.BENCHMARKING_RESULTS_DIR / f"{dataset_name}{graph_variant_suffix}")
+                reports_dir = str(self.config.RESULTS_BENCHMARKING_DIR / f"{dataset_name}{graph_variant_suffix}")
                 os.makedirs(reports_dir, exist_ok=True)
                 history_path = os.path.join(reports_dir, f'benchmark_{model_name}_history.csv')
                 history_df.to_csv(history_path, index=False)
@@ -406,14 +406,14 @@ class GNNBenchmarker:
             current_dataset_summary = [res for res in all_results_summary if res['dataset'].startswith(dataset_name)]
             if current_dataset_summary:
                 dataset_summary_df = pd.DataFrame(current_dataset_summary)
-                summary_path = os.path.join(str(self.config.BENCHMARKING_RESULTS_DIR), f"benchmark_summary_{dataset_name}.csv")
+                summary_path = os.path.join(str(self.config.RESULTS_BENCHMARKING_DIR), f"benchmark_summary_{dataset_name}.csv")
                 DataUtils.save_dataframe_to_csv(dataset_summary_df, summary_path)
                 print(f"\nSummary for {dataset_name} saved to {summary_path}")
                 print(dataset_summary_df)
 
         if all_results_summary:
             final_summary_df = pd.DataFrame(all_results_summary)
-            final_summary_path = os.path.join(str(self.config.BENCHMARKING_RESULTS_DIR), "gnn_benchmark_FULL_SUMMARY.csv")
+            final_summary_path = os.path.join(str(self.config.RESULTS_BENCHMARKING_DIR), "gnn_benchmark_FULL_SUMMARY.csv")
             DataUtils.save_dataframe_to_csv(final_summary_df, final_summary_path)
             print(f"\nFull GNN benchmarking summary saved to {final_summary_path}")
             print("\nFull Summary Table:")
