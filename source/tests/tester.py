@@ -111,10 +111,10 @@ def verify_cudnn_with_pycuda_lib():
 
     try:
         # 1. Import necessary library
-        from nvidia import cudnn
+        import nvidia.cudnn
 
         # 2. Get and print the version
-        version = cudnn.get_version()
+        version = nvidia.cudnn.__version__
         print(f"✅ [Success] Found nvidia-cudnn-python library.")
         print(f"  cuDNN Version reported by library: {version}")
         print("  Functional test is deferred to PyTorch/TensorFlow diagnostics.")
@@ -389,15 +389,17 @@ def run_graph_builder_full_test():
         f.write(fasta_content)
 
     config = Config()
-    config.GCN_INPUT_FASTA_PATH = Path(fasta_path)
-    config.RESULTS_GRAPH_OBJECTS_DIR = Path(base_test_dir) / "test_pipeline_output" / "1_graph_objects"
+    config.UNIPROT_FASTA_PATH = Path(fasta_path)  # Override the correct path
+    config.BASE_OUTPUT_DIR = Path(base_test_dir) / "test_pipeline_output"  # This ensures temp_dir is also isolated
     config.DEBUG_VERBOSE = True
     config.GCN_NGRAM_MAX_N = 3
     config.GRAPH_BUILDER_WORKERS = 1  # Force synchronous
 
     print(f"--- Running GraphBuilder instance for n_max={config.GCN_NGRAM_MAX_N} ---")
-    print(f"  Input FASTA: {config.GCN_INPUT_FASTA_PATH}")
-    print(f"  GraphBuilder output will be within: {config.BASE_OUTPUT_DIR}")
+    print(f"  Input FASTA: {config.UNIPROT_FASTA_PATH}")
+    print(f"  GraphBuilder output will be within: {config.BASE_OUTPUT_DIR.name}")
+    # Manually update the derived paths after overriding the base
+    config._setup_paths()
 
     try:
         graph_builder_instance = GraphBuilder(config)
@@ -451,14 +453,17 @@ class TestGraphBuilderSmoke(unittest.TestCase):
         print("=" * 80)
         try:
             config = Config()
-            config.GCN_INPUT_FASTA_PATH = Path(self.fasta_path)
-            config.RESULTS_GRAPH_OBJECTS_DIR = Path(self.temp_output_dir) / "1_graph_objects"
+            config.UNIPROT_FASTA_PATH = Path(self.fasta_path)
+            config.BASE_OUTPUT_DIR = Path(self.temp_output_dir)  # Isolate all output, including temp dirs
             config.GCN_NGRAM_MAX_N = 1
             config.GRAPH_BUILDER_WORKERS = 1
 
-            print(f"  Running GraphBuilder with FASTA: {config.GCN_INPUT_FASTA_PATH}")
-            print(f"  Outputting to: {config.BASE_OUTPUT_DIR}")
+            print(f"  Running GraphBuilder with FASTA: {config.UNIPROT_FASTA_PATH}")
+            print(f"  Outputting to: {config.BASE_OUTPUT_DIR.name}")
             print(f"  N_max: {config.GCN_NGRAM_MAX_N}, Workers: {config.GRAPH_BUILDER_WORKERS}")
+
+            # Re-run setup_paths to ensure all derived paths use the overridden base
+            config._setup_paths()
 
             graph_builder = GraphBuilder(config)
             graph_builder.run()
@@ -561,8 +566,8 @@ def test_gnn_benchmarker_run():
 
     test_benchmark_output_dir = Path(config.BASE_OUTPUT_DIR) / "test_gnn_benchmark_results"
     if os.path.exists(test_benchmark_output_dir): shutil.rmtree(test_benchmark_output_dir)
-    original_benchmark_output_dir = config.RESULTS_BENCHMARKING_DIR
-    config.RESULTS_BENCHMARKING_DIR = test_benchmark_output_dir
+    original_benchmark_output_dir = config.RESULTS_BENCHMARKING_DIR  # Store the original path
+    config.RESULTS_BENCHMARKING_DIR = test_benchmark_output_dir  # Override with the temp path
 
     pyg_dataset_root = Path(config.BASE_DATA_DIR) / "standard_datasets_pyg"
     karate_specific_path = pyg_dataset_root / "KarateClub"
@@ -577,7 +582,7 @@ def test_gnn_benchmarker_run():
     finally:
         config.BENCHMARK_NODE_CLASSIFICATION_DATASETS = original_datasets
         config.EVAL_EPOCHS = original_epochs
-        config.RESULTS_BENCHMARKING_DIR = original_benchmark_output_dir
+        config.RESULTS_BENCHMARKING_DIR = original_benchmark_output_dir  # Restore original path
         if os.path.exists(test_benchmark_output_dir): shutil.rmtree(test_benchmark_output_dir)
         if os.path.exists(karate_specific_path): shutil.rmtree(karate_specific_path)
     print("--- GNN Benchmarker Smoke Test Complete ---")
@@ -597,8 +602,8 @@ def test_ppi_pipeline_run():
 
     test_ppi_output_dir = Path(config.BASE_OUTPUT_DIR) / "test_ppi_eval_results"
     if os.path.exists(test_ppi_output_dir): shutil.rmtree(test_ppi_output_dir)
-    original_eval_results_dir = config.EVALUATION_RESULTS_DIR
-    config.EVALUATION_RESULTS_DIR = test_ppi_output_dir
+    original_eval_results_dir = config.RESULTS_EVALUATION_DIR
+    config.RESULTS_EVALUATION_DIR = test_ppi_output_dir
 
     try:
         evaluator = PPIPipeline(config)
@@ -611,7 +616,7 @@ def test_ppi_pipeline_run():
         config.RUN_DUMMY_TEST = original_dummy_flag
         config.EVAL_EPOCHS = original_epochs
         config.EVAL_N_FOLDS = original_folds
-        config.EVALUATION_RESULTS_DIR = original_eval_results_dir
+        config.RESULTS_EVALUATION_DIR = original_eval_results_dir
         if os.path.exists(test_ppi_output_dir): shutil.rmtree(test_ppi_output_dir)
         dummy_data_created_path = Path(config.BASE_OUTPUT_DIR) / "dummy_data_temp"
         if os.path.exists(dummy_data_created_path) and config.CLEANUP_DUMMY_DATA:
