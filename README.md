@@ -9,9 +9,9 @@
 ## Overview
 
 This project introduces ProtGram-DirectGCN, a method to generate powerful protein sequence embeddings for predicting interactions. The core pipeline involves:
-1.  **Graph Construction**: Building directed n-gram graphs from protein sequences, where nodes are amino acid n-grams and edges represent their co-occurrence.
-2.  **GCN Training**: Training a Graph Convolutional Network on these graphs to learn topologically-aware embeddings.
-3.  **PPI Prediction**: Using the learned embeddings to train a downstream classifier for link prediction (PPI).
+1.  **ProtGram: Graph Construction**: Building directed n-gram graphs from protein sequences, where nodes are amino acid n-grams and edges represent their co-occurrence.
+2.  **DirectGCN: Graph Convolutional Neural Network Training**: Training a Custom Directed Graph Convolutional Network on these graphs to learn topologically-aware embeddings.
+3.  **PPI Prediction**: Relying on the learned embeddings to train a downstream classifier for link prediction (PPI).
 4.  **Benchmarking**: Evaluating the model against other GNNs and established protein embedding techniques.
 
 ## Prerequisites
@@ -23,7 +23,7 @@ Before you begin, ensure you have the following installed:
 
 ## Installation Guide
 
-The setup process is designed to be straightforward. Follow these three steps to create the environment and install all required packages.
+The setup process is designed to be straightforward. Follow these four steps to create the environment and install all required packages.
 
 > **Note for Windows Users**: If you are running on Windows, it is strongly recommended to use the [Windows Subsystem for Linux (WSL) 2](https://learn.microsoft.com/en-us/windows/wsl/install) to create a Linux environment. The following commands should be run inside a WSL terminal. If you are on a Linux-based OS like Ubuntu, you can proceed directly.
 
@@ -45,13 +45,24 @@ conda activate ppi-env
 
 You will know the environment is active because its name, `(ppi-env)`, will appear at the beginning of your terminal prompt.
 
-### Step 3: Run the Installation Script
+### Step 3: Clone the Repository
 
-Now, navigate to the `configuration` directory within the project and run the `setup.py` script.
+With your environment active, clone this repository to your local machine using the following command.
+**Important**: After cloning, you must check out the `v2` branch, which contains the stable version of the project.
 
 ```sh
-# Navigate to the configuration directory
-cd path/to/ProtGram-DirectGCN/configuration
+git clone https://github.com/iebeid/ProtGram-DirectGCN.git
+cd ProtGram-DirectGCN
+git checkout v2
+```
+
+### Step 4: Run the Installation Script
+
+Now that you are inside the project directory, navigate to the `configuration` folder and run the `setup.py` script.
+
+```sh
+# Navigate to the configuration directory from the project root
+cd configuration
 
 # Run the setup script
 python setup.py

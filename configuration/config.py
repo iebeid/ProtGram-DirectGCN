@@ -48,6 +48,10 @@ class Config:
         self.BASE_SRC_DIR = self.PROJECT_ROOT / "source"
         self.BASE_CONFIG_DIR = self.PROJECT_ROOT / "configuration"
 
+        # --- NEW: Logging Configuration ---
+        self.ENABLE_FILE_LOGGING = True
+        self.LOG_DIR = self.BASE_OUTPUT_DIR / "logs"
+
         # --- Define file keys and their relative paths to BASE_DATA_DIR ---
         # This provides a single source of truth for file locations.
         self.FILE_KEYS = {
@@ -63,6 +67,7 @@ class Config:
         self.GCN_INPUT_FASTA_PATH = self.BASE_DATA_DIR / self.FILE_KEYS["UNIPROT_FASTA"]
         self.INTERACTIONS_POSITIVE_PATH = self.BASE_DATA_DIR / self.FILE_KEYS["POS_INTERACTIONS"]
         self.INTERACTIONS_NEGATIVE_PATH = self.BASE_DATA_DIR / self.FILE_KEYS["NEG_INTERACTIONS"]
+        self.ID_MAPPING_PATH = self.BASE_DATA_DIR / self.FILE_KEYS["ID_MAPPING_TSV"]
 
         self.GRAPH_OBJECTS_DIR = self.BASE_OUTPUT_DIR / "1_graph_objects"
         self.GCN_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_gcn_embeddings"
