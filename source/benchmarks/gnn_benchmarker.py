@@ -21,11 +21,11 @@ from torch_geometric.data import Data
 from torch_geometric.datasets import (KarateClub, Planetoid)
 from torch_geometric.utils import add_self_loops, degree, to_undirected
 
-from config.config import Config
-from src.models.gnn import gcn,gat,graphsage,gin,chebnet,rgcn,tongidigcn,directgcn
-from src.models.gnn.directgcn import ProtGramDirectGCN
-from src.utils.data_utils import DataUtils
-from src.utils.models_utils import EmbeddingProcessor
+from configuration.config import Config
+from source.models.gnn import gcn,gat,graphsage,gin,chebnet,rgcn,tongidigcn,directgcn
+from source.models.gnn.directgcn import ProtGramDirectGCN
+from source.utils.data_utils import DataUtils
+from source.utils.models_utils import EmbeddingProcessor
 
 
 class GNNBenchmarker:

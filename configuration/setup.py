@@ -150,7 +150,9 @@ if __name__ == "__main__":
         "conda install -c conda-forge python-louvain -y",
         "pip install torch_geometric", # Now install the main package
         "pip install seaborn",
-        "pip install pycuda"
+        "pip install pycuda",
+        "conda clean --all -y",
+        "pip cache purge"
     ]
 
     # Create the platform-specific script

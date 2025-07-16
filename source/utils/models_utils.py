@@ -21,10 +21,10 @@ from tqdm.auto import tqdm
 from pathlib import Path
 
 if TYPE_CHECKING:
-    from src.models.gnn.directgcn import ProtGramDirectGCN
+    from source.models.gnn.directgcn import ProtGramDirectGCN
     from gensim.models import Word2Vec
-    from config import Config  # Import Config for type hinting
-    from src.data.graph import DirectedNgramGraph  # Import DirectedNgramGraph for type hinting
+    from configuration.config import Config  # Import Config for type hinting
+    from source.data.graph import DirectedNgramGraph  # Import DirectedNgramGraph for type hinting
 
 
 class BaseGNN(nn.Module):
