@@ -38,6 +38,89 @@ from source.utils.results import EvaluationReporter
 
 
 # ==============================================================================
+# --- NEW SECTION: Comprehensive GPU Environment Verification ---
+# ==============================================================================
+
+def verify_full_gpu_environment():
+    """
+    A comprehensive test to verify that CUDA, cuDNN, PyTorch, and TensorFlow
+    are all correctly configured and can access the GPU within the same script execution.
+    """
+    print("\n" + "=" * 80)
+    DataUtils.print_header("Comprehensive GPU Environment Verification")
+    print("=" * 80)
+    all_ok = True
+
+    # --- Part 1: PyTorch Verification ---
+    print("\n--- Verifying PyTorch ---")
+    try:
+        print(f"PyTorch Version: {torch.__version__}")
+        pt_cuda_available = torch.cuda.is_available()
+        print(f"Is CUDA available for PyTorch? -> {pt_cuda_available}")
+        if not pt_cuda_available:
+            print("  ❌ [Error] PyTorch cannot find a CUDA-enabled GPU.")
+            all_ok = False
+        else:
+            print(f"  CUDA Version PyTorch built with: {torch.version.cuda}")
+            device_count = torch.cuda.device_count()
+            print(f"  Number of GPUs found: {device_count}")
+            for i in range(device_count):
+                print(f"    - GPU {i}: {torch.cuda.get_device_name(i)}")
+            # Perform a test operation
+            device = torch.device("cuda")
+            cpu_tensor = torch.randn(2, 2)
+            gpu_tensor = cpu_tensor.to(device)
+            gpu_result = gpu_tensor * gpu_tensor
+            print(f"  ✅ [Success] PyTorch GPU tensor operation completed.")
+    except Exception as e:
+        print(f"  ❌ [Error] An unexpected error occurred during PyTorch verification: {e}")
+        all_ok = False
+
+    # --- Part 2: TensorFlow Verification ---
+    print("\n--- Verifying TensorFlow ---")
+    try:
+        print(f"TensorFlow Version: {tf.__version__}")
+        gpus = tf.config.list_physical_devices('GPU')
+        print(f"Is CUDA available for TensorFlow? -> {len(gpus) > 0}")
+        if not gpus:
+            print("  ❌ [Error] TensorFlow cannot find a CUDA-enabled GPU.")
+            all_ok = False
+        else:
+            for i, gpu in enumerate(gpus):
+                print(f"  - GPU {i}: {gpu.name}")
+            tf.config.experimental.set_memory_growth(gpus[0], True)
+            with tf.device('/GPU:0'):
+                a = tf.constant([[1.0, 2.0], [3.0, 4.0]], dtype=tf.float32)
+                b = tf.constant([[5.0, 6.0], [7.0, 8.0]], dtype=tf.float32)
+                c = tf.matmul(a, b)
+            # Accessing .numpy() forces computation
+            _ = c.numpy()
+            print(f"  ✅ [Success] TensorFlow GPU tensor operation completed.")
+    except Exception as e:
+        print(f"  ❌ [Error] An unexpected error occurred during TensorFlow verification: {e}")
+        all_ok = False
+
+    # --- Part 3: cuDNN Library Check ---
+    print("\n--- Verifying cuDNN Library ---")
+    try:
+        import nvidia.cudnn
+        cudnn_version = torch.backends.cudnn.version()
+        print(f"  ✅ [Success] Found and imported 'nvidia.cudnn' library.")
+        print(f"  cuDNN Version reported by PyTorch backend: {cudnn_version}")
+    except ImportError:
+        print("  ❌ [Error] Could not import the 'nvidia.cudnn' library.")
+        all_ok = False
+
+    # --- Part 4: Final Summary ---
+    print("\n" + "-" * 40)
+    if all_ok:
+        print("✅ GPU Environment Verification Passed for both PyTorch and TensorFlow.")
+    else:
+        print("❌ GPU Environment Verification FAILED. Please check the errors above.")
+    print("-" * 40)
+
+
+# ==============================================================================
 # --- SECTION 1: CUDA and cuDNN Verification (from verify_cuda_cudnn.py) ---
 # ==============================================================================
 
@@ -648,11 +731,9 @@ def run_all_tests():
     print("### Starting All Integrated Tests... ###")
     print("#" * 100)
 
-    # Phase 1: Low-Level Environment & GPU Verification
+    # Phase 1: Comprehensive GPU Environment Verification
+    verify_full_gpu_environment()
     verify_cuda_with_pycuda()
-    verify_cudnn_with_pycuda_lib()
-    test_tensorflow_gpu()
-    test_pytorch_gpu()
 
     # Phase 2: Utility and Model Build Tests
     test_reporter()

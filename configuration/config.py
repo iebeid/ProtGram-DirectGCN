@@ -47,7 +47,9 @@ class Config:
         """Sets up all base, data_builders, and results paths for the project."""
         # Base Paths
         self.PROJECT_ROOT = (Path(__file__).parent.parent).resolve()
+        self.BASE_CONFIG_DIR = self.PROJECT_ROOT / "configuration"
         self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
+        self.BASE_SOURCE_DIR = self.PROJECT_ROOT / "source"
         self.BASE_OUTPUT_DIR = self.PROJECT_ROOT / "results"
         self.LOG_DIR = self.BASE_OUTPUT_DIR / "logs"
 
@@ -56,7 +58,7 @@ class Config:
         self.DATA_GROUND_TRUTH_DIR = self.BASE_DATA_DIR / "ground_truth"
         self.DATA_MODELS_DIR = self.BASE_DATA_DIR / "models"
         self.DATA_MAPPINGS_DIR = self.BASE_DATA_DIR / "mappings"
-        self.DATA_STANDARD_DATASETS_DIR = self.BASE_DATA_DIR / "standard_datasets_pyg"
+        self.DATA_STANDARD_DATASETS_DIR = self.BASE_DATA_DIR / "benchmarks"
 
         # Results Subdirectories
         self.RESULTS_GRAPH_OBJECTS_DIR = self.BASE_OUTPUT_DIR / "1_graph_objects"
@@ -71,8 +73,8 @@ class Config:
         self.UNIPROT_FASTA_PATH = self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta"
         self.POS_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "positive_interactions.csv"
         self.NEG_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "negative_interactions.csv"
-        self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "uniref_to_uniprot.tsv"
-        self.PROTT5_MODEL_PATH = self.DATA_MODELS_DIR / "prott5.h5"
+        self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "idmapping_selected.tab"
+        self.PROTT5_MODEL_PATH = self.DATA_MODELS_DIR / "per-protein.h5"
 
     def _setup_pipeline_flags(self):
         """Sets flags to control which parts of the main pipeline are executed."""
@@ -99,19 +101,19 @@ class Config:
                 "checksum": None
             },
             "POS_INTERACTIONS": {
-                "url": "https://example.com/data/positive_interactions.csv",
+                "url": "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID_FOR_positive_interactions.csv",
                 "path": self.POS_INTERACTIONS_PATH,
                 "post_process": None,
                 "checksum": None
             },
             "NEG_INTERACTIONS": {
-                "url": "https://example.com/data/negative_interactions.csv",
+                "url": "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID_FOR_negative_interactions.csv",
                 "path": self.NEG_INTERACTIONS_PATH,
                 "post_process": None,
                 "checksum": None
             },
             "PROTT5_MODEL": {
-                "url": "https://example.com/models/prott5.h5",
+                "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5",
                 "path": self.PROTT5_MODEL_PATH,
                 "post_process": None,
                 "checksum": None
