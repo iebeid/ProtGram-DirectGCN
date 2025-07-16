@@ -35,7 +35,7 @@ try:
     import tensorflow as tf
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_score
-    from src.models.ml.mlp import MLP
+    from source.models.ml.mlp import MLP
 
     TENSORFLOW_AVAILABLE = True
 except ImportError:
@@ -276,7 +276,7 @@ class ProtGramDirectGCNTrainer:
 
     def run(self):
         DataUtils.print_header("PIPELINE STEP 2: Training ProtGramDirectGCN & Generating Embeddings")
-        os.makedirs(self.config.GCN_EMBEDDINGS_DIR, exist_ok=True)
+        os.makedirs(self.config.RESULTS_GCN_EMBEDDINGS_DIR, exist_ok=True)
         DataUtils.print_header("Step 1: Loading Protein ID Mapping (if configured)")
         if self.config.ID_MAPPING_MODE != 'none':
             id_mapper_instance = DataLoader(config=self.config)
@@ -291,7 +291,7 @@ class ProtGramDirectGCNTrainer:
 
         for n_val in range(1, self.config.GCN_NGRAM_MAX_N + 1):
             DataUtils.print_header(f"Processing N-gram Level: n = {n_val}")
-            graph_path = os.path.join(self.config.GRAPH_OBJECTS_DIR, f"ngram_graph_n{n_val}.pkl")
+            graph_path = os.path.join(self.config.RESULTS_GRAPH_OBJECTS_DIR, f"ngram_graph_n{n_val}.pkl")
             try:
                 graph_obj = DataUtils.load_object(graph_path)
                 if not isinstance(graph_obj, DirectedNgramGraph):
@@ -408,7 +408,7 @@ class ProtGramDirectGCNTrainer:
             return
         final_ngram_embeds = level_embeddings[final_n_val]
         final_ngram_map = level_ngram_to_idx[final_n_val]
-        protein_sequences = list(DataLoader.parse_sequences(str(self.config.GCN_INPUT_FASTA_PATH)))
+        protein_sequences = list(DataLoader.parse_sequences(str(self.config.UNIPROT_FASTA_PATH)))
         pooled_embeddings = EmbeddingProcessor.pool_ngram_embeddings_for_protein_fast(
             protein_sequences=protein_sequences, n_val=final_n_val,
             ngram_map=final_ngram_map, ngram_embeddings=final_ngram_embeds
@@ -417,7 +417,7 @@ class ProtGramDirectGCNTrainer:
             pooled_embeddings = {self.id_map.get(k, k): v for k, v in pooled_embeddings.items()}
 
         DataUtils.print_header("Step 4: Saving Generated Embeddings")
-        output_h5_path = os.path.join(self.config.GCN_EMBEDDINGS_DIR, f"gcn_n{final_n_val}_embeddings.h5")
+        output_h5_path = os.path.join(self.config.RESULTS_GCN_EMBEDDINGS_DIR, f"gcn_n{final_n_val}_embeddings.h5")
         with h5py.File(output_h5_path, 'w') as hf:
             for key, vector in tqdm(pooled_embeddings.items(), desc="  Writing H5 File"):
                 if vector is not None: hf.create_dataset(key, data=vector)
@@ -430,7 +430,7 @@ class ProtGramDirectGCNTrainer:
             pca_embeds = EmbeddingProcessor.apply_pca(pooled_embeddings, self.config.PCA_TARGET_DIMENSION, self.config.RANDOM_STATE)
             if pca_embeds:
                 pca_dim = next(iter(pca_embeds.values())).shape[0]
-                pca_h5_path = os.path.join(self.config.GCN_EMBEDDINGS_DIR, f"gcn_n{final_n_val}_embeddings_pca{pca_dim}.h5")
+                pca_h5_path = os.path.join(self.config.RESULTS_GCN_EMBEDDINGS_DIR, f"gcn_n{final_n_val}_embeddings_pca{pca_dim}.h5")
                 with h5py.File(pca_h5_path, 'w') as hf:
                     for key, vector in tqdm(pca_embeds.items(), desc="  Writing PCA H5 File"):
                         if vector is not None: hf.create_dataset(key, data=vector)
@@ -453,13 +453,13 @@ class ProtGramDirectGCNTrainer:
 
         sample_size = getattr(self.config, 'GCN_SANITY_CHECK_SAMPLE_SIZE', None)
 
-        pos_pairs = GroundTruthLoader.load_interaction_pairs(str(self.config.INTERACTIONS_POSITIVE_PATH), 1)
+        pos_pairs = GroundTruthLoader.load_interaction_pairs(str(self.config.POS_INTERACTIONS_PATH), 1)
 
         if sample_size and len(pos_pairs) > sample_size:
             print(f"  Subsampling positive pairs to {sample_size} for a faster sanity check.")
             pos_pairs = random.sample(pos_pairs, sample_size)
 
-        neg_pairs = GroundTruthLoader.load_interaction_pairs(str(self.config.INTERACTIONS_NEGATIVE_PATH), 0, sample_n=len(pos_pairs), random_state=self.config.RANDOM_STATE)
+        neg_pairs = GroundTruthLoader.load_interaction_pairs(str(self.config.NEG_INTERACTIONS_PATH), 0, sample_n=len(pos_pairs), random_state=self.config.RANDOM_STATE)
         all_pairs = pos_pairs + neg_pairs
         random.shuffle(all_pairs)
         if not all_pairs:

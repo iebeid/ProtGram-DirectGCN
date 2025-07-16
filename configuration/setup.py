@@ -110,47 +110,35 @@ if __name__ == "__main__":
     if not check_conda_installed():
         sys.exit(1)
 
-    # This command sequence will install all packages into the active environment.
+    # This command sequence installs all packages. Commands are grouped for efficiency
+    # and to ensure dependency compatibility (e.g., installing PyTorch and its
+    # ecosystem from the same source).
     command_sequence = [
-        # Initial cleanup and update of the active environment
-        "conda clean --all -y",
-        "conda update --all -y",
+        # 1. Initial cleanup
         "conda clean --all -y",
 
-        # Install core GPU libraries (CUDA, cuDNN)
-        f"conda install -c nvidia cuda-toolkit={CUDA_TOOLKIT_VERSION} -y",
-        f"conda install -c nvidia cudnn={CUDNN_VERSION} -y",
+        # 2. Install all conda-based packages in a single command for efficiency.
+        #    This includes GPU libraries, TensorFlow, and other data science packages.
+        (f"conda install -y -c nvidia -c conda-forge "
+         f"cuda-toolkit={CUDA_TOOLKIT_VERSION} cudnn={CUDNN_VERSION} tensorflow "
+         "dask tqdm biopython matplotlib scipy scikit-learn transformers gensim"),
 
-        # Install and verify TensorFlow
-        "conda install -c conda-forge tensorflow -y",
+        # 3. Verify TensorFlow GPU detection
         'python -c "import tensorflow as tf; print(\'Num GPUs Available: \', len(tf.config.list_physical_devices(\'GPU\')))"',
 
-        # Install PyTorch using a specific index to match the conda-installed CUDA version. This is more robust.
+        # 4. Install PyTorch stack using pip, targeting the correct CUDA version for robustness
         (f"pip install torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio "
          f"--index-url https://download.pytorch.org/whl/{PYTORCH_CUDA_SUFFIX}"),
+
+        # 5. Verify PyTorch GPU detection
         'python -c "import torch; print(f\'PyTorch CUDA available: {torch.cuda.is_available()}\')"',
 
-        # Final cleanup
-        "conda clean --all -y",
-        "pip cache purge",
-
-        # Install remaining data science and ML libraries
-        "conda install -c conda-forge dask -y",
-        "conda install -c conda-forge tqdm -y",
-        "conda install -c conda-forge biopython -y",
-        # Install PyG dependencies pointing to the correct torch/cuda version
+        # 6. Install all remaining pip packages together
         (f"pip install pyg_lib torch-scatter torch-sparse -f "
          f"https://data.pyg.org/whl/torch-{PYTORCH_VERSION}+{PYTORCH_CUDA_SUFFIX}.html"),
-        "conda install -c conda-forge matplotlib -y",
-        "conda install -c conda-forge scipy -y",
-        "conda install -c conda-forge scikit-learn -y",
-        "pip install mlflow",
-        "conda install -c conda-forge transformers -y",
-        "conda install -c conda-forge gensim -y",
-        "conda install -c conda-forge python-louvain -y",
-        "pip install torch_geometric", # Now install the main package
-        "pip install seaborn",
-        "pip install pycuda",
+        "pip install torch_geometric mlflow seaborn pycuda python-louvain",
+
+        # 7. Final cleanup
         "conda clean --all -y",
         "pip cache purge"
     ]

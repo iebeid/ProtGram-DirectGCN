@@ -91,17 +91,16 @@ class DataManager:
         Main method to iterate through required files, check existence, and download if needed.
         """
         print("\n--- Running Data Verification and Download ---")
-        if not hasattr(self.config, 'DATA_SOURCES') or not hasattr(self.config, 'FILE_KEYS'):
-            print("DATA_SOURCES or FILE_KEYS not defined in config. Skipping.")
+        if not hasattr(self.config, 'DATA_SOURCES'):
+            print("DATA_SOURCES not defined in config. Skipping.")
             return
 
         for key, source_info in self.config.DATA_SOURCES.items():
-            relative_path = self.config.FILE_KEYS.get(key)
-            if not relative_path:
-                print(f"Warning: No path found in FILE_KEYS for source '{key}'. Skipping.")
+            final_path = source_info.get('path')
+            if not final_path:
+                print(f"Warning: No 'path' defined for data source '{key}'. Skipping.")
                 continue
 
-            final_path = self.base_data_dir / relative_path
             checksum = source_info.get('checksum')
 
             if final_path.exists() and self._verify_checksum(final_path, checksum):
