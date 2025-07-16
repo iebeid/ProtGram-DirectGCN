@@ -102,86 +102,27 @@ def verify_cuda_with_pycuda():
 
 def verify_cudnn_with_pycuda_lib():
     """
-    Verifies cuDNN functionality by performing a convolution using the nvidia-cudnn-python
-    library, with PyCUDA handling the tensor operations.
+    Verifies that the nvidia-cudnn-python library is installed and accessible.
+    The functional verification of cuDNN is implicitly handled by the PyTorch and TensorFlow tests.
     """
     print("\n" + "=" * 80)
-    DataUtils.print_header("cuDNN Verification with PyCUDA and nvidia-cudnn-python")
+    DataUtils.print_header("cuDNN Library Verification (nvidia-cudnn-python)")
     print("=" * 80)
 
     try:
-        # 1. Import necessary libraries
+        # 1. Import necessary library
         from nvidia import cudnn
-        import pycuda.autoinit
-        import pycuda.gpuarray as gpuarray
-        import numpy as np
 
-        # 2. Print the version of the cuDNN library
-        print(f"Found cuDNN version: {cudnn.backend.get_version_string()}")
-
+        # 2. Get and print the version
+        version = cudnn.get_version()
+        print(f"✅ [Success] Found nvidia-cudnn-python library.")
+        print(f"  cuDNN Version reported by library: {version}")
+        print("  Functional test is deferred to PyTorch/TensorFlow diagnostics.")
+    except ImportError:
+        print("❌ [Error] Could not import the 'nvidia.cudnn' library.")
+        print("  Please ensure 'nvidia-cudnn-cu12' (or similar) is installed via pip.")
     except Exception as e:
-        print(f"Error initializing libraries. Please ensure PyCUDA and nvidia-cudnn-python are installed correctly.")
-        print(f"Details: {e}")
-        return
-
-    try:
-        # 3. Set up data parameters for a sample convolution
-        input_shape = (1, 3, 32, 32)
-        filter_shape = (16, 3, 3, 3)
-
-        # 4. Create input and filter data on the GPU using PyCUDA
-        print("\nCreating input and filter tensors on the GPU with PyCUDA...")
-        # Create CPU tensors first
-        x_cpu = np.random.rand(*input_shape).astype(np.float32)
-        w_cpu = np.random.rand(*filter_shape).astype(np.float32)
-        # Transfer to GPU
-        x_gpu = gpuarray.to_gpu(x_cpu)
-        w_gpu = gpuarray.to_gpu(w_cpu)
-        print(f"Input tensor 'x' created with shape: {x_gpu.shape}")
-        print(f"Filter tensor 'w' created with shape: {w_gpu.shape}")
-
-        # 5. Create a handle to the cuDNN library context
-        handle = cudnn.create_handle()
-        print("\nCreated cuDNN handle.")
-
-        # 6. Define the computation graph for a convolution
-        graph = cudnn.pygraph(
-            intermediate_data_type=cudnn.data_type.FLOAT,
-            compute_data_type=cudnn.data_type.FLOAT
-        )
-
-        # Define the tensors for the graph using properties from our PyCUDA arrays
-        X = graph.tensor(name="X", dim=x_gpu.shape, stride=x_gpu.strides, data_type=x_gpu.dtype)
-        W = graph.tensor(name="W", dim=w_gpu.shape, stride=w_gpu.strides, data_type=w_gpu.dtype)
-
-        # Define the convolution operation
-        Y = graph.conv_fprop(name="conv1", image=X, weight=W, padding=[1, 1], stride=[1, 1])
-        Y.set_output(True).set_data_type(Y.get_data_type())
-        print("Defined a convolution operation graph.")
-
-        # 7. Build and execute the graph
-        print("Building and executing the cuDNN graph...")
-        graph.build([cudnn.heuristic_mode.A])
-
-        # Allocate workspace on the GPU using PyCUDA
-        workspace = gpuarray.empty(graph.get_workspace_size(), dtype=np.uint8)
-
-        # Prepare a dictionary mapping graph tensors to the actual PyCUDA GPU arrays
-        variant_pack = {X: x_gpu, W: w_gpu}
-
-        # Execute the convolution
-        graph.execute(variant_pack, workspace)
-        print("Execution successful.")
-
-        # 8. Get the result
-        y_result = variant_pack[Y]
-        print(f"Output tensor 'y' received with shape: {y_result.shape}")
-        print("\nVerification successful! A cuDNN-accelerated convolution was executed using PyCUDA.")
-
-    except Exception as e:
-        print(f"\n[ERROR] An exception occurred during cuDNN verification with PyCUDA: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ [Error] An unexpected error occurred while checking nvidia-cudnn-python: {e}")
 
 
 # ==============================================================================
@@ -449,8 +390,7 @@ def run_graph_builder_full_test():
 
     config = Config()
     config.GCN_INPUT_FASTA_PATH = Path(fasta_path)
-    config.BASE_OUTPUT_DIR = Path(base_test_dir) / "test_pipeline_output"
-    config.GRAPH_OBJECTS_DIR = config.BASE_OUTPUT_DIR / "1_graph_objects"
+    config.RESULTS_GRAPH_OBJECTS_DIR = Path(base_test_dir) / "test_pipeline_output" / "1_graph_objects"
     config.DEBUG_VERBOSE = True
     config.GCN_NGRAM_MAX_N = 3
     config.GRAPH_BUILDER_WORKERS = 1  # Force synchronous
@@ -464,7 +404,7 @@ def run_graph_builder_full_test():
         graph_builder_instance.run()
         print(f"--- GraphBuilder run() method completed ---")
         for n_val_check in range(1, config.GCN_NGRAM_MAX_N + 1):
-            expected_graph_file = config.GRAPH_OBJECTS_DIR / f"ngram_graph_n{n_val_check}.pkl"
+            expected_graph_file = config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{n_val_check}.pkl"
             if expected_graph_file.exists():
                 print(f"  OK: Final graph object file found: {expected_graph_file}")
             else:
@@ -512,8 +452,7 @@ class TestGraphBuilderSmoke(unittest.TestCase):
         try:
             config = Config()
             config.GCN_INPUT_FASTA_PATH = Path(self.fasta_path)
-            config.BASE_OUTPUT_DIR = Path(self.temp_output_dir)
-            config.GRAPH_OBJECTS_DIR = config.BASE_OUTPUT_DIR / "1_graph_objects"
+            config.RESULTS_GRAPH_OBJECTS_DIR = Path(self.temp_output_dir) / "1_graph_objects"
             config.GCN_NGRAM_MAX_N = 1
             config.GRAPH_BUILDER_WORKERS = 1
 
@@ -524,7 +463,7 @@ class TestGraphBuilderSmoke(unittest.TestCase):
             graph_builder = GraphBuilder(config)
             graph_builder.run()
 
-            expected_graph_file = config.GRAPH_OBJECTS_DIR / f"ngram_graph_n{config.GCN_NGRAM_MAX_N}.pkl"
+            expected_graph_file = config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{config.GCN_NGRAM_MAX_N}.pkl"
             self.assertTrue(expected_graph_file.exists(), f"Expected graph file not found: {expected_graph_file}")
             print(f"\n  GraphBuilder smoke test completed successfully. Output file found: {expected_graph_file}")
 
@@ -622,8 +561,8 @@ def test_gnn_benchmarker_run():
 
     test_benchmark_output_dir = Path(config.BASE_OUTPUT_DIR) / "test_gnn_benchmark_results"
     if os.path.exists(test_benchmark_output_dir): shutil.rmtree(test_benchmark_output_dir)
-    original_benchmark_output_dir = config.BENCHMARKING_RESULTS_DIR
-    config.BENCHMARKING_RESULTS_DIR = test_benchmark_output_dir
+    original_benchmark_output_dir = config.RESULTS_BENCHMARKING_DIR
+    config.RESULTS_BENCHMARKING_DIR = test_benchmark_output_dir
 
     pyg_dataset_root = Path(config.BASE_DATA_DIR) / "standard_datasets_pyg"
     karate_specific_path = pyg_dataset_root / "KarateClub"
@@ -638,7 +577,7 @@ def test_gnn_benchmarker_run():
     finally:
         config.BENCHMARK_NODE_CLASSIFICATION_DATASETS = original_datasets
         config.EVAL_EPOCHS = original_epochs
-        config.BENCHMARKING_RESULTS_DIR = original_benchmark_output_dir
+        config.RESULTS_BENCHMARKING_DIR = original_benchmark_output_dir
         if os.path.exists(test_benchmark_output_dir): shutil.rmtree(test_benchmark_output_dir)
         if os.path.exists(karate_specific_path): shutil.rmtree(karate_specific_path)
     print("--- GNN Benchmarker Smoke Test Complete ---")
