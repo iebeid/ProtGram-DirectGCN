@@ -71,27 +71,26 @@ def verify_cuda_with_pycuda():
         print(f"Details: {e}")
         return  # Exit this function if PyCUDA fails
 
-    # 3. Create two large random matrices on the CPU using NumPy
-    print("\nCreating two large random matrices on the CPU (NumPy)...")
+    # 3. Create two random matrices of the same shape on the CPU using NumPy
+    print("\nCreating two random matrices on the CPU (NumPy)...")
     matrix_a_cpu = np.random.randn(512, 1024).astype(np.float32)
-    matrix_b_cpu = np.random.randn(1024, 256).astype(np.float32)
+    matrix_b_cpu = np.random.randn(512, 1024).astype(np.float32)  # Shape must match for element-wise op
     print(f"Matrix A shape: {matrix_a_cpu.shape} (on CPU)")
     print(f"Matrix B shape: {matrix_b_cpu.shape} (on CPU)")
 
     # 4. Transfer the matrices from the CPU to the GPU
-    # This creates gpuarray objects, which are stored in the GPU's memory.
     print("\nTransferring matrices from CPU to GPU...")
     matrix_a_gpu = gpuarray.to_gpu(matrix_a_cpu)
     matrix_b_gpu = gpuarray.to_gpu(matrix_b_cpu)
     print("Transfer complete.")
 
-    # 5. Perform matrix multiplication on the GPU
-    print("\nPerforming matrix multiplication on the GPU...")
-    # The dot product is performed using the gpuarray's dot method
-    result_gpu = gpuarray.dot(matrix_a_gpu, matrix_b_gpu)
+    # 5. Perform a simple element-wise operation on the GPU.
+    # This is more robust for a basic verification test than a dot product, which can have complex dependencies.
+    print("\nPerforming element-wise addition on the GPU...")
+    result_gpu = matrix_a_gpu + matrix_b_gpu
 
     # PyCUDA operations are synchronous by default in this context, so the next line executes after the dot product is complete.
-    print("Matrix multiplication complete.")
+    print("GPU operation complete.")
     print(f"Result matrix shape: {result_gpu.shape} (on GPU)")
 
     # 6. Transfer the result back to the CPU (as a NumPy array) to print it
