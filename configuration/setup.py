@@ -120,7 +120,7 @@ if __name__ == "__main__":
         # 2. Install all conda-based packages in a single command for efficiency.
         #    This includes GPU libraries, TensorFlow, and other data_builders science packages.
         (f"conda install -y -c nvidia -c conda-forge python={PYTHON_VERSION} "
-         f"cuda-toolkit={CUDA_TOOLKIT_VERSION} cudnn={CUDNN_VERSION} tensorflow={TENSORFLOW_VERSION} "
+         f"cuda-toolkit={CUDA_TOOLKIT_VERSION} cudnn={CUDNN_VERSION} tensorflow={TENSORFLOW_VERSION} gxx_linux-64 "
          "dask tqdm biopython matplotlib scipy scikit-learn transformers gensim"),
 
         # 3. Verify TensorFlow GPU detection

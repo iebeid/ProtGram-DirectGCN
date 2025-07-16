@@ -111,6 +111,9 @@ def setup_data(config: Config):
                 print(f"Decompressing {download_path.name} to {final_path.name}...")
                 with gzip.open(download_path, 'rb') as f_in, open(final_path, 'wb') as f_out:
                     shutil.copyfileobj(f_in, f_out)
+                # Explicitly remove the archive after successful decompression
+                if download_path.exists():
+                    download_path.unlink()
                 print(f"✔ Successfully acquired: {final_path.relative_to(config.PROJECT_ROOT)}")
 
         except requests.exceptions.RequestException as e:

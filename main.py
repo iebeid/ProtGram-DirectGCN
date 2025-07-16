@@ -113,6 +113,7 @@ def run_pipeline_for_dataset(base_config: Config, fasta_path: Path):
 
 def main():
     script_start_time = time.monotonic()
+    should_downsample = False  # Initialize before the try block
     base_config = Config()
 
     if base_config.ENABLE_FILE_LOGGING:
