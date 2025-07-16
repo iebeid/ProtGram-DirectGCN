@@ -81,7 +81,8 @@ class Config:
         self.RUN_TRANSFORMER_PIPELINE = False
         self.RUN_BENCHMARKING_PIPELINE = True
         self.RUN_MAIN_PPI_EVALUATION = True
-        self.RUN_DUMMY_TEST = True # Runs a quick evaluation on dummy data
+        self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification tests from tester.py
+        self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data
         self.CLEANUP_DUMMY_DATA = True
         self.ENABLE_FILE_LOGGING = True
 

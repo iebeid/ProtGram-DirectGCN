@@ -51,9 +51,9 @@ class Word2VecEmbedder:
             # For now, we'll assume the GCN training (if run) populates a map that
             # could be used, or pooling uses original IDs if map is empty.
             # Let's load it similar to how GCN trainer does for consistency:
-            if os.path.exists(str(self.config.ID_MAPPING_OUTPUT_FILE)):
+            if os.path.exists(str(self.config.ID_MAPPING_PATH)):
                 try:
-                    mapping_df = pd.read_csv(str(self.config.ID_MAPPING_OUTPUT_FILE), sep='\t', header=None, names=['original', 'mapped'])
+                    mapping_df = pd.read_csv(str(self.config.ID_MAPPING_PATH), sep='\t', header=None, names=['original', 'mapped'])
                     self.id_map = dict(zip(mapping_df['original'], mapping_df['mapped']))
                     print(f"  Loaded {len(self.id_map)} ID mappings from GCN's output file for Word2Vec.")
                 except Exception as e:
@@ -68,12 +68,12 @@ class Word2VecEmbedder:
 
         DataUtils.print_header("Step 2: Preparing FASTA Corpus for Word2Vec")
         fasta_files = []
-        if self.config.W2V_INPUT_FASTA_DIR.is_file():
-            fasta_files.append(str(self.config.W2V_INPUT_FASTA_DIR))
-        elif self.config.W2V_INPUT_FASTA_DIR.is_dir():
-            fasta_files = [str(f) for f in self.config.W2V_INPUT_FASTA_DIR.glob('*.fasta')]
+        if self.config.UNIPROT_FASTA_PATH.is_file():
+            fasta_files.append(str(self.config.UNIPROT_FASTA_PATH))
+        elif self.config.UNIPROT_FASTA_PATH.is_dir():
+            fasta_files = [str(f) for f in self.config.UNIPROT_FASTA_PATH.glob('*.fasta')]
         else:
-            print(f"ERROR: W2V_INPUT_FASTA_DIR '{self.config.W2V_INPUT_FASTA_DIR}' is not a valid file or directory.")
+            print(f"ERROR: W2V_INPUT_FASTA_DIR '{self.config.UNIPROT_FASTA_PATH}' is not a valid file or directory.")
             return
 
         if not fasta_files:
@@ -99,7 +99,7 @@ class Word2VecEmbedder:
             seed=self.config.RANDOM_STATE
         )
         print(f"  Word2Vec model training finished in {time.time() - model_train_start_time:.2f}s.")
-        model_path = str(self.config.WORD2VEC_EMBEDDINGS_DIR / f"word2vec_model_dim{self.config.W2V_VECTOR_SIZE}.model")
+        model_path = str(self.config.RESULTS_W2V_EMBEDDINGS_DIR / f"word2vec_model_dim{self.config.W2V_VECTOR_SIZE}.model")
         w2v_model.save(model_path)
         print(f"  Word2Vec model saved to: {model_path}")
 
@@ -127,7 +127,7 @@ class Word2VecEmbedder:
         else:
             print(f"  Generated {len(protein_embeddings)} protein embeddings using Word2Vec.")
 
-        output_h5_path = str(self.config.WORD2VEC_EMBEDDINGS_DIR / f"word2vec_dim{self.config.W2V_VECTOR_SIZE}_{self.config.W2V_POOLING_STRATEGY}.h5")
+        output_h5_path = str(self.config.RESULTS_W2V_EMBEDDINGS_DIR / f"word2vec_dim{self.config.W2V_VECTOR_SIZE}_{self.config.W2V_POOLING_STRATEGY}.h5")
         with h5py.File(output_h5_path, 'w') as hf:
             for key, vector in tqdm(protein_embeddings.items(), desc="  Writing H5 File", disable=not self.config.DEBUG_VERBOSE):
                 if vector is not None and vector.size > 0:
@@ -142,7 +142,7 @@ class Word2VecEmbedder:
                 first_valid_pca_emb = next((v for v in pca_embeds.values() if v is not None and v.size > 0), None)
                 if first_valid_pca_emb is not None:
                     pca_dim = first_valid_pca_emb.shape[0]
-                    pca_h5_path = str(self.config.WORD2VEC_EMBEDDINGS_DIR / f"word2vec_dim{self.config.W2V_VECTOR_SIZE}_{self.config.W2V_POOLING_STRATEGY}_pca{pca_dim}.h5")
+                    pca_h5_path = str(self.config.RESULTS_W2V_EMBEDDINGS_DIR / f"word2vec_dim{self.config.W2V_VECTOR_SIZE}_{self.config.W2V_POOLING_STRATEGY}_pca{pca_dim}.h5")
                     with h5py.File(pca_h5_path, 'w') as hf:
                         for key, vector in tqdm(pca_embeds.items(), desc="  Writing PCA H5 File", disable=not self.config.DEBUG_VERBOSE):
                             if vector is not None and vector.size > 0:

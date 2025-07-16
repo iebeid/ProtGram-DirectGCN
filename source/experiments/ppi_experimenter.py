@@ -333,16 +333,16 @@ class PPIPipeline:
         DataUtils.print_header(f"PPI EVALUATION PIPELINE ({run_type})")
 
         if use_dummy_data:
-            output_dir = os.path.join(str(self.config.EVALUATION_RESULTS_DIR), "dummy_run_output")
+            output_dir = os.path.join(str(self.config.RESULTS_EVALUATION_DIR), "dummy_run_output")
             pos_fp, neg_fp, emb_configs = PPIPipeline._create_dummy_data(
                 base_dir=str(self.config.BASE_OUTPUT_DIR), num_proteins=50,
                 embedding_dim=16, num_pos=100, num_neg=100
             )
         else:
-            output_dir = str(self.config.EVALUATION_RESULTS_DIR)
+            output_dir = str(self.config.RESULTS_EVALUATION_DIR)
             emb_configs = getattr(self.config, 'LP_EMBEDDING_FILES_TO_EVALUATE', [])
-            pos_fp = str(self.config.INTERACTIONS_POSITIVE_PATH)
-            neg_fp = str(self.config.INTERACTIONS_NEGATIVE_PATH)
+            pos_fp = str(self.config.POS_INTERACTIONS_PATH)
+            neg_fp = str(self.config.NEG_INTERACTIONS_PATH)
             if not emb_configs:
                 print("Warning: 'LP_EMBEDDING_FILES_TO_EVALUATE' is empty in config. No evaluation will run.")
                 return

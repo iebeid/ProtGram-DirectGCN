@@ -17,6 +17,7 @@ from source.experiments.ppi_experimenter import PPIPipeline
 from source.training.protgram_directgcn_trainer import ProtGramDirectGCNTrainer
 from source.training.prott5_trainer import TransformerEmbedder
 from source.training.word2vec_trainer import Word2VecEmbedder
+from source.tests.tester import run_all_tests
 from source.utils.data_utils import DataUtils
 from source.utils.logging_utils import start_logging, stop_logging
 
@@ -40,6 +41,12 @@ def main():
     try:
         print("Starting the main pipeline...")
         setup_data(config)
+
+        # --- Run Integrated Test Suite (Optional) ---
+        if config.RUN_INTEGRATED_TESTS:
+            DataUtils.print_header("Running Integrated Test Suite")
+            run_all_tests()
+            DataUtils.print_header("Integrated Test Suite Finished. Continuing main pipeline...")
 
         if config.USE_MLFLOW:
             print(f"MLflow tracking URI: {config.MLFLOW_TRACKING_URI}")

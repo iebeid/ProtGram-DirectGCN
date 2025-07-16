@@ -177,14 +177,14 @@ class TransformerEmbedder:
 
     def run(self):
         DataUtils.print_header("PIPELINE STEP: Generating Embeddings from Transformers")
-        os.makedirs(str(self.config.TRANSFORMER_EMBEDDINGS_DIR), exist_ok=True)
+        os.makedirs(str(self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR), exist_ok=True)
 
         if tf.config.list_physical_devices('GPU'):
             print("  TensorFlow: GPU available.")
         else:
             print("  TensorFlow: No GPU detected by TensorFlow. Using CPU.")
 
-        fasta_input_dir = str(self.config.TRANSFORMER_INPUT_FASTA_DIR)
+        fasta_input_dir = str(self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR)
         fasta_files = sorted([os.path.normpath(f) for f in glob.glob(os.path.join(fasta_input_dir, '*.fasta')) + glob.glob(os.path.join(fasta_input_dir, '*.fa'))])
 
         if not fasta_files:

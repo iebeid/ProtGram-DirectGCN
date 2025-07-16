@@ -685,23 +685,26 @@ def test_ppi_pipeline_run():
 # --- SECTION 8: Main Execution Block ---
 # ==============================================================================
 
-if __name__ == "__main__":
+def run_all_tests():
+    """
+    Runs the full suite of verification, unit, and smoke tests.
+    """
     print("\n" + "#" * 100)
     print("### Starting All Integrated Tests... ###")
     print("#" * 100)
 
-    # --- Phase 1: Low-Level Environment & GPU Verification ---
+    # Phase 1: Low-Level Environment & GPU Verification
     verify_cuda_with_pycuda()
     verify_cudnn_with_pycuda_lib()
     test_tensorflow_gpu()
     test_pytorch_gpu()
 
-    # --- Phase 2: Utility and Model Build Tests ---
+    # Phase 2: Utility and Model Build Tests
     test_reporter()
     test_data_utilities()
     test_mlp_model_build()
 
-    # --- Phase 3: Graph Builder Tests ---
+    # Phase 3: Graph Builder Tests
     # Run the unittest version of the smoke test
     # This automatically handles setUp and tearDown
     suite = unittest.TestSuite()
@@ -712,7 +715,7 @@ if __name__ == "__main__":
     # Run the full, synchronous GraphBuilder test
     run_graph_builder_full_test()
 
-    # --- Phase 4: Full Pipeline Smoke Tests ---
+    # Phase 4: Full Pipeline Smoke Tests
     # Note: These are designed to be quick. You can comment out any that you don't need to run every time.
     # test_word2vec_pipeline_run() # Disabled by default as per original script
     # test_transformer_embedder_pipeline_run() # Disabled by default as per original script

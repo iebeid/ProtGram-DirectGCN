@@ -57,8 +57,8 @@ def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int, n
 class GraphBuilder:
     def __init__(self, config: Config):
         self.config = config
-        self.protein_sequence_file = str(config.GCN_INPUT_FASTA_PATH)
-        self.output_dir = str(config.GRAPH_OBJECTS_DIR)
+        self.protein_sequence_file = str(config.UNIPROT_FASTA_PATH)
+        self.output_dir = str(config.RESULTS_GRAPH_OBJECTS_DIR)
         self.n_max = config.GCN_NGRAM_MAX_N
         self.num_workers_config = config.GRAPH_BUILDER_WORKERS if config.GRAPH_BUILDER_WORKERS is not None else 1
         self.temp_dir = os.path.join(str(config.BASE_OUTPUT_DIR), "temp_graph_builder")
