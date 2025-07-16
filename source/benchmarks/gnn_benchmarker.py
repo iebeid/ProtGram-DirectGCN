@@ -32,9 +32,9 @@ class GNNBenchmarker:
     def __init__(self, config: Config):
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        os.makedirs(str(self.config.BENCHMARK_EMBEDDINGS_DIR), exist_ok=True)
+        os.makedirs(str(self.config.RESULTS_BENCHMARK_EMBEDDINGS_DIR), exist_ok=True)
         print(f"GNNBenchmarker initialized. Using device: {self.device}")
-        print(f"Benchmark embeddings will be saved to: {self.config.BENCHMARK_EMBEDDINGS_DIR}")
+        print(f"Benchmark embeddings will be saved to: {self.config.RESULTS_BENCHMARK_EMBEDDINGS_DIR}")
 
     @staticmethod
     def set_seeds(seed: int):
@@ -204,7 +204,7 @@ class GNNBenchmarker:
             else:
                 print(f"      PCA failed or was skipped for {model_name}, using full dimension embeddings.")
 
-        emb_dir = os.path.join(str(self.config.BENCHMARK_EMBEDDINGS_DIR), f"{dataset_name}{graph_variant_suffix}")
+        emb_dir = os.path.join(str(self.config.RESULTS_BENCHMARK_EMBEDDINGS_DIR), f"{dataset_name}{graph_variant_suffix}")
         os.makedirs(emb_dir, exist_ok=True)
         emb_filename = f"{model_name}_embeddings{filename_suffix}.h5"
         emb_path = os.path.join(emb_dir, emb_filename)
