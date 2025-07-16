@@ -70,7 +70,7 @@ class ProtGramDirectGCNTrainer:
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.id_map: Dict[str, str] = {}
-        self.gcn_propagation_epsilon = getattr(config, 'GCN_PROPAGATION_EPSILON', 1e-9)
+        self.gcn_propagation_epsilon = getattr(self.config, 'GCN_PROPAGATION_EPSILON', 1e-9)
         DataUtils.print_header("ProtGramDirectGCNEmbedder Initialized")
 
     def _train_model_full_batch(self, model: ProtGramDirectGCN, data: Data, optimizer: torch.optim.Optimizer, epochs: int,
@@ -278,7 +278,7 @@ class ProtGramDirectGCNTrainer:
         DataUtils.print_header("PIPELINE STEP 2: Training ProtGramDirectGCN & Generating Embeddings")
         os.makedirs(self.config.RESULTS_GCN_EMBEDDINGS_DIR, exist_ok=True)
         DataUtils.print_header("Step 1: Loading Protein ID Mapping (if configured)")
-        if self.config.ID_MAPPING_MODE != 'none':
+        if getattr(self.config, 'ID_MAPPING_MODE', 'none') != 'none':
             id_mapper_instance = DataLoader(config=self.config)
             self.id_map = id_mapper_instance.generate_id_maps()
             print(f"  Loaded {len(self.id_map)} ID mappings.")
@@ -291,7 +291,7 @@ class ProtGramDirectGCNTrainer:
 
         for n_val in range(1, self.config.GCN_NGRAM_MAX_N + 1):
             DataUtils.print_header(f"Processing N-gram Level: n = {n_val}")
-            graph_path = os.path.join(self.config.RESULTS_GRAPH_OBJECTS_DIR, f"ngram_graph_n{n_val}.pkl")
+            graph_path = os.path.join(str(self.config.RESULTS_GRAPH_OBJECTS_DIR), f"ngram_graph_n{n_val}.pkl")
             try:
                 graph_obj = DataUtils.load_object(graph_path)
                 if not isinstance(graph_obj, DirectedNgramGraph):
@@ -408,7 +408,7 @@ class ProtGramDirectGCNTrainer:
             return
         final_ngram_embeds = level_embeddings[final_n_val]
         final_ngram_map = level_ngram_to_idx[final_n_val]
-        protein_sequences = list(DataLoader.parse_sequences(str(self.config.UNIPROT_FASTA_PATH)))
+        protein_sequences = list(DataLoader.parse_sequences(self.config.UNIPROT_FASTA_PATH))
         pooled_embeddings = EmbeddingProcessor.pool_ngram_embeddings_for_protein_fast(
             protein_sequences=protein_sequences, n_val=final_n_val,
             ngram_map=final_ngram_map, ngram_embeddings=final_ngram_embeds
@@ -417,7 +417,7 @@ class ProtGramDirectGCNTrainer:
             pooled_embeddings = {self.id_map.get(k, k): v for k, v in pooled_embeddings.items()}
 
         DataUtils.print_header("Step 4: Saving Generated Embeddings")
-        output_h5_path = os.path.join(self.config.RESULTS_GCN_EMBEDDINGS_DIR, f"gcn_n{final_n_val}_embeddings.h5")
+        output_h5_path = str(self.config.RESULTS_GCN_EMBEDDINGS_DIR / f"gcn_n{final_n_val}_embeddings.h5")
         with h5py.File(output_h5_path, 'w') as hf:
             for key, vector in tqdm(pooled_embeddings.items(), desc="  Writing H5 File"):
                 if vector is not None: hf.create_dataset(key, data=vector)
@@ -430,7 +430,7 @@ class ProtGramDirectGCNTrainer:
             pca_embeds = EmbeddingProcessor.apply_pca(pooled_embeddings, self.config.PCA_TARGET_DIMENSION, self.config.RANDOM_STATE)
             if pca_embeds:
                 pca_dim = next(iter(pca_embeds.values())).shape[0]
-                pca_h5_path = os.path.join(self.config.RESULTS_GCN_EMBEDDINGS_DIR, f"gcn_n{final_n_val}_embeddings_pca{pca_dim}.h5")
+                pca_h5_path = str(self.config.RESULTS_GCN_EMBEDDINGS_DIR / f"gcn_n{final_n_val}_embeddings_pca{pca_dim}.h5")
                 with h5py.File(pca_h5_path, 'w') as hf:
                     for key, vector in tqdm(pca_embeds.items(), desc="  Writing PCA H5 File"):
                         if vector is not None: hf.create_dataset(key, data=vector)
@@ -480,7 +480,7 @@ class ProtGramDirectGCNTrainer:
                                 embedding_dim=embedding_dim)
             test_gen = partial(EmbeddingProcessor.generate_edge_features_batched, interaction_pairs=test_pairs, protein_embeddings=protein_embeddings, method='concatenate', batch_size=self.config.EVAL_BATCH_SIZE,
                                embedding_dim=embedding_dim)
-            output_sig = (tf.TensorSpec(shape=(None, edge_feature_dim), dtype=tf.float16), tf.TensorSpec(shape=(None,), dtype=tf.int32))
+            output_sig = (tf.TensorSpec(shape=(None, edge_feature_dim), dtype=tf.float32), tf.TensorSpec(shape=(None,), dtype=tf.int32))
             train_ds = tf.data.Dataset.from_generator(train_gen, output_signature=output_sig).prefetch(tf.data.AUTOTUNE)
             test_ds = tf.data.Dataset.from_generator(test_gen, output_signature=output_sig).prefetch(tf.data.AUTOTUNE)
             mlp_params = {'dense1_units': 64, 'dropout1_rate': 0.5, 'dense2_units': 32, 'dropout2_rate': 0.5, 'l2_reg': 1e-5}
