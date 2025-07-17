@@ -251,7 +251,13 @@ class ProtGramXGCNTrainer:
         for epoch in range(1, epochs + 1):
             optimizer.zero_grad()
             with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
-                task_output, _ = model(data=data)
+                # FIX: Handle models that return a single tensor (e.g., standard GNNs)
+                # or a tuple (e.g., ProtGramDirectGCN which also returns embeddings).
+                output = model(data=data)
+                if isinstance(output, tuple):
+                    task_output = output[0]
+                else:
+                    task_output = output
                 primary_loss = criterion(task_output, data.y)
                 l2_reg = sum(p.norm(2).pow(2) for p in model.parameters() if p.requires_grad)
                 loss = primary_loss + l2_lambda * l2_reg
@@ -288,7 +294,12 @@ class ProtGramXGCNTrainer:
                 batch_data = batch_data.to(self.device)
                 optimizer.zero_grad()
                 with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
-                    task_output, _ = model(data=batch_data)
+                    # FIX: Handle different model output signatures (single tensor vs. tuple)
+                    output = model(data=batch_data)
+                    if isinstance(output, tuple):
+                        task_output = output[0]
+                    else:
+                        task_output = output
                     primary_loss_per_node_avg = criterion(task_output, batch_data.y)
                     weight_factor = batch_data.num_nodes / total_nodes_in_level_graph if total_nodes_in_level_graph > 0 else 0.0
                     weighted_primary_loss = primary_loss_per_node_avg * weight_factor

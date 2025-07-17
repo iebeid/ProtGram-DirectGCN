@@ -180,6 +180,12 @@ def main():
             run_all_tests()
             DataUtils.print_header("Integrated Test Suite Finished. Continuing main pipeline...")
 
+        # --- 3. Initial Setup: Configure MLflow Tracking ---
+        # Create the directory and set the tracking URI before any other MLflow calls.
+        mlruns_path = base_config.BASE_OUTPUT_DIR / "mlruns"
+        mlruns_path.mkdir(parents=True, exist_ok=True)
+        mlflow.set_tracking_uri(base_config.MLFLOW_TRACKING_URI)
+
         # --- 3. Initial Setup: Run Benchmarking Suites (They are dataset-agnostic) ---
         if base_config.USE_MLFLOW:
             mlflow.set_tracking_uri(base_config.MLFLOW_TRACKING_URI)
