@@ -18,7 +18,6 @@ from typing import Optional, List, Dict, Any
 
 # --- Dependencies from unit_tests.py ---
 import h5py
-import pycuda.tools
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -132,6 +131,22 @@ def verify_cuda_with_pycuda():
     print("\n" + "=" * 80)
     DataUtils.print_header("CUDA Verification with PyCUDA")
     print("=" * 80)
+
+    # --- Robustness Fix: Explicitly set the compiler for PyCUDA ---
+    # This prevents nvcc from finding a stale compiler from a different
+    # environment by directly specifying the correct compiler directory.
+    import platform
+    import pycuda.compiler
+    if platform.system() == "Linux":
+        conda_prefix = os.environ.get("CONDA_PREFIX")
+        if conda_prefix:
+            conda_bin_dir = os.path.join(conda_prefix, "bin")
+            if os.path.exists(conda_bin_dir):
+                print(f"--- Forcing PyCUDA to use compiler directory: {conda_bin_dir} ---")
+                # Add the compiler directory flag to PyCUDA's default commands
+                if ['--compiler-bindir', conda_bin_dir] not in pycuda.compiler.DEFAULT_NVCC_FLAGS:
+                    pycuda.compiler.DEFAULT_NVCC_FLAGS.extend(['--compiler-bindir', conda_bin_dir])
+
     try:
         # 1. Import PyCUDA and initialize it
         import pycuda.autoinit
@@ -141,6 +156,7 @@ def verify_cuda_with_pycuda():
 
         # 2. Clear caches now that we know the module is imported and initialized.
         # This resolves the UnboundLocalError and ensures we start fresh.
+        import pycuda.tools
         pycuda.tools.clear_context_caches()
 
         # 3. Get information about the current GPU device
