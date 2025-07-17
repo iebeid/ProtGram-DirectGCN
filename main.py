@@ -171,6 +171,13 @@ def main():
             for key, value in flags.items(): print(f"  {key}: {value}")
             print("--------------------------")
 
+        # --- PRE-PIPELINE SETUP: Configure MLflow Tracking ---
+        # This must be done before any pipeline step that might use MLflow (including tests).
+        if base_config.USE_MLFLOW:
+            mlruns_path = base_config.BASE_OUTPUT_DIR / "mlruns"
+            mlruns_path.mkdir(parents=True, exist_ok=True) # Ensure the directory exists
+            mlflow.set_tracking_uri(base_config.MLFLOW_TRACKING_URI)
+
         # --- 1. Initial Setup: Download all required data ---
         setup_data(base_config)
 
@@ -180,15 +187,7 @@ def main():
             run_all_tests()
             DataUtils.print_header("Integrated Test Suite Finished. Continuing main pipeline...")
 
-        # --- 3. Initial Setup: Configure MLflow Tracking ---
-        # Create the directory and set the tracking URI before any other MLflow calls.
-        mlruns_path = base_config.BASE_OUTPUT_DIR / "mlruns"
-        mlruns_path.mkdir(parents=True, exist_ok=True)
-        mlflow.set_tracking_uri(base_config.MLFLOW_TRACKING_URI)
-
         # --- 3. Initial Setup: Run Benchmarking Suites (They are dataset-agnostic) ---
-        if base_config.USE_MLFLOW:
-            mlflow.set_tracking_uri(base_config.MLFLOW_TRACKING_URI)
 
         if base_config.RUN_BENCHMARKING_PIPELINE:
             mlflow.set_experiment(base_config.MLFLOW_BENCHMARK_EXPERIMENT_NAME)
