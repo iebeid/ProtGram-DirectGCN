@@ -12,7 +12,10 @@ import torch
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from torch_geometric.datasets import Planetoid, WebKB
-from torch_geometric.nn import Node2Vec, DeepWalk
+# FIX: In recent PyG versions, Node2Vec is in the models submodule,
+# but DeepWalk must be imported from its specific path.
+from torch_geometric.nn.models import Node2Vec
+from torch_geometric.nn.models.metapath2vec import MetaPath2Vec
 
 from configuration.config import Config
 from source.utils.data import DataUtils
@@ -66,14 +69,13 @@ class NetworkEmbeddingBenchmarker:
                     q=1,
                     sparse=True,
                 ).to(self.device)
-            elif model_name == 'DeepWalk':
-                model = DeepWalk(
-                    edge_index=data.edge_index,
+            elif model_name == 'MetaPath2Vec':
+                model = MetaPath2Vec(edge_index_dict=data.edge_index,
                     embedding_dim=self.config.BENCHMARK_NE_EMBEDDING_DIM,
                     walk_length=self.config.BENCHMARK_NE_WALK_LENGTH,
                     context_size=self.config.BENCHMARK_NE_CONTEXT_SIZE,
                     walks_per_node=10,
-                    sparse=True,
+                    sparse=True
                 ).to(self.device)
             else:
                 raise ValueError(f"Unknown model: {model_name}")

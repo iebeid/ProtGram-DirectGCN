@@ -6,7 +6,6 @@
 # ==============================================================================
 
 import gzip
-import os
 import shutil
 import requests
 from tqdm.auto import tqdm

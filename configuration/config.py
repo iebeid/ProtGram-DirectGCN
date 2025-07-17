@@ -148,7 +148,7 @@ class Config:
         self.BENCHMARK_TEST_ON_UNDIRECTED = True
         self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8}
         self.BENCHMARK_PCA_TARGET_DIM = 64
-        self.BENCHMARK_NE_MODELS_TO_RUN = ["Node2Vec", "DeepWalk"]
+        self.BENCHMARK_NE_MODELS_TO_RUN = ["Node2Vec", "MetaPath2Vec"]
         self.BENCHMARK_NE_EMBEDDING_DIM = 128
         self.BENCHMARK_NE_WALK_LENGTH = 20
         self.BENCHMARK_NE_CONTEXT_SIZE = 10
