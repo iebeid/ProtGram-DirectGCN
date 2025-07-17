@@ -345,7 +345,7 @@ class DataLoader:
             print("Ensure the file exists. It can be downloaded by setting 'ID_MAPPING_TSV' in DATA_SOURCES.")
             return {}
 
-        print(f"Loading ID mappings from: {os.path.basename(self.mapping_output_file)} (Dask Mode)")
+        print(f"Loading ID mappings from: {os.path.basename(self.mapping_output_file)} (Dask Partitioned Mode)")
         id_map = {}
         column_names = ['UniProtKB-AC', 'ID_type', 'ID']
         # Use the DB type specified in the config to filter the large file
@@ -353,27 +353,28 @@ class DataLoader:
         print(f"  Filtering for ID type: '{target_db}'")
 
         try:
-            # Use Dask to read the large file in parallel without loading it all into memory.
-            # Dask creates a task graph instead of loading data immediately.
+            # Use Dask to lazily read the large file in parallel.
             ddf = dd.read_csv(
                 self.mapping_output_file,
                 sep='\t',
                 header=None,
                 names=column_names,
                 usecols=[0, 1, 2],
-                dtype={'UniProtKB-AC': 'object', 'ID_type': 'object', 'ID': 'object'},
+                dtype={'UniProtKB-AC': 'object', 'ID_type': 'category', 'ID': 'object'},
                 blocksize='256MB'  # Process the file in 256MB chunks
             )
 
-            # Lazily filter the Dask dataframe for the rows we need. No computation happens yet.
+            # Lazily filter the Dask dataframe. No data is loaded yet.
             filtered_ddf = ddf[ddf['ID_type'] == target_db]
 
-            # Now, trigger the computation to build the final dictionary.
-            # This is the memory-intensive step, but all filtering has been done efficiently.
-            with ProgressBar(dt=5.0): # Update progress bar every 5 seconds
-                print("  Computing filtered map with Dask (this may take a while)...")
-                id_map_series = filtered_ddf.set_index('ID')['UniProtKB-AC']
-                id_map = id_map_series.compute().to_dict()
+            # Iterate over each partition, compute it, and add it to the dictionary.
+            # This avoids materializing the entire filtered result in memory at once.
+            with ProgressBar(dt=5.0):  # Update progress bar every 5 seconds
+                print("  Building map from Dask partitions (this may take a while)...")
+                for partition in filtered_ddf.partitions:
+                    chunk_df = partition.compute()
+                    chunk_map = pd.Series(chunk_df['UniProtKB-AC'].values, index=chunk_df['ID']).to_dict()
+                    id_map.update(chunk_map)
         except Exception as e:
             print(f"An error occurred while reading the mapping file with Dask: {e}")
             return {}

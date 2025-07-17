@@ -150,9 +150,6 @@ class TransformerEmbedder:
             output_filename = f"{output_filename_base}{output_filename_suffix}.h5"
             output_path = os.path.join(str(self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR), output_filename)
 
-            # Return the path of the generated file so the main pipeline can use it
-            return output_path
-
             print(f"  Saving final embeddings to: {output_path}")
             if final_embeddings_to_save:
                 save_start_time = time.time()
@@ -161,6 +158,8 @@ class TransformerEmbedder:
                         if embedding is not None and embedding.size > 0:
                             hf.create_dataset(prot_id.replace('/', '_'), data=embedding)
                 print(f"  Save complete in {time.time() - save_start_time:.2f}s. Saved {len(final_embeddings_to_save)} embeddings.")
+                # Return the path of the generated file so the main pipeline can use it
+                return output_path
             else:
                 print("  No final embeddings to save.")
 
