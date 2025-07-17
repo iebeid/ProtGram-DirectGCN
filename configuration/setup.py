@@ -110,6 +110,24 @@ if __name__ == "__main__":
     if not check_conda_installed():
         sys.exit(1)
 
+    # Platform-specific step to ensure compilers are available in the environment.
+    # This prevents build errors for packages that need to be compiled from source.
+    system = platform.system()
+    compiler_commands = []
+    if system == "Linux":
+        # For Linux, install the GNU compiler toolchain from conda-forge.
+        print("--- Adding commands to install GCC/G++ compilers for Linux. ---")
+        compiler_commands.append("conda install -c conda-forge gcc_linux-64 gxx_linux-64 -y")
+    elif system == "Darwin":  # This is macOS
+        # For macOS, install the Clang compiler toolchain from conda-forge.
+        print("--- Adding commands to install Clang compilers for macOS. ---")
+        compiler_commands.append("conda install -c conda-forge clang_osx-64 clangxx_osx-64 -y")
+    elif system == "Windows":
+        # For Windows, compilation often requires the MSVC build tools, which are
+        # best installed manually via the Visual Studio Installer.
+        print("\n--- INFO: On Windows, some packages may require the Microsoft C++ Build Tools. ---")
+        print("--- If you encounter compilation errors, please install them and try again. ---\n")
+
     # This command sequence will install all packages into the active environment.
     command_sequence = [
         # Initial cleanup and update of the active environment
@@ -120,6 +138,8 @@ if __name__ == "__main__":
         # Install core GPU libraries (CUDA, cuDNN)
         f"conda install -c nvidia cuda-toolkit={CUDA_TOOLKIT_VERSION} -y",
         f"conda install -c nvidia cudnn={CUDNN_VERSION} -y",
+
+        # The platform-specific compiler commands will be inserted here
 
         # Install and verify TensorFlow
         "conda install -c conda-forge tensorflow -y",
@@ -149,9 +169,16 @@ if __name__ == "__main__":
         "conda install -c conda-forge gensim -y",
         "conda install -c conda-forge python-louvain -y",
         "pip install torch_geometric", # Now install the main package
-        "pip install seaborn",
-        "pip install pycuda"
+        "conda install -c conda-forge seaborn -y",
+        "conda install -c conda-forge pycuda -y",
+
+        "conda clean --all -y",
+        "pip cache purge"
     ]
+
+    # Insert the compiler installation commands at the right place in the sequence.
+    # This happens after core setup and before packages that might need compilation.
+    command_sequence[5:5] = compiler_commands
 
     # Create the platform-specific script
     script_file = create_setup_script(command_sequence)
