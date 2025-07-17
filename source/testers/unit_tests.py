@@ -131,22 +131,6 @@ def verify_cuda_with_pycuda():
     print("\n" + "=" * 80)
     DataUtils.print_header("CUDA Verification with PyCUDA")
     print("=" * 80)
-
-    # --- Robustness Fix: Explicitly set the compiler for PyCUDA ---
-    # This prevents nvcc from finding a stale compiler from a different
-    # environment by directly specifying the correct compiler directory.
-    import platform
-    import pycuda.compiler
-    if platform.system() == "Linux":
-        conda_prefix = os.environ.get("CONDA_PREFIX")
-        if conda_prefix:
-            conda_bin_dir = os.path.join(conda_prefix, "bin")
-            if os.path.exists(conda_bin_dir):
-                print(f"--- Forcing PyCUDA to use compiler directory: {conda_bin_dir} ---")
-                # Add the compiler directory flag to PyCUDA's default commands
-                if ['--compiler-bindir', conda_bin_dir] not in pycuda.compiler.DEFAULT_NVCC_FLAGS:
-                    pycuda.compiler.DEFAULT_NVCC_FLAGS.extend(['--compiler-bindir', conda_bin_dir])
-
     try:
         # 1. Import PyCUDA and initialize it
         import pycuda.autoinit
