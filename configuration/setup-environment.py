@@ -5,16 +5,12 @@ import sys
 # --- Configuration for a Stable Environment ---
 ENV_NAME = "ppi-env"
 PYTHON_VERSION = "3.11"
-# We select versions of CUDA, PyTorch, and TensorFlow that are known to be compatible.
-# Conda and Mamba will handle the specific library versions.
+# We guide conda with the major CUDA version and let it find the compatible packages.
 CUDA_VERSION = "12.1"
-PYTORCH_VERSION = "2.4.0"
-TENSORFLOW_VERSION = "2.16.1"
-TORCH_GEOMETRIC_VERSION = "2.6.0"
 
 
 def create_environment_yaml():
-    """Creates the environment.yml file for a robust conda/mamba setup."""
+    """Creates a more flexible and solvable environment.yml file."""
     yaml_content = f"""
 name: {ENV_NAME}
 channels:
@@ -22,15 +18,19 @@ channels:
   - nvidia
   - conda-forge
 dependencies:
+  # --- Core Python and GPU Setup ---
   - python={PYTHON_VERSION}
-  - pytorch={PYTORCH_VERSION}
+  - pytorch-cuda={CUDA_VERSION} # This is the key: let this package manage cudnn and cudatoolkit
+
+  # --- Frameworks ---
+  # Conda will find compatible versions of PyTorch, torchvision, and TensorFlow
+  - pytorch
   - torchvision
   - torchaudio
-  - pytorch-cuda={CUDA_VERSION}
-  - tensorflow-gpu={TENSORFLOW_VERSION}
-  - torch-geometric={TORCH_GEOMETRIC_VERSION}
-  - cudatoolkit={CUDA_VERSION}
-  - cudnn
+  - tensorflow
+  - torch-geometric
+
+  # --- Core Libraries ---
   - dask
   - tqdm
   - biopython
@@ -38,13 +38,15 @@ dependencies:
   - scipy
   - scikit-learn
   - mlflow
-  - transformers=4.41.2
+  - transformers=4.41.2 # Keep this pinned for stability
   - gensim
   - python-louvain
   - seaborn
   - pycuda
-  - networkx=3.2.1
+  - networkx=3.2.1 # Keep this pinned to avoid known issues
   - pip
+
+  # --- Pip for packages not well-supported on Conda ---
   - pip:
     - tf-keras
     - pyarrow
@@ -52,24 +54,22 @@ dependencies:
 """
     with open("environment.yml", "w") as f:
         f.write(yaml_content)
-    print("--- Successfully created environment.yml file. ---")
+    print("--- Successfully created a flexible environment.yml file. ---")
 
 
 def run_setup():
-    """Installs Mamba and then creates the new conda environment using Mamba."""
+    """Installs Mamba and creates the new conda environment."""
     try:
-        # Step 1: Install Mamba into the base conda environment if it's not there.
-        print("\n--- Checking for Mamba and installing if necessary... ---")
+        print("\n--- Ensuring Mamba is installed in the base environment... ---")
         subprocess.run(
             ["conda", "install", "-n", "base", "-c", "conda-forge", "mamba", "-y"],
             check=True,
-            capture_output=True  # Hide output unless there's an error
+            capture_output=True
         )
-        print("--- Mamba is installed. Proceeding with environment creation. ---")
+        print("--- Mamba is ready. ---")
 
-        # Step 2: Use Mamba to create the environment. It's much faster.
         print(f"\n--- Creating the '{ENV_NAME}' environment with Mamba... ---")
-        print("--- This should be significantly faster than using the standard conda solver. ---")
+        print("--- This will be much faster and more reliable. ---")
         subprocess.run(["mamba", "env", "create", "-f", "environment.yml"], check=True)
 
         print("\n" + "=" * 80)
@@ -80,8 +80,8 @@ def run_setup():
 
     except subprocess.CalledProcessError as e:
         print(f"\n--- ERROR: The setup process failed. ---")
-        print(f"--- The command returned a non-zero exit code: {e.returncode} ---")
-        print("--- Please check the error messages above. ---")
+        print("--- Please check the error messages above. The environment may be partially created. ---")
+        print("--- It's recommended to run 'conda env remove -n ppi-env' before trying again. ---")
         sys.exit(1)
     except FileNotFoundError:
         print("--- ERROR: 'conda' command not found. Please ensure Conda is installed and in your PATH. ---")
