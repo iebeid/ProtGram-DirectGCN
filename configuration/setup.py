@@ -149,6 +149,9 @@ if __name__ == "__main__":
 
         # Install and verify TensorFlow
         "conda install -c conda-forge tensorflow -y",
+        # Install tf-keras for backwards compatibility with Keras 2, required by transformers
+        "echo '--- Installing tf-keras for Keras 2 API compatibility ---'",
+        "pip install tf-keras",
         'python -c "import tensorflow as tf; print(\'Num GPUs Available: \', len(tf.config.list_physical_devices(\'GPU\')))"',
 
         # Install PyTorch using a specific index to match the conda-installed CUDA version. This is more robust.

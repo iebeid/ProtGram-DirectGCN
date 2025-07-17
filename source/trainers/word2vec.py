@@ -88,9 +88,8 @@ class Word2VecEmbedder:
 
         DataUtils.print_header("Step 4: Generating Per-Protein Embeddings using Word2Vec")
         protein_embeddings: Dict[str, np.ndarray] = {}
-        sequences_for_embedding = []
-        for f_path in fasta_files:
-            sequences_for_embedding.extend(list(DataLoader.parse_sequences(f_path)))
+        # FIX: The parse_sequences function takes a list of file paths.
+        sequences_for_embedding = list(DataLoader.parse_sequences(fasta_files))
 
         if not sequences_for_embedding:
             print("  No sequences found to generate Word2Vec protein embeddings.")
