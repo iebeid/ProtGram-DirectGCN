@@ -18,6 +18,7 @@ from typing import Optional, List, Dict, Any
 
 # --- Dependencies from unit_tests.py ---
 import h5py
+import pycuda.tools
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -131,7 +132,7 @@ def verify_cuda_with_pycuda():
     print("\n" + "=" * 80)
     DataUtils.print_header("CUDA Verification with PyCUDA")
     print("=" * 80)
-
+    pycuda.tools.clear_context_caches()
     try:
         # 1. Import PyCUDA and initialize it
         import pycuda.autoinit

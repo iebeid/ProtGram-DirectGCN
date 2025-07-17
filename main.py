@@ -123,13 +123,18 @@ def main():
     if platform.system() == "Linux":
         conda_prefix = os.environ.get("CONDA_PREFIX")
         if conda_prefix:
+            conda_bin_path = os.path.join(conda_prefix, "bin")
             # These are the standard names for conda-forge's C/C++ compilers
-            cc_path = os.path.join(conda_prefix, "bin", "x86_64-conda-linux-gnu-cc")
-            cxx_path = os.path.join(conda_prefix, "bin", "x86_64-conda-linux-gnu-c++")
+            cc_path = os.path.join(conda_bin_path, "x86_64-conda-linux-gnu-cc")
+            cxx_path = os.path.join(conda_bin_path, "x86_64-conda-linux-gnu-c++")
 
-            # Only set the environment variables if the compilers actually exist
-            if os.path.exists(cc_path) and os.path.exists(cxx_path):
-                print("--- Setting CC/CXX environment variables to point to active Conda compilers ---")
+            if os.path.exists(conda_bin_path) and os.path.exists(cxx_path):
+                print("--- Forcing environment to use compilers from active Conda env ---")
+                # 1. Forcefully prepend the conda bin path to the system PATH.
+                #    This is the most effective way to ensure subprocesses find the right tools.
+                os.environ["PATH"] = conda_bin_path + os.pathsep + os.environ.get("PATH", "")
+
+                # 2. Set CC and CXX as a backup measure.
                 os.environ["CC"] = cc_path
                 os.environ["CXX"] = cxx_path
             else:
