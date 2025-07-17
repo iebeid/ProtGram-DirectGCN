@@ -15,6 +15,8 @@ import os
 
 from pathlib import Path
 
+import tensorflow as tf
+
 from configuration.config import Config
 from configuration.data import setup_data
 from source.data_builders.protgram import GraphBuilder

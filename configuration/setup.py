@@ -80,11 +80,10 @@ def run_script(script_filename):
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         sys.exit(1)
-    finally:
-        # Clean up the generated script file
-        if os.path.exists(script_filename):
-            os.remove(script_filename)
-            print(f"--- Cleaned up temporary script file: {script_filename} ---")
+    # Clean up the generated script file
+    if os.path.exists(script_filename):
+        os.remove(script_filename)
+        print(f"--- Cleaned up temporary script file: {script_filename} ---")
 
 
 def check_conda_installed():

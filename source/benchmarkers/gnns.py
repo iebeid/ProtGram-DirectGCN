@@ -8,7 +8,7 @@
 import os
 import time
 from typing import Dict, Optional, List
-
+import h5py
 import numpy as np
 import pandas as pd
 import torch
@@ -26,7 +26,7 @@ from source.models.gnn.gcn import GCN
 from source.models.gnn.gin import GIN
 from source.models.gnn.graphsage import GraphSAGE
 from source.models.gnn.rgcn import RGCN
-from source.models.gnn.tong_gcn import TongDiGCN
+from source.models.gnn.tongidigcn import TongDiGCN
 from source.utils.data import DataUtils
 from source.utils.models import EmbeddingProcessor
 
