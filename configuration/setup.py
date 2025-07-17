@@ -180,6 +180,10 @@ if __name__ == "__main__":
         "conda install -c conda-forge seaborn -y",
         "conda install -c conda-forge pycuda -y",
 
+        # FIX: Explicitly install a stable version of networkx to prevent a known SyntaxError bug in v3.3
+        "echo '--- Installing a stable version of networkx to prevent runtime errors ---'",
+        "conda install -c conda-forge networkx=3.2.1 -y",
+
         "conda clean --all -y",
         "pip cache purge"
     ]
