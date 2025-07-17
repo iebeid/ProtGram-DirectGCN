@@ -83,8 +83,8 @@ class TransformerEmbedder:
                 print(f"\n  Processing FASTA file {fasta_idx + 1}/{len(fasta_files)}: {os.path.basename(fasta_path)}")
                 file_protein_count = 0
                 batch_sequences, batch_ids = [], []
-
-                for prot_id, sequence in tqdm(DataLoader.parse_sequences(fasta_path), desc=f"  Sequences in {os.path.basename(fasta_path)}", leave=False):
+                # FIX: DataLoader.parse_sequences expects an iterable (a list of paths).
+                for prot_id, sequence in tqdm(DataLoader.parse_sequences([fasta_path]), desc=f"  Sequences in {os.path.basename(fasta_path)}", leave=False):
                     if not sequence:
                         print(f"    Skipping empty sequence for ID: {prot_id}")
                         continue
@@ -131,9 +131,9 @@ class TransformerEmbedder:
 
             print(f"\n  Generated {len(all_protein_embeddings)} total protein embeddings for {model_name} from {total_proteins_processed} sequences.")
 
+            # --- REFACTORED & FIXED: This logic should run once, after all files are processed. ---
             final_embeddings_to_save = all_protein_embeddings
             output_filename_suffix = f"_dim{embedding_dim_from_model}"
-
             if self.config.APPLY_PCA_TO_TRANSFORMER and len(all_protein_embeddings) > self.config.PCA_TARGET_DIMENSION :
                 print(f"  Applying PCA to {model_name} embeddings (target dim: {self.config.PCA_TARGET_DIMENSION})...")
                 pca_start_time = time.time()

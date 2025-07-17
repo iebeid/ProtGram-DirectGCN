@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+import torch_geometric
 from torch_geometric.datasets import Planetoid, GNNBenchmarkDataset, ZINC, TUDataset, QM9
 from torch_geometric.datasets import WebKB, Actor
 from torch_geometric.transforms import ToUndirected
@@ -74,7 +75,7 @@ class GNNBenchmarker:
             print(f"  Error loading dataset '{name}': {e}")
             return None
 
-    def _get_model(self, name: str, data, num_relations: int = 1):
+    def _get_model(self, name: str, dataset, data, num_relations: int = 1):
         model_params = {
             "GCN": {"class": GCN, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
             "GAT": {"class": GAT, "params": {"hidden_channels": 32, "heads": 8, "num_layers": 2, "dropout_rate": 0.6}},
@@ -83,18 +84,22 @@ class GNNBenchmarker:
             "ChebNet": {"class": ChebNet, "params": {"hidden_channels": 256, "K": 3, "num_layers": 2, "dropout_rate": 0.5}},
             "RGCN_SR": {"class": RGCN, "params": {"hidden_channels": 256, "num_relations": num_relations, "num_layers": 2, "dropout_rate": 0.5}},
             "TongDiGCN": {"class": TongDiGCN, "params": {"hidden_dim": 128}},
-            "ProtGramDirectGCN": {"class": ProtGramDirectGCN, "params": {"layer_dims": [data.num_features, 256, 128, 64, data.num_classes], "num_graph_nodes": data.num_nodes, "n_gram_len": 0, "one_gram_dim": 0, "max_pe_len": 0, "dropout": 0.5, "use_vector_coeffs": False}}
+            # Note: ProtGramDirectGCN layer_dims are defined dynamically below
+            "ProtGramDirectGCN": {"class": ProtGramDirectGCN, "params": {"num_graph_nodes": data.num_nodes, "n_gram_len": 0, "one_gram_dim": 0, "max_pe_len": 0, "dropout": 0.5, "use_vector_coeffs": False}}
         }
         model_info = model_params.get(name)
-        if not model_info: raise ValueError(f"Model {name} not found in GNNBenchmarker.")
+        if not model_info:
+            raise ValueError(f"Model {name} not found in GNNBenchmarker.")
 
         params = model_info['params']
+        # FIX: Correctly get num_classes from the parent dataset object, which always has this attribute.
+        # The individual `data` object might not.
+        is_collection = hasattr(dataset, '__len__') and not isinstance(dataset, torch_geometric.data.Data)
+        num_classes = dataset.num_classes if is_collection else int(data.y.max().item() + 1)
 
-        # Correctly get num_classes from dataset, not data object
-        num_classes = dataset.num_classes if hasattr(dataset, 'num_classes') else int(data.y.max()) + 1
         params['in_channels'] = data.num_features
         params['out_channels'] = num_classes
-        if name == "ProtGramDirectGCN": # Special case for ProtGramDirectGCN's layer_dims
+        if name == "ProtGramDirectGCN":  # Special case for ProtGramDirectGCN's layer_dims
             params["layer_dims"] = [data.num_features, 256, 128, 64, num_classes]
 
         return model_info['class'](**params)
@@ -104,10 +109,8 @@ class GNNBenchmarker:
         """Prepares standard PyG data for ProtGramDirectGCN's specific input format."""
         print(f"--- Pre-processing data for ProtGramDirectGCN on {data.name} ---")
         # 1. Create undirected normalized matrix (used for the structural path)
-        # FIX: to_undirected returns a single tensor if edge_attr is None.
-        edge_index_undir = to_undirected(data.edge_index, num_nodes=data.num_nodes)
-        if edge_index_undir.shape[0] != 2: raise ValueError(f"Expected edge_index of shape (2, N), but got {edge_index_undir.shape}")
-        row, col = edge_index_undir[0], edge_index_undir[1]
+        edge_index_undir, _ = to_undirected(data.edge_index, num_nodes=data.num_nodes)
+        row, col = edge_index_undir
         deg = torch.bincount(col, minlength=data.num_nodes).float()
         deg_inv_sqrt = deg.pow(-0.5)
         deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
@@ -223,14 +226,8 @@ class GNNBenchmarker:
         print(f"### Benchmarking on Dataset: {variant_name} ###")
         print("=" * 50 + "\n")
 
-        # Handle both single Data objects (like KarateClub) and Dataset collections
-        is_collection = hasattr(dataset, '__len__') and not isinstance(dataset, torch_geometric.data.Data)
-        if is_collection:
-            data = dataset[0]
-            num_classes = dataset.num_classes
-        else:
-            data = dataset
-            num_classes = int(data.y.max().item()) + 1
+        # Use the first data object
+        data = dataset[0]
         data.name = variant_name
 
         # Generate custom split if no masks exist
@@ -252,7 +249,7 @@ class GNNBenchmarker:
         else: # FIX: Use variant_name which is always available, instead of dataset.name
             print(f"  Using existing standard masks for {variant_name}.")
 
-        print(f"  {variant_name.split('_')[0]} loaded: Nodes: {data.num_nodes}, Edges: {data.num_edges}, Features: {data.num_features}, Classes: {num_classes}")
+        print(f"  {variant_name.split('_')[0]} loaded: Nodes: {data.num_nodes}, Edges: {data.num_edges}, Features: {data.num_features}, Classes: {dataset.num_classes}")
 
         # Pre-process a copy for ProtGramDirectGCN if it's in the list
         models_to_run = self.config.GNN_MODELS_TO_RUN if hasattr(self.config, 'GNN_MODELS_TO_RUN') else ["GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN_SR", "TongDiGCN", "ProtGramDirectGCN"]
