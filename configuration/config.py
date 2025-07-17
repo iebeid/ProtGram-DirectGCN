@@ -236,6 +236,7 @@ class Config:
         self.TRANSFORMER_BASE_BATCH_SIZE = 16
         self.TRANSFORMER_POOLING_STRATEGY = 'mean'
         self.APPLY_PCA_TO_TRANSFORMER = True
+        self.USE_XLA_COMPILATION = False  # Set to False by default for stability
 
     def _setup_lstm_params(self):
         """Sets parameters for the LSTM embedding pipeline."""
