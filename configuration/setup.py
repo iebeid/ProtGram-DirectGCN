@@ -118,10 +118,16 @@ if __name__ == "__main__":
         # For Linux, install the GNU compiler toolchain from conda-forge.
         print("--- Adding commands to install GCC/G++ compilers for Linux. ---")
         compiler_commands.append("conda install -c conda-forge gcc_linux-64 gxx_linux-64 -y")
+        # Also clear any stale PyCUDA cache that might point to the wrong compiler.
+        compiler_commands.append("echo '--- Clearing PyCUDA cache to prevent stale compiler paths ---'")
+        compiler_commands.append("rm -rf ~/.config/pycuda")
     elif system == "Darwin":  # This is macOS
         # For macOS, install the Clang compiler toolchain from conda-forge.
         print("--- Adding commands to install Clang compilers for macOS. ---")
         compiler_commands.append("conda install -c conda-forge clang_osx-64 clangxx_osx-64 -y")
+        # Also clear any stale PyCUDA cache that might point to the wrong compiler.
+        compiler_commands.append("echo '--- Clearing PyCUDA cache to prevent stale compiler paths ---'")
+        compiler_commands.append("rm -rf ~/.config/pycuda")
     elif system == "Windows":
         # For Windows, compilation often requires the MSVC build tools, which are
         # best installed manually via the Visual Studio Installer.
