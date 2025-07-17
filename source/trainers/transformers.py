@@ -66,8 +66,8 @@ class TransformerEmbedder:
             print("  Loading tokenizer and model...")
             tokenizer_class = T5Tokenizer if is_t5 else AutoTokenizer
             tokenizer = tokenizer_class.from_pretrained(hf_id)
-            # FIX: Add use_safetensors=True to avoid the torch.load vulnerability check
-            model = TFAutoModel.from_pretrained(hf_id, from_pt=True, use_safetensors=True)
+            # FIX: Load native TF weights by setting from_pt=False. This avoids the torch.load vulnerability check entirely.
+            model = TFAutoModel.from_pretrained(hf_id, from_pt=False)
             inference_func = TransformerEmbedder._get_model_inference_function(model, is_t5, self.config.USE_XLA_COMPILATION)
 
             if hasattr(model.config, 'hidden_size'):

@@ -1,29 +1,30 @@
 # ==============================================================================
 # MODULE: trainers/protgram_xgcn.py
-# PURPOSE: Generic trainer for GNNs on ProtGram n-gram graphs.
-# VERSION: 2.0 (Merged with protgram_directgcn.py)
-# AUTHOR: Islam Ebeid
+# PURPOSE: Unified trainer for GNNs on ProtGram n-gram graphs with self-supervised tasks.
+# VERSION: 2.1 (Restored and integrated full self-supervised label generation logic)
+# AUTHOR: Islam Ebeid (Integrated by Coding Partner)
 # ==============================================================================
 
 import collections
 import gc
 import os
 import random
-import math
-import time
-import h5py
-from typing import Dict, Optional, List, Tuple
 from functools import partial
-
-from tqdm import tqdm
 from pathlib import Path
+from typing import Dict, Optional, List, Tuple
+
+# Correctly import community_louvain
+import community as community_louvain
+import h5py
+import math
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch_geometric.data import Data
-from torch_geometric.utils import subgraph, to_networkx
+from torch_geometric.utils import to_networkx
+from tqdm import tqdm
 
 from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
@@ -49,7 +50,7 @@ AMINO_ACID_ALPHABET = list("ACDEFGHIKLMNPQRSTVWY")
 
 
 class EarlyStopper:
-    """A simple early stopper to monitor loss and stop trainers when it stops improving."""
+    """A simple early stopper to monitor loss and stop training when it stops improving."""
 
     def __init__(self, patience: int = 1, min_delta: float = 0):
         self.patience = patience
@@ -97,6 +98,7 @@ class ProtGramXGCNTrainer:
             final_protein_embeddings = self._pool_to_protein_level(ngram_embeddings_per_level)
 
             if id_map and final_protein_embeddings:
+                # Use the .get() method for safe dictionary access
                 final_protein_embeddings = {id_map.get(k, k): v for k, v in final_protein_embeddings.items()}
 
             final_protein_embeddings_per_model[model_type] = final_protein_embeddings
@@ -125,7 +127,7 @@ class ProtGramXGCNTrainer:
                 print(f"  Graph object not found for n={n}. Skipping.")
                 continue
 
-            graph_obj: DirectedNgramGraph = DataUtils.load_object(graph_obj_path)
+            graph_obj: DirectedNgramGraph = DataUtils.load_object(str(graph_obj_path))
             graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
             graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
             graph_obj.A_undirected_norm_sparse = graph_obj.A_undirected_norm_sparse.to(self.device)
@@ -144,8 +146,8 @@ class ProtGramXGCNTrainer:
             else:
                 prev_level_embeds = ngram_embeddings_per_level.get(n - 1)
                 prev_level_map = level_ngram_to_idx.get(n - 1)
-                if prev_level_embeds is None or prev_level_map is None:
-                    print(f"  Cannot proceed for n={n}, previous level embeddings not found.")
+                if prev_level_embeds is None or prev_level_embeds.size == 0 or prev_level_map is None:
+                    print(f"  Cannot proceed for n={n}, previous level embeddings not found or empty.")
                     continue
                 initial_features = self._pool_lower_level_embeddings(graph_obj, prev_level_embeds, prev_level_map)
                 if initial_features is None: continue
@@ -154,8 +156,6 @@ class ProtGramXGCNTrainer:
             task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(n, self.config.GCN_DEFAULT_TASK_TYPE)
             print(f"  Selected self-supervised task for n={n}: '{task_type}'")
             labels, num_classes_for_task = self._generate_task_labels(graph_obj, task_type)
-            if labels is None:
-                continue
 
             model = self._build_model(model_type, n, initial_features.shape[1], num_classes_for_task, graph_obj.number_of_nodes)
             if model is None: continue
@@ -207,8 +207,8 @@ class ProtGramXGCNTrainer:
 
         if model_type == 'directgcn':
             data_dict.update({
-                'edge_index_in': graph.A_in_w.indices(), 'edge_weight_in': graph.A_in_w.values(),
-                'edge_index_out': graph.A_out_w.indices(), 'edge_weight_out': graph.A_out_w.values(),
+                'edge_index_in': graph.mathcal_A_in.indices(), 'edge_weight_in': graph.mathcal_A_in.values(),
+                'edge_index_out': graph.mathcal_A_out.indices(), 'edge_weight_out': graph.mathcal_A_out.values(),
                 'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
                 'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values()
             })
@@ -220,14 +220,16 @@ class ProtGramXGCNTrainer:
             data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
             data_dict['edge_type'] = torch.cat([edge_type_out, edge_type_in], dim=0)
         elif model_type == 'tongdigcn':
+            # This model expects forward and backward edges. We use the raw weighted matrices.
             data_dict['edge_index'] = graph.A_out_w.indices()
+            data_dict['edge_index_backward'] = graph.A_in_w.indices()
         else:
             raise ValueError(f"Cannot prepare data for unknown model type: {model_type}")
         return Data.from_dict(data_dict)
 
     def _train_model_full_batch(self, model: nn.Module, data: Data, optimizer: torch.optim.Optimizer, epochs: int,
                                 task_type: str, l2_lambda: float = 0.0):
-        """Full-batch trainers logic."""
+        """Full-batch training logic."""
         model.train()
         model.to(self.device)
         data = data.to(self.device)
@@ -237,12 +239,12 @@ class ProtGramXGCNTrainer:
         early_stopper = None
         if self.config.GCN_USE_EARLY_STOPPING:
             early_stopper = EarlyStopper(patience=self.config.GCN_EARLY_STOPPING_PATIENCE, min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA)
-        scaler = torch.amp.GradScaler('cuda', enabled=(self.device.type == 'cuda'))
+        scaler = torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
         criterion = F.nll_loss
-        print(f"  Starting full-batch trainers for up to {epochs} epochs (Task: {task_type}, L2 lambda: {l2_lambda})...")
+        print(f"  Starting full-batch training for up to {epochs} epochs (Task: {task_type}, L2 lambda: {l2_lambda})...")
         for epoch in range(1, epochs + 1):
             optimizer.zero_grad()
-            with torch.amp.autocast('cuda', enabled=(self.device.type == 'cuda')):
+            with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
                 task_output, _ = model(data=data)
                 primary_loss = criterion(task_output, data.y)
                 l2_reg = sum(p.norm(2).pow(2) for p in model.parameters() if p.requires_grad)
@@ -261,7 +263,7 @@ class ProtGramXGCNTrainer:
     def _train_model_clustered(self, model: nn.Module, subgraphs: List[Data], optimizer: torch.optim.Optimizer,
                                epochs: int, task_type: str, l2_lambda: float = 0.0,
                                total_nodes_in_level_graph: int = 1):
-        """Clustered trainers logic."""
+        """Clustered training logic."""
         model.train()
         model.to(self.device)
         scheduler = None
@@ -270,16 +272,16 @@ class ProtGramXGCNTrainer:
         early_stopper = None
         if self.config.GCN_USE_EARLY_STOPPING:
             early_stopper = EarlyStopper(patience=self.config.GCN_EARLY_STOPPING_PATIENCE, min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA)
-        scaler = torch.amp.GradScaler('cuda', enabled=(self.device.type == 'cuda'))
+        scaler = torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
         criterion = F.nll_loss
-        print(f"  Starting Cluster-GCN style trainers for up to {epochs} epochs on {len(subgraphs)} subgraphs (Task: {task_type})...")
+        print(f"  Starting Cluster-GCN style training for up to {epochs} epochs on {len(subgraphs)} subgraphs (Task: {task_type})...")
         for epoch in range(1, epochs + 1):
             random.shuffle(subgraphs)
             epoch_loss = 0.0
             for batch_data in tqdm(subgraphs, desc=f"  Epoch {epoch}", leave=False, disable=not self.config.DEBUG_VERBOSE):
                 batch_data = batch_data.to(self.device)
                 optimizer.zero_grad()
-                with torch.amp.autocast('cuda', enabled=(self.device.type == 'cuda')):
+                with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
                     task_output, _ = model(data=batch_data)
                     primary_loss_per_node_avg = criterion(task_output, batch_data.y)
                     weight_factor = batch_data.num_nodes / total_nodes_in_level_graph if total_nodes_in_level_graph > 0 else 0.0
@@ -306,7 +308,7 @@ class ProtGramXGCNTrainer:
         num_clusters = min(num_clusters, self.config.GCN_MAX_CLUSTERS)
         print(f"  Partitioning graph with {graph.number_of_nodes} nodes into {num_clusters} clusters (target nodes/cluster: {self.config.GCN_TARGET_NODES_PER_CLUSTER})...")
 
-        A_combined_cpu = (graph.mathcal_A_out.cpu() + graph.mathcal_A_in.cpu()).coalesce()
+        A_combined_cpu = (graph.A_in_w.cpu() + graph.A_out_w.cpu()).coalesce()
         g_nx = to_networkx(Data(edge_index=A_combined_cpu.indices(), edge_attr=A_combined_cpu.values(), num_nodes=graph.number_of_nodes), to_undirected=True, edge_attrs=['edge_attr'])
 
         try:
@@ -315,7 +317,6 @@ class ProtGramXGCNTrainer:
             _, parts = metis.part_graph(g_nx, num_clusters, seed=self.config.RANDOM_STATE)
             partition = {node_idx: part_id for node_idx, part_id in enumerate(parts)}
         except (ImportError, ModuleNotFoundError):
-            import community as community_louvain
             print("  METIS not found. Falling back to Louvain for clustering (slower)...")
             partition = community_louvain.best_partition(g_nx, random_state=self.config.RANDOM_STATE, weight='edge_attr')
 
@@ -327,59 +328,81 @@ class ProtGramXGCNTrainer:
 
         subgraphs = []
         for cluster_nodes in tqdm(cluster_list, desc="  Creating subgraphs", leave=False):
-            nodes_tensor = torch.tensor(cluster_nodes, dtype=torch.long, device='cpu')
-
+            nodes_tensor_cpu = torch.tensor(cluster_nodes, dtype=torch.long, device='cpu')
             subgraph_data = self._prepare_data_for_model(
-                self.config.PROTGRAM_MODELS_TO_TRAIN[0], # Assuming same structure for all in cluster
+                self.config.PROTGRAM_MODELS_TO_TRAIN[0],  # Assuming same structure for all in cluster
                 graph,
-                full_data.x[nodes_tensor],
-                full_data.y[nodes_tensor]
+                full_data.x[nodes_tensor_cpu],
+                full_data.y[nodes_tensor_cpu]
             )
-            subgraph_data.original_indices = nodes_tensor
+            subgraph_data.original_indices = nodes_tensor_cpu
             subgraphs.append(subgraph_data)
         return subgraphs
 
+    def _generate_task_labels(self, graph: DirectedNgramGraph, task_type: str) -> Tuple[Optional[torch.Tensor], int]:
+        """
+        Dispatcher for generating labels for different self-supervised tasks.
+        """
+        if task_type == 'community':
+            return self._generate_community_labels(graph)
+        elif task_type == 'next_node':
+            return self._generate_next_node_labels(graph)
+        elif task_type == 'closest_aa':
+            return self._generate_closest_amino_acid_labels(graph, self.config.GCN_CLOSEST_AA_K_HOPS)
+        else:
+            raise ValueError(f"Unknown self-supervised task type: '{task_type}'")
+
     def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
-        """Generates community detection labels using Louvain."""
-        import community as community_louvain
+        """Generates community detection labels using the Louvain algorithm."""
         num_nodes = graph.number_of_nodes
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1
         print(f"  Generating community labels for all {num_nodes} nodes.")
-        A_combined_cpu = (graph.A_in_w.cpu() + graph.A_out_w.cpu()).coalesce()
-        if A_combined_cpu._nnz() == 0: return torch.zeros(num_nodes, dtype=torch.long), 1
-        nx_graph = to_networkx(Data(edge_index=A_combined_cpu.indices(), edge_attr=A_combined_cpu.values(), num_nodes=num_nodes), to_undirected=True, edge_attrs=['edge_attr'])
+
+        # Use the undirected, normalized adjacency matrix as it represents the core structure
+        # for community detection better than directed, weighted matrices.
+        coo = graph.A_undirected_norm_sparse.cpu().coalesce()
+        if coo._nnz() == 0: return torch.zeros(num_nodes, dtype=torch.long), 1
+
+        # Convert to NetworkX graph
+        nx_graph = to_networkx(Data(edge_index=coo.indices(), edge_attr=coo.values(), num_nodes=num_nodes), to_undirected=True, edge_attrs=['edge_attr'])
         if nx_graph.number_of_edges() == 0: return torch.zeros(num_nodes, dtype=torch.long), 1
+
         partition = community_louvain.best_partition(nx_graph, random_state=self.config.RANDOM_STATE, weight='edge_attr')
         labels_list = [partition.get(i, -1) for i in range(num_nodes)]
+
+        # Map labels to be contiguous from 0
         unique_labels = sorted(list(set(labels_list)))
         label_map = {lbl: i for i, lbl in enumerate(unique_labels)}
         labels = torch.tensor([label_map[lbl] for lbl in labels_list], dtype=torch.long)
-        return labels, len(unique_labels)
+
+        num_classes = len(unique_labels)
+        print(f"    Found {num_classes} communities.")
+        return labels, num_classes
 
     def _generate_next_node_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
-        """Generates labels for predicting the most likely next node."""
+        """Generates labels by predicting the most likely next node based on transition weights."""
         num_nodes = graph.number_of_nodes
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1
         print(f"  Generating next_node labels for all {num_nodes} nodes.")
-        adj_out = graph.A_out_w.cpu()
+        adj_out_weighted_sparse = graph.A_out_w
         labels_list = [-1] * num_nodes
         for i in tqdm(range(num_nodes), desc="  Generating next_node labels", disable=not self.config.DEBUG_VERBOSE):
-            row_mask = (adj_out.indices()[0] == i)
+            row_mask = (adj_out_weighted_sparse.indices()[0] == i)
             if not torch.any(row_mask):
-                labels_list[i] = i
+                labels_list[i] = i  # Self-loop if no outgoing edges
             else:
-                successors = adj_out.indices()[1][row_mask]
-                weights = adj_out.values()[row_mask]
-                max_weight_idx = torch.argmax(weights)
-                labels_list[i] = successors[max_weight_idx].item()
+                successors = adj_out_weighted_sparse.indices()[1][row_mask]
+                weights = adj_out_weighted_sparse.values()[row_mask]
+                max_weight_successors = successors[weights == weights.max()]
+                labels_list[i] = random.choice(max_weight_successors.cpu().tolist())
         return torch.tensor(labels_list, dtype=torch.long), num_nodes
 
     def _generate_closest_amino_acid_labels(self, graph: DirectedNgramGraph, k_hops: int) -> Tuple[torch.Tensor, int]:
-        """Generates labels for predicting the distance to a random amino acid."""
+        """Generates labels by finding the shortest path distance to a randomly chosen amino acid."""
         num_nodes = graph.number_of_nodes
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), k_hops + 1
         labels = torch.full((num_nodes,), k_hops, dtype=torch.long)
-        print(f"  Generating closest_aa labels for all {num_nodes} nodes.")
+        print(f"  Generating closest_aa labels for all {num_nodes} nodes (k={k_hops}).")
         adj_out = graph.A_out_w.cpu()
         node_sequences = graph.node_sequences
         for start_node in tqdm(range(num_nodes), desc="  Generating closest_aa labels", disable=not self.config.DEBUG_VERBOSE):
@@ -408,19 +431,19 @@ class ProtGramXGCNTrainer:
                 labels[start_node] = found_at_hop
         return labels, k_hops + 1
 
-    def _load_id_map(self) -> Dict[str, str]:
+    def _load_id_map(self):
         """Loads the UniProt ID mapping file if configured."""
-        id_map = {}
         DataUtils.print_header("Step 1: Loading Protein ID Mapping (if configured)")
         if getattr(self.config, 'ID_MAPPING_MODE', 'none') != 'none':
             id_mapper_instance = DataLoader(config=self.config)
-            id_map = id_mapper_instance.generate_id_maps()
-            print(f"  Loaded {len(id_map)} ID mappings.")
-        return id_map
+            id_map_result = id_mapper_instance.generate_id_maps()
+            print(f"  ID mapping result of type '{type(id_map_result)}' loaded.")
+            return id_map_result
+        return {}
 
     @staticmethod
     def _pool_lower_level_embeddings(graph_obj: DirectedNgramGraph, prev_level_embeddings: np.ndarray, prev_level_map: Dict[str, int]) -> Optional[torch.Tensor]:
-        """Pools embeddings from level n-1 to initialize features for level n."""
+        """Pools embeddings from level n-1 to initialize features for level n by concatenating prefix and suffix embeddings."""
         print(f"  Initializing features for n={graph_obj.n_value} by pooling (n-1)-gram constituent embeddings...")
         num_current_nodes = graph_obj.number_of_nodes
         prev_embedding_dim = prev_level_embeddings.shape[1]
@@ -446,11 +469,15 @@ class ProtGramXGCNTrainer:
             print(f"  ERROR: No n-gram embeddings found for the final level (n={final_n}). Cannot generate protein embeddings.")
             return {}
 
-        graph_obj: DirectedNgramGraph = DataUtils.load_object(self.config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{final_n}.pkl")
+        graph_obj_path = self.config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{final_n}.pkl"
+        graph_obj: DirectedNgramGraph = DataUtils.load_object(str(graph_obj_path))
+        if graph_obj is None:
+            print(f"  ERROR: Failed to load graph object for n={final_n} for pooling.")
+            return {}
         ngram_map = graph_obj.node_to_idx
         del graph_obj
 
-        protein_sequences = list(DataLoader.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
+        protein_sequences = list(DataLoader.parse_sequences([str(p) for p in self.config.SEQUENCE_FILE_PATHS]))
         pooled_embeddings = EmbeddingProcessor.pool_ngram_embeddings_for_protein_fast(
             protein_sequences=protein_sequences, n_val=final_n,
             ngram_map=ngram_map, ngram_embeddings=final_ngram_embeddings
@@ -530,8 +557,10 @@ class ProtGramXGCNTrainer:
             embedding_dim = protein_embeddings[first_emb_key].shape[0]
             edge_feature_dim = embedding_dim * 2
 
-            train_gen = partial(EmbeddingProcessor.generate_edge_features_batched, interaction_pairs=train_pairs, protein_embeddings=protein_embeddings, method='concatenate', batch_size=self.config.EVAL_BATCH_SIZE, embedding_dim=embedding_dim)
-            test_gen = partial(EmbeddingProcessor.generate_edge_features_batched, interaction_pairs=test_pairs, protein_embeddings=protein_embeddings, method='concatenate', batch_size=self.config.EVAL_BATCH_SIZE, embedding_dim=embedding_dim)
+            train_gen = partial(EmbeddingProcessor.generate_edge_features_batched, interaction_pairs=train_pairs, protein_embeddings=protein_embeddings, method='concatenate', batch_size=self.config.EVAL_BATCH_SIZE,
+                                embedding_dim=embedding_dim)
+            test_gen = partial(EmbeddingProcessor.generate_edge_features_batched, interaction_pairs=test_pairs, protein_embeddings=protein_embeddings, method='concatenate', batch_size=self.config.EVAL_BATCH_SIZE,
+                               embedding_dim=embedding_dim)
 
             output_sig = (tf.TensorSpec(shape=(None, edge_feature_dim), dtype=tf.float32), tf.TensorSpec(shape=(None,), dtype=tf.int32))
             train_ds = tf.data.Dataset.from_generator(train_gen, output_signature=output_sig).prefetch(tf.data.AUTOTUNE)

@@ -240,7 +240,7 @@ class GNNBenchmarker:
             data.test_mask[indices[train_size + val_size:]] = True
             print(f"  Applied custom seeded split. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
         else:
-            print(f"  Using existing standard masks for {dataset.name}.")
+            print(f"  Using existing standard masks for {variant_name}.")
 
         print(f"  {dataset.name} loaded: Nodes: {data.num_nodes}, Edges: {data.num_edges}, Features: {data.num_features}, Classes: {dataset.num_classes}")
 
