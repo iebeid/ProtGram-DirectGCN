@@ -80,7 +80,7 @@ class GNNBenchmarker:
             "GIN": {"class": GIN, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
             "ChebNet": {"class": ChebNet, "params": {"hidden_channels": 256, "K": 3, "num_layers": 2, "dropout_rate": 0.5}},
             "RGCN_SR": {"class": RGCN, "params": {"hidden_channels": 256, "num_relations": num_relations, "num_layers": 2, "dropout_rate": 0.5}},
-            "TongDiGCN": {"class": TongDiGCN, "params": {"hidden_channels": 128}}, # NEW
+            "TongDiGCN": {"class": TongDiGCN, "params": {"hidden_dim": 128}}, # NEW
             "ProtGramDirectGCN": {"class": ProtGramDirectGCN, "params": {"num_graph_nodes": data.num_nodes, "n_gram_len": 0, "one_gram_dim": 0, "max_pe_len": 0, "dropout": 0.5, "use_vector_coeffs": False}}
         }
         model_info = model_params.get(name)
@@ -99,8 +99,8 @@ class GNNBenchmarker:
 
         # Handle special cases for custom models
         if name == "TongDiGCN":
-            params['in_channels'] = data.num_features
-            params['out_channels'] = num_classes
+            params['in_dim'] = data.num_features
+            params['out_dim'] = num_classes
         elif name == "ProtGramDirectGCN":
             params["layer_dims"] = [data.num_features, 256, 128, 64, num_classes]
             params['task_num_output_classes'] = num_classes

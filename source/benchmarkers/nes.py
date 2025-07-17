@@ -121,19 +121,18 @@ class NetworkEmbeddingBenchmarker:
 
 
             # Simple node classification evaluation
-            train_mask = data.train_mask.bool().flatten() if hasattr(data, 'train_mask') and data.train_mask is not None else data.train_mask
-            test_mask = data.test_mask.bool().flatten() if hasattr(data, 'test_mask') and data.test_mask is not None else data.test_mask
-
-            # Ensure masks exist before trying to use them
-            if train_mask is None or test_mask is None:
-                 raise ValueError(f"Masks are still missing for {dataset.name} after generation attempt.")
-
+            if data.train_mask.dim() > 1:
+                train_mask = data.train_mask[:, 0].bool()
+                test_mask = data.test_mask[:, 0].bool()
+            else:
+                train_mask = data.train_mask.bool()
+                test_mask = data.test_mask.bool()
 
             clf = LogisticRegression(
                 solver='lbfgs', multi_class='auto', random_state=self.config.RANDOM_STATE
-            ).fit(z[train_mask].cpu().numpy(), data.y[train_mask].cpu().numpy()) # .detach() is already applied to z
+            ).fit(z[train_mask].cpu().numpy(), data.y[train_mask].cpu().numpy())
 
-            test_acc = accuracy_score(data.y[test_mask].cpu().numpy(), clf.predict(z[test_mask].cpu().numpy())) # .detach() is already applied to z
+            test_acc = accuracy_score(data.y[test_mask].cpu().numpy(), clf.predict(z[test_mask].cpu().numpy()))
 
             print(f"  ✅ Test Accuracy for {model_name} on {dataset.name}: {test_acc:.4f}")
             return {
