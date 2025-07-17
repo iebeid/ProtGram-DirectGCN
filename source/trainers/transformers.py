@@ -66,8 +66,8 @@ class TransformerEmbedder:
             print("  Loading tokenizer and model...")
             tokenizer_class = T5Tokenizer if is_t5 else AutoTokenizer
             tokenizer = tokenizer_class.from_pretrained(hf_id)
-            model = TFAutoModel.from_pretrained(hf_id, from_pt=True)
-            inference_func = TransformerEmbedder._get_model_inference_function(model, is_t5, False)
+            model = TFAutoModel.from_pretrained(hf_id, from_pt=True) # from_pt=True can improve compatibility
+            inference_func = TransformerEmbedder._get_model_inference_function(model, is_t5, self.config.USE_XLA_COMPILATION)
 
             if hasattr(model.config, 'hidden_size'):
                 embedding_dim_from_model = model.config.hidden_size

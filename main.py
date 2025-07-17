@@ -8,9 +8,11 @@
 import time
 import mlflow
 import random
-import os
 import copy
 import shutil
+import platform
+import os
+
 from pathlib import Path
 
 from configuration.config import Config
@@ -113,6 +115,29 @@ def run_pipeline_for_dataset(base_config: Config, fasta_path: Path):
 
 def main():
     script_start_time = time.monotonic()
+
+    # --- Robustness Improvement: Explicitly set compiler paths for PyCUDA ---
+    # On some systems, PyCUDA/NVCC may find the wrong host compiler if environment
+    # variables (e.g., CC, CXX) are set incorrectly. This block ensures that
+    # the compilers from the currently active Conda environment are used.
+    if platform.system() == "Linux":
+        conda_prefix = os.environ.get("CONDA_PREFIX")
+        if conda_prefix:
+            # These are the standard names for conda-forge's C/C++ compilers
+            cc_path = os.path.join(conda_prefix, "bin", "x86_64-conda-linux-gnu-cc")
+            cxx_path = os.path.join(conda_prefix, "bin", "x86_64-conda-linux-gnu-c++")
+
+            # Only set the environment variables if the compilers actually exist
+            if os.path.exists(cc_path) and os.path.exists(cxx_path):
+                print("--- Setting CC/CXX environment variables to point to active Conda compilers ---")
+                os.environ["CC"] = cc_path
+                os.environ["CXX"] = cxx_path
+            else:
+                print("--- INFO: Could not find Conda compilers to set environment variables. ---")
+        else:
+            print("--- INFO: Not in a Conda environment, skipping compiler path setup. ---")
+    # --------------------------------------------------------------------------
+
     should_downsample = False  # Initialize before the try block
     base_config = Config()
 
