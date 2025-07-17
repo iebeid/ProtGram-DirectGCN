@@ -184,13 +184,13 @@ class TransformerEmbedder:
         else:
             print("  TensorFlow: No GPU detected by TensorFlow. Using CPU.")
 
-        fasta_input_dir = str(self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR)
-        fasta_files = sorted([os.path.normpath(f) for f in glob.glob(os.path.join(fasta_input_dir, '*.fasta')) + glob.glob(os.path.join(fasta_input_dir, '*.fa'))])
+        # This was a bug: It should use the sequence files from the config, not look in its own output dir.
+        fasta_files = self.config.SEQUENCE_FILE_PATHS
 
         if not fasta_files:
-            print(f"Error: No FASTA files found in '{fasta_input_dir}'. Skipping Transformer embedding generation.")
+            print(f"Error: No FASTA files specified in 'config.SEQUENCE_FILE_PATHS'. Skipping Transformer embedding generation.")
             return
-        print(f"Found {len(fasta_files)} FASTA file(s) to process from '{fasta_input_dir}': {fasta_files}")
+        print(f"Found {len(fasta_files)} FASTA file(s) to process from config: {[p.name for p in fasta_files]}")
 
         for model_config_item in self.config.TRANSFORMER_MODELS_TO_RUN:
             self._generate_embeddings_for_single_model(model_config_item, fasta_files)

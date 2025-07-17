@@ -343,22 +343,40 @@ class DataLoader:
             print("Ensure the file exists. It can be downloaded by setting 'ID_MAPPING_TSV' in DATA_SOURCES.")
             return {}
 
-        print(f"Loading ID mappings from: {os.path.basename(self.mapping_output_file)}")
+        print(f"Loading ID mappings from: {os.path.basename(self.mapping_output_file)} (Memory-Efficient Mode)")
         id_map = {}
+        column_names = ['UniProtKB-AC', 'ID_type', 'ID']
+        # Use the DB type specified in the config to filter the large file
+        target_db = self.config.API_MAPPING_FROM_DB
+        print(f"  Filtering for ID type: '{target_db}'")
+
         try:
-            # The official UniProt mapping files are tab-separated: from_id -> to_id
-            with open(self.mapping_output_file, 'r', encoding='utf-8') as f:
-                for line in tqdm(f, desc="Parsing mapping file", leave=False):
-                    parts = line.strip().split('\t')
-                    if len(parts) >= 2:  # Use >= 2 to handle files with more columns
-                        original_id, mapped_id = parts[0], parts[1]
-                        if original_id and mapped_id:
-                            id_map[original_id] = mapped_id
+            # Create an iterator that reads the large TSV file in chunks
+            chunk_iterator = pd.read_csv(
+                self.mapping_output_file,
+                sep='\t',
+                header=None,
+                names=column_names,
+                usecols=[0, 1, 2],
+                chunksize=2_000_000,  # Process 2 million rows at a time
+                low_memory=True
+            )
+
+            with tqdm(desc="  Reading mapping file", unit=" chunks") as pbar:
+                for chunk in chunk_iterator:
+                    # Filter the in-memory chunk for only the DB we need
+                    filtered_chunk = chunk[chunk['ID_type'] == target_db]
+                    # Create a dictionary from the filtered part and update the main map
+                    # This maps from the target DB ID (e.g., UniRef50) to the main UniProt AC
+                    chunk_map = pd.Series(filtered_chunk['UniProtKB-AC'].values, index=filtered_chunk['ID']).to_dict()
+                    id_map.update(chunk_map)
+                    pbar.update(1)
+
         except Exception as e:
             print(f"An error occurred while reading the mapping file: {e}")
             return {}
 
-        print(f"File-based mapping complete. Loaded {len(id_map)} mappings.")
+        print(f"File-based mapping complete. Loaded {len(id_map)} mappings for DB '{target_db}'.")
         return id_map
 
     def _perform_regex_mapping(self) -> Dict[str, str]:
