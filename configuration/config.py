@@ -282,7 +282,7 @@ class Config:
         """Sets parameters for MLflow experiment tracking."""
         self.USE_MLFLOW = True
         mlruns_path = self.BASE_OUTPUT_DIR / "mlruns"
-        self.MLFLOW_TRACKING_URI = mlruns_path.resolve().as_uri()
+        self.MLFLOW_TRACKING_URI = str(mlruns_path.resolve())
         self.MLFLOW_EXPERIMENT_NAME = "PPI-Link-Prediction"
         self.MLFLOW_BENCHMARK_EXPERIMENT_NAME = "GNN-Benchmarking"
         self.MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME = "Network_Embedding_Benchmarking"

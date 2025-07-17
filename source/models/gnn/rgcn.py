@@ -2,12 +2,13 @@
 # MODULE: models/gnn/rgcn.py
 # PURPOSE: A standard implementation of the Relational Graph Convolutional
 #          Network (RGCN) for use in benchmarking.
-# VERSION: 1.0
+# VERSION: 1.1 (Corrected forward pass for benchmarker compatibility)
 # AUTHOR: Your Name (Assembled by Coding Partner)
 # ==============================================================================
 
 import torch
 import torch.nn.functional as F
+from torch_geometric.data import Data
 from torch_geometric.nn import RGCNConv
 
 
@@ -45,9 +46,20 @@ class RGCN(torch.nn.Module):
         # Output layer
         self.convs.append(RGCNConv(hidden_channels, out_channels, num_relations))
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_type: torch.Tensor) -> torch.Tensor:
+    def forward(self, data: Data) -> torch.Tensor:
+        """
+        The forward pass for the RGCN model, adapted for standard PyG Data objects.
+        """
+        x, edge_index = data.x, data.edge_index
+
+        # For standard benchmark datasets, there's only one relation type (0).
+        # We create the edge_type tensor if it doesn't exist.
+        edge_type = getattr(data, 'edge_type', None)
+        if edge_type is None:
+            edge_type = torch.zeros(edge_index.size(1), dtype=torch.long, device=edge_index.device)
+
         for i, conv in enumerate(self.convs):
-            x = conv(x, edge_index, edge_type)
+            x = conv(x, edge_index, edge_type=edge_type)
             if i < len(self.convs) - 1:
                 x = F.relu(x)
                 x = F.dropout(x, p=self.dropout_rate, training=self.training)

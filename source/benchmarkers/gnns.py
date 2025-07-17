@@ -1,29 +1,32 @@
 # ==============================================================================
-# MODULE: gnns.py
-# PURPOSE: To benchmark various GNN models on standard datasets.
-# VERSION: 3.4.18 (Definitive fix for mask attribute and data_builders loading)
-# AUTHOR: Islam Ebeid
+# MODULE: benchmarkers/gnns.py
+# PURPOSE: Handles benchmarking of various GNN models on standard datasets.
+# VERSION: 1.1 (Corrected dataset root path and RGCN forward pass)
+# AUTHOR: Your Name (Assembled by Coding Partner)
 # ==============================================================================
 
 import os
-import random
-from typing import Dict, Tuple
+import time
+from typing import Dict, Optional, List
 
-import h5py
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-import torch_geometric.transforms as T
-from sklearn.metrics import accuracy_score
-from torch_geometric.data import Data
-from torch_geometric.datasets import (KarateClub, Planetoid)
-from torch_geometric.utils import add_self_loops, degree, to_undirected
+from torch_geometric.datasets import Planetoid, GNNBenchmarkDataset, ZINC, TUDataset, QM9
+from torch_geometric.datasets import WebKB, Actor
+from torch_geometric.transforms import ToUndirected
+from torch_geometric.utils import to_undirected
 
 from configuration.config import Config
-from source.models.gnn import gcn,gat,graphsage,gin,chebnet,rgcn,tongidigcn
+from source.models.gnn.chebnet import ChebNet
 from source.models.gnn.directgcn import ProtGramDirectGCN
+from source.models.gnn.gat import GAT
+from source.models.gnn.gcn import GCN
+from source.models.gnn.gin import GIN
+from source.models.gnn.graphsage import GraphSAGE
+from source.models.gnn.rgcn import RGCN
+from source.models.gnn.tong_gcn import TongDiGCN
 from source.utils.data import DataUtils
 from source.utils.models import EmbeddingProcessor
 
@@ -32,391 +35,294 @@ class GNNBenchmarker:
     def __init__(self, config: Config):
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        os.makedirs(str(self.config.RESULTS_BENCHMARK_EMBEDDINGS_DIR), exist_ok=True)
+        self.output_dir = config.RESULTS_BENCHMARKING_DIR
+        self.embedding_dir = config.RESULTS_BENCHMARK_EMBEDDINGS_DIR
+        # FIX: Use the correct dataset directory from the config
+        self.dataset_root = str(config.DATA_STANDARD_DATASETS_DIR)
+
+        os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(self.embedding_dir, exist_ok=True)
+
         print(f"GNNBenchmarker initialized. Using device: {self.device}")
-        print(f"Benchmark embeddings will be saved to: {self.config.RESULTS_BENCHMARK_EMBEDDINGS_DIR}")
-
-    @staticmethod
-    def set_seeds(seed: int):
-        """Sets random seeds for reproducibility across all relevant libraries."""
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
+        print(f"Benchmark embeddings will be saved to: {self.embedding_dir}")
+        torch.manual_seed(config.RANDOM_STATE)
+        np.random.seed(config.RANDOM_STATE)
         if torch.cuda.is_available():
-            torch.cuda.manual_seed(seed)
-            torch.cuda.manual_seed_all(seed)  # for multi-GPU
-            torch.backends.cudnn.deterministic = True
-            torch.backends.cudnn.benchmark = False
-        print(f"  Seeds set to {seed} for reproducibility.")
+            torch.cuda.manual_seed_all(config.RANDOM_STATE)
+        print(f"  Seeds set to {config.RANDOM_STATE} for reproducibility.")
 
-    def _get_dataset(self, name: str, root_path: str, make_undirected: bool = False):
-        print(f"  Attempting to load dataset: {name} (root: {root_path}, undirected_requested: {make_undirected})...")
-
-        dataset_obj = None
-        if name.lower() == 'karateclub':
-            dataset_obj = KarateClub(transform=None)
-        elif name.lower() in ['cora', 'citeseer', 'pubmed']:
-            dataset_obj = Planetoid(root=root_path, name=name, transform=None)
-        elif name.lower() in ['cornell', 'texas', 'wisconsin']:
-            from torch_geometric.datasets import WebKB
-            dataset_obj = WebKB(root=root_path, name=name, transform=None)
-        else:
-            print(f"ERROR: Dataset '{name}' loader not implemented.")
-            return None, None, None, None
-
-        raw_data_obj = dataset_obj[0]
-
-        # Extract core attributes and ensure they are on CPU initially
-        x = raw_data_obj.x.cpu() if raw_data_obj.x is not None else torch.empty(raw_data_obj.num_nodes, dataset_obj.num_features)
-        edge_index = raw_data_obj.edge_index.cpu()
-        y = raw_data_obj.y.cpu() if raw_data_obj.y is not None else torch.empty(raw_data_obj.num_nodes, dtype=torch.long)
-        num_nodes = raw_data_obj.num_nodes
-
-        if make_undirected:
-            edge_index = to_undirected(edge_index, num_nodes=num_nodes)
-
-        # --- DEFINITIVE FIX for AttributeError: Check for ALL masks before using them ---
-        use_existing_masks = (
-            hasattr(raw_data_obj, 'train_mask') and hasattr(raw_data_obj, 'val_mask') and hasattr(raw_data_obj, 'test_mask') and
-            raw_data_obj.train_mask is not None and raw_data_obj.val_mask is not None and raw_data_obj.test_mask is not None and
-            raw_data_obj.train_mask.ndim == 1
-        )
-
-        if use_existing_masks:
-            print(f"  Using existing standard masks for {name}.")
-            train_mask = raw_data_obj.train_mask.cpu()
-            val_mask = raw_data_obj.val_mask.cpu()
-            test_mask = raw_data_obj.test_mask.cpu()
-        else:
-            print(f"  Generating custom seeded split for {name}.")
-            g = torch.Generator().manual_seed(self.config.RANDOM_STATE)
-            indices = torch.randperm(num_nodes, generator=g)
-            num_train = int(self.config.BENCHMARK_SPLIT_RATIOS['train'] * num_nodes)
-            num_val = int(self.config.BENCHMARK_SPLIT_RATIOS['val'] * num_nodes)
-
-            train_mask = torch.zeros(num_nodes, dtype=torch.bool)
-            val_mask = torch.zeros(num_nodes, dtype=torch.bool)
-            test_mask = torch.zeros(num_nodes, dtype=torch.bool)
-
-            train_mask[indices[:num_train]] = True
-            val_mask[indices[num_train:num_train + num_val]] = True
-            test_mask[indices[num_train + num_val:]] = True
-            print(f"  Applied custom seeded split. Train: {train_mask.sum()}, Val: {val_mask.sum()}, Test: {test_mask.sum()}")
-        # --- END FIX ---
-
-        # Create a brand new Data object with all attributes explicitly passed
-        final_data_obj = Data(x=x, edge_index=edge_index, y=y,
-                              train_mask=train_mask, val_mask=val_mask, test_mask=test_mask,
-                              num_nodes=num_nodes)
-
-        # Now apply the ToDevice transform to the fully constructed Data object
-        transform_compose = T.Compose([T.ToDevice(self.device)])
-        final_data_obj = transform_compose(final_data_obj)
-
-        print(f"  {name} loaded: Nodes: {final_data_obj.num_nodes}, Edges: {final_data_obj.num_edges}, Features: {dataset_obj.num_features}, Classes: {dataset_obj.num_classes}")
-        return final_data_obj, final_data_obj, final_data_obj, 'single-label-node'
-
-    def _get_undirected_normalized_edges(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
-        num_nodes = data.num_nodes
-        edge_index = data.edge_index.to(self.device).long()
-
-        if edge_index.ndim != 2 or edge_index.shape[0] != 2:
-            return torch.empty((2, 0), dtype=torch.long, device=self.device), torch.empty((0,), dtype=torch.float32, device=self.device)
-
-        undir_edge_index_raw, _ = to_undirected(edge_index, num_nodes=num_nodes)
-
-        if undir_edge_index_raw.ndim != 2 or undir_edge_index_raw.shape[0] != 2:
-            if undir_edge_index_raw.ndim == 1 and undir_edge_index_raw.numel() > 0 and undir_edge_index_raw.numel() % 2 == 0:
-                print(f"WARNING: to_undirected returned unexpected 1D shape {undir_edge_index_raw.shape}. Attempting to reshape to (2, N/2).")
-                undir_edge_index = undir_edge_index_raw.reshape(2, -1)
-            else:
-                print(f"WARNING: to_undirected returned unexpected shape {undir_edge_index_raw.shape}. Converting to (2, 0) empty tensor.")
-                undir_edge_index = torch.empty((2, 0), dtype=torch.long, device=self.device)
-        else:
-            undir_edge_index = undir_edge_index_raw
-
-        undir_edge_index, _ = add_self_loops(undir_edge_index, num_nodes=num_nodes)
-
-        if undir_edge_index.numel() == 0:
-            return undir_edge_index, torch.empty((0,), dtype=torch.float32, device=self.device)
-
-        edge_weight = torch.ones(undir_edge_index.size(1), dtype=torch.float32, device=self.device)
-        row, col = undir_edge_index
-        deg = degree(col, num_nodes=num_nodes, dtype=edge_weight.dtype)
-        deg_inv_sqrt = deg.pow(-0.5)
-        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
-        norm_values = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
-
-        return undir_edge_index, norm_values
-
-    def _save_node_embeddings(self, model: nn.Module, data_for_emb, model_name: str, dataset_name: str, graph_variant_suffix: str):
-        if not self.config.BENCHMARK_SAVE_EMBEDDINGS:
-            return
-
-        print(f"    Extracting embeddings for {model_name} on {dataset_name}{graph_variant_suffix}...")
-        model.eval()
-        with torch.no_grad():
-            node_embeddings_tensor = None
-            if isinstance(data_for_emb, Data):
-                if model_name == "ProtGramDirectGCN":
-                    _, node_embeddings_tensor = model(data=data_for_emb)
-                elif hasattr(model, 'get_embeddings') and callable(getattr(model, 'get_embeddings')):
-                    node_embeddings_tensor = model.get_embeddings(data_for_emb)
-                elif hasattr(model, 'embedding_output') and model.embedding_output is not None:
-                    node_embeddings_tensor = model.embedding_output
-                else:
-                    output = model(data_for_emb)
-                    if isinstance(output, tuple):
-                        node_embeddings_tensor = output[1] if len(output) > 1 and output[1] is not None else output[0]
-                    else:
-                        node_embeddings_tensor = output
-                    if node_embeddings_tensor.shape[-1] == data_for_emb.y.max().item() + 1:
-                        print(f"      Using final layer output (likely logits) as embeddings for {model_name}.")
-
-                if node_embeddings_tensor is None:
-                    print(f"      Could not extract embeddings for {model_name}. Skipping save.")
-                    return
-                node_embeddings_np = node_embeddings_tensor.cpu().numpy()
-            else:
-                print(f"      Unsupported data type for embedding extraction: {type(data_for_emb)}. Skipping save.")
-                return
-
-        if node_embeddings_np.size == 0:
-            print(f"      Embeddings are empty for {model_name}. Skipping save.")
-            return
-
-        emb_dim = node_embeddings_np.shape[1]
-        filename_suffix = f"_dim{emb_dim}"
-
-        if self.config.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS and emb_dim > self.config.BENCHMARK_PCA_TARGET_DIM and node_embeddings_np.shape[0] > self.config.BENCHMARK_PCA_TARGET_DIM:
-            print(f"      Applying PCA to {model_name} embeddings (target dim: {self.config.BENCHMARK_PCA_TARGET_DIM})...")
-            temp_emb_dict = {str(i): node_embeddings_np[i] for i in range(node_embeddings_np.shape[0])}
-            pca_embeds_dict = EmbeddingProcessor.apply_pca(temp_emb_dict, self.config.BENCHMARK_PCA_TARGET_DIM, self.config.RANDOM_STATE, output_dtype=np.float32)
-            if pca_embeds_dict:
-                pca_node_embeddings_np = np.array([pca_embeds_dict[str(i)] for i in range(len(pca_embeds_dict))])
-                if pca_node_embeddings_np.size > 0:
-                    node_embeddings_np = pca_node_embeddings_np
-                    emb_dim = node_embeddings_np.shape[1]
-                    filename_suffix = f"_pca{emb_dim}"
-                    print(f"      PCA applied. New embedding dim: {emb_dim}")
-                else:
-                    print(f"      PCA resulted in empty embeddings for {model_name}, using full dimension embeddings.")
-            else:
-                print(f"      PCA failed or was skipped for {model_name}, using full dimension embeddings.")
-
-        emb_dir = os.path.join(str(self.config.RESULTS_BENCHMARK_EMBEDDINGS_DIR), f"{dataset_name}{graph_variant_suffix}")
-        os.makedirs(emb_dir, exist_ok=True)
-        emb_filename = f"{model_name}_embeddings{filename_suffix}.h5"
-        emb_path = os.path.join(emb_dir, emb_filename)
+    def _get_dataset(self, name: str, undirected: bool):
+        transform = ToUndirected() if undirected else None
+        path = self.dataset_root
 
         try:
-            with h5py.File(emb_path, 'w') as hf:
-                hf.create_dataset('embeddings', data=node_embeddings_np)
-                hf.attrs['model_name'] = model_name
-                hf.attrs['dataset_name'] = dataset_name
-                hf.attrs['graph_variant'] = graph_variant_suffix
-                hf.attrs['shape'] = node_embeddings_np.shape
-            print(f"      Saved {model_name} embeddings for {dataset_name}{graph_variant_suffix} to {emb_path}")
+            if name in ['Cora', 'CiteSeer', 'PubMed']:
+                return Planetoid(root=path, name=name, transform=transform)
+            elif name in ['Cornell', 'Texas', 'Wisconsin']:
+                # For WebKB datasets, we need to handle the transform slightly differently
+                # as they don't natively come with a directed option to undo.
+                return WebKB(root=path, name=name)
+            elif name == 'Actor':
+                return Actor(root=path)
+            elif name == 'KarateClub':
+                from torch_geometric.datasets import KarateClub
+                return KarateClub() # This one doesn't take a root
+            else:
+                print(f"  Dataset '{name}' not recognized by this loader.")
+                return None
         except Exception as e:
-            print(f"      ERROR saving embeddings to {emb_path}: {e}")
+            print(f"  Error loading dataset '{name}': {e}")
+            return None
 
-    def train_and_evaluate(
-            self, model_name_str: str, model: nn.Module, dataset_name: str,
-            train_data, val_data, test_data,
-            optimizer: torch.optim.Optimizer, num_epochs: int, task_type: str,
-            num_classes: int):
+    def _get_model(self, name: str, data, num_relations: int = 1):
+        model_params = {
+            "GCN": {"class": GCN, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
+            "GAT": {"class": GAT, "params": {"hidden_channels": 32, "heads": 8, "num_layers": 2, "dropout_rate": 0.6}},
+            "GraphSAGE": {"class": GraphSAGE, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
+            "GIN": {"class": GIN, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
+            "ChebNet": {"class": ChebNet, "params": {"hidden_channels": 256, "K": 3, "num_layers": 2, "dropout_rate": 0.5}},
+            "RGCN_SR": {"class": RGCN, "params": {"hidden_channels": 256, "num_relations": num_relations, "num_layers": 2, "dropout_rate": 0.5}},
+            "TongDiGCN": {"class": TongDiGCN, "params": {"hidden_dim": 128}},
+            "ProtGramDirectGCN": {"class": ProtGramDirectGCN, "params": {"layer_dims": [data.num_features, 256, 128, 64, data.num_classes], "num_graph_nodes": data.num_nodes, "n_gram_len": 0, "one_gram_dim": 0, "max_pe_len": 0, "dropout": 0.5, "use_vector_coeffs": False}}
+        }
+        model_info = model_params.get(name)
+        if not model_info:
+            raise ValueError(f"Model {name} not found in GNNBenchmarker.")
 
-        best_val_metric = 0.0
-        best_test_metric_at_best_val = 0.0
-        history = []
-        final_trained_model_state = None
+        params = model_info['params']
+        # Standardize parameter names for model constructors
+        if name not in ["ProtGramDirectGCN", "TongDiGCN"]:
+            params['in_channels'] = data.num_features
+            params['out_channels'] = data.num_classes
 
+        return model_info['class'](**params)
+
+
+    def _preprocess_for_directgcn(self, data):
+        """Prepares standard PyG data for ProtGramDirectGCN's specific input format."""
+        print(f"--- Pre-processing data for ProtGramDirectGCN on {data.name} ---")
+        # 1. Create undirected normalized matrix (used for the structural path)
+        edge_index_undir, _ = to_undirected(data.edge_index, num_nodes=data.num_nodes)
+        row, col = edge_index_undir
+        deg = torch.bincount(col, minlength=data.num_nodes).float()
+        deg_inv_sqrt = deg.pow(-0.5)
+        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
+        edge_weight_undir = deg_inv_sqrt[row] * deg_inv_sqrt[col]
+        data.edge_index_undirected_norm = edge_index_undir
+        data.edge_weight_undirected_norm = edge_weight_undir
+
+        # 2. Create directional matrices (in/out)
+        # For standard datasets, we can treat the original edge_index as the "out" edges
+        # and its transpose as the "in" edges. They won't have inherent weights.
+        data.edge_index_out = data.edge_index
+        data.edge_weight_out = None
+        data.edge_index_in = data.edge_index.flip(0)
+        data.edge_weight_in = None
+
+        print("--- Pre-processing complete ---")
+        return data
+
+    def train_and_evaluate(self, model, train_data, val_data, test_data, loss_fn_name, metric_name, epochs):
         model.to(self.device)
-        print(f"  Training {model_name_str} on {dataset_name} using device: {self.device} for {num_epochs} epochs.")
+        train_data, val_data, test_data = train_data.to(self.device), val_data.to(self.device), test_data.to(self.device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
 
-        criterion = F.cross_entropy
-        metric_name = "Accuracy"
-        metric_fn = lambda y_true, y_pred_logits: accuracy_score(y_true.cpu().numpy(), y_pred_logits.detach().argmax(dim=-1).cpu().numpy())
-        print(f"  Using Loss: cross_entropy, Metric: {metric_name}")
+        best_val_metric = -1
+        corresponding_test_metric = -1
+        history = {'epoch': [], 'loss': [], 'val_loss': [], 'val_metric': [], 'test_metric': []}
 
-        for epoch in range(num_epochs):
+        for epoch in range(epochs):
+            # Training
             model.train()
             optimizer.zero_grad()
+            out = model(train_data)
 
-            if model_name_str == "ProtGramDirectGCN":
-                out, _ = model(data=train_data)
-            else:
-                out = model(train_data)
+            # The output 'out' might be a tuple from ProtGramDirectGCN
+            if isinstance(out, tuple):
+                out = out[0]
 
-            loss = criterion(out[train_data.train_mask], train_data.y[train_data.train_mask])
+            loss = F.cross_entropy(out[train_data.train_mask], train_data.y[train_data.train_mask])
             loss.backward()
             optimizer.step()
 
+            # Evaluation
             model.eval()
             with torch.no_grad():
-                if model_name_str == "ProtGramDirectGCN":
-                    out_val, _ = model(data=val_data)
+                out = model(train_data)
+                if isinstance(out, tuple): out = out[0]
+
+                pred = out.argmax(dim=1)
+                val_correct = pred[val_data.val_mask] == val_data.y[val_data.val_mask]
+                val_acc = int(val_correct.sum()) / int(val_data.val_mask.sum())
+
+                test_correct = pred[test_data.test_mask] == test_data.y[test_data.test_mask]
+                test_acc = int(test_correct.sum()) / int(test_data.test_mask.sum())
+
+                val_loss = F.cross_entropy(out[val_data.val_mask], val_data.y[val_data.val_mask])
+
+            history['epoch'].append(epoch)
+            history['loss'].append(loss.item())
+            history['val_loss'].append(val_loss.item())
+            history['val_metric'].append(val_acc)
+            history['test_metric'].append(test_acc)
+
+            if val_acc > best_val_metric:
+                best_val_metric = val_acc
+                corresponding_test_metric = test_acc
+
+            if self.config.DEBUG_VERBOSE and (epoch == 0 or (epoch + 1) % 10 == 0 or epoch == epochs - 1):
+                 print(f"    Epoch {epoch:03d}, Loss: {loss:.4f}, Val Accuracy: {val_acc:.4f}")
+
+        print(f"  Finished training for {model.__class__.__name__} on {train_data.name}.")
+        print(f"  Best Val Accuracy: {best_val_metric:.4f}, Corresponding Test Accuracy: {corresponding_test_metric:.4f}")
+
+        # Extract embeddings if configured
+        if self.config.BENCHMARK_SAVE_EMBEDDINGS:
+            print(f"    Extracting embeddings for {model.__class__.__name__} on {train_data.name}...")
+            with torch.no_grad():
+                model.eval()
+                # BaseGNN models store embeddings in .embedding_output after forward pass
+                if hasattr(model, 'get_embeddings'):
+                    full_embeddings = model.get_embeddings(train_data.to(self.device))
+                    if isinstance(full_embeddings, tuple): full_embeddings = full_embeddings[1]
                 else:
-                    out_val = model(val_data)
-                val_metric = metric_fn(val_data.y[val_data.val_mask], out_val[val_data.val_mask])
+                    # Fallback for models without get_embeddings
+                    output = model(train_data.to(self.device))
+                    full_embeddings = output[0] if isinstance(output, tuple) else output
 
-            history.append({'epoch': epoch, 'loss': loss.item(), f'val_{metric_name.lower()}': val_metric})
+            if full_embeddings is not None:
+                embeddings_np = full_embeddings.cpu().numpy()
+                emb_dim = embeddings_np.shape[1]
+                emb_dict = {str(i): embeddings_np[i] for i in range(embeddings_np.shape[0])}
 
-            if val_metric >= best_val_metric:
-                best_val_metric = val_metric
-                final_trained_model_state = model.state_dict()
-                with torch.no_grad():
-                    if model_name_str == "ProtGramDirectGCN":
-                        out_test, _ = model(data=test_data)
-                    else:
-                        out_test = model(test_data)
-                    best_test_metric_at_best_val = metric_fn(test_data.y[test_data.test_mask], out_test[test_data.test_mask])
+                save_path_emb_dir = self.embedding_dir / train_data.name
+                os.makedirs(save_path_emb_dir, exist_ok=True)
 
-        if epoch == num_epochs - 1:
-            print(f"    Epoch {epoch:03d}, Loss: {loss.item():.4f}, Val {metric_name}: {val_metric:.4f}")
+                if self.config.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS and emb_dim > self.config.BENCHMARK_PCA_TARGET_DIM:
+                    print(f"      Applying PCA to {model.__class__.__name__} embeddings (target dim: {self.config.BENCHMARK_PCA_TARGET_DIM})...")
+                    pca_embeds = EmbeddingProcessor.apply_pca(emb_dict, self.config.BENCHMARK_PCA_TARGET_DIM, self.config.RANDOM_STATE)
+                    if pca_embeds:
+                        h5_path = save_path_emb_dir / f"{model.__class__.__name__}_embeddings_pca{self.config.BENCHMARK_PCA_TARGET_DIM}.h5"
+                        with h5py.File(h5_path, 'w') as hf:
+                            for k, v in pca_embeds.items(): hf.create_dataset(k, data=v)
+                        print(f"      Saved {model.__class__.__name__} embeddings for {train_data.name} to {h5_path}")
+                else:
+                    h5_path = save_path_emb_dir / f"{model.__class__.__name__}_embeddings_dim{emb_dim}.h5"
+                    with h5py.File(h5_path, 'w') as hf:
+                        for k, v in emb_dict.items(): hf.create_dataset(k, data=v)
+                    print(f"      Saved {model.__class__.__name__} embeddings for {train_data.name} to {h5_path}")
 
-        print(f"  Finished training for {model_name_str} on {dataset_name}.")
-        print(f"  Best Val {metric_name}: {best_val_metric:.4f}, Corresponding Test {metric_name}: {best_test_metric_at_best_val:.4f}")
+        return best_val_metric, corresponding_test_metric, pd.DataFrame(history), metric_name
 
-        if final_trained_model_state:
-            model.load_state_dict(final_trained_model_state)
+    def run_on_dataset_variant(self, dataset, variant_name: str):
+        print(f"\n" + "=" * 50)
+        print(f"### Benchmarking on Dataset: {variant_name} ###")
+        print("=" * 50 + "\n")
 
-        return best_val_metric, best_test_metric_at_best_val, pd.DataFrame(history), metric_name
+        # Use the first data object
+        data = dataset[0]
+        data.name = variant_name
 
-    def run_on_dataset_variant(self, dataset_name: str, model_zoo_config: Dict,
-                               train_data, val_data, test_data, task_type: str,
-                               num_features: int, num_classes: int, graph_variant_suffix: str = ""):
-        dataset_results = []
-        DataUtils.print_header(f"Benchmarking on Dataset: {dataset_name}{graph_variant_suffix}")
+        # Generate custom split if no masks exist
+        if not hasattr(data, 'train_mask') or data.train_mask is None:
+            print(f"  Generating custom seeded split for {dataset.name}.")
+            num_nodes = data.num_nodes
+            indices = np.random.permutation(num_nodes)
+            train_size = int(num_nodes * self.config.BENCHMARK_SPLIT_RATIOS['train'])
+            val_size = int(num_nodes * self.config.BENCHMARK_SPLIT_RATIOS['val'])
 
-        pgd_train_data, pgd_val_data, pgd_test_data = None, None, None
-        try:
-            print(f"\n--- Pre-processing data for ProtGramDirectGCN on {dataset_name}{graph_variant_suffix} ---")
-            pgd_train_data, pgd_val_data, pgd_test_data = [d.clone() for d in [train_data, val_data, test_data]]
-            for d in [pgd_train_data, pgd_val_data, pgd_test_data]:
-                d.edge_index_out = d.edge_index
-                d.edge_weight_out = getattr(d, 'edge_attr', None)
-                d.edge_index_in = d.edge_index[[1, 0]]
-                d.edge_weight_in = getattr(d, 'edge_attr', None)
-                undir_idx, undir_w = self._get_undirected_normalized_edges(d)
-                d.edge_index_undirected_norm = undir_idx
-                d.edge_weight_undirected_norm = undir_w
-            print("--- Pre-processing complete ---")
-        except Exception as e:
-            print(f"ERROR during pre-processing for ProtGramDirectGCN: {e}")
-            import traceback
-            traceback.print_exc()
+            data.train_mask = torch.zeros(num_nodes, dtype=torch.bool)
+            data.val_mask = torch.zeros(num_nodes, dtype=torch.bool)
+            data.test_mask = torch.zeros(num_nodes, dtype=torch.bool)
 
-        all_models_to_run = list(model_zoo_config.keys()) + ["ProtGramDirectGCN"]
-        for model_name in all_models_to_run:
-            print(f"\n--- Benchmarking Model: {model_name} on Dataset: {dataset_name}{graph_variant_suffix} ---")
+            data.train_mask[indices[:train_size]] = True
+            data.val_mask[indices[train_size:train_size + val_size]] = True
+            data.test_mask[indices[train_size + val_size:]] = True
+            print(f"  Applied custom seeded split. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
+        else:
+            print(f"  Using existing standard masks for {dataset.name}.")
+
+        print(f"  {dataset.name} loaded: Nodes: {data.num_nodes}, Edges: {data.num_edges}, Features: {data.num_features}, Classes: {dataset.num_classes}")
+
+        # Pre-process a copy for ProtGramDirectGCN if it's in the list
+        models_to_run = self.config.GNN_MODELS_TO_RUN if hasattr(self.config, 'GNN_MODELS_TO_RUN') else ["GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN_SR", "TongDiGCN", "ProtGramDirectGCN"]
+        data_for_protgram = self._preprocess_for_directgcn(data.clone()) if "ProtGramDirectGCN" in models_to_run else None
+
+        results = []
+        for model_name in models_to_run:
+            print(f"\n--- Benchmarking Model: {model_name} on Dataset: {variant_name} ---")
             try:
-                if model_name == "ProtGramDirectGCN":
-                    if pgd_train_data is None:
-                        print("Skipping ProtGramDirectGCN due to pre-processing error.")
-                        dataset_results.append({'dataset': f"{dataset_name}{graph_variant_suffix}", 'model': model_name, 'error': "Pre-processing failed"})
-                        continue
-                    layer_dims = [num_features] + self.config.GCN_HIDDEN_LAYER_DIMS + [num_classes]
-                    model_instance = ProtGramDirectGCN(
-                        layer_dims=layer_dims, num_graph_nodes=train_data.num_nodes,
-                        task_num_output_classes=num_classes, n_gram_len=0, one_gram_dim=0, max_pe_len=0,
-                        dropout=self.config.GCN_DROPOUT_RATE, use_vector_coeffs=self.config.GCN_USE_VECTOR_COEFFS
-                    ).to(self.device)
-                    train_d, val_d, test_d = pgd_train_data, pgd_val_data, pgd_test_data
-                else:
-                    m_config = model_zoo_config[model_name]
-                    model_instance = m_config["class"](in_channels=num_features, out_channels=num_classes, **m_config["params"]).to(self.device)
-                    train_d, val_d, test_d = train_data, val_data, test_data
+                data_to_use = data_for_protgram if model_name == 'ProtGramDirectGCN' else data
+                if data_to_use is None: continue
 
-                if self.config.DEBUG_VERBOSE: print(f"  Model Architecture:\n{model_instance}")
-                optimizer = torch.optim.Adam(model_instance.parameters(), lr=self.config.EVAL_LEARNING_RATE, weight_decay=5e-4)
+                model = self._get_model(model_name, data_to_use)
+                print("  Model Architecture:")
+                print(model)
+
+                epochs = self.config.EVAL_EPOCHS
+                print(f"  Training {model_name} on {variant_name} using device: {self.device} for {epochs} epochs.")
+                print(f"  Using Loss: cross_entropy, Metric: Accuracy")
 
                 val_metric, test_metric, history_df, metric_name_used = self.train_and_evaluate(
-                    model_name, model_instance, f"{dataset_name}{graph_variant_suffix}",
-                    train_d, val_d, test_d,
-                    optimizer, num_epochs=self.config.EVAL_EPOCHS, task_type=task_type,
-                    num_classes=num_classes
+                    model=model,
+                    train_data=data_to_use,
+                    val_data=data_to_use,
+                    test_data=data_to_use,
+                    loss_fn_name='cross_entropy',
+                    metric_name='accuracy',
+                    epochs=epochs
                 )
 
-                result_entry = {
-                    'dataset': f"{dataset_name}{graph_variant_suffix}", 'model': model_name,
-                    f'best_val_{metric_name_used.lower().replace(" ", "_")}': val_metric,
-                    f'test_{metric_name_used.lower().replace(" ", "_")}': test_metric
-                }
-                dataset_results.append(result_entry)
+                results.append({"dataset": variant_name, "model": model_name,
+                                "best_val_accuracy": val_metric, "test_accuracy": test_metric, "error": None})
 
-                self._save_node_embeddings(model_instance, test_d, model_name, dataset_name, graph_variant_suffix)
-
-                reports_dir = str(self.config.RESULTS_BENCHMARKING_DIR / f"{dataset_name}{graph_variant_suffix}")
-                os.makedirs(reports_dir, exist_ok=True)
-                history_path = os.path.join(reports_dir, f'benchmark_{model_name}_history.csv')
-                history_df.to_csv(history_path, index=False)
-                print(f"  Saved {model_name} training history to {history_path}")
+                history_path = self.output_dir / variant_name
+                os.makedirs(history_path, exist_ok=True)
+                history_df.to_csv(history_path / f"benchmark_{model_name}_history.csv", index=False)
+                print(f"  Saved {model_name} training history to {history_path / f'benchmark_{model_name}_history.csv'}")
 
             except Exception as e:
-                print(f"ERROR during training/evaluation of {model_name} on {dataset_name}{graph_variant_suffix}: {e}")
+                print(f"ERROR during training/evaluation of {model_name} on {variant_name}: {e}")
                 import traceback
                 traceback.print_exc()
-                dataset_results.append({'dataset': f"{dataset_name}{graph_variant_suffix}", 'model': model_name, 'error': str(e)})
+                results.append({"dataset": variant_name, "model": model_name,
+                                "best_val_accuracy": None, "test_accuracy": None, "error": str(e)})
+        return results
 
-        return dataset_results
 
     def run(self):
-        self.set_seeds(self.config.RANDOM_STATE)
         DataUtils.print_header("PIPELINE: GNN BENCHMARKER")
-        base_dataset_path = str(self.config.BASE_DATA_DIR / "standard_datasets_pyg")
-        os.makedirs(base_dataset_path, exist_ok=True)
-        print(f"Standard PyG datasets will be stored in/loaded from: {base_dataset_path}")
+        all_results = []
 
-        all_results_summary = []
+        print(f"Standard PyG datasets will be stored in/loaded from: {self.dataset_root}")
 
         for dataset_name in self.config.BENCHMARK_NODE_CLASSIFICATION_DATASETS:
-            train_data_orig, val_data_orig, test_data_orig, task_type_orig = self._get_dataset(dataset_name, base_dataset_path, make_undirected=False)
-            if train_data_orig is None:
-                print(f"Skipping dataset {dataset_name} (original) due to loading error.")
-                continue
+            # 1. Run on the original (potentially directed) graph
+            print(f"\n  Attempting to load dataset: {dataset_name} (root: {self.dataset_root}, undirected_requested: False)...")
+            dataset = self._get_dataset(dataset_name, undirected=False)
+            if dataset:
+                all_results.extend(self.run_on_dataset_variant(dataset, f"{dataset_name}_Original"))
 
-            num_features = train_data_orig.x.shape[1]
-            num_classes = train_data_orig.y.max().item() + 1 if train_data_orig.y is not None and train_data_orig.y.numel() > 0 else 1
-
-            model_zoo_cfg = {
-                "GCN": {"class": gcn.GCN, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
-                "GAT": {"class": gat.GAT, "params": {"hidden_channels": 32, "heads": 8, "num_layers": 2, "dropout_rate": 0.6}},
-                "GraphSAGE": {"class": graphsage.GraphSAGE, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
-                "GIN": {"class": gin.GIN, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
-                "ChebNet": {"class": chebnet.ChebNet, "params": {"hidden_channels": 256, "K": 3, "num_layers": 2, "dropout_rate": 0.5}},
-                "RGCN_SR": {"class": rgcn.RGCN, "params": {"hidden_channels": 256, "num_relations": 1, "num_layers": 2, "dropout_rate": 0.5}},
-                "TongDiGCN": {"class": tongidigcn.TongDiGCN, "params": {"hidden_channels": 128, "num_layers": 2, "dropout_rate": 0.5}},
-            }
-
-            results_orig = self.run_on_dataset_variant(dataset_name, model_zoo_cfg,
-                                                       train_data_orig, val_data_orig, test_data_orig,
-                                                       task_type_orig, num_features, num_classes, "_Original")
-            all_results_summary.extend(results_orig)
-
+            # 2. Run on the undirected version of the graph
             if self.config.BENCHMARK_TEST_ON_UNDIRECTED:
-                train_data_undir, val_data_undir, test_data_undir, task_type_undir = self._get_dataset(
-                    dataset_name, base_dataset_path, make_undirected=True)
-                if train_data_undir is not None:
-                    results_undir = self.run_on_dataset_variant(dataset_name, model_zoo_cfg,
-                                                                train_data_undir, val_data_undir, test_data_undir,
-                                                                task_type_undir, num_features, num_classes, "_Undirected")
-                    all_results_summary.extend(results_undir)
+                print(f"\n  Attempting to load dataset: {dataset_name} (root: {self.dataset_root}, undirected_requested: True)...")
+                dataset_undirected = self._get_dataset(dataset_name, undirected=True)
+                if dataset_undirected:
+                    all_results.extend(self.run_on_dataset_variant(dataset_undirected, f"{dataset_name}_Undirected"))
 
-            current_dataset_summary = [res for res in all_results_summary if res['dataset'].startswith(dataset_name)]
-            if current_dataset_summary:
-                dataset_summary_df = pd.DataFrame(current_dataset_summary)
-                summary_path = os.path.join(str(self.config.RESULTS_BENCHMARKING_DIR), f"benchmark_summary_{dataset_name}.csv")
-                DataUtils.save_dataframe_to_csv(dataset_summary_df, summary_path)
+            if all_results:
+                summary_df = pd.DataFrame([r for r in all_results if dataset_name in r['dataset']])
+                summary_path = self.output_dir / f"benchmark_summary_{dataset_name}.csv"
+                DataUtils.save_dataframe_to_csv(summary_df, str(summary_path))
                 print(f"\nSummary for {dataset_name} saved to {summary_path}")
-                print(dataset_summary_df)
+                print(summary_df)
 
-        if all_results_summary:
-            final_summary_df = pd.DataFrame(all_results_summary)
-            final_summary_path = os.path.join(str(self.config.RESULTS_BENCHMARKING_DIR), "gnn_benchmark_FULL_SUMMARY.csv")
-            DataUtils.save_dataframe_to_csv(final_summary_df, final_summary_path)
-            print(f"\nFull GNN benchmarking summary saved to {final_summary_path}")
+        if all_results:
+            full_summary_df = pd.DataFrame(all_results)
+            full_summary_path = self.output_dir / "gnn_benchmark_FULL_SUMMARY.csv"
+            DataUtils.save_dataframe_to_csv(full_summary_df, str(full_summary_path))
+            print(f"\nFull GNN benchmarking summary saved to {full_summary_path}")
             print("\nFull Summary Table:")
-            print(final_summary_df.to_string())
+            print(full_summary_df.to_string())
 
         DataUtils.print_header("GNN Benchmarking PIPELINE FINISHED")

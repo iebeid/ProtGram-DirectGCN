@@ -146,6 +146,15 @@ def main():
     should_downsample = False  # Initialize before the try block
     base_config = Config()
 
+    # --- Robustness Improvement: Configure GPU Memory Growth for TensorFlow ---
+    # This prevents TensorFlow from allocating all GPU memory at once, which can
+    # cause conflicts with PyTorch and lead to "DNN library initialization failed" errors.
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus: tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as e: print(f"Warning: Could not set memory growth for GPUs: {e}")
+
     if base_config.ENABLE_FILE_LOGGING:
         start_logging(base_config.LOG_DIR)
 
