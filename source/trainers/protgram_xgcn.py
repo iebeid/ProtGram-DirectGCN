@@ -28,7 +28,7 @@ from torch_geometric.utils import subgraph, to_networkx
 from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
 from source.models.gnn.directgcn import ProtGramDirectGCN
-from source.models.gnn.rgcn import ProtGramRGCN
+from source.models.gnn.rgcn import RGCN
 from source.models.gnn.tongidigcn import TongDiGCN
 from source.utils.data import DataUtils, DataLoader, GroundTruthLoader
 from source.utils.models import EmbeddingProcessor, EmbeddingLoader
@@ -194,7 +194,7 @@ class ProtGramXGCNTrainer:
                 dropout=self.config.GCN_DROPOUT_RATE, use_vector_coeffs=self.config.GCN_USE_VECTOR_COEFFS
             )
         elif model_type == 'rgcn':
-            return ProtGramRGCN(in_channels, self.config.GCN_HIDDEN_LAYER_DIMS[-1], num_classes, num_relations=2)
+            return RGCN(in_channels, self.config.GCN_HIDDEN_LAYER_DIMS[-1], num_classes, num_relations=2)
         elif model_type == 'tongdigcn':
             return TongDiGCN(in_channels, self.config.GCN_HIDDEN_LAYER_DIMS[0], num_classes)
         else:
