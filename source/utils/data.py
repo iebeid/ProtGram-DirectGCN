@@ -18,6 +18,8 @@ import numpy as np
 import pandas as pd
 import requests  # For DataLoader ID mapping
 from Bio import SeqIO  # For DataLoader ID mapping
+import dask.dataframe as dd
+from dask.diagnostics import ProgressBar
 from tqdm.auto import tqdm
 
 # Assuming your Config class is in src.config
@@ -343,7 +345,7 @@ class DataLoader:
             print("Ensure the file exists. It can be downloaded by setting 'ID_MAPPING_TSV' in DATA_SOURCES.")
             return {}
 
-        print(f"Loading ID mappings from: {os.path.basename(self.mapping_output_file)} (Memory-Efficient Mode)")
+        print(f"Loading ID mappings from: {os.path.basename(self.mapping_output_file)} (Dask Mode)")
         id_map = {}
         column_names = ['UniProtKB-AC', 'ID_type', 'ID']
         # Use the DB type specified in the config to filter the large file
@@ -351,29 +353,29 @@ class DataLoader:
         print(f"  Filtering for ID type: '{target_db}'")
 
         try:
-            # Create an iterator that reads the large TSV file in chunks
-            chunk_iterator = pd.read_csv(
+            # Use Dask to read the large file in parallel without loading it all into memory.
+            # Dask creates a task graph instead of loading data immediately.
+            ddf = dd.read_csv(
                 self.mapping_output_file,
                 sep='\t',
                 header=None,
                 names=column_names,
                 usecols=[0, 1, 2],
-                chunksize=2_000_000,  # Process 2 million rows at a time
-                low_memory=True
+                dtype={'UniProtKB-AC': 'object', 'ID_type': 'object', 'ID': 'object'},
+                blocksize='256MB'  # Process the file in 256MB chunks
             )
 
-            with tqdm(desc="  Reading mapping file", unit=" chunks") as pbar:
-                for chunk in chunk_iterator:
-                    # Filter the in-memory chunk for only the DB we need
-                    filtered_chunk = chunk[chunk['ID_type'] == target_db]
-                    # Create a dictionary from the filtered part and update the main map
-                    # This maps from the target DB ID (e.g., UniRef50) to the main UniProt AC
-                    chunk_map = pd.Series(filtered_chunk['UniProtKB-AC'].values, index=filtered_chunk['ID']).to_dict()
-                    id_map.update(chunk_map)
-                    pbar.update(1)
+            # Lazily filter the Dask dataframe for the rows we need. No computation happens yet.
+            filtered_ddf = ddf[ddf['ID_type'] == target_db]
 
+            # Now, trigger the computation to build the final dictionary.
+            # This is the memory-intensive step, but all filtering has been done efficiently.
+            with ProgressBar(dt=5.0): # Update progress bar every 5 seconds
+                print("  Computing filtered map with Dask (this may take a while)...")
+                id_map_series = filtered_ddf.set_index('ID')['UniProtKB-AC']
+                id_map = id_map_series.compute().to_dict()
         except Exception as e:
-            print(f"An error occurred while reading the mapping file: {e}")
+            print(f"An error occurred while reading the mapping file with Dask: {e}")
             return {}
 
         print(f"File-based mapping complete. Loaded {len(id_map)} mappings for DB '{target_db}'.")

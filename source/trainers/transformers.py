@@ -150,6 +150,9 @@ class TransformerEmbedder:
             output_filename = f"{output_filename_base}{output_filename_suffix}.h5"
             output_path = os.path.join(str(self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR), output_filename)
 
+            # Return the path of the generated file so the main pipeline can use it
+            return output_path
+
             print(f"  Saving final embeddings to: {output_path}")
             if final_embeddings_to_save:
                 save_start_time = time.time()
@@ -175,10 +178,13 @@ class TransformerEmbedder:
                 tf.keras.backend.clear_session()
             print(f"--- Finished Transformer: {model_name} ---")
 
+        # Return None if there was an error or nothing was produced
+        return None
+
     def run(self):
         DataUtils.print_header("PIPELINE STEP: Generating Embeddings from Transformers")
         os.makedirs(str(self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR), exist_ok=True)
-
+        generated_paths = {}
         if tf.config.list_physical_devices('GPU'):
             print("  TensorFlow: GPU available.")
         else:
@@ -189,10 +195,14 @@ class TransformerEmbedder:
 
         if not fasta_files:
             print(f"Error: No FASTA files specified in 'config.SEQUENCE_FILE_PATHS'. Skipping Transformer embedding generation.")
-            return
+            return None
         print(f"Found {len(fasta_files)} FASTA file(s) to process from config: {[p.name for p in fasta_files]}")
 
         for model_config_item in self.config.TRANSFORMER_MODELS_TO_RUN:
-            self._generate_embeddings_for_single_model(model_config_item, fasta_files)
+            output_path = self._generate_embeddings_for_single_model(model_config_item, fasta_files)
+            # Store the generated path to return to the main pipeline
+            if output_path:
+                generated_paths[model_config_item['name']] = Path(output_path)
 
         DataUtils.print_header("Transformer Embedding PIPELINE STEP FINISHED")
+        return generated_paths
