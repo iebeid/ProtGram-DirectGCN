@@ -132,7 +132,6 @@ def verify_cuda_with_pycuda():
     print("\n" + "=" * 80)
     DataUtils.print_header("CUDA Verification with PyCUDA")
     print("=" * 80)
-    pycuda.tools.clear_context_caches()
     try:
         # 1. Import PyCUDA and initialize it
         import pycuda.autoinit
@@ -140,7 +139,11 @@ def verify_cuda_with_pycuda():
         import pycuda.gpuarray as gpuarray
         import numpy as np
 
-        # 2. Get information about the current GPU device
+        # 2. Clear caches now that we know the module is imported and initialized.
+        # This resolves the UnboundLocalError and ensures we start fresh.
+        pycuda.tools.clear_context_caches()
+
+        # 3. Get information about the current GPU device
         device = drv.Device(0)
         print(f"Successfully selected GPU 0: {device.name()}")
 
@@ -150,20 +153,20 @@ def verify_cuda_with_pycuda():
         print(f"Details: {e}")
         return  # Exit this function if PyCUDA fails
 
-    # 3. Create two random matrices of the same shape on the CPU using NumPy
+    # 4. Create two random matrices of the same shape on the CPU using NumPy
     print("\nCreating two random matrices on the CPU (NumPy)...")
     matrix_a_cpu = np.random.randn(512, 1024).astype(np.float32)
     matrix_b_cpu = np.random.randn(512, 1024).astype(np.float32)  # Shape must match for element-wise op
     print(f"Matrix A shape: {matrix_a_cpu.shape} (on CPU)")
     print(f"Matrix B shape: {matrix_b_cpu.shape} (on CPU)")
 
-    # 4. Transfer the matrices from the CPU to the GPU
+    # 5. Transfer the matrices from the CPU to the GPU
     print("\nTransferring matrices from CPU to GPU...")
     matrix_a_gpu = gpuarray.to_gpu(matrix_a_cpu)
     matrix_b_gpu = gpuarray.to_gpu(matrix_b_cpu)
     print("Transfer complete.")
 
-    # 5. Perform a simple element-wise operation on the GPU.
+    # 6. Perform a simple element-wise operation on the GPU.
     # This is more robust for a basic verification test than a dot product, which can have complex dependencies.
     print("\nPerforming element-wise addition on the GPU...")
     result_gpu = matrix_a_gpu + matrix_b_gpu
@@ -172,7 +175,7 @@ def verify_cuda_with_pycuda():
     print("GPU operation complete.")
     print(f"Result matrix shape: {result_gpu.shape} (on GPU)")
 
-    # 6. Transfer the result back to the CPU (as a NumPy array) to print it
+    # 7. Transfer the result back to the CPU (as a NumPy array) to print it
     result_cpu = result_gpu.get()
 
     print(f"\nVerification successful! A small subset of the result tensor:\n{result_cpu[:2, :2]}")
