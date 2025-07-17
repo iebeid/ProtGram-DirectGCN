@@ -54,20 +54,16 @@ class Word2VecEmbedder:
         """The core logic for Word2Vec, now accepting a mapper object."""
 
         DataUtils.print_header("Step 2: Preparing FASTA Corpus for Word2Vec")
-        fasta_files = []
-        if self.config.UNIPROT_FASTA_PATH.is_file():
-            fasta_files.append(str(self.config.UNIPROT_FASTA_PATH))
-        elif self.config.UNIPROT_FASTA_PATH.is_dir():
-            fasta_files = [str(f) for f in self.config.UNIPROT_FASTA_PATH.glob('*.fasta')]
-        else:
-            print(f"ERROR: W2V_INPUT_FASTA_DIR '{self.config.UNIPROT_FASTA_PATH}' is not a valid file or directory.")
+        # FIX: The Word2Vec embedder should use the same centrally-defined sequence files
+        # as the rest of the pipeline, which are located in config.SEQUENCE_FILE_PATHS.
+        fasta_paths = self.config.SEQUENCE_FILE_PATHS
+        if not fasta_paths:
+            print("ERROR: No FASTA files configured in 'config.SEQUENCE_FILE_PATHS' for Word2Vec.")
             return
 
-        if not self.config.SEQUENCE_FILE_PATHS:
-            print("ERROR: No FASTA files found for Word2Vec trainers.")
-            return
-
-        print(f"  Found {len(fasta_files)} FASTA file(s) for corpus.")
+        # Convert Path objects to strings for gensim compatibility
+        fasta_files = [str(p) for p in fasta_paths]
+        print(f"  Found {len(fasta_files)} FASTA file(s) for corpus: {[os.path.basename(f) for f in fasta_files]}")
         corpus = DataLoader._FastaCorpus(fasta_files)  # Use the nested _FastaCorpus
 
         DataUtils.print_header("Step 3: Training Word2Vec Model")
