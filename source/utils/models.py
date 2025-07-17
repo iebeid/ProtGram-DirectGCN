@@ -307,7 +307,13 @@ class EmbeddingProcessor:
             for subgraph_data in tqdm(subgraphs, desc="  Inference on subgraphs", leave=False):
                 # subgraph_data is already on device from create_clustered_subgraphs_func
                 with torch.no_grad():
-                    _, subgraph_embeddings_normalized = model(data=subgraph_data)
+                    output = model(data=subgraph_data)
+                    if isinstance(output, tuple) and len(output) >= 2:
+                        # This is likely (logits, embeddings) from ProtGramDirectGCN
+                        _, subgraph_embeddings_normalized = output
+                    else:
+                        # This is likely just embeddings from a standard GNN
+                        subgraph_embeddings_normalized = output
 
                 # Place the embeddings into the correct positions in the full tensor
                 original_indices_in_full_graph = subgraph_data.original_indices
@@ -319,7 +325,13 @@ class EmbeddingProcessor:
             print(f"  Extracting embeddings for {graph_obj.number_of_nodes} nodes using full-batch inference...")
             full_data = full_data.to(device)  # Move full data_builders to device here
             with torch.no_grad():
-                _, embeddings = model(data=full_data)
+                output = model(data=full_data)
+                if isinstance(output, tuple) and len(output) >= 2:
+                    # This is likely (logits, embeddings) from ProtGramDirectGCN
+                    _, embeddings = output
+                else:
+                    # This is likely just embeddings from a standard GNN
+                    embeddings = output
             return embeddings.cpu().numpy()
 
     @staticmethod

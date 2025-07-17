@@ -6,7 +6,7 @@
 # ==============================================================================
 
 import os
-
+import numpy as np
 import pandas as pd
 import torch
 from sklearn.linear_model import LogisticRegression
@@ -27,7 +27,7 @@ class NetworkEmbeddingBenchmarker:
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.output_dir = config.RESULTS_BENCHMARKING_DIR
         self.dataset_root = str(config.DATA_STANDARD_DATASETS_DIR)
-        self.models_to_run = config.BENCHMARK_NE_MODELS_TO_RUN
+        self.models_to_run = [m for m in config.BENCHMARK_NE_MODELS_TO_RUN if m != 'MetaPath2Vec']
         os.makedirs(self.output_dir, exist_ok=True)
         print("\n" + "=" * 80)
         print("### Network Embedding Benchmarker Initialized ###")
@@ -72,13 +72,19 @@ class NetworkEmbeddingBenchmarker:
                     sparse=True,
                 ).to(self.device)
             elif model_name == 'MetaPath2Vec':
-                model = MetaPath2Vec(edge_index_dict=data.edge_index,
-                    embedding_dim=self.config.BENCHMARK_NE_EMBEDDING_DIM,
-                    walk_length=self.config.BENCHMARK_NE_WALK_LENGTH,
-                    context_size=self.config.BENCHMARK_NE_CONTEXT_SIZE,
-                    walks_per_node=10,
-                    sparse=True
-                ).to(self.device)
+                # Define a simple metapath for the benchmark since one is required.
+                metapath = [
+                    ('node', 'to', 'node'),
+                    ('node', 'to', 'node'),
+                ]
+                model = MetaPath2Vec(edge_index_dict={('node', 'to', 'node'): data.edge_index},
+                                     embedding_dim=self.config.BENCHMARK_NE_EMBEDDING_DIM,
+                                     metapath=metapath,
+                                     walk_length=self.config.BENCHMARK_NE_WALK_LENGTH,
+                                     context_size=self.config.BENCHMARK_NE_CONTEXT_SIZE,
+                                     walks_per_node=10,
+                                     sparse=True
+                                     ).to(self.device)
             else:
                 raise ValueError(f"Unknown model: {model_name}")
 
@@ -95,17 +101,39 @@ class NetworkEmbeddingBenchmarker:
 
             model.eval()
             with torch.no_grad():
-                z = model()
+                z = model().detach()
+
+            num_nodes = data.num_nodes
+            if not hasattr(data, 'train_mask') or data.train_mask is None or data.train_mask.sum() == 0:
+                # Generate masks if not present or empty
+                indices = np.random.permutation(num_nodes)
+                train_size = int(num_nodes * self.config.BENCHMARK_SPLIT_RATIOS['train'])
+                val_size = int(num_nodes * self.config.BENCHMARK_SPLIT_RATIOS['val'])
+
+                data.train_mask = torch.zeros(num_nodes, dtype=torch.bool)
+                data.val_mask = torch.zeros(num_nodes, dtype=torch.bool)
+                data.test_mask = torch.zeros(num_nodes, dtype=torch.bool)
+
+                data.train_mask[indices[:train_size]] = True
+                data.val_mask[indices[train_size:train_size + val_size]] = True
+                data.test_mask[indices[train_size + val_size:]] = True
+                print(f"  Generated custom seeded split for {data.name}. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
+
 
             # Simple node classification evaluation
-            train_mask = data.train_mask[:, 0] if data.train_mask.dim() > 1 else data.train_mask
-            test_mask = data.test_mask[:, 0] if data.test_mask.dim() > 1 else data.test_mask
+            train_mask = data.train_mask.bool().flatten() if hasattr(data, 'train_mask') and data.train_mask is not None else data.train_mask
+            test_mask = data.test_mask.bool().flatten() if hasattr(data, 'test_mask') and data.test_mask is not None else data.test_mask
+
+            # Ensure masks exist before trying to use them
+            if train_mask is None or test_mask is None:
+                 raise ValueError(f"Masks are still missing for {dataset.name} after generation attempt.")
+
 
             clf = LogisticRegression(
                 solver='lbfgs', multi_class='auto', random_state=self.config.RANDOM_STATE
-            ).fit(z[train_mask].cpu().numpy(), data.y[train_mask].cpu().numpy())
+            ).fit(z[train_mask].cpu().numpy(), data.y[train_mask].cpu().numpy()) # .detach() is already applied to z
 
-            test_acc = accuracy_score(data.y[test_mask].cpu().numpy(), clf.predict(z[test_mask].cpu().numpy()))
+            test_acc = accuracy_score(data.y[test_mask].cpu().numpy(), clf.predict(z[test_mask].cpu().numpy())) # .detach() is already applied to z
 
             print(f"  ✅ Test Accuracy for {model_name} on {dataset.name}: {test_acc:.4f}")
             return {

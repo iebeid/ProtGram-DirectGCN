@@ -80,7 +80,7 @@ class GNNBenchmarker:
             "GIN": {"class": GIN, "params": {"hidden_channels": 256, "num_layers": 2, "dropout_rate": 0.5}},
             "ChebNet": {"class": ChebNet, "params": {"hidden_channels": 256, "K": 3, "num_layers": 2, "dropout_rate": 0.5}},
             "RGCN_SR": {"class": RGCN, "params": {"hidden_channels": 256, "num_relations": num_relations, "num_layers": 2, "dropout_rate": 0.5}},
-            "TongDiGCN": {"class": TongDiGCN, "params": {"hidden_dim": 128}},
+            "TongDiGCN": {"class": TongDiGCN, "params": {"hidden_channels": 128}}, # NEW
             "ProtGramDirectGCN": {"class": ProtGramDirectGCN, "params": {"num_graph_nodes": data.num_nodes, "n_gram_len": 0, "one_gram_dim": 0, "max_pe_len": 0, "dropout": 0.5, "use_vector_coeffs": False}}
         }
         model_info = model_params.get(name)
@@ -99,8 +99,8 @@ class GNNBenchmarker:
 
         # Handle special cases for custom models
         if name == "TongDiGCN":
-            params['in_dim'] = data.num_features
-            params['out_dim'] = num_classes
+            params['in_channels'] = data.num_features
+            params['out_channels'] = num_classes
         elif name == "ProtGramDirectGCN":
             params["layer_dims"] = [data.num_features, 256, 128, 64, num_classes]
             params['task_num_output_classes'] = num_classes
@@ -172,7 +172,7 @@ class GNNBenchmarker:
 
             history['epoch'].append(epoch)
             history['loss'].append(loss.item())
-            history['val_loss'].append(val_loss.item() if not np.isnan(val_loss) else 0.0)
+            history['val_loss'].append(val_loss.cpu().item() if not np.isnan(val_loss.cpu().numpy()) else 0.0) # NEW
             history['val_metric'].append(val_acc)
             history['test_metric'].append(test_acc)
 
@@ -207,7 +207,7 @@ class GNNBenchmarker:
 
                 # --- Add PCA reduction step here for consistency ---
                 if self.config.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS and full_embeddings.shape[0] > self.config.BENCHMARK_PCA_TARGET_DIM:
-                    print(f"      Applying PCA to {model_name} embeddings (target dim: {self.config.BENCHMARK_PCA_TARGET_DIM})...")
+                    # print(f"      Applying PCA to {model_name} embeddings (target dim: {self.config.BENCHMARK_PCA_TARGET_DIM})...")
                     embeddings_for_pca = {i: emb for i, emb in enumerate(full_embeddings.cpu().numpy())}
                     pca_embed_dict = EmbeddingProcessor.apply_pca(embeddings_for_pca, self.config.BENCHMARK_PCA_TARGET_DIM, self.config.RANDOM_STATE)
                     if pca_embed_dict:

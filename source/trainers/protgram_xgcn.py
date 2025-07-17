@@ -294,12 +294,13 @@ class ProtGramXGCNTrainer:
                 batch_data = batch_data.to(self.device)
                 optimizer.zero_grad()
                 with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
-                    # FIX: Handle different model output signatures (single tensor vs. tuple)
                     output = model(data=batch_data)
+                    # FIX: Handle different model output signatures
                     if isinstance(output, tuple):
                         task_output = output[0]
                     else:
                         task_output = output
+
                     primary_loss_per_node_avg = criterion(task_output, batch_data.y)
                     weight_factor = batch_data.num_nodes / total_nodes_in_level_graph if total_nodes_in_level_graph > 0 else 0.0
                     weighted_primary_loss = primary_loss_per_node_avg * weight_factor
@@ -487,10 +488,18 @@ class ProtGramXGCNTrainer:
 
         for i, current_ngram in tqdm(enumerate(graph_obj.node_sequences), total=num_current_nodes, desc=f"  Initializing n={graph_obj.n_value} features", leave=False):
             prefix, suffix = current_ngram[:-1], current_ngram[1:]
-            prefix_idx, suffix_idx = prev_level_map.get(prefix), prev_level_map.get(suffix)
+            prefix_idx = prev_level_map.get(prefix)
+            suffix_idx = prev_level_map.get(suffix)
 
-            prefix_emb = torch.from_numpy(prev_level_embeddings[prefix_idx]) if prefix_idx is not None else torch.zeros(prev_embedding_dim)
-            suffix_emb = torch.from_numpy(prev_level_embeddings[suffix_idx]) if suffix_idx is not None else torch.zeros(prev_embedding_dim)
+            if prefix_idx is not None and suffix_idx is not None:
+                prefix_emb = torch.from_numpy(prev_level_embeddings[prefix_idx])
+                suffix_emb = torch.from_numpy(prev_level_embeddings[suffix_idx])
+            else:
+                # If either prefix or suffix ngram is not found, use a zero vector of appropriate dimension
+                prefix_emb = torch.zeros(prev_embedding_dim)
+                suffix_emb = torch.zeros(prev_embedding_dim)
+
+            new_features[i] = torch.cat([prefix_emb, suffix_emb])
 
             new_features[i] = torch.cat([prefix_emb, suffix_emb])
         return new_features

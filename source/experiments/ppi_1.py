@@ -20,6 +20,15 @@ import mlflow
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+
+# Add this section to configure GPU memory growth
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        print(e)
 # --- NEW IMPORTS for PCA dimensionality reduction ---
 from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
