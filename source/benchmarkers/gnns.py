@@ -1,20 +1,19 @@
 # ==============================================================================
 # MODULE: benchmarkers/gnns.py
 # PURPOSE: Handles benchmarking of various GNN models on standard datasets.
-# VERSION: 1.1 (Corrected dataset root path and RGCN forward pass)
+# VERSION: 1.2 (Corrected handling for all dataset mask types and model parameters)
 # AUTHOR: Your Name (Assembled by Coding Partner)
 # ==============================================================================
 
 import os
-import time
-from typing import Dict, Optional, List
+
 import h5py
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
 import torch_geometric
-from torch_geometric.datasets import Planetoid, GNNBenchmarkDataset, ZINC, TUDataset, QM9
+from torch_geometric.datasets import Planetoid
 from torch_geometric.datasets import WebKB, Actor
 from torch_geometric.transforms import ToUndirected
 from torch_geometric.utils import to_undirected
@@ -29,7 +28,6 @@ from source.models.gnn.graphsage import GraphSAGE
 from source.models.gnn.rgcn import RGCN
 from source.models.gnn.tongidigcn import TongDiGCN
 from source.utils.data import DataUtils
-from source.utils.models import EmbeddingProcessor
 
 
 class GNNBenchmarker:
@@ -38,7 +36,6 @@ class GNNBenchmarker:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.output_dir = config.RESULTS_BENCHMARKING_DIR
         self.embedding_dir = config.RESULTS_BENCHMARK_EMBEDDINGS_DIR
-        # FIX: Use the correct dataset directory from the config
         self.dataset_root = str(config.DATA_STANDARD_DATASETS_DIR)
 
         os.makedirs(self.output_dir, exist_ok=True)
@@ -60,14 +57,14 @@ class GNNBenchmarker:
             if name in ['Cora', 'CiteSeer', 'PubMed']:
                 return Planetoid(root=path, name=name, transform=transform)
             elif name in ['Cornell', 'Texas', 'Wisconsin']:
-                # For WebKB datasets, we need to handle the transform slightly differently
-                # as they don't natively come with a directed option to undo.
-                return WebKB(root=path, name=name)
+                # WebKB datasets don't have a separate transform for undirected,
+                # but ToUndirected is idempotent so it's safe to apply.
+                return WebKB(root=path, name=name, transform=transform)
             elif name == 'Actor':
-                return Actor(root=path)
+                return Actor(root=path, transform=transform)
             elif name == 'KarateClub':
                 from torch_geometric.datasets import KarateClub
-                return KarateClub() # This one doesn't take a root
+                return KarateClub(transform=transform)
             else:
                 print(f"  Dataset '{name}' not recognized by this loader.")
                 return None
@@ -84,38 +81,30 @@ class GNNBenchmarker:
             "ChebNet": {"class": ChebNet, "params": {"hidden_channels": 256, "K": 3, "num_layers": 2, "dropout_rate": 0.5}},
             "RGCN_SR": {"class": RGCN, "params": {"hidden_channels": 256, "num_relations": num_relations, "num_layers": 2, "dropout_rate": 0.5}},
             "TongDiGCN": {"class": TongDiGCN, "params": {"hidden_dim": 128}},
-            # Note: ProtGramDirectGCN layer_dims are defined dynamically below
             "ProtGramDirectGCN": {"class": ProtGramDirectGCN, "params": {"num_graph_nodes": data.num_nodes, "n_gram_len": 0, "one_gram_dim": 0, "max_pe_len": 0, "dropout": 0.5, "use_vector_coeffs": False}}
         }
         model_info = model_params.get(name)
         if not model_info:
             raise ValueError(f"Model {name} not found in GNNBenchmarker.")
 
-        params = model_info['params']
-        # FIX: Correctly get num_classes from the parent dataset object, which always has this attribute.
-        # The individual `data` object might not.
+        params = model_info['params'].copy()
+
         is_collection = hasattr(dataset, '__len__') and not isinstance(dataset, torch_geometric.data.Data)
         num_classes = dataset.num_classes if is_collection else int(data.y.max().item() + 1)
 
         params['in_channels'] = data.num_features
         params['out_channels'] = num_classes
-        if name == "ProtGramDirectGCN":  # Special case for ProtGramDirectGCN's layer_dims
-            params["layer_dims"] = [data.num_features, 256, 128, 64, num_classes]
 
-        # FIX: Pop standardized keys that are not part of ProtGramDirectGCN's constructor
-        # to prevent the TypeError.
         if name == "ProtGramDirectGCN":
+            params["layer_dims"] = [data.num_features, 256, 128, 64, num_classes]
+            params['task_num_output_classes'] = num_classes
             params.pop('in_channels', None)
             params.pop('out_channels', None)
 
         return model_info['class'](**params)
 
-
     def _preprocess_for_directgcn(self, data):
-        """Prepares standard PyG data for ProtGramDirectGCN's specific input format."""
         print(f"--- Pre-processing data for ProtGramDirectGCN on {data.name} ---")
-        # 1. Create undirected normalized matrix (used for the structural path)
-        # FIX: to_undirected returns a single tensor when the input has no edge attributes.
         edge_index_undir = to_undirected(data.edge_index, num_nodes=data.num_nodes)
         row, col = edge_index_undir
         deg = torch.bincount(col, minlength=data.num_nodes).float()
@@ -124,15 +113,10 @@ class GNNBenchmarker:
         edge_weight_undir = deg_inv_sqrt[row] * deg_inv_sqrt[col]
         data.edge_index_undirected_norm = edge_index_undir
         data.edge_weight_undirected_norm = edge_weight_undir
-
-        # 2. Create directional matrices (in/out)
-        # For standard datasets, we can treat the original edge_index as the "out" edges
-        # and its transpose as the "in" edges. They won't have inherent weights.
         data.edge_index_out = data.edge_index
         data.edge_weight_out = None
         data.edge_index_in = data.edge_index.flip(0)
         data.edge_weight_in = None
-
         print("--- Pre-processing complete ---")
         return data
 
@@ -146,42 +130,39 @@ class GNNBenchmarker:
         history = {'epoch': [], 'loss': [], 'val_loss': [], 'val_metric': [], 'test_metric': []}
 
         for epoch in range(epochs):
-            # Training
             model.train()
             optimizer.zero_grad()
             out = model(train_data)
 
-            # The output 'out' might be a tuple from ProtGramDirectGCN
-            # Also handle the case where the model returns a dictionary
             if isinstance(out, dict):
                 out = out.get('out')
             elif isinstance(out, tuple):
-                out = out[0] # Assume the first element is the prediction
-
+                out = out[0]
 
             loss = F.cross_entropy(out[train_data.train_mask], train_data.y[train_data.train_mask])
             loss.backward()
             optimizer.step()
 
-            # Evaluation
             model.eval()
             with torch.no_grad():
-                out = model(val_data)
-                if isinstance(out, dict):
-                    out = out.get('out')
-                elif isinstance(out, tuple):
-                    out = out[0]
+                out_eval = model(val_data)
+                if isinstance(out_eval, dict):
+                    out_eval = out_eval.get('out')
+                elif isinstance(out_eval, tuple):
+                    out_eval = out_eval[0]
 
-                pred = out.argmax(dim=1)
-                # Ensure masks are boolean
+                pred = out_eval.argmax(dim=1)
+
                 val_mask = val_data.val_mask.bool()
+                test_mask = test_data.test_mask.bool()
+
                 val_correct = pred[val_mask] == val_data.y[val_mask]
-                val_acc = int(val_correct.sum()) / int(val_data.val_mask.sum())
+                val_acc = int(val_correct.sum()) / int(val_mask.sum()) if val_mask.sum() > 0 else 0.0
 
-                test_correct = pred[test_data.test_mask] == test_data.y[test_data.test_mask]
-                test_acc = int(test_correct.sum()) / int(test_data.test_mask.sum())
+                test_correct = pred[test_mask] == test_data.y[test_mask]
+                test_acc = int(test_correct.sum()) / int(test_mask.sum()) if test_mask.sum() > 0 else 0.0
 
-                val_loss = F.cross_entropy(out[val_data.val_mask], val_data.y[val_data.val_mask])
+                val_loss = F.cross_entropy(out_eval[val_mask], val_data.y[val_mask]) if val_mask.sum() > 0 else float('nan')
 
             history['epoch'].append(epoch)
             history['loss'].append(loss.item())
@@ -194,22 +175,18 @@ class GNNBenchmarker:
                 corresponding_test_metric = test_acc
 
             if self.config.DEBUG_VERBOSE and (epoch == 0 or (epoch + 1) % 10 == 0 or epoch == epochs - 1):
-                 print(f"    Epoch {epoch:03d}, Loss: {loss:.4f}, Val Accuracy: {val_acc:.4f}")
+                print(f"    Epoch {epoch:03d}, Loss: {loss:.4f}, Val Accuracy: {val_acc:.4f}")
 
         print(f"  Finished training for {model.__class__.__name__} on {train_data.name}.")
         print(f"  Best Val Accuracy: {best_val_metric:.4f}, Corresponding Test Accuracy: {corresponding_test_metric:.4f}")
 
-        # Extract embeddings if configured
         if self.config.BENCHMARK_SAVE_EMBEDDINGS:
             print(f"    Extracting embeddings for {model.__class__.__name__} on {train_data.name}...")
             with torch.no_grad():
                 model.eval()
-                # BaseGNN models store embeddings in .embedding_output after forward pass
                 if hasattr(model, 'get_embeddings'):
                     full_embeddings = model.get_embeddings(train_data.to(self.device))
-                    if isinstance(full_embeddings, tuple): full_embeddings = full_embeddings[1]
                 else:
-                    # Fallback for models without get_embeddings
                     output = model(train_data.to(self.device))
                     full_embeddings = output[0] if isinstance(output, tuple) else output
 
@@ -221,19 +198,10 @@ class GNNBenchmarker:
                 save_path_emb_dir = self.embedding_dir / train_data.name
                 os.makedirs(save_path_emb_dir, exist_ok=True)
 
-                if self.config.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS and emb_dim > self.config.BENCHMARK_PCA_TARGET_DIM:
-                    print(f"      Applying PCA to {model.__class__.__name__} embeddings (target dim: {self.config.BENCHMARK_PCA_TARGET_DIM})...")
-                    pca_embeds = EmbeddingProcessor.apply_pca(emb_dict, self.config.BENCHMARK_PCA_TARGET_DIM, self.config.RANDOM_STATE)
-                    if pca_embeds:
-                        h5_path = save_path_emb_dir / f"{model.__class__.__name__}_embeddings_pca{self.config.BENCHMARK_PCA_TARGET_DIM}.h5"
-                        with h5py.File(h5_path, 'w') as hf:
-                            for k, v in pca_embeds.items(): hf.create_dataset(k, data=v)
-                        print(f"      Saved {model.__class__.__name__} embeddings for {train_data.name} to {h5_path}")
-                else:
-                    h5_path = save_path_emb_dir / f"{model.__class__.__name__}_embeddings_dim{emb_dim}.h5"
-                    with h5py.File(h5_path, 'w') as hf:
-                        for k, v in emb_dict.items(): hf.create_dataset(k, data=v)
-                    print(f"      Saved {model.__class__.__name__} embeddings for {train_data.name} to {h5_path}")
+                h5_path = save_path_emb_dir / f"{model.__class__.__name__}_embeddings_dim{emb_dim}.h5"
+                with h5py.File(h5_path, 'w') as hf:
+                    for k, v in emb_dict.items(): hf.create_dataset(k, data=v)
+                print(f"      Saved {model.__class__.__name__} embeddings for {train_data.name} to {h5_path}")
 
         return best_val_metric, corresponding_test_metric, pd.DataFrame(history), metric_name
 
@@ -242,21 +210,19 @@ class GNNBenchmarker:
         print(f"### Benchmarking on Dataset: {variant_name} ###")
         print("=" * 50 + "\n")
 
-        # Use the first data object
-        data = dataset[0]
+        is_collection = hasattr(dataset, '__len__') and not isinstance(dataset, torch_geometric.data.Data)
+        data = dataset[0] if is_collection else dataset
         data.name = variant_name
+        num_classes = dataset.num_classes if is_collection else int(data.y.max().item()) + 1
 
-        # FIX: Handle datasets with multiple splits (like WebKB) by selecting the first one.
-        # This converts a 2D mask [num_nodes, num_splits] to a 1D mask [num_nodes].
         if hasattr(data, 'train_mask') and data.train_mask is not None and data.train_mask.dim() > 1:
             print(f"  Detected multi-split masks for {variant_name}. Using the first split (index 0).")
             data.train_mask = data.train_mask[:, 0]
             data.val_mask = data.val_mask[:, 0]
             data.test_mask = data.test_mask[:, 0]
 
-        # Generate custom split if no masks exist
-        if not hasattr(data, 'train_mask') or data.train_mask is None:
-            print(f"  Generating custom seeded split for {dataset.name}.")
+        if not hasattr(data, 'train_mask') or data.train_mask is None or data.train_mask.sum() == 0:
+            print(f"  Generating custom seeded split for {variant_name}.")
             num_nodes = data.num_nodes
             indices = np.random.permutation(num_nodes)
             train_size = int(num_nodes * self.config.BENCHMARK_SPLIT_RATIOS['train'])
@@ -270,27 +236,24 @@ class GNNBenchmarker:
             data.val_mask[indices[train_size:train_size + val_size]] = True
             data.test_mask[indices[train_size + val_size:]] = True
             print(f"  Applied custom seeded split. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
-        else: # FIX: Use variant_name which is always available, instead of dataset.name
+        else:
             print(f"  Using existing standard masks for {variant_name}.")
 
-        print(f"  {variant_name.split('_')[0]} loaded: Nodes: {data.num_nodes}, Edges: {data.num_edges}, Features: {data.num_features}, Classes: {dataset.num_classes}")
+        print(f"  {variant_name.split('_')[0]} loaded: Nodes: {data.num_nodes}, Edges: {data.num_edges}, Features: {data.num_features}, Classes: {num_classes}")
 
-        # Pre-process a copy for ProtGramDirectGCN if it's in the list
         models_to_run = self.config.GNN_MODELS_TO_RUN if hasattr(self.config, 'GNN_MODELS_TO_RUN') else ["GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN_SR", "TongDiGCN", "ProtGramDirectGCN"]
         data_for_protgram = self._preprocess_for_directgcn(data.clone()) if "ProtGramDirectGCN" in models_to_run else None
 
-        # FIX: Add backward edges for TongDiGCN for all relevant data objects
         if "TongDiGCN" in models_to_run:
             data.edge_index_backward = data.edge_index.flip(0)
-            if data_for_protgram: data_for_protgram.edge_index_backward = data_for_protgram.edge_index.flip(0)
+            if data_for_protgram:
+                data_for_protgram.edge_index_backward = data_for_protgram.edge_index.flip(0)
 
         results = []
         for model_name in models_to_run:
             print(f"\n--- Benchmarking Model: {model_name} on Dataset: {variant_name} ---")
             try:
                 data_to_use = data_for_protgram if model_name == 'ProtGramDirectGCN' else data
-                if data_to_use is None: continue
-
                 model = self._get_model(model_name, dataset, data_to_use)
                 print("  Model Architecture:")
                 print(model)
@@ -300,13 +263,8 @@ class GNNBenchmarker:
                 print(f"  Using Loss: cross_entropy, Metric: Accuracy")
 
                 val_metric, test_metric, history_df, metric_name_used = self.train_and_evaluate(
-                    model=model,
-                    train_data=data_to_use,
-                    val_data=data_to_use,
-                    test_data=data_to_use,
-                    loss_fn_name='cross_entropy',
-                    metric_name='accuracy',
-                    epochs=epochs
+                    model=model, train_data=data_to_use, val_data=data_to_use, test_data=data_to_use,
+                    loss_fn_name='cross_entropy', metric_name='accuracy', epochs=epochs
                 )
 
                 results.append({"dataset": variant_name, "model": model_name,
@@ -325,7 +283,6 @@ class GNNBenchmarker:
                                 "best_val_accuracy": None, "test_accuracy": None, "error": str(e)})
         return results
 
-
     def run(self):
         DataUtils.print_header("PIPELINE: GNN BENCHMARKER")
         all_results = []
@@ -333,25 +290,26 @@ class GNNBenchmarker:
         print(f"Standard PyG datasets will be stored in/loaded from: {self.dataset_root}")
 
         for dataset_name in self.config.BENCHMARK_NODE_CLASSIFICATION_DATASETS:
-            # 1. Run on the original (potentially directed) graph
+            dataset_results = []
+
             print(f"\n  Attempting to load dataset: {dataset_name} (root: {self.dataset_root}, undirected_requested: False)...")
             dataset = self._get_dataset(dataset_name, undirected=False)
             if dataset:
-                all_results.extend(self.run_on_dataset_variant(dataset, f"{dataset_name}_Original"))
+                dataset_results.extend(self.run_on_dataset_variant(dataset, f"{dataset_name}_Original"))
 
-            # 2. Run on the undirected version of the graph
             if self.config.BENCHMARK_TEST_ON_UNDIRECTED:
                 print(f"\n  Attempting to load dataset: {dataset_name} (root: {self.dataset_root}, undirected_requested: True)...")
                 dataset_undirected = self._get_dataset(dataset_name, undirected=True)
                 if dataset_undirected:
-                    all_results.extend(self.run_on_dataset_variant(dataset_undirected, f"{dataset_name}_Undirected"))
+                    dataset_results.extend(self.run_on_dataset_variant(dataset_undirected, f"{dataset_name}_Undirected"))
 
-            if all_results:
-                summary_df = pd.DataFrame([r for r in all_results if dataset_name in r['dataset']])
+            if dataset_results:
+                summary_df = pd.DataFrame(dataset_results)
                 summary_path = self.output_dir / f"benchmark_summary_{dataset_name}.csv"
                 DataUtils.save_dataframe_to_csv(summary_df, str(summary_path))
                 print(f"\nSummary for {dataset_name} saved to {summary_path}")
-                print(summary_df)
+                print(summary_df.to_string())
+                all_results.extend(dataset_results)
 
         if all_results:
             full_summary_df = pd.DataFrame(all_results)

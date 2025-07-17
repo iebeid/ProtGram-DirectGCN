@@ -283,7 +283,6 @@ class Config:
         """Sets parameters for MLflow experiment tracking."""
         self.USE_MLFLOW = True
         mlruns_path = self.BASE_OUTPUT_DIR / "mlruns"
-        mlruns_path.mkdir(parents=True, exist_ok=True)  # Proactively create the directory
         self.MLFLOW_TRACKING_URI = mlruns_path.resolve().as_uri() # Revert to .as_uri() for correct mlflow format
         self.MLFLOW_EXPERIMENT_NAME = "PPI-Link-Prediction"
         self.MLFLOW_BENCHMARK_EXPERIMENT_NAME = "GNN-Benchmarking"

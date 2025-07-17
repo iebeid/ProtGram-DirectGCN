@@ -45,7 +45,9 @@ class NetworkEmbeddingBenchmarker:
                 return WebKB(root=path, name=name)
             elif name == 'KarateClub':
                 from torch_geometric.datasets import KarateClub
-                return KarateClub()
+                dataset = KarateClub()
+                dataset.name = 'KarateClub'  # Manually add the name attribute
+                return dataset
             else:
                 return None
         except Exception as e:
