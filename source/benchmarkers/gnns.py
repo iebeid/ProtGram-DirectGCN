@@ -102,6 +102,12 @@ class GNNBenchmarker:
         if name == "ProtGramDirectGCN":  # Special case for ProtGramDirectGCN's layer_dims
             params["layer_dims"] = [data.num_features, 256, 128, 64, num_classes]
 
+        # FIX: Pop standardized keys that are not part of ProtGramDirectGCN's constructor
+        # to prevent the TypeError.
+        if name == "ProtGramDirectGCN":
+            params.pop('in_channels', None)
+            params.pop('out_channels', None)
+
         return model_info['class'](**params)
 
 
@@ -146,8 +152,12 @@ class GNNBenchmarker:
             out = model(train_data)
 
             # The output 'out' might be a tuple from ProtGramDirectGCN
-            if isinstance(out, tuple):
-                out = out[0]
+            # Also handle the case where the model returns a dictionary
+            if isinstance(out, dict):
+                out = out.get('out')
+            elif isinstance(out, tuple):
+                out = out[0] # Assume the first element is the prediction
+
 
             loss = F.cross_entropy(out[train_data.train_mask], train_data.y[train_data.train_mask])
             loss.backward()
@@ -156,11 +166,16 @@ class GNNBenchmarker:
             # Evaluation
             model.eval()
             with torch.no_grad():
-                out = model(train_data)
-                if isinstance(out, tuple): out = out[0]
+                out = model(val_data)
+                if isinstance(out, dict):
+                    out = out.get('out')
+                elif isinstance(out, tuple):
+                    out = out[0]
 
                 pred = out.argmax(dim=1)
-                val_correct = pred[val_data.val_mask] == val_data.y[val_data.val_mask]
+                # Ensure masks are boolean
+                val_mask = val_data.val_mask.bool()
+                val_correct = pred[val_mask] == val_data.y[val_mask]
                 val_acc = int(val_correct.sum()) / int(val_data.val_mask.sum())
 
                 test_correct = pred[test_data.test_mask] == test_data.y[test_data.test_mask]
@@ -231,6 +246,14 @@ class GNNBenchmarker:
         data = dataset[0]
         data.name = variant_name
 
+        # FIX: Handle datasets with multiple splits (like WebKB) by selecting the first one.
+        # This converts a 2D mask [num_nodes, num_splits] to a 1D mask [num_nodes].
+        if hasattr(data, 'train_mask') and data.train_mask is not None and data.train_mask.dim() > 1:
+            print(f"  Detected multi-split masks for {variant_name}. Using the first split (index 0).")
+            data.train_mask = data.train_mask[:, 0]
+            data.val_mask = data.val_mask[:, 0]
+            data.test_mask = data.test_mask[:, 0]
+
         # Generate custom split if no masks exist
         if not hasattr(data, 'train_mask') or data.train_mask is None:
             print(f"  Generating custom seeded split for {dataset.name}.")
@@ -255,6 +278,11 @@ class GNNBenchmarker:
         # Pre-process a copy for ProtGramDirectGCN if it's in the list
         models_to_run = self.config.GNN_MODELS_TO_RUN if hasattr(self.config, 'GNN_MODELS_TO_RUN') else ["GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN_SR", "TongDiGCN", "ProtGramDirectGCN"]
         data_for_protgram = self._preprocess_for_directgcn(data.clone()) if "ProtGramDirectGCN" in models_to_run else None
+
+        # FIX: Add backward edges for TongDiGCN for all relevant data objects
+        if "TongDiGCN" in models_to_run:
+            data.edge_index_backward = data.edge_index.flip(0)
+            if data_for_protgram: data_for_protgram.edge_index_backward = data_for_protgram.edge_index.flip(0)
 
         results = []
         for model_name in models_to_run:
