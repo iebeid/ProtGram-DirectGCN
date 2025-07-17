@@ -8,7 +8,7 @@
 import gc
 import os
 import time
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, Mapping
 
 import h5py
 import numpy as np

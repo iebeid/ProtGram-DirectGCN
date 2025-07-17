@@ -619,12 +619,12 @@ def test_transformer_embedder_pipeline_run():
      dummy_input_dir.mkdir()
      _create_dummy_fasta_for_testing(str(dummy_input_dir), "transformer_test.fasta", num_seqs=2)
 
-     # Store and override settings
-     original_transformer_input_dir = config.DATA_SEQUENCES_DIR
+     # Store original paths and settings
+     original_sequence_paths = config.SEQUENCE_FILE_PATHS
      original_transformer_output_dir = config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR
 
-     # Point the trainer to the temporary input directory
-     config.DATA_SEQUENCES_DIR = dummy_input_dir
+     # Override with temporary test settings
+     config.SEQUENCE_FILE_PATHS = [dummy_input_dir / "transformer_test.fasta"]
      config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = Path(base_test_dir) / "test_transformer_embeddings"
      config.APPLY_PCA_TO_TRANSFORMER = False
      config.TRANSFORMER_BASE_BATCH_SIZE = 1
@@ -638,7 +638,7 @@ def test_transformer_embedder_pipeline_run():
          raise
      finally:
          # Restore original settings
-         config.DATA_SEQUENCES_DIR = original_transformer_input_dir
+         config.SEQUENCE_FILE_PATHS = original_sequence_paths
          config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = original_transformer_output_dir
          # Clean up temporary files
          if os.path.exists(base_test_dir):
