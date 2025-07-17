@@ -8,7 +8,7 @@
 import gc
 import os
 import time
-from typing import Dict
+from typing import Dict, Optional, Union
 
 import h5py
 import numpy as np
@@ -18,14 +18,14 @@ from tqdm import tqdm
 
 from configuration.config import Config
 # Corrected import for DataUtils
-from source.utils.data import DataLoader, DataUtils  # Import DataUtils directly
+from source.utils.data import DataLoader, DataUtils, IDMapper  # Import DataUtils and the new IDMapper
 from source.utils.models import EmbeddingProcessor
 
 
 class Word2VecEmbedder:
     def __init__(self, config: Config):
         self.config = config
-        self.id_map: Dict[str, str] = {}
+        self.id_mapper: Optional[Union[Dict[str, str], IDMapper]] = None
         DataUtils.print_header("Word2VecEmbedder Initialized")
 
     def run(self):
@@ -37,34 +37,21 @@ class Word2VecEmbedder:
         # It's removed because DataUtils is now imported directly.
 
         DataUtils.print_header("Step 1: Loading Protein ID Mapping (if configured)")
-        if self.config.ID_MAPPING_MODE != 'none':
-            # Assuming DataLoader is instantiated correctly if needed for mapping elsewhere,
-            # or that id_map is loaded/passed if this embedder doesn't do mapping itself.
-            # For simplicity, if Word2Vec needs its own mapping, it should handle it.
-            # If it relies on GCN's mapping, that map needs to be accessible.
-            # For now, let's assume it might use a pre-generated map or map IDs later.
-            # If Word2Vec needs to *generate* the map, it would need a DataLoader instance.
-            # This example assumes id_map is populated if needed by pooling.
-            # If no mapping is done by this class, self.id_map remains empty.
-            # A more robust solution might involve passing a shared ID map or
-            # ensuring each embedder can generate/load its own if necessary.
-            # For now, we'll assume the GCN trainers (if run) populates a map that
-            # could be used, or pooling uses original IDs if map is empty.
-            # Let's load it similar to how GCN trainer does for consistency:
-            if os.path.exists(str(self.config.ID_MAPPING_PATH)):
-                try:
-                    mapping_df = pd.read_csv(str(self.config.ID_MAPPING_PATH), sep='\t', header=None, names=['original', 'mapped'])
-                    self.id_map = dict(zip(mapping_df['original'], mapping_df['mapped']))
-                    print(f"  Loaded {len(self.id_map)} ID mappings from GCN's output file for Word2Vec.")
-                except Exception as e:
-                    print(f"  Could not load ID mapping file for Word2Vec: {e}. Using original IDs.")
-                    self.id_map = {}
-            else:
-                print("  ID mapping file not found. Word2Vec will use original FASTA IDs for pooling keys.")
-                self.id_map = {}
+        # FIX: Use the robust DataLoader to handle ID mapping safely.
+        data_loader = DataLoader(config=self.config)
+        self.id_mapper = data_loader.generate_id_maps()
+
+        # Now, we need a 'with' block if the mapper is the on-disk SQLite version
+        if isinstance(self.id_mapper, IDMapper):
+            with self.id_mapper as mapper:
+                # The main logic is now inside the 'with' block
+                return self._execute_embedding_logic(mapper)
         else:
-            print("  ID mapping mode is 'none'. Word2Vec will use original FASTA IDs for pooling keys.")
-            self.id_map = {}
+            # If it's a simple dictionary (from regex/api) or None, run directly.
+            return self._execute_embedding_logic(self.id_mapper)
+
+    def _execute_embedding_logic(self, id_mapper: Optional[Mapping]):
+        """The core logic for Word2Vec, now accepting a mapper object."""
 
         DataUtils.print_header("Step 2: Preparing FASTA Corpus for Word2Vec")
         fasta_files = []
@@ -76,7 +63,7 @@ class Word2VecEmbedder:
             print(f"ERROR: W2V_INPUT_FASTA_DIR '{self.config.UNIPROT_FASTA_PATH}' is not a valid file or directory.")
             return
 
-        if not fasta_files:
+        if not self.config.SEQUENCE_FILE_PATHS:
             print("ERROR: No FASTA files found for Word2Vec trainers.")
             return
 
@@ -117,7 +104,7 @@ class Word2VecEmbedder:
                 if residue_vectors is not None and residue_vectors.size > 0:
                     protein_vector = EmbeddingProcessor.pool_residue_embeddings(residue_vectors, self.config.W2V_POOLING_STRATEGY, self.config.W2V_VECTOR_SIZE)
                     # Use mapped ID if available, otherwise original ID
-                    final_key = self.id_map.get(original_id, original_id)
+                    final_key = id_mapper.get(original_id, original_id) if id_mapper else original_id
                     protein_embeddings[final_key] = protein_vector.astype(np.float16)  # Store as float16
                 # else:
                 # print(f"    Warning: No residue vectors for {original_id}. Skipping.")
