@@ -1,13 +1,12 @@
 # ==============================================================================
 # MODULE: benchmarkers/gnns.py
 # PURPOSE: Handles benchmarking of various GNN models on standard datasets.
-# VERSION: 1.3 (Fully robust handling of all dataset masks and model parameters)
+# VERSION: 1.4 (Final robust version for all datasets and models)
 # AUTHOR: Your Name (Assembled by Coding Partner)
 # ==============================================================================
 
 import os
-import time
-from typing import Dict, Optional, List, Any
+from typing import Dict, List, Any
 
 import h5py
 import numpy as np
@@ -15,8 +14,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 import torch_geometric
-from torch_geometric.datasets import Planetoid
-from torch_geometric.datasets import WebKB, Actor
+from torch_geometric.datasets import Planetoid, WebKB, Actor
 from torch_geometric.transforms import ToUndirected
 from torch_geometric.utils import to_undirected
 
@@ -92,7 +90,7 @@ class GNNBenchmarker:
         params = model_info['params'].copy()
 
         is_collection = hasattr(dataset, '__len__') and not isinstance(dataset, torch_geometric.data.Data)
-        num_classes = dataset.num_classes if is_collection else int(data.y.max().item() + 1)
+        num_classes = dataset.num_classes if is_collection else int(data.y.max().item()) + 1
 
         # Set common parameters for standard GNNs
         if name not in ["ProtGramDirectGCN", "TongDiGCN"]:
@@ -135,9 +133,10 @@ class GNNBenchmarker:
         corresponding_test_metric = -1
         history = {'epoch': [], 'loss': [], 'val_loss': [], 'val_metric': [], 'test_metric': []}
 
-        train_mask = train_data.train_mask.bool()
-        val_mask = val_data.val_mask.bool()
-        test_mask = test_data.test_mask.bool()
+        # Ensure masks are 1D boolean tensors before the loop
+        train_mask = train_data.train_mask.bool().flatten()
+        val_mask = val_data.val_mask.bool().flatten()
+        test_mask = test_data.test_mask.bool().flatten()
 
         for epoch in range(epochs):
             model.train()
@@ -187,10 +186,50 @@ class GNNBenchmarker:
         print(f"  Finished training for {model.__class__.__name__} on {train_data.name}.")
         print(f"  Best Val Accuracy: {best_val_metric:.4f}, Corresponding Test Accuracy: {corresponding_test_metric:.4f}")
 
-        # Embedding extraction logic remains the same...
-        # ... (rest of the function)
+        if self.config.BENCHMARK_SAVE_EMBEDDINGS:
+            print(f"    Extracting embeddings for {model.__class__.__name__} on {train_data.name}...")
+            with torch.no_grad():
+                model.eval()
+                if hasattr(model, 'get_embeddings'):
+                    full_embeddings = model.get_embeddings(train_data.to(self.device))
+                else:
+                    output = model(train_data.to(self.device))
+                    if isinstance(output, dict):
+                        full_embeddings = output.get('embedding', output.get('out'))  # Prioritize 'embedding' key
+                    else:
+                        full_embeddings = output[1] if isinstance(output, tuple) and len(output) > 1 else output
 
-        return best_val_metric, corresponding_test_metric, pd.DataFrame(history), metric_name
+                if full_embeddings is not None and full_embeddings.ndim == 3:  # Handle sequence models
+                    full_embeddings = full_embeddings.mean(dim=1)
+
+            if full_embeddings is not None:
+                final_embedding_dim = full_embeddings.shape[1]
+
+                # --- Add PCA reduction step here for consistency ---
+                if self.config.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS and full_embeddings.shape[0] > self.config.BENCHMARK_PCA_TARGET_DIM:
+                    print(f"      Applying PCA to {model_name} embeddings (target dim: {self.config.BENCHMARK_PCA_TARGET_DIM})...")
+                    embeddings_for_pca = {i: emb for i, emb in enumerate(full_embeddings.cpu().numpy())}
+                    pca_embed_dict = EmbeddingProcessor.apply_pca(embeddings_for_pca, self.config.BENCHMARK_PCA_TARGET_DIM, self.config.RANDOM_STATE)
+                    if pca_embed_dict:
+                        embeddings_np = np.array(list(pca_embed_dict.values()))
+                        final_embedding_dim = embeddings_np.shape[1]
+                    else:
+                        embeddings_np = full_embeddings.cpu().numpy()
+                else:
+                    embeddings_np = full_embeddings.cpu().numpy()
+
+                emb_dict = {str(i): embeddings_np[i] for i in range(embeddings_np.shape[0])}
+
+                output_suffix = f"_pca{final_embedding_dim}" if 'pca' in locals() and pca_embed_dict else f"_dim{final_embedding_dim}"
+                save_path_emb_dir = self.embedding_dir / train_data.name
+                os.makedirs(save_path_emb_dir, exist_ok=True)
+
+                h5_path = save_path_emb_dir / f"{model.__class__.__name__}_embeddings{output_suffix}.h5"
+                with h5py.File(h5_path, 'w') as hf:
+                    for k, v in emb_dict.items(): hf.create_dataset(k, data=v)
+                print(f"      Saved {model.__class__.__name__} embeddings for {train_data.name} to {h5_path}")
+
+        return best_val_metric, corresponding_test_metric, pd.DataFrame(history), "accuracy"
 
     def run_on_dataset_variant(self, dataset: Any, variant_name: str) -> List[Dict]:
         print(f"\n" + "=" * 50)
@@ -202,15 +241,16 @@ class GNNBenchmarker:
         data.name = variant_name
         num_classes = dataset.num_classes if is_collection else int(data.y.max().item() + 1)
 
-        # Standardize data masks
-        if hasattr(data, 'train_mask') and data.train_mask.dim() > 1:
+        # Robustly handle different mask configurations
+        has_predefined_masks = all(hasattr(data, mask) and getattr(data, mask) is not None for mask in ['train_mask', 'val_mask', 'test_mask'])
+
+        if has_predefined_masks and data.train_mask.dim() > 1:
             print(f"  Detected multi-split masks for {variant_name}. Using the first split (index 0).")
             data.train_mask = data.train_mask[:, 0]
             data.val_mask = data.val_mask[:, 0]
             data.test_mask = data.test_mask[:, 0]
-        elif not hasattr(data, 'train_mask') or data.train_mask is None:
+        elif not has_predefined_masks:
             print(f"  Generating custom seeded split for {variant_name}.")
-            # ... (logic to generate train/val/test masks from scratch)
             num_nodes = data.num_nodes
             indices = np.random.permutation(num_nodes)
             train_size = int(num_nodes * self.config.BENCHMARK_SPLIT_RATIOS['train'])
@@ -246,7 +286,7 @@ class GNNBenchmarker:
                 print("  Model Architecture:")
                 print(model)
 
-                epochs = self.config.EVAL_EPOCHS if model_name != "ProtGramDirectGCN" else self.config.GCN_EPOCHS_PER_LEVEL
+                epochs = self.config.EVAL_EPOCHS
 
                 val_metric, test_metric, history_df, metric_name_used = self.train_and_evaluate(
                     model=model, train_data=data_to_use, val_data=data_to_use, test_data=data_to_use,
@@ -268,7 +308,6 @@ class GNNBenchmarker:
         return results
 
     def run(self):
-        # ... (rest of the run function remains the same)
         DataUtils.print_header("PIPELINE: GNN BENCHMARKER")
         all_results = []
 
