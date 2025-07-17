@@ -46,6 +46,8 @@ def run_pipeline_for_dataset(base_config: Config, fasta_path: Path):
     # --- 1. Modify Configuration to be Dataset-Specific ---
     # Point all subsequent modules to the single FASTA file for this run
     config.SEQUENCE_FILE_PATHS = [fasta_path]
+    # Add a log message for clarity
+    print(f"  - This run will process sequences from: {fasta_path}")
 
     # Create dataset-specific output directories to prevent overwriting results
     config.RESULTS_GRAPH_OBJECTS_DIR /= dataset_name

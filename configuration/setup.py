@@ -173,7 +173,8 @@ if __name__ == "__main__":
         "conda install -c conda-forge scipy -y",
         "conda install -c conda-forge scikit-learn -y",
         "pip install mlflow",
-        "conda install -c conda-forge transformers -y",
+        # FIX: Pin transformers to a version before the torch.load security check was added
+        "conda install -c conda-forge transformers=4.41.2 -y",
         "conda install -c conda-forge gensim -y",
         "conda install -c conda-forge python-louvain -y",
         "pip install torch_geometric", # Now install the main package

@@ -102,7 +102,8 @@ class GNNBenchmarker:
         """Prepares standard PyG data for ProtGramDirectGCN's specific input format."""
         print(f"--- Pre-processing data for ProtGramDirectGCN on {data.name} ---")
         # 1. Create undirected normalized matrix (used for the structural path)
-        edge_index_undir, _ = to_undirected(data.edge_index, num_nodes=data.num_nodes)
+        # FIX: to_undirected returns a single tensor if edge_attr is None.
+        edge_index_undir = to_undirected(data.edge_index, num_nodes=data.num_nodes)
         row, col = edge_index_undir
         deg = torch.bincount(col, minlength=data.num_nodes).float()
         deg_inv_sqrt = deg.pow(-0.5)
