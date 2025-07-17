@@ -1,39 +1,42 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch_geometric.data import Data
-from source.utils.models import BaseGNN
+
 from source.models.gnn.gcn import GCN
+from source.utils.models import BaseGNN
+
 
 class TongDiGCN(BaseGNN):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_layers=2, dropout_rate=0.5):
+    """
+    Implements the DiGCN model variant from "Harnessing the Power of Choices:
+    A Survey on Selection Bias in Graph-based Recommender Systems" by Tong et al.
+    This model runs two separate GCNs on the forward and backward adjacency matrices
+    and concatenates their outputs.
+    """
+
+    def __init__(self, in_channels: int, hidden_dim: int, out_channels: int):
         super().__init__()
-        self.gcn_forward = GCN(in_channels, hidden_channels, hidden_channels, num_layers, dropout_rate)
-        self.gcn_backward = GCN(in_channels, hidden_channels, hidden_channels, num_layers, dropout_rate)
-        self.final_linear = nn.Linear(hidden_channels * 2, out_channels)
-        self.dropout_rate = dropout_rate
+        self.gcn_forward = GCN(in_channels, hidden_dim, hidden_dim)  # Output of GCN is hidden_dim
+        self.gcn_backward = GCN(in_channels, hidden_dim, hidden_dim)
+        # The final linear layer maps the concatenated embeddings to the output channels
+        self.final_linear = nn.Linear(hidden_dim * 2, out_channels)
+        self.out_channels = out_channels
 
     def forward(self, data: Data) -> torch.Tensor:
-        x, edge_index = data.x, data.edge_index
+        # Create a new Data object for the forward pass
+        data_forward = Data(x=data.x, edge_index=data.edge_index)
+        x_forward = self.gcn_forward(data_forward)
 
-        # Forward pass
-        x_fwd = self.gcn_forward(data)
+        # Create a new Data object for the backward pass
+        if not hasattr(data, 'edge_index_backward'):
+            raise ValueError("TongDiGCN requires 'edge_index_backward' in the Data object.")
+        data_backward = Data(x=data.x, edge_index=data.edge_index_backward)
+        x_backward = self.gcn_backward(data_backward)
 
-        # Backward pass (reverse edges)
-        edge_index_bwd = edge_index[[1, 0], :]
-        # Create a new Data object for the backward pass, copying relevant attributes
-        data_bwd = Data(x=x, edge_index=edge_index_bwd)
-        if hasattr(data, 'edge_attr') and data.edge_attr is not None:
-            data_bwd.edge_attr = data.edge_attr # Assuming edge_attr is symmetric or handled by GCN
-        # Copy other necessary attributes if your GCN model uses them
-        # for attr_name in ['batch', 'ptr', 'num_nodes']: # Example attributes
-        #     if hasattr(data_builders, attr_name):
-        #         setattr(data_bwd, attr_name, getattr(data_builders, attr_name))
+        # Concatenate the outputs from both GCNs
+        x_combined = torch.cat([x_forward, x_backward], dim=1)
 
-        x_bwd = self.gcn_backward(data_bwd)
-
-        x_combined = torch.cat([x_fwd, x_bwd], dim=-1)
-        x_combined = F.dropout(x_combined, p=self.dropout_rate, training=self.training)
-        out = self.final_linear(x_combined)
-        self.embedding_output = x_combined
-        return out
+        # Apply the final linear layer
+        x_out = self.final_linear(x_combined)
+        self.embedding_output = x_combined  # Store the concatenated embeddings before the final projection
+        return x_out

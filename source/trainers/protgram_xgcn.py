@@ -1,3 +1,5 @@
+# G:/My Drive/Knowledge/Research/TWU/Projects/protein-protein interaction prediction/Code/ProtGram-DirectGCN/source/trainers/protgram_xgcn.py
+
 # ==============================================================================
 # MODULE: trainers/protgram_xgcn.py
 # PURPOSE: Unified trainer for GNNs on ProtGram n-gram graphs with self-supervised tasks.
@@ -7,6 +9,7 @@
 
 import collections
 import gc
+import math
 import os
 import random
 from functools import partial
@@ -16,14 +19,13 @@ from typing import Dict, Optional, List, Tuple
 # Correctly import community_louvain
 import community as community_louvain
 import h5py
-import math
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch_geometric.data import Data
-from torch_geometric.utils import to_networkx
+from torch_geometric.utils import to_networkx, subgraph
 from tqdm import tqdm
 
 from configuration.config import Config
@@ -128,6 +130,10 @@ class ProtGramXGCNTrainer:
                 continue
 
             graph_obj: DirectedNgramGraph = DataUtils.load_object(str(graph_obj_path))
+            if graph_obj is None:
+                print(f"  Failed to load graph object for n={n}. Skipping.")
+                continue
+
             graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
             graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
             graph_obj.A_undirected_norm_sparse = graph_obj.A_undirected_norm_sparse.to(self.device)
@@ -174,7 +180,7 @@ class ProtGramXGCNTrainer:
             ngram_embeddings_per_level[n] = EmbeddingProcessor.extract_gcn_node_embeddings(
                 model, data, graph_obj, self.config, self.device, self._create_clustered_subgraphs
             )
-            print(f"  Generated {ngram_embeddings_per_level[n].shape[0]} embeddings for n={n}.")
+            print(f"  Generated {ngram_embeddings_per_level[n].shape[0]} embeddings of dim {ngram_embeddings_per_level[n].shape[1]} for n={n}.")
             del model, data, graph_obj, initial_features, labels, optimizer
             gc.collect()
             if torch.cuda.is_available(): torch.cuda.empty_cache()
@@ -305,7 +311,7 @@ class ProtGramXGCNTrainer:
         """Partitions the graph into subgraphs, including all necessary matrices."""
         num_clusters_calculated = math.ceil(graph.number_of_nodes / self.config.GCN_TARGET_NODES_PER_CLUSTER)
         num_clusters = max(self.config.GCN_MIN_CLUSTERS, num_clusters_calculated)
-        num_clusters = min(num_clusters, self.config.GCN_MAX_CLUSTERS)
+        num_clusters = min(num_clusters, self.config.GCN_MAX_CLUSTERS, graph.number_of_nodes)
         print(f"  Partitioning graph with {graph.number_of_nodes} nodes into {num_clusters} clusters (target nodes/cluster: {self.config.GCN_TARGET_NODES_PER_CLUSTER})...")
 
         A_combined_cpu = (graph.A_in_w.cpu() + graph.A_out_w.cpu()).coalesce()
@@ -329,14 +335,32 @@ class ProtGramXGCNTrainer:
         subgraphs = []
         for cluster_nodes in tqdm(cluster_list, desc="  Creating subgraphs", leave=False):
             nodes_tensor_cpu = torch.tensor(cluster_nodes, dtype=torch.long, device='cpu')
-            subgraph_data = self._prepare_data_for_model(
-                self.config.PROTGRAM_MODELS_TO_TRAIN[0],  # Assuming same structure for all in cluster
-                graph,
-                full_data.x[nodes_tensor_cpu],
-                full_data.y[nodes_tensor_cpu]
-            )
-            subgraph_data.original_indices = nodes_tensor_cpu
+
+            # Create subgraph for all necessary matrices
+            sub_x = full_data.x[nodes_tensor_cpu]
+            sub_y = full_data.y[nodes_tensor_cpu] if full_data.y.numel() > 0 else torch.empty(0, dtype=torch.long)
+
+            subgraph_data = Data(x=sub_x, y=sub_y, original_indices=nodes_tensor_cpu)
+
+            # Subgraph the matrices required by the models being used.
+            # This is more efficient than subgraphing everything every time.
+            for model_type in self.config.PROTGRAM_MODELS_TO_TRAIN:
+                if model_type == 'directgcn':
+                    sub_edge_index_in, sub_edge_weight_in = subgraph(nodes_tensor_cpu, graph.mathcal_A_in.indices(), graph.mathcal_A_in.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+                    sub_edge_index_out, sub_edge_weight_out = subgraph(nodes_tensor_cpu, graph.mathcal_A_out.indices(), graph.mathcal_A_out.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+                    sub_edge_index_undir, sub_edge_weight_undir = subgraph(nodes_tensor_cpu, graph.A_undirected_norm_sparse.indices(), graph.A_undirected_norm_sparse.values(), relabel_nodes=True,
+                                                                           num_nodes=graph.number_of_nodes)
+                    subgraph_data.edge_index_in, subgraph_data.edge_weight_in = sub_edge_index_in, sub_edge_weight_in
+                    subgraph_data.edge_index_out, subgraph_data.edge_weight_out = sub_edge_index_out, sub_edge_weight_out
+                    subgraph_data.edge_index_undirected_norm, subgraph_data.edge_weight_undirected_norm = sub_edge_index_undir, sub_edge_weight_undir
+
+                elif model_type == 'tongdigcn':
+                    sub_edge_index_fwd, _ = subgraph(nodes_tensor_cpu, graph.A_out_w.indices(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+                    sub_edge_index_bwd, _ = subgraph(nodes_tensor_cpu, graph.A_in_w.indices(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+                    subgraph_data.edge_index = sub_edge_index_fwd
+                    subgraph_data.edge_index_backward = sub_edge_index_bwd
             subgraphs.append(subgraph_data)
+
         return subgraphs
 
     def _generate_task_labels(self, graph: DirectedNgramGraph, task_type: str) -> Tuple[Optional[torch.Tensor], int]:
@@ -447,16 +471,17 @@ class ProtGramXGCNTrainer:
         print(f"  Initializing features for n={graph_obj.n_value} by pooling (n-1)-gram constituent embeddings...")
         num_current_nodes = graph_obj.number_of_nodes
         prev_embedding_dim = prev_level_embeddings.shape[1]
+        # FIX: The new dimension should be sum, not product, if we are concatenating.
         new_features = torch.zeros((num_current_nodes, prev_embedding_dim * 2), dtype=torch.float32)
 
-        for i, current_ngram in tqdm(graph_obj.idx_to_node.items(), desc=f"  Initializing n={graph_obj.n_value} features", leave=False):
+        for i, current_ngram in tqdm(enumerate(graph_obj.node_sequences), total=num_current_nodes, desc=f"  Initializing n={graph_obj.n_value} features", leave=False):
             prefix, suffix = current_ngram[:-1], current_ngram[1:]
             prefix_idx, suffix_idx = prev_level_map.get(prefix), prev_level_map.get(suffix)
 
-            if prefix_idx is not None and suffix_idx is not None:
-                prefix_emb = prev_level_embeddings[prefix_idx]
-                suffix_emb = prev_level_embeddings[suffix_idx]
-                new_features[i] = torch.from_numpy(np.concatenate([prefix_emb, suffix_emb]))
+            prefix_emb = torch.from_numpy(prev_level_embeddings[prefix_idx]) if prefix_idx is not None else torch.zeros(prev_embedding_dim)
+            suffix_emb = torch.from_numpy(prev_level_embeddings[suffix_idx]) if suffix_idx is not None else torch.zeros(prev_embedding_dim)
+
+            new_features[i] = torch.cat([prefix_emb, suffix_emb])
         return new_features
 
     def _pool_to_protein_level(self, ngram_embeddings: Dict[int, np.ndarray]) -> Optional[Dict[str, np.ndarray]]:

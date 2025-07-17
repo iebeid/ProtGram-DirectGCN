@@ -239,10 +239,10 @@ class GNNBenchmarker:
             data.val_mask[indices[train_size:train_size + val_size]] = True
             data.test_mask[indices[train_size + val_size:]] = True
             print(f"  Applied custom seeded split. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
-        else:
+        else: # FIX: Use variant_name which is always available, instead of dataset.name
             print(f"  Using existing standard masks for {variant_name}.")
 
-        print(f"  {dataset.name} loaded: Nodes: {data.num_nodes}, Edges: {data.num_edges}, Features: {data.num_features}, Classes: {dataset.num_classes}")
+        print(f"  {variant_name.split('_')[0]} loaded: Nodes: {data.num_nodes}, Edges: {data.num_edges}, Features: {data.num_features}, Classes: {dataset.num_classes}")
 
         # Pre-process a copy for ProtGramDirectGCN if it's in the list
         models_to_run = self.config.GNN_MODELS_TO_RUN if hasattr(self.config, 'GNN_MODELS_TO_RUN') else ["GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN_SR", "TongDiGCN", "ProtGramDirectGCN"]

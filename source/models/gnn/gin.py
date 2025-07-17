@@ -1,11 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn import Sequential, Linear, ReLU
 from torch_geometric.nn import GINConv
 from torch_geometric.data import Data
 from source.utils.models import BaseGNN
-
 
 class GIN(BaseGNN):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers=2, dropout_rate=0.5):
@@ -16,17 +14,17 @@ class GIN(BaseGNN):
 
         current_dim = in_channels
         for i in range(num_layers):
-            final_out_dim_gin = hidden_channels if i < num_layers - 1 else out_channels
-            mlp = Sequential(
-                Linear(current_dim, hidden_channels),
-                ReLU(),
-                Linear(hidden_channels, final_out_dim_gin)
+            out_dim = hidden_channels if i < num_layers - 1 else out_channels
+            nn_module = nn.Sequential(
+                nn.Linear(current_dim, out_dim),
+                nn.ReLU(),
+                nn.Linear(out_dim, out_dim)
             )
-            self.convs.append(GINConv(nn=mlp, train_eps=True))
-            current_dim = final_out_dim_gin
+            self.convs.append(GINConv(nn_module))
+            current_dim = out_dim
 
     def forward(self, data: Data) -> torch.Tensor:
-        x, edge_index = data.x, data.edge_index # GINConv doesn't typically use edge_weight
+        x, edge_index = data.x, data.edge_index
         for i, conv in enumerate(self.convs):
             x = conv(x, edge_index)
             if i < len(self.convs) - 1:
