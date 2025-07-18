@@ -103,26 +103,26 @@ if __name__ == "__main__":
         "conda update --all -y",
 
         # Step 1: Install all non-framework packages and compilers with Conda first.
-        # This is fast and robust.
         *compiler_commands,
         "conda install -c conda-forge dask tqdm biopython matplotlib scipy scikit-learn mlflow transformers=4.41.2 gensim python-louvain seaborn pycuda networkx=3.2.1 -y",
 
-        # Step 2: Install TensorFlow and PyTorch with PIP. This ensures they bring their own, compatible CUDA libraries.
+        # Step 2: Install TensorFlow and PyTorch with PIP.
         "echo '--- Installing TensorFlow with its own CUDA libraries via pip ---'",
-        "pip install \"tensorflow[and-cuda]\"",  # Let pip choose the best compatible version
+        "pip install \"tensorflow[and-cuda]\"",
 
         "echo '--- Installing PyTorch with its own CUDA libraries via pip ---'",
         (f"pip install torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio --index-url https://download.pytorch.org/whl/{PYTORCH_CUDA_SUFFIX}"),
 
-        # Step 3: Install PyG dependencies, pointing to the now-installed PyTorch version.
+        # Step 3: Install PyG dependencies.
         "echo '--- Installing PyG dependencies ---'",
         (f"pip install pyg_lib torch-scatter torch-sparse torch-geometric -f "
          f"https://data.pyg.org/whl/torch-{PYTORCH_VERSION}+{PYTORCH_CUDA_SUFFIX}.html"),
 
         # Step 4: Verification and Cleanup
         "echo '--- Verifying installations ---'",
-        'python -c "import tensorflow as tf; print(f\'TensorFlow found {len(tf.config.list_physical_devices(\\\'GPU\\\'))} GPUs\')"',
-        'python -c "import torch; print(f\'PyTorch CUDA available: {torch.cuda.is_available()}\')"',
+        # FIX: Corrected the quoting to prevent the SyntaxError
+        "python -c \"import tensorflow as tf; print(f'TensorFlow found {len(tf.config.list_physical_devices(\\'GPU\\'))} GPUs')\"",
+        "python -c \"import torch; print(f'PyTorch CUDA available: {torch.cuda.is_available()}')\"",
         "conda clean --all -y",
         "pip cache purge"
     ]
