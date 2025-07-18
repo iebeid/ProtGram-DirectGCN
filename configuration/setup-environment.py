@@ -13,9 +13,11 @@ PYTORCH_CUDA_SUFFIX = "cu121"
 # --- End Configuration ---
 
 def create_setup_script(commands):
+    """Creates a platform-specific shell script from a list of commands."""
     is_windows = platform.system() == "Windows"
     script_extension = ".bat" if is_windows else ".sh"
     script_filename = f"setup_script{script_extension}"
+
     with open(script_filename, "w") as f:
         if not is_windows:
             f.write("#!/bin/bash\nset -e\n")
@@ -26,6 +28,7 @@ def create_setup_script(commands):
     return script_filename
 
 def run_script(script_filename):
+    """Executes the setup script."""
     is_windows = platform.system() == "Windows"
     print(f"--- Starting Environment Setup using '{script_filename}' ---")
     try:
@@ -49,6 +52,7 @@ def run_script(script_filename):
             print(f"--- Cleaned up temporary script file: {script_filename} ---")
 
 def check_conda_installed():
+    """Checks if conda is installed."""
     try:
         subprocess.run(["conda", "--version"], check=True, capture_output=True, text=True, shell=False)
         print("--- Conda is installed. ---")
@@ -66,9 +70,6 @@ if __name__ == "__main__":
     system = platform.system()
     compiler_commands = []
     if system == "Linux":
-        # --- THE FIX IS HERE ---
-        # Pinning the compilers to version 12, which is compatible with CUDA toolkits up to 12.5
-        print("--- Adding commands to install GCC/G++ version 12 for CUDA compatibility. ---")
         compiler_commands.extend([
             "conda install -c conda-forge gcc_linux-64=12 gxx_linux-64=12 -y",
             "rm -rf ~/.config/pycuda"
@@ -86,8 +87,12 @@ if __name__ == "__main__":
         "echo '--- Installing PyG dependencies ---'",
         f"pip install pyg_lib torch-scatter torch-sparse torch-geometric -f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}+{PYTORCH_CUDA_SUFFIX}.html",
         "echo '--- Verifying installations ---'",
-        "python -c 'import tensorflow as tf; print(f\"TensorFlow found {len(tf.config.list_physical_devices(\\\'GPU\\\'))} GPUs\")'",
-        "python -c 'import torch; print(f\"PyTorch CUDA available: {torch.cuda.is_available()}\")'",
+
+        # --- THE FIX IS HERE ---
+        # This simplified command avoids shell parsing errors with complex quotes.
+        "python -c \"import tensorflow as tf; print('TensorFlow GPUs found: ' + str(len(tf.config.list_physical_devices('GPU'))))\"",
+        "python -c \"import torch; print('PyTorch CUDA available: ' + str(torch.cuda.is_available()))\"",
+
         "conda clean --all -y",
         "pip cache purge"
     ]
