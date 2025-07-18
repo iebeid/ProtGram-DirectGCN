@@ -1,14 +1,15 @@
+import argparse
 import os
 import platform
 import subprocess
 import sys
-import argparse
 
 # --- Configuration ---
 PYTHON_VERSION = "3.11"
 PYTORCH_VERSION = "2.4.0"
 TORCHVISION_VERSION = "0.19.0"
 PYTORCH_CUDA_SUFFIX = "cu121"
+
 
 # --- End Configuration ---
 
@@ -24,6 +25,7 @@ def create_setup_script(commands):
     if not is_windows:
         os.chmod(script_filename, 0o755)
     return script_filename
+
 
 def run_script(script_filename):
     is_windows = platform.system() == "Windows"
@@ -48,6 +50,7 @@ def run_script(script_filename):
             os.remove(script_filename)
             print(f"--- Cleaned up temporary script file: {script_filename} ---")
 
+
 def check_conda_installed():
     try:
         subprocess.run(["conda", "--version"], check=True, capture_output=True, text=True, shell=False)
@@ -56,6 +59,7 @@ def check_conda_installed():
     except (subprocess.CalledProcessError, FileNotFoundError):
         print("--- ERROR: Conda is not installed or not in your system's PATH. ---")
         return False
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Install packages into the active Conda environment.")
@@ -83,10 +87,12 @@ if __name__ == "__main__":
         "echo '--- Installing PyG dependencies ---'",
         f"pip install pyg_lib torch-scatter torch-sparse torch-geometric -f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}+{PYTORCH_CUDA_SUFFIX}.html",
         "echo '--- Verifying installations ---'",
+
         # --- THE FIX IS HERE ---
-        # Use single quotes for the shell and double quotes for the Python string. This is safe.
-        "python -c 'import tensorflow as tf; print(f\"TensorFlow found {len(tf.config.list_physical_devices(\'GPU\'))} GPUs\")'",
-        "python -c 'import torch; print(f\"PyTorch CUDA available: {torch.cuda.is_available()}\")'",
+        # This quoting method is safe for both the shell and Python.
+        'python -c "import tensorflow as tf; print(f\'TensorFlow found {len(tf.config.list_physical_devices(\\\"GPU\\\"))} GPUs\')"',
+        'python -c "import torch; print(f\'PyTorch CUDA available: {torch.cuda.is_available()}\')"',
+
         "conda clean --all -y",
         "pip cache purge"
     ]
