@@ -1,9 +1,7 @@
-# source/trainers/lstm.py
-
 # ==============================================================================
 # MODULE: trainers/lstm.py
 # PURPOSE: Trainer for a character-level LSTM model to generate protein embeddings.
-# VERSION: 5.0 (Corrected downsampling logic to respect LSTM-specific config)
+# VERSION: 6.0 (Implemented batched inference for massive speedup)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -14,6 +12,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import Embedding, LSTM, Dense
 from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.utils import Sequence, to_categorical
 from tqdm.auto import tqdm
 
@@ -21,13 +20,14 @@ from configuration.config import Config
 from source.utils.data import DataUtils, FastaUtils
 
 
+# LstmCorpusGenerator class remains the same and is correct.
 class LstmCorpusGenerator(Sequence):
     """
     Generates batches of data for the LSTM model on-the-fly.
-    This version now accepts a list of sequences directly to avoid re-reading files.
+    This version uses a step parameter to control the sliding window, allowing
+    for much faster, non-overlapping sequence generation.
     """
 
-    # --- FIX: Accept a list of sequences instead of file paths ---
     def __init__(self, sequences: List[Tuple[str, str]], batch_size: int, seq_len: int, step: int, vocab_size: int,
                  char_to_int: dict):
         self.batch_size = batch_size
@@ -37,7 +37,6 @@ class LstmCorpusGenerator(Sequence):
         self.char_to_int = char_to_int
 
         print("  [Generator] Concatenating sequences for corpus...")
-        # --- FIX: Build corpus from the provided list of sequences ---
         self.text = "".join([seq for _, seq in sequences])
         self.text_len = len(self.text)
         print(f"  [Generator] Corpus created with {self.text_len:,} characters.")
@@ -89,10 +88,8 @@ class LSTMBasedEmbedder:
         Prepares the corpus by loading sequences and applying LSTM-specific downsampling.
         """
         print("  Preparing LSTM corpus and character mappings...")
-        # Load all sequences from the file path provided by the main pipeline
         all_loaded_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
 
-        # --- FIX: Apply LSTM-specific downsampling if configured ---
         should_downsample = self.config.LSTM_DOWNSAMPLE_FRACTION and 0 < self.config.LSTM_DOWNSAMPLE_FRACTION < 1.0
         if should_downsample:
             sample_size = int(len(all_loaded_sequences) * self.config.LSTM_DOWNSAMPLE_FRACTION)
@@ -101,7 +98,6 @@ class LSTMBasedEmbedder:
             self.sequences = random.sample(all_loaded_sequences, sample_size)
         else:
             self.sequences = all_loaded_sequences
-        # --- END FIX ---
 
         all_chars = sorted(list(set("".join(seq for _, seq in self.sequences))))
         self.char_to_int = {c: i for i, c in enumerate(all_chars)}
@@ -112,7 +108,7 @@ class LSTMBasedEmbedder:
     def _build_model(self):
         """Builds the Keras LSTM model for next-character prediction."""
         model = Sequential([
-            Embedding(self.config.LSTM_EMBEDDING_DIM, self.config.LSTM_EMBEDDING_DIM,
+            Embedding(self.vocab_size, self.config.LSTM_EMBEDDING_DIM,
                       input_length=None, name="embedding_layer"),
             LSTM(self.config.LSTM_HIDDEN_DIM, return_sequences=True, name="lstm_layer_1", recurrent_dropout=0.1),
             LSTM(self.config.LSTM_HIDDEN_DIM, return_sequences=True, name="lstm_embedding_layer", recurrent_dropout=0.1),
@@ -128,9 +124,8 @@ class LSTMBasedEmbedder:
         self._build_model()
 
         print(f"  Training LSTM model for {self.config.LSTM_EPOCHS} epochs using a data generator...")
-        # --- FIX: Pass the downsampled list of sequences directly to the generator ---
         training_generator = LstmCorpusGenerator(
-            sequences=self.sequences,  # Pass the in-memory list
+            sequences=self.sequences,
             batch_size=self.config.LSTM_BATCH_SIZE,
             seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
             step=self.config.LSTM_TRAIN_STEP,
@@ -138,7 +133,6 @@ class LSTMBasedEmbedder:
             char_to_int=self.char_to_int
         )
 
-        # We need to modify the training model slightly for the generator output shape
         train_model_input = tf.keras.Input(shape=(self.config.LSTM_TRAIN_SEQ_LEN,))
         x = self.model.get_layer('embedding_layer')(train_model_input)
         x = self.model.get_layer('lstm_layer_1')(x)
@@ -147,7 +141,6 @@ class LSTMBasedEmbedder:
         train_model_output = self.model.get_layer('output_dense_layer')(x)
         train_model = Model(inputs=train_model_input, outputs=train_model_output)
         train_model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-
         train_model.fit(training_generator, epochs=self.config.LSTM_EPOCHS, verbose=1)
 
         print("  LSTM training complete. Generating embeddings...")
@@ -160,18 +153,44 @@ class LSTMBasedEmbedder:
         inference_model = Model(inputs=inf_input, outputs=embedding_layer_output)
         inference_model.summary()
 
-        print("  Generating per-protein embeddings using mean pooling...")
+        # --- PERFORMANCE FIX: Implement Batched Inference ---
+        print("  Generating per-protein embeddings using BATCHED mean pooling...")
         protein_embeddings = {}
-        # Use self.sequences here as it's the correctly downsampled list
-        for pid, seq_text in tqdm(self.sequences, desc="  Generating Embeddings"):
-            if not seq_text: continue
-            tokenized_seq = [self.char_to_int[c] for c in seq_text if c in self.char_to_int]
-            if not tokenized_seq: continue
+        batch_size = self.config.LSTM_BATCH_SIZE
 
-            input_tensor = tf.constant([tokenized_seq], dtype=tf.int32)
-            all_hidden_states = inference_model.predict(input_tensor, verbose=0)
-            pooled_embedding = tf.reduce_mean(all_hidden_states, axis=1).numpy().squeeze(0)
-            protein_embeddings[pid] = pooled_embedding
+        for i in tqdm(range(0, len(self.sequences), batch_size), desc="  Generating Embeddings in Batches"):
+            batch = self.sequences[i:i + batch_size]
+            if not batch: continue
+
+            batch_ids = [item[0] for item in batch]
+            batch_seqs_text = [item[1] for item in batch]
+
+            # Tokenize and store original lengths
+            tokenized_batch = []
+            original_lengths = []
+            for seq_text in batch_seqs_text:
+                tokens = [self.char_to_int[c] for c in seq_text if c in self.char_to_int]
+                if tokens:
+                    tokenized_batch.append(tokens)
+                    original_lengths.append(len(tokens))
+
+            if not tokenized_batch: continue
+
+            # Pad sequences to the max length in the current batch
+            padded_batch = pad_sequences(tokenized_batch, padding='post', dtype='int32')
+
+            # Get hidden states for the entire batch in one call
+            all_hidden_states_batch = inference_model.predict_on_batch(padded_batch)
+
+            # Process each item in the batch result
+            for j in range(len(all_hidden_states_batch)):
+                original_len = original_lengths[j]
+                # Slice the output to only include the original, unpadded sequence
+                valid_hidden_states = all_hidden_states_batch[j, :original_len, :]
+                # Perform mean pooling
+                pooled_embedding = np.mean(valid_hidden_states, axis=0)
+                protein_embeddings[batch_ids[j]] = pooled_embedding
+        # --- END FIX ---
 
         output_path = self.config.RESULTS_LSTM_EMBEDDINGS_DIR / "lstm_generated_embeddings.h5"
         DataUtils.write_h5(protein_embeddings, output_path, "Writing LSTM Embeddings")
