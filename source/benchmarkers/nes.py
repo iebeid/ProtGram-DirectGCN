@@ -1,11 +1,12 @@
 # ==============================================================================
 # MODULE: benchmarkers/nes.py
 # PURPOSE: Handles benchmarking of traditional network embedding methods.
-# VERSION: 2.0 (Uses configurable epoch count)
+# VERSION: 2.1 (Corrected signature, variable names, and deprecation warnings)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
+import traceback
 
 import numpy as np
 import pandas as pd
@@ -48,15 +49,20 @@ class NetworkEmbeddingBenchmarker:
                 dataset.name = 'KarateClub'
                 return dataset
             else:
+                print(f"  Warning: Unknown dataset '{name}' requested.")
                 return None
         except Exception as e:
             print(f"  Error loading dataset '{name}': {e}")
             return None
 
-    def _run_model_on_dataset(self, model_name, dataset):
+    # --- MODIFICATION: Corrected function signature for clarity and correctness ---
+    def _run_model_on_dataset(self, model_name: str, dataset: 'Dataset'):
+        # --- MODIFICATION: Clearer variable assignment ---
         data = dataset[0]
+        dataset_name = dataset.name
         data = data.to(self.device)
-        print(f"--- Benchmarking Model: {model_name} on Dataset: {dataset.name} ---")
+
+        print(f"--- Benchmarking Model: {model_name} on Dataset: {dataset_name} ---")
         try:
             if model_name == 'Node2Vec':
                 model = Node2Vec(
@@ -102,12 +108,13 @@ class NetworkEmbeddingBenchmarker:
             with torch.no_grad():
                 z = model().detach()
 
-            num_nodes = data.num_nodes
-            if not hasattr(data, 'train_mask') or data.train_mask is None or data.train_mask.sum() == 0:
-                # Generate masks if not present or empty
+            # --- FIX: Check for and create data splits if they don't exist (e.g., for KarateClub) ---
+            if not hasattr(data, 'train_mask') or data.train_mask is None:
+                print(f"  - No predefined splits found for {dataset_name}. Creating random splits.")
+                num_nodes = data.num_nodes
                 indices = np.random.permutation(num_nodes)
-                train_size = int(num_nodes * self.config.BENCHMARK_SPLIT_RATIOS['train'])
-                val_size = int(num_nodes * self.config.BENCHMARK_SPLIT_RATIOS['val'])
+                train_size = int(num_nodes * 0.1)
+                val_size = int(num_nodes * 0.1)
 
                 data.train_mask = torch.zeros(num_nodes, dtype=torch.bool)
                 data.val_mask = torch.zeros(num_nodes, dtype=torch.bool)
@@ -117,9 +124,9 @@ class NetworkEmbeddingBenchmarker:
                 data.val_mask[indices[train_size:train_size + val_size]] = True
                 data.test_mask[indices[train_size + val_size:]] = True
                 print(
-                    f"  Generated custom seeded split for {dataset.name}. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
+                    f"  Generated custom seeded split for {dataset_name}. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
 
-            # FIX: Access the masks *after* they are guaranteed to exist.
+            # Access the masks *after* they are guaranteed to exist.
             if hasattr(data, 'train_mask') and data.train_mask.dim() > 1:
                 train_mask = data.train_mask[:, 0].bool()
                 test_mask = data.test_mask[:, 0].bool()
@@ -127,26 +134,25 @@ class NetworkEmbeddingBenchmarker:
                 train_mask = data.train_mask.bool()
                 test_mask = data.test_mask.bool()
 
+            # --- MODIFICATION: Removed deprecated 'multi_class' parameter to avoid warnings ---
             clf = LogisticRegression(
-                solver='lbfgs', multi_class='auto', random_state=self.config.RANDOM_STATE
+                solver='lbfgs', random_state=self.config.RANDOM_STATE
             ).fit(z[train_mask].cpu().numpy(), data.y[train_mask].cpu().numpy())
-            # ... (rest of the function) ...
 
             test_acc = accuracy_score(data.y[test_mask].cpu().numpy(), clf.predict(z[test_mask].cpu().numpy()))
 
-            print(f"  ✅ Test Accuracy for {model_name} on {dataset.name}: {test_acc:.4f}")
+            print(f"  ✅ Test Accuracy for {model_name} on {dataset_name}: {test_acc:.4f}")
             return {
-                "dataset": dataset.name,
+                "dataset": dataset_name,
                 "model": model_name,
                 "test_accuracy": test_acc,
                 "error": None
             }
         except Exception as e:
-            print(f"  ❌ FAILED to benchmark on {dataset.name}: {e}")
-            import traceback
+            print(f"  ❌ FAILED to benchmark on {dataset_name}: {e}")
             traceback.print_exc()
             return {
-                "dataset": dataset.name,
+                "dataset": dataset_name,
                 "model": model_name,
                 "test_accuracy": None,
                 "error": str(e)
@@ -169,6 +175,7 @@ class NetworkEmbeddingBenchmarker:
                 f"\nLoaded dataset: {dataset.name}. Nodes: {dataset[0].num_nodes}, Edges: {dataset[0].num_edges}")
 
             for model_name in self.models_to_run:
+                # --- MODIFICATION: Call now matches the corrected function signature ---
                 result = self._run_model_on_dataset(model_name, dataset)
                 all_results.append(result)
 

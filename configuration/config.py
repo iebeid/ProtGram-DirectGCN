@@ -247,8 +247,10 @@ class Config:
         self.LSTM_NUM_LAYERS = 2
         self.LSTM_EPOCHS = 5
         self.LSTM_BATCH_SIZE = 64
-        self.LSTM_TRAIN_SEQ_LEN = 50  # The sequence length for the next-character prediction task
+        self.LSTM_TRAIN_SEQ_LEN = 50
         self.LSTM_LEARNING_RATE = 0.001
+        # ADD THIS LINE: A separate downsample for the LSTM pipeline
+        self.LSTM_DOWNSAMPLE_FRACTION: Optional[float] = 0.01 # Use only 1% of data for LSTM
 
     def _setup_evaluation_params(self):
         """Sets parameters for the final PPI evaluation pipeline."""
