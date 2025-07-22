@@ -1,19 +1,18 @@
 # ==============================================================================
 # MODULE: benchmarkers/nes.py
 # PURPOSE: Handles benchmarking of traditional network embedding methods.
-# VERSION: 1.0
-# AUTHOR: Your Name (Assembled by Coding Partner)
+# VERSION: 2.0 (Uses configurable epoch count)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
+
 import numpy as np
 import pandas as pd
 import torch
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
-from torch_geometric.datasets import Planetoid, WebKB
-# FIX: In recent PyG versions, Node2Vec is in the models submodule,
-# but DeepWalk must be imported from its specific path.
+from torch_geometric.datasets import Planetoid, WebKB, KarateClub
 from torch_geometric.nn.models import Node2Vec
 from torch_geometric.nn.models.metapath2vec import MetaPath2Vec
 
@@ -44,9 +43,9 @@ class NetworkEmbeddingBenchmarker:
             elif name in ['Cornell', 'Texas', 'Wisconsin']:
                 return WebKB(root=path, name=name)
             elif name == 'KarateClub':
-                from torch_geometric.datasets import KarateClub
                 dataset = KarateClub()
-                dataset.name = 'KarateClub'  # Manually add the name attribute
+                # Manually add the name attribute for consistency
+                dataset.name = 'KarateClub'
                 return dataset
             else:
                 return None
@@ -57,7 +56,7 @@ class NetworkEmbeddingBenchmarker:
     def _run_model_on_dataset(self, model_name, dataset):
         data = dataset[0]
         data = data.to(self.device)
-        print(f"--- Benchmarking Model: {model_name} on Dataset: {data} ---")
+        print(f"--- Benchmarking Model: {model_name} on Dataset: {dataset.name} ---")
         try:
             if model_name == 'Node2Vec':
                 model = Node2Vec(
@@ -91,7 +90,7 @@ class NetworkEmbeddingBenchmarker:
             loader = model.loader(batch_size=128, shuffle=True, num_workers=4)
             optimizer = torch.optim.SparseAdam(list(model.parameters()), lr=0.01)
 
-            for _ in range(1, 3):  # Train for 2 epochs for a quick benchmark
+            for _ in range(1, self.config.BENCHMARK_NE_EPOCHS + 1):
                 model.train()
                 for pos_rw, neg_rw in loader:
                     optimizer.zero_grad()
@@ -117,8 +116,8 @@ class NetworkEmbeddingBenchmarker:
                 data.train_mask[indices[:train_size]] = True
                 data.val_mask[indices[train_size:train_size + val_size]] = True
                 data.test_mask[indices[train_size + val_size:]] = True
-                print(f"  Generated custom seeded split for {data.name}. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
-
+                print(
+                    f"  Generated custom seeded split for {dataset.name}. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
 
             # Simple node classification evaluation
             if data.train_mask.dim() > 1:
@@ -165,7 +164,8 @@ class NetworkEmbeddingBenchmarker:
                 })
                 continue
 
-            print(f"\nLoaded dataset: {dataset.name}. Nodes: {dataset[0].num_nodes}, Edges: {dataset[0].num_edges}")
+            print(
+                f"\nLoaded dataset: {dataset.name}. Nodes: {dataset[0].num_nodes}, Edges: {dataset[0].num_edges}")
 
             for model_name in self.models_to_run:
                 result = self._run_model_on_dataset(model_name, dataset)

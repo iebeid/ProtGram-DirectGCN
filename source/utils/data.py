@@ -1,9 +1,8 @@
 # ==============================================================================
 # MODULE: utils/data.py
-# PURPOSE: Contains all data loading utilities for the PPI trainers,
-#          including FASTA parsing, ID mapping, and interaction data loading.
-# VERSION: 2.3 (Introduced on-disk SQLite DB for memory-safe ID mapping)
-# AUTHOR: Islam Ebeid (Refactored by Coding Partner)
+# PURPOSE: Contains all data loading and processing utilities.
+# VERSION: 3.0 (Refactored for logical class organization)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import os
@@ -19,7 +18,7 @@ import dask.dataframe as dd
 import h5py
 import numpy as np
 import pandas as pd
-import requests  # For DataLoader ID mapping
+import requests
 from Bio import SeqIO
 from dask.diagnostics import ProgressBar
 from tqdm.auto import tqdm
@@ -28,43 +27,155 @@ from configuration.config import Config
 
 
 # ==============================================================================
-# --- NEW: Memory-Efficient ID Mapper ---
+# 1. General Data Utilities (Moved from post.py)
 # ==============================================================================
-class IDMapper:
-    """
-    A memory-efficient wrapper for a SQLite database that provides a dictionary-like
-    lookup for protein ID mappings. This avoids loading millions of mappings into RAM.
-    Should be used with a 'with' statement to ensure the database connection is managed.
-    """
+class DataUtils:
+    """General data utility functions."""
 
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
-        self.conn: Optional[sqlite3.Connection] = None
-        if not self.db_path.exists():
-            raise FileNotFoundError(f"ID Mapping database not found at {self.db_path}")
+    @staticmethod
+    def print_header(title: str):
+        border = "=" * (len(title) + 6)
+        print(f"\n{border}\n### {title} ###\n{border}\n")
 
-    def __enter__(self):
-        # Connect to the DB in read-only mode for safety and in WAL mode for better read performance.
-        self.conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
-        self.conn.execute("PRAGMA journal_mode=WAL;")
-        return self
+    @staticmethod
+    def save_object(obj: any, filepath: Union[str, Path]):
+        filepath = Path(filepath)
+        try:
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+            with open(filepath, 'wb') as f:
+                pickle.dump(obj, f)
+            print(f"Object saved to {filepath}")
+        except Exception as e:
+            print(f"Error saving object to {filepath}: {e}")
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.conn:
-            self.conn.close()
+    @staticmethod
+    def load_object(filepath: Union[str, Path]) -> Optional[any]:
+        filepath = Path(filepath)
+        if not filepath.exists(): return None
+        try:
+            with open(filepath, 'rb') as f:
+                return pickle.load(f)
+        except Exception as e:
+            print(f"Error loading object from {filepath}: {e}")
+            return None
 
-    def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
-        """Fetches the mapped ID for a given original ID. Implements the dict.get() interface."""
-        if not self.conn:
-            raise ConnectionError("Database connection is not open. Use this object within a 'with' block.")
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT mapped_id FROM id_map WHERE original_id = ?", (key,))
-        result = cursor.fetchone()
-        return result[0] if result else default
+    @staticmethod
+    def save_dataframe_to_csv(df: pd.DataFrame, output_path: Union[str, Path], index: bool = False):
+        output_path = Path(output_path)
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(output_path, index=index)
+            print(f"DataFrame saved to: {output_path}")
+        except Exception as e:
+            print(f"Error saving DataFrame to {output_path}: {e}")
+
+    @staticmethod
+    def write_h5(embeddings_dict: Dict, path: Path, desc: str):
+        """Helper function to write a dictionary of embeddings to an HDF5 file."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with h5py.File(path, 'w') as hf:
+            for key, value in tqdm(embeddings_dict.items(), desc=f"  {desc}"):
+                if value is not None:
+                    hf.create_dataset(key, data=value)
+
+    @staticmethod
+    def check_h5_embeddings_integrity(h5_filepath: Union[str, Path], num_samples_to_check: int = 5):
+        h5_filepath = Path(h5_filepath)
+        DataUtils.print_header(f"Checking HDF5 file: {h5_filepath.name}")
+        if not h5_filepath.exists() or not h5py.is_hdf5(h5_filepath):
+            print(f"Error: File at '{h5_filepath}' is not a valid HDF5 file or does not exist.")
+            return
+        try:
+            with h5py.File(h5_filepath, 'r') as hf:
+                keys = list(hf.keys())
+                if not keys:
+                    print("HDF5 check: File is empty.")
+                    return
+                print(f"Found {len(keys)} total embeddings. Inspecting up to {num_samples_to_check} samples:")
+                sample_keys = random.sample(keys, min(len(keys), num_samples_to_check))
+                for i, key in enumerate(sample_keys):
+                    dataset = hf.get(key)
+                    if not isinstance(dataset, h5py.Dataset): continue
+                    emb = dataset[:]
+                    print(f"  - Sample {i + 1}: Key='{key}', Shape={emb.shape}, DType={emb.dtype}")
+                    if np.isnan(emb).any(): print("    - WARNING: Embedding contains NaN values.")
+                    if np.isinf(emb).any(): print("    - WARNING: Embedding contains Inf values.")
+        except Exception as e:
+            print(f"An error occurred while checking HDF5 file '{h5_filepath}': {e}")
 
 
 # ==============================================================================
-# --- Ground Truth and Interaction Data Loading ---
+# 2. FASTA File Utilities
+# ==============================================================================
+class FastaUtils:
+    """
+    A collection of utilities for handling FASTA files, including an
+    efficient parser and a memory-safe corpus class for sequence processing.
+    """
+    AMINO_ACID_ALPHABET = list("ACDEFGHIKLMNPQRSTVWY")
+
+    @staticmethod
+    def extract_id_from_header(header: str) -> str:
+        """
+        Robustly extracts a protein identifier from a FASTA header.
+        Prioritizes UniProt accession numbers but falls back to the first word.
+        """
+        hid = header.strip().lstrip('>')
+        # Regex for standard UniProt headers (e.g., >sp|P12345|ID_NAME)
+        up_match = re.match(r"^(?:sp|tr)\|([OPQ]?[A-Z0-9]{5,9}(?:-\d+)?)\|", hid, re.IGNORECASE)
+        if up_match:
+            return up_match.group(1)
+        # Regex for UniRef headers (e.g., >UniRef90_A0A0A0A0A0)
+        uniref_match = re.match(r"^(?:UniRef\d{2,3})_([A-Z0-9]+)", hid, re.IGNORECASE)
+        if uniref_match:
+            return uniref_match.group(1)  # Return the accession, not the UniRef ID itself
+        # Fallback to the first word in the header
+        return hid.split()[0]
+
+    @staticmethod
+    def parse_sequences(fasta_filepaths: List[Union[str, Path]]) -> Iterator[Tuple[str, str]]:
+        """
+        An efficient FASTA parser that reads one or more FASTA files, yielding
+        an ID and sequence for each record.
+        """
+        for path_str in fasta_filepaths:
+            normalized_path = Path(path_str)
+            protein_id: Optional[str] = None
+            sequence_parts: List[str] = []
+            try:
+                with open(normalized_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line: continue
+                        if line.startswith('>'):
+                            if protein_id and sequence_parts:
+                                yield protein_id, "".join(sequence_parts)
+                            header = line[1:]
+                            protein_id = FastaUtils.extract_id_from_header(header)
+                            sequence_parts = []
+                        elif protein_id is not None:
+                            sequence_parts.append(line.upper())
+                if protein_id and sequence_parts:
+                    yield protein_id, "".join(sequence_parts)
+            except FileNotFoundError:
+                print(f"Error: FASTA file not found at {normalized_path}")
+            except Exception as e:
+                print(f"Error parsing FASTA file {normalized_path}: {e}")
+
+    class FastaCorpus:
+        """A memory-efficient corpus for Word2Vec that reads from FASTA files."""
+
+        def __init__(self, fasta_files: List[Union[str, Path]]):
+            self.fasta_files = [Path(f) for f in fasta_files]
+
+        def __iter__(self) -> Iterator[List[str]]:
+            for f_path in self.fasta_files:
+                for _, sequence in FastaUtils.parse_sequences([f_path]):
+                    if sequence: yield list(sequence)
+
+
+# ==============================================================================
+# 3. Interaction Data Loading
 # ==============================================================================
 class GroundTruthLoader:
     """
@@ -72,7 +183,7 @@ class GroundTruthLoader:
     """
 
     @staticmethod
-    def get_required_ids_from_files(file_paths: List[str]) -> Set[str]:
+    def get_required_ids_from_files(file_paths: List[Union[str, Path]]) -> Set[str]:
         """
         Memory-efficiently reads interaction files to get the set of all unique protein IDs.
         Reads files line-by-line to avoid loading everything into memory.
@@ -80,13 +191,13 @@ class GroundTruthLoader:
         print("Gathering all required protein IDs from interaction files...")
         required_ids: Set[str] = set()
         for filepath in file_paths:
-            filepath = os.path.normpath(filepath)
-            if not os.path.exists(filepath):
+            filepath = Path(filepath)
+            if not filepath.exists():
                 print(f"Warning: File not found during ID gathering: {filepath}")
                 continue
             try:
                 with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                    for line in tqdm(f, desc=f"Scanning {os.path.basename(filepath)} for IDs", leave=False):
+                    for line in tqdm(f, desc=f"Scanning {filepath.name} for IDs", leave=False):
                         parts = [p.strip() for p in line.strip().replace('"', '').split(',')]
                         if len(parts) < 2:
                             parts = [p.strip() for p in line.strip().replace('"', '').split('\t')]
@@ -100,24 +211,25 @@ class GroundTruthLoader:
         return required_ids
 
     @staticmethod
-    def load_interaction_pairs(filepath: str, label: int, sample_n: Optional[int] = None, random_state: Optional[int] = None) -> List[Tuple[str, str, int]]:
+    def load_interaction_pairs(filepath: Union[str, Path], label: int, sample_n: Optional[int] = None,
+                               random_state: Optional[int] = None) -> List[Tuple[str, str, int]]:
         """
         Loads interaction pairs from a CSV/TSV file. Includes option for sampling.
         """
-        filepath = os.path.normpath(filepath)
+        filepath = Path(filepath)
         sampling_info = f" (sampling up to {sample_n} pairs)" if sample_n is not None else ""
-        print(f"Loading pairs from: {os.path.basename(filepath)} (label: {label}){sampling_info}...")
-        if not os.path.exists(filepath):
+        print(f"Loading pairs from: {filepath.name} (label: {label}){sampling_info}...")
+        if not filepath.exists():
             print(f"Warning: Interaction file not found: {filepath}")
             return []
         try:
-            try:
-                df = pd.read_csv(filepath, header=None, names=['protein1', 'protein2'], dtype=str, on_bad_lines='warn', sep=',')
-                if df.shape[1] < 2 and os.path.getsize(filepath) > 0:
-                    df = pd.read_csv(filepath, header=None, names=['protein1', 'protein2'], dtype=str, on_bad_lines='warn', sep='\t')
-            except pd.errors.ParserError:
-                df = pd.read_csv(filepath, header=None, names=['protein1', 'protein2'], dtype=str, on_bad_lines='warn', sep='\t')
+            # Sniff the delimiter for robustness instead of nested try-except
+            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                first_line = f.readline()
+                sep = '\t' if '\t' in first_line else ','
 
+            df = pd.read_csv(filepath, header=None, names=['protein1', 'protein2'], dtype=str, on_bad_lines='warn',
+                             sep=sep)
             df.dropna(subset=['protein1', 'protein2'], inplace=True)
             df['protein1'] = df['protein1'].astype(str).str.strip()
             df['protein2'] = df['protein2'].astype(str).str.strip()
@@ -134,11 +246,12 @@ class GroundTruthLoader:
             return []
 
     @staticmethod
-    def stream_interaction_pairs(filepath: str, label: int, batch_size: int, sample_n: Optional[int] = None, random_state: Optional[int] = None) -> Iterator[List[Tuple[str, str, int]]]:
+    def stream_interaction_pairs(filepath: Union[str, Path], label: int, batch_size: int, sample_n: Optional[int] = None,
+                                 random_state: Optional[int] = None) -> Iterator[List[Tuple[str, str, int]]]:
         """
         Reads interaction pairs from a CSV/TSV file line by line and yields them in batches.
         """
-        filepath = os.path.normpath(filepath)
+        filepath = os.path.normpath(str(filepath))
         streaming_info = f" (sampling up to {sample_n} pairs)" if sample_n is not None else ""
         print(f"Streaming pairs from: {os.path.basename(filepath)} (label: {label}, batch_size: {batch_size}){streaming_info}...")
         if not os.path.exists(filepath):
@@ -180,68 +293,64 @@ class GroundTruthLoader:
 
 
 # ==============================================================================
-# --- Sequence Parsing and ID Mapping ---
+# 3. Protein ID Mapping Utilities
 # ==============================================================================
-class DataLoader:
+
+# --- 3a. ID Map Generator ---
+class IDMapGenerator:
     """
-    Utilities for parsing FASTA files, mapping protein identifiers, and providing FASTA corpus.
-    If ID mapping is required, an instance should be created with a Config object.
-    The `parse_sequences` method and `_FastaCorpus` can be used statically/nested.
+    Handles the complex process of generating protein ID mappings from various
+    sources (API, regex, or large mapping files).
     """
 
-    def __init__(self, config: Optional[Config] = None):
+    def __init__(self, config: Config):
         self.config = config
-        if config:
-            self.fasta_files_for_mapping = config.SEQUENCE_FILE_PATHS
-            self.mapping_output_file = str(config.ID_MAPPING_PATH)
-            self.api_from_db = config.API_MAPPING_FROM_DB
-            self.api_to_db = config.API_MAPPING_TO_DB
-            self.random_seed_for_mapping = config.RANDOM_STATE
-            self.mapping_mode = config.ID_MAPPING_MODE
-            self.api_sample_size: Optional[int] = getattr(config, 'API_MAPPING_SAMPLE_SIZE', None)
+        self.fasta_files_for_mapping = config.SEQUENCE_FILE_PATHS
+        self.mapping_output_file = str(config.ID_MAPPING_PATH)
+        self.api_from_db = config.API_MAPPING_FROM_DB
+        self.api_to_db = config.API_MAPPING_TO_DB
+        self.random_seed_for_mapping = config.RANDOM_STATE
+        self.mapping_mode = config.ID_MAPPING_MODE
+        self.api_sample_size: Optional[int] = getattr(config, 'API_MAPPING_SAMPLE_SIZE', None)
+
+    def generate_id_maps(self) -> Optional[Union[Mapping[str, str], 'IDMapper']]:
+        """
+        Main entry point for generating ID mappings.
+        Returns a dictionary for 'regex'/'api' modes or an IDMapper object for 'file' mode.
+        """
+        if not self.mapping_output_file and self.mapping_mode != 'file':
+            return None
+
+        if self.mapping_mode == 'file':
+            DataUtils.print_header("Loading Protein ID Mapping from File")
+            db_path = self._create_or_get_mapping_db()
+            return IDMapper(db_path) if db_path else None
+
+        DataUtils.print_header("Generating Protein ID Mapping")
+        output_dir = os.path.dirname(self.mapping_output_file)
+        if output_dir: os.makedirs(output_dir, exist_ok=True)
+
+        id_map: Dict[str, str] = {}
+        if self.mapping_mode == 'api':
+            id_map = self._perform_api_mapping()
+        elif self.mapping_mode == 'regex':
+            id_map = self._perform_regex_mapping()
+        elif self.mapping_mode == 'none':
+            return {}
         else:
-            self.fasta_files_for_mapping, self.mapping_output_file, self.api_from_db = [], None, None
-            self.api_to_db, self.random_seed_for_mapping, self.mapping_mode = None, None, 'none'
-            self.api_sample_size = None
+            print(f"Warning: Unknown ID_MAPPING_MODE '{self.mapping_mode}'.")
+            return {}
 
-    @staticmethod
-    def parse_sequences(fasta_filepaths: List[str]) -> Iterator[Tuple[str, str]]:
-        """
-        An efficient FASTA parser that reads one or more FASTA files, yielding an ID and sequence for each record.
-        """
-        for path_str in fasta_filepaths:
-            normalized_path = os.path.normpath(path_str)
-            protein_id: Optional[str] = None
-            sequence_parts: List[str] = []
+        if id_map:
             try:
-                with open(normalized_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line: continue
-                        if line.startswith('>'):
-                            if protein_id and sequence_parts:
-                                yield protein_id, "".join(sequence_parts)
-                            header = line[1:]
-                            parts = header.split('|')
-                            protein_id = parts[1] if len(parts) > 1 and parts[1] else header.split()[0]
-                            sequence_parts = []
-                        elif protein_id is not None:
-                            sequence_parts.append(line.upper())
-                if protein_id and sequence_parts:
-                    yield protein_id, "".join(sequence_parts)
-            except FileNotFoundError:
-                print(f"Error: FASTA file not found at {normalized_path}")
-            except Exception as e:
-                print(f"Error parsing FASTA file {normalized_path}: {e}")
-
-    class _FastaCorpus:
-        """A memory-efficient corpus for Word2Vec that reads from FASTA files."""
-        def __init__(self, fasta_files: List[str]):
-            self.fasta_files = [os.path.normpath(f) for f in fasta_files]
-        def __iter__(self) -> Iterator[List[str]]:
-            for f_path in self.fasta_files:
-                for _, sequence in DataLoader.parse_sequences([f_path]):
-                    if sequence: yield list(sequence)
+                with open(self.mapping_output_file, 'w', encoding='utf-8') as f:
+                    for original, mapped in id_map.items():
+                        f.write(f"{original}\t{mapped}\n")
+                print(f"ID mapping saved to {self.mapping_output_file}")
+            except IOError as e:
+                print(f"ERROR: Could not write ID mapping file: {e}")
+        print("--- Protein ID Mapping Finished ---")
+        return id_map
 
     def _extract_candidate_ids_from_fasta_for_mapping(self) -> Set[str]:
         if not self.fasta_files_for_mapping: return set()
@@ -254,35 +363,17 @@ class DataLoader:
                         if line.startswith('>'):
                             header = line[1:].strip()
                             parts = header.split('|')
-                            candidate_ids.add(parts[1].strip() if len(parts) > 1 and parts[1] else header.split()[0].strip())
-            except Exception as e: print(f"ERROR reading FASTA {fasta_file}: {e}")
+                            candidate_ids.add(
+                                parts[1].strip() if len(parts) > 1 and parts[1] else header.split()[0].strip())
+            except Exception as e:
+                print(f"ERROR reading FASTA {fasta_file}: {e}")
         print(f"Found {len(candidate_ids)} unique candidate IDs for API mapping.")
         return candidate_ids
-
-    @staticmethod
-    def _submit_id_mapping_job(ids_to_map: List[str], from_db: str, to_db: str) -> str:
-        response = requests.post("https://rest.uniprot.org/idmapping/run", data={"ids": ",".join(ids_to_map), "from": from_db, "to": to_db})
-        response.raise_for_status()
-        job_id = response.json().get("jobId")
-        if not job_id: raise ValueError("Failed to submit job to UniProt.")
-        print(f"  UniProt API job submitted for {len(ids_to_map)} IDs. Job ID: {job_id}")
-        return job_id
-
-    @staticmethod
-    def _check_job_status(job_id: str) -> str:
-        response = requests.get(f"https://rest.uniprot.org/idmapping/status/{job_id}")
-        response.raise_for_status()
-        return response.json().get("jobStatus", "UNKNOWN")
-
-    @staticmethod
-    def _get_mapping_results(job_id: str) -> List[Dict]:
-        response = requests.get(f"https://rest.uniprot.org/idmapping/results/{job_id}?format=json")
-        response.raise_for_status()
-        return response.json().get("results", [])
 
     def _perform_api_mapping(self) -> Dict[str, str]:
         if not all([self.api_from_db, self.api_to_db, self.random_seed_for_mapping is not None]): return {}
         all_candidate_ids = list(self._extract_candidate_ids_from_fasta_for_mapping())
+
         if not all_candidate_ids: return {}
         ids_to_process = all_candidate_ids
         if self.api_sample_size is not None and 0 < self.api_sample_size < len(all_candidate_ids):
@@ -305,32 +396,22 @@ class DataLoader:
                             to_id = to_data.get("primaryAccession") if isinstance(to_data, dict) else to_data
                             if from_id and to_id: processed_mappings[from_id] = to_id
                         break
-                    elif status not in ["RUNNING", "QUEUED"]: break
-            except Exception as e: print(f"  Error processing batch: {e}. Skipping.")
+                    elif status not in ["RUNNING", "QUEUED"]:
+                        break
+            except Exception as e:
+                print(f"  Error processing batch: {e}. Skipping.")
         return processed_mappings
-
-    @staticmethod
-    def _extract_canonical_id_and_type_from_header(header: str) -> Tuple[Optional[str], Optional[str]]:
-        hid = header.strip().lstrip('>')
-        up_match = re.match(r"^(?:sp|tr)\|([OPQ]?[A-Z0-9]{5,9}(?:-\d+)?)\|", hid, re.IGNORECASE)
-        if up_match: return "UniProt", up_match.group(1)
-        uniref_match = re.match(r"^(UniRef\d{2,3})_([A-Z0-9]+)", hid, re.IGNORECASE)
-        if uniref_match: return "UniProt (from UniRef)", uniref_match.group(2)
-        plain_match_strict = re.match(r"^([OPQ]?[A-Z0-9]{5,9}(?:-\d+)?)", hid.split()[0])
-        if plain_match_strict: return "UniProt (assumed)", plain_match_strict.group(1)
-        return "Unknown", hid.split()[0]
 
     def _create_or_get_mapping_db(self) -> Optional[Path]:
         """
         Creates a SQLite database from the large TSV mapping file if it doesn't already exist.
-        This is the core fix for the OOM error, as it processes the file in chunks
-        and writes directly to a database on disk, avoiding loading the full map into RAM.
         """
         source_tsv_path = self.config.ID_MAPPING_PATH
         if not source_tsv_path or not source_tsv_path.exists():
             print(f"ERROR: Mapping file not found at {source_tsv_path}. Cannot create DB.")
             print("Ensure the file exists. It can be downloaded by setting 'ID_MAPPING_TSV' in DATA_SOURCES.")
             return None
+
         db_path = source_tsv_path.with_suffix('.sqlite')
         if db_path.exists():
             print(f"  Found existing ID mapping database: {db_path.name}")
@@ -354,7 +435,8 @@ class DataLoader:
                     chunk_df = partition.compute()
                     data_to_insert = list(zip(chunk_df['ID'], chunk_df['UniProtKB-AC']))
                     if data_to_insert:
-                        cursor.executemany("INSERT OR IGNORE INTO id_map (original_id, mapped_id) VALUES (?, ?)", data_to_insert)
+                        cursor.executemany("INSERT OR IGNORE INTO id_map (original_id, mapped_id) VALUES (?, ?)",
+                                           data_to_insert)
                 conn.commit()
             print(f"  Successfully created ID mapping database: {db_path.name}")
             return db_path
@@ -376,120 +458,113 @@ class DataLoader:
                         id_map[record.id] = canonical_id
                         first_word = record.description.split()[0]
                         if first_word != record.id: id_map[first_word] = canonical_id
-            except Exception as e: print(f"An error during regex mapping on {fasta_file}: {e}")
+            except Exception as e:
+                print(f"An error during regex mapping on {fasta_file}: {e}")
         print(f"Regex mapping complete. Found {len(id_map)} potential mappings.")
         return id_map
 
-    def generate_id_maps(self) -> Optional[Union[Mapping[str, str], IDMapper]]:
-        """
-        Main entry point for generating ID mappings.
-        Returns a dictionary for 'regex'/'api' modes or an IDMapper object for 'file' mode.
-        """
-        if not self.config: return None
-        if not self.mapping_output_file and self.mapping_mode != 'file': return None
+    @staticmethod
+    def _submit_id_mapping_job(ids_to_map: List[str], from_db: str, to_db: str) -> str:
+        response = requests.post("https://rest.uniprot.org/idmapping/run",
+                                 data={"ids": ",".join(ids_to_map), "from": from_db, "to": to_db})
+        response.raise_for_status()
+        job_id = response.json().get("jobId")
+        if not job_id: raise ValueError("Failed to submit job to UniProt.")
+        print(f"  UniProt API job submitted for {len(ids_to_map)} IDs. Job ID: {job_id}")
+        return job_id
 
-        if self.mapping_mode == 'file':
-            DataUtils.print_header("Loading Protein ID Mapping from File")
-            db_path = self._create_or_get_mapping_db()
-            return IDMapper(db_path) if db_path else None
+    @staticmethod
+    def _check_job_status(job_id: str) -> str:
+        response = requests.get(f"https://rest.uniprot.org/idmapping/status/{job_id}")
+        response.raise_for_status()
+        return response.json().get("jobStatus", "UNKNOWN")
 
-        DataUtils.print_header("Generating Protein ID Mapping")
-        output_dir = os.path.dirname(self.mapping_output_file)
-        if output_dir: os.makedirs(output_dir, exist_ok=True)
-        id_map: Dict[str, str] = {}
-        if self.mapping_mode == 'api': id_map = self._perform_api_mapping()
-        elif self.mapping_mode == 'regex': id_map = self._perform_regex_mapping()
-        elif self.mapping_mode == 'none': return {}
-        else: print(f"Warning: Unknown ID_MAPPING_MODE '{self.mapping_mode}'."); return {}
+    @staticmethod
+    def _get_mapping_results(job_id: str) -> List[Dict]:
+        response = requests.get(f"https://rest.uniprot.org/idmapping/results/{job_id}?format=json")
+        response.raise_for_status()
+        return response.json().get("results", [])
 
-        if id_map:
-            try:
-                with open(self.mapping_output_file, 'w', encoding='utf-8') as f:
-                    for original, mapped in id_map.items(): f.write(f"{original}\t{mapped}\n")
-                print(f"ID mapping saved to {self.mapping_output_file}")
-            except IOError as e: print(f"ERROR: Could not write ID mapping file: {e}")
-        print("--- Protein ID Mapping Finished ---")
-        return id_map
+    @staticmethod
+    def _extract_canonical_id_and_type_from_header(header: str) -> Tuple[Optional[str], Optional[str]]:
+        hid = header.strip().lstrip('>')
+        up_match = re.match(r"^(?:sp|tr)\|([OPQ]?[A-Z0-9]{5,9}(?:-\d+)?)\|", hid, re.IGNORECASE)
+        if up_match: return "UniProt", up_match.group(1)
+        uniref_match = re.match(r"^(UniRef\d{2,3})_([A-Z0-9]+)", hid, re.IGNORECASE)
+        if uniref_match: return "UniProt (from UniRef)", uniref_match.group(2)
+        plain_match_strict = re.match(r"^([OPQ]?[A-Z0-9]{5,9}(?:-\d+)?)", hid.split()[0])
+        if plain_match_strict: return "UniProt (assumed)", plain_match_strict.group(1)
+        return "Unknown", hid.split()[0]
+
+
+# --- 3b. Memory-Efficient ID Map Reader ---
+class IDMapper:
+    """
+    A memory-efficient wrapper for a SQLite database that provides a dictionary-like
+    lookup for protein ID mappings. This avoids loading millions of mappings into RAM.
+    Should be used with a 'with' statement to ensure the database connection is managed.
+    """
+
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self.conn: Optional[sqlite3.Connection] = None
+        if not self.db_path.exists():
+            raise FileNotFoundError(f"ID Mapping database not found at {self.db_path}")
+
+    def __enter__(self):
+        # Connect to the DB in read-only mode for safety and in WAL mode for better read performance.
+        self.conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
+        self.conn.execute("PRAGMA journal_mode=WAL;")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.conn:
+            self.conn.close()
+
+    def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        """Fetches the mapped ID for a given original ID. Implements the dict.get() interface."""
+        if not self.conn:
+            raise ConnectionError("Database connection is not open. Use this object within a 'with' block.")
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT mapped_id FROM id_map WHERE original_id = ?", (key,))
+        result = cursor.fetchone()
+        return result[0] if result else default
+
+
+# ==============================================================================
+# 4. Dask Helpers for ProtGram Graph Builder
+# ==============================================================================
+class ProtgramDaskHelpers:
+    """
+    Contains static helper methods used exclusively by the Dask pipeline
+    in the GraphBuilder class. Isolating them here cleans up the namespace.
+    """
 
     @staticmethod
     def _preprocess_sequence_tuple_for_bag(seq_tuple: Tuple[str, str], add_initial_space: bool) -> Tuple[str, str]:
+        """Prepares a sequence tuple for Dask Bag processing."""
         pid, seq_text = seq_tuple
+        # Add space padding for consistent n-gram extraction at sequence boundaries
         modified_seq_text = f" {seq_text}" if add_initial_space else str(seq_text)
         return pid, f"{modified_seq_text} "
 
     @staticmethod
     def _extract_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int) -> Iterator[str]:
+        """Extracts n-grams from a single processed sequence."""
         _, processed_seq_text = seq_tuple
         if len(processed_seq_text) >= n_val:
             for i in range(len(processed_seq_text) - n_val + 1):
                 yield processed_seq_text[i:i + n_val]
 
     @staticmethod
-    def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int, ngram_to_id_map: Dict[str, int]) -> Iterator[str]:
+    def _extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int,
+                                           ngram_to_id_map: Dict[str, int]) -> Iterator[str]:
+        """Extracts n-gram transitions (edges) from a single processed sequence."""
         _, processed_seq_text = seq_tuple
         if len(processed_seq_text) >= n_val + 1:
             for i in range(len(processed_seq_text) - n_val):
                 source_id = ngram_to_id_map.get(processed_seq_text[i:i + n_val])
                 target_id = ngram_to_id_map.get(processed_seq_text[i + 1:i + 1 + n_val])
                 if source_id is not None and target_id is not None:
-                    yield f"{source_id} {target_id}\n"
-
-
-# ==============================================================================
-# --- General Data Utilities ---
-# ==============================================================================
-class DataUtils:
-    """General data utility functions."""
-
-    @staticmethod
-    def print_header(title: str):
-        border = "=" * (len(title) + 6)
-        print(f"\n{border}\n### {title} ###\n{border}\n")
-
-    @staticmethod
-    def save_object(obj: any, filepath: str):
-        filepath = os.path.normpath(filepath)
-        try:
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            with open(filepath, 'wb') as f: pickle.dump(obj, f)
-            print(f"Object saved to {filepath}")
-        except Exception as e: print(f"Error saving object to {filepath}: {e}")
-
-    @staticmethod
-    def load_object(filepath: str) -> Optional[any]:
-        filepath = os.path.normpath(filepath)
-        if not os.path.exists(filepath): return None
-        try:
-            with open(filepath, 'rb') as f: return pickle.load(f)
-        except Exception as e: print(f"Error loading object from {filepath}: {e}"); return None
-
-    @staticmethod
-    def save_dataframe_to_csv(df: pd.DataFrame, output_path: str, index: bool = False):
-        output_path = os.path.normpath(output_path)
-        try:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            df.to_csv(output_path, index=index)
-            print(f"DataFrame saved to: {output_path}")
-        except Exception as e: print(f"Error saving DataFrame to {output_path}: {e}")
-
-    @staticmethod
-    def check_h5_embeddings_integrity(h5_filepath: str, num_samples_to_check: int = 5):
-        h5_filepath = os.path.normpath(h5_filepath)
-        DataUtils.print_header(f"Checking HDF5 file: {os.path.basename(h5_filepath)}")
-        if not os.path.exists(h5_filepath) or not h5py.is_hdf5(h5_filepath):
-            print(f"Error: File at '{h5_filepath}' is not a valid HDF5 file or does not exist.")
-            return
-        try:
-            with h5py.File(h5_filepath, 'r') as hf:
-                keys = list(hf.keys())
-                if not keys: print("HDF5 check: File is empty."); return
-                print(f"Found {len(keys)} total embeddings. Inspecting up to {num_samples_to_check} samples:")
-                sample_keys = random.sample(keys, min(len(keys), num_samples_to_check))
-                for i, key in enumerate(sample_keys):
-                    dataset = hf.get(key)
-                    if not isinstance(dataset, h5py.Dataset): continue
-                    emb = dataset[:]
-                    print(f"  - Sample {i + 1}: Key='{key}', Shape={emb.shape}, DType={emb.dtype}")
-                    if np.isnan(emb).any(): print("    - WARNING: Embedding contains NaN values.")
-                    if np.isinf(emb).any(): print("    - WARNING: Embedding contains Inf values.")
-        except Exception as e: print(f"An error occurred while checking HDF5 file '{h5_filepath}': {e}")
+                    # Yield a string representation for easy writing to text files
+                    yield f"{source_id} {target_id}"

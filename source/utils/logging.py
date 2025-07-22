@@ -1,78 +1,112 @@
 # ==============================================================================
-# MODULE: logging.py
-# PURPOSE: Provides a simple utility to redirect stdout/stderr to a log file.
-# AUTHOR: Islam Ebeid
+# MODULE: utils/logging.py
+# PURPOSE: Provides a class-based utility to redirect stdout/stderr to a log file.
+# VERSION: 2.0 (Corrected path handling and context management)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, IO, Text
 
 
-class Tee:
+class FileLogger:
     """
-    A file-like object that redirects write calls to multiple streams.
-    This allows printing to both the console and a file simultaneously.
+    A logger that redirects stdout and stderr to a file and the console.
+    Designed to be used as a context manager to ensure logging is
+    always stopped correctly.
+
+    Usage:
+        logger = FileLogger(log_dir="/path/to/logs", enabled=True)
+        with logger:
+            print("This will be logged to console and file.")
+        # Logging is automatically stopped here.
     """
-    def __init__(self, *files):
-        self.files = files
 
-    def write(self, obj):
-        for f in self.files:
-            if f:
-                f.write(obj)
-                f.flush()  # Ensure output is written immediately
+    class _Tee:
+        """
+        A file-like object that redirects write calls to multiple streams.
+        This allows printing to both the console and a file simultaneously.
+        """
 
-    def flush(self):
-        for f in self.files:
-            if f:
-                f.flush()
+        def __init__(self, *files):
+            self.files = files
 
-    def isatty(self):
-        # tqdm checks this to decide whether to draw a progress bar.
-        # We delegate this to the original stdout to preserve progress bars.
-        return self.files[0].isatty() if self.files else False
+        def write(self, obj: Text):
+            for f in self.files:
+                if f:
+                    f.write(obj)
+                    f.flush()  # Ensure output is written immediately
 
+        def flush(self):
+            for f in self.files:
+                if f:
+                    f.flush()
 
-# --- Global variables to manage logging state ---
-log_file_handler = None
-original_stdout = None
-original_stderr = None
+        def isatty(self) -> bool:
+            # tqdm checks this to decide whether to draw a progress bar.
+            # We delegate this to the original stdout to preserve progress bars.
+            return self.files[0].isatty() if self.files else False
 
+    def __init__(self, log_dir: Path, enabled: bool = True):
+        self.log_dir = log_dir
+        self.enabled = enabled
+        self.log_file_handler: Optional[IO[str]] = None
+        self.original_stdout: Optional[IO[str]] = None
+        self.original_stderr: Optional[IO[str]] = None
 
-def start_logging(log_dir: Path):
-    """
-    Redirects stdout and stderr to both the console and a timestamped log file.
-    """
-    global log_file_handler, original_stdout, original_stderr
+    def start(self):
+        """
+        Redirects stdout and stderr to both the console and a timestamped log file.
+        """
+        if not self.enabled:
+            return
 
-    if original_stdout is not None:
-        print("Warning: Logging is already started.")
-        return
+        if self.original_stdout is not None:
+            print("Warning: Logging is already started.")
+            return
 
-    log_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file_path = log_dir / f"run_{timestamp}.log"
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file_path = self.log_dir / f"run_{timestamp}.log"
 
-    original_stdout = sys.stdout
-    original_stderr = sys.stderr
-    log_file_handler = open(log_file_path, 'w', encoding='utf-8')
+        self.original_stdout = sys.stdout
+        self.original_stderr = sys.stderr
+        self.log_file_handler = open(log_file_path, 'w', encoding='utf-8')
 
-    sys.stdout = Tee(original_stdout, log_file_handler)
-    sys.stderr = Tee(original_stderr, log_file_handler)
+        sys.stdout = self._Tee(self.original_stdout, self.log_file_handler)
+        sys.stderr = self._Tee(self.original_stderr, self.log_file_handler)
 
-    print(f"--- Logging all console output to: {log_file_path} ---")
+        print(f"--- Logging all console output to: {log_file_path} ---")
 
+    def stop(self):
+        """
+        Restores stdout and stderr to their original configurations.
+        """
+        if not self.enabled or self.original_stdout is None:
+            return
 
-def stop_logging():
-    """
-    Restores stdout and stderr to their original configurations.
-    """
-    global original_stdout, original_stderr, log_file_handler
-    if original_stdout:
-        sys.stdout = original_stdout
-        sys.stderr = original_stderr
-        if log_file_handler:
-            log_file_handler.close()
-        original_stdout, original_stderr, log_file_handler = None, None, None
+        # Check if streams have already been restored to prevent errors
+        if sys.stdout is self.original_stdout:
+            return
+
+        sys.stdout = self.original_stdout
+        sys.stderr = self.original_stderr
+        if self.log_file_handler:
+            self.log_file_handler.close()
+
+        # Reset state
+        self.original_stdout = None
+        self.original_stderr = None
+        self.log_file_handler = None
         print("--- File logging stopped. Console output is back to normal. ---")
+
+    def __enter__(self):
+        """Starts logging when entering a 'with' block."""
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Stops logging when exiting a 'with' block."""
+        self.stop()

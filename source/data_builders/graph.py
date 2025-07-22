@@ -1,7 +1,7 @@
 # ==============================================================================
-# MODULE: utils/graph_utils.py
+# MODULE: data_builders/graph.py
 # PURPOSE: Contains robust classes for n-gram graph representation.
-# VERSION: 7.9 (Added creation of undirected, normalized adjacency matrix)
+# VERSION: 8.0 (Renamed node_sequences to node_names for clarity)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -25,7 +25,7 @@ class Graph:
         self.node_to_idx: Dict[Any, int] = {}
         self.idx_to_node: Dict[int, Any] = {}
         self.number_of_nodes: int = 0
-        self.node_sequences: List[Any] = []
+        self.node_names: List[Any] = []
         self.edges: List[Tuple] = []
         self.number_of_edges: int = 0
 
@@ -61,7 +61,8 @@ class Graph:
 
         max_node_map_idx = -1
         if self.idx_to_node_map_from_constructor:
-            valid_node_indices = {idx for idx in self.idx_to_node_map_from_constructor.keys() if isinstance(idx, (int, np.integer)) and idx >= 0}
+            valid_node_indices = {idx for idx in self.idx_to_node_map_from_constructor.keys() if
+                                  isinstance(idx, (int, np.integer)) and idx >= 0}
             if valid_node_indices:
                 max_node_map_idx = max(valid_node_indices)
 
@@ -80,7 +81,7 @@ class Graph:
 
         self.idx_to_node = temp_idx_to_node_name
         self.node_to_idx = {name: idx for idx, name in self.idx_to_node.items()}
-        self.node_sequences = [self.idx_to_node.get(i, f"__NODE_{i}__") for i in range(self.number_of_nodes)]
+        self.node_names = [self.idx_to_node.get(i, f"__NODE_{i}__") for i in range(self.number_of_nodes)]
 
         self.edges = self.original_edges
         self.number_of_edges = len(self.edges)
@@ -98,7 +99,7 @@ class DirectedNgramGraph(Graph):
 
         self.A_out_w: torch.Tensor
         self.A_in_w: torch.Tensor
-        self.A_undirected_norm_sparse: torch.Tensor  # NEW
+        self.A_undirected_norm_sparse: torch.Tensor
         self.mathcal_A_out: torch.Tensor
         self.mathcal_A_in: torch.Tensor
 
@@ -114,7 +115,7 @@ class DirectedNgramGraph(Graph):
 
                 self.number_of_edges = len(source_indices)
                 self._create_raw_weighted_adj_matrices_torch(source_indices, target_indices, weights)
-                self._create_undirected_normalized_adj_matrix(source_indices, target_indices)  # NEW
+                self._create_undirected_normalized_adj_matrix(source_indices, target_indices)
                 self._create_propagation_matrices_for_gcn()
 
             except Exception as e:
@@ -132,7 +133,7 @@ class DirectedNgramGraph(Graph):
 
         self.A_out_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
         self.A_in_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-        self.A_undirected_norm_sparse = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)  # NEW
+        self.A_undirected_norm_sparse = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
         self.mathcal_A_out = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
         self.mathcal_A_in = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
 
@@ -149,7 +150,8 @@ class DirectedNgramGraph(Graph):
         values = torch.ones(size, device=device, dtype=torch.float32)
         return torch.sparse_coo_tensor(indices, values, (size, size)).coalesce()
 
-    def _create_raw_weighted_adj_matrices_torch(self, source_indices: np.ndarray, target_indices: np.ndarray, weights: np.ndarray):
+    def _create_raw_weighted_adj_matrices_torch(self, source_indices: np.ndarray, target_indices: np.ndarray,
+                                                weights: np.ndarray):
         """Creates sparse adjacency matrices directly from numpy arrays with memory optimization."""
         size = (self.number_of_nodes, self.number_of_nodes)
 
@@ -171,7 +173,7 @@ class DirectedNgramGraph(Graph):
 
     def _create_undirected_normalized_adj_matrix(self, source_indices: np.ndarray, target_indices: np.ndarray):
         """
-        NEW: Creates a symmetric, degree-normalized adjacency matrix from raw unique edges.
+        Creates a symmetric, degree-normalized adjacency matrix from raw unique edges.
         """
         print(f"  Creating undirected normalized adjacency matrix for n={self.n_value}...")
         if self.number_of_nodes == 0:
@@ -213,7 +215,6 @@ class DirectedNgramGraph(Graph):
         using sparse tensor operations. This version uses a memory-optimized formula.
         """
 
-        # This method remains unchanged from v7.8
         def print_sparse_info(tensor: torch.Tensor, name: str, n_val_debug: Optional[int] = None):
             prefix = f"    DEBUG_SPARSE (n={n_val_debug if n_val_debug is not None else 'N/A'})"
             if tensor.is_sparse:
@@ -221,11 +222,13 @@ class DirectedNgramGraph(Graph):
                 shape = tensor.shape
                 mem_bytes = (2 * nnz * 8) + (nnz * 4)  # 2x long for indices, 1x float for values
                 mem_mb = mem_bytes / (1024 * 1024)
-                print(f"{prefix} [{name}]: shape={shape}, nnz={nnz}, device={tensor.device}, estimated_mem={mem_mb:.3f} MB")
+                print(
+                    f"{prefix} [{name}]: shape={shape}, nnz={nnz}, device={tensor.device}, estimated_mem={mem_mb:.3f} MB")
             else:
                 mem_bytes = tensor.numel() * tensor.element_size()
                 mem_mb = mem_bytes / (1024 * 1024)
-                print(f"{prefix} [{name}]: shape={tensor.shape}, device={tensor.device} (Dense), estimated_mem={mem_mb:.3f} MB")
+                print(
+                    f"{prefix} [{name}]: shape={tensor.shape}, device={tensor.device} (Dense), estimated_mem={mem_mb:.3f} MB")
 
         current_n_val = self.n_value
 
@@ -273,7 +276,8 @@ class DirectedNgramGraph(Graph):
 
         epsilon_tensor = torch.tensor(self.epsilon_propagation, device=dev, dtype=torch.float32)
         mathcal_A_base_values = torch.sqrt(S_sq_plus_K_sq_sparse.values() + epsilon_tensor)
-        mathcal_A_base_sparse = torch.sparse_coo_tensor(S_sq_plus_K_sq_sparse.indices(), mathcal_A_base_values, S_sq_plus_K_sq_sparse.size()).coalesce()
+        mathcal_A_base_sparse = torch.sparse_coo_tensor(S_sq_plus_K_sq_sparse.indices(), mathcal_A_base_values,
+                                                        S_sq_plus_K_sq_sparse.size()).coalesce()
         print_sparse_info(mathcal_A_base_sparse, "mathcal_A_base", current_n_val)
         del S_sq_plus_K_sq_sparse, mathcal_A_base_values
 
@@ -297,5 +301,3 @@ class DirectedNgramGraph(Graph):
         print(f"  Creating mathcal_A_in for n={self.n_value}...")
         self.mathcal_A_in = self._calculate_single_propagation_matrix_for_gcn(self.A_in_w)
         gc.collect()
-
-

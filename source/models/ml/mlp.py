@@ -1,9 +1,9 @@
 # ==============================================================================
-# MODULE: models/mlp.py
+# MODULE: models/ml/mlp.py
 # PURPOSE: Contains the definition for the Multi-Layer Perceptron (MLP) used
 #          for link prediction in the evaluation trainers.
-# VERSION: 2.0 (Refactored into MLPModelBuilder class)
-# AUTHOR: Islam Ebeid
+# VERSION: 2.1 (Corrected docstrings and path)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 from typing import Dict, Any
@@ -11,7 +11,7 @@ from typing import Dict, Any
 import tensorflow as tf
 from tensorflow.keras.layers import InputLayer, Dense, Dropout
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.optimizers import Adam  # Adam is used directly
+from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.regularizers import l2
 
 
@@ -23,7 +23,7 @@ class MLP:
 
     def __init__(self, input_shape: int, mlp_params: Dict[str, Any], learning_rate: float):
         """
-        Initializes the MLPModelBuilder.
+        Initializes the MLP.
 
         Args:
             input_shape (int): The dimension of the input edge features.

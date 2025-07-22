@@ -1,9 +1,9 @@
 # ==============================================================================
-# MODULE: integrated_tests.py
+# MODULE: testers/unit_tests.py
 # PURPOSE: A unified script for all environment checks, unit testers,
 #          and pipeline smoke testers for the ProtGram-DirectGCN project.
 # VERSION: 1.2 (Corrects test isolation and data type issues)
-# AUTHOR: Your Name (Integrated by Coding Partner)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
@@ -12,9 +12,8 @@ import sys
 import tempfile
 import time
 import unittest
-from functools import partial
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 
 # --- Dependencies from unit_tests.py ---
 import h5py
@@ -26,14 +25,13 @@ import torch
 # --- Local Application Imports ---
 from configuration.config import Config
 from source.benchmarkers.gnns import GNNBenchmarker
-from source.data_builders.protgram import GraphBuilder
+from source.data_builders.protgram import ProtGramBuilder
 from source.experiments.ppi_1 import PPIPipeline
 from source.models.ml.mlp import MLP
 from source.trainers.transformers import TransformerEmbedder
 from source.trainers.word2vec import Word2VecEmbedder
-from source.utils.data import DataLoader
-from source.utils.data import DataUtils
-from source.utils.models import EmbeddingLoader, EmbeddingProcessor
+from source.utils.data import DataUtils, IDMapGenerator
+from source.utils.models import EmbeddingLoader
 from source.utils.results import EvaluationReporter
 
 
@@ -413,7 +411,7 @@ def test_data_utilities():
         with open(dummy_fasta_path, 'w') as f:
             f.write(">sp|P12345|TEST_HUMAN Test protein\nACDEFGHIKLMNPQRSTVWY\n")
             f.write(">tr|A0A0A0|ANOTHER_TEST Another test\nWYTSRQPONMLKIHGFEDCA\n")
-        parser_mapper = DataLoader(config=config_instance)
+        parser_mapper = IDMapGenerator(config=config_instance)
         id_map_dictionary = parser_mapper.generate_id_maps()
         print(f"  DataLoader generate_id_maps called. Number of mappings: {len(id_map_dictionary)}")
         assert len(id_map_dictionary) > 0, "ID mapping should produce some results."
@@ -489,7 +487,7 @@ def run_graph_builder_full_test():
     print(f"  GraphBuilder output will be within: {config.BASE_OUTPUT_DIR.name}")
 
     try:
-        graph_builder_instance = GraphBuilder(config)
+        graph_builder_instance = ProtGramBuilder(config)
         graph_builder_instance.run()
         print(f"--- GraphBuilder run() method completed ---")
         for n_val_check in range(1, config.GCN_NGRAM_MAX_N + 1):
@@ -552,7 +550,7 @@ class TestGraphBuilderSmoke(unittest.TestCase):
             print(f"  Outputting to: {config.BASE_OUTPUT_DIR.name}")
             print(f"  N_max: {config.GCN_NGRAM_MAX_N}, Workers: {config.GRAPH_BUILDER_WORKERS}")
 
-            graph_builder = GraphBuilder(config)
+            graph_builder = ProtGramBuilder(config)
             graph_builder.run()
 
             expected_graph_file = config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{config.GCN_NGRAM_MAX_N}.pkl"
@@ -572,78 +570,78 @@ class TestGraphBuilderSmoke(unittest.TestCase):
 # ==============================================================================
 
 def test_word2vec_pipeline_run():
-     print("\n" + "=" * 80)
-     DataUtils.print_header("Word2Vec Pipeline Smoke Test")
-     print("=" * 80)
-     config = Config()
-     base_test_dir = tempfile.mkdtemp()
-     dummy_fasta_path = _create_dummy_fasta_for_testing(os.path.join(base_test_dir, "input"), "w2v_test.fasta")
+    print("\n" + "=" * 80)
+    DataUtils.print_header("Word2Vec Pipeline Smoke Test")
+    print("=" * 80)
+    config = Config()
+    base_test_dir = tempfile.mkdtemp()
+    dummy_fasta_path = _create_dummy_fasta_for_testing(os.path.join(base_test_dir, "input"), "w2v_test.fasta")
 
-     # Store original paths and settings
-     original_fasta_paths = config.SEQUENCE_FILE_PATHS
-     original_w2v_output_dir = config.RESULTS_W2V_EMBEDDINGS_DIR
-     original_epochs = config.W2V_EPOCHS
+    # Store original paths and settings
+    original_fasta_paths = config.SEQUENCE_FILE_PATHS
+    original_w2v_output_dir = config.RESULTS_W2V_EMBEDDINGS_DIR
+    original_epochs = config.W2V_EPOCHS
 
-     # Override with temporary test settings
-     config.SEQUENCE_FILE_PATHS = [Path(dummy_fasta_path)]
-     config.RESULTS_W2V_EMBEDDINGS_DIR = Path(base_test_dir) / "test_w2v_embeddings"
-     config.W2V_EPOCHS = 1
-     config.APPLY_PCA_TO_W2V = False # Keep it fast for a smoke test
+    # Override with temporary test settings
+    config.SEQUENCE_FILE_PATHS = [Path(dummy_fasta_path)]
+    config.RESULTS_W2V_EMBEDDINGS_DIR = Path(base_test_dir) / "test_w2v_embeddings"
+    config.W2V_EPOCHS = 1
+    config.APPLY_PCA_TO_W2V = False  # Keep it fast for a smoke test
 
-     try:
-         embedder = Word2VecEmbedder(config)
-         embedder.run()
-         print("\n  Word2VecEmbedder smoke test ran successfully.")
-     except Exception as e:
-         print(f"\n  Word2VecEmbedder smoke test FAILED: {e}")
-         raise
-     finally:
-         # Restore original settings
-         config.SEQUENCE_FILE_PATHS = original_fasta_paths
-         config.RESULTS_W2V_EMBEDDINGS_DIR = original_w2v_output_dir
-         config.W2V_EPOCHS = original_epochs
-         # Clean up temporary files
-         if os.path.exists(base_test_dir):
-             shutil.rmtree(base_test_dir)
-     print("--- Word2Vec Pipeline Smoke Test Complete ---")
+    try:
+        embedder = Word2VecEmbedder(config)
+        embedder.run()
+        print("\n  Word2VecEmbedder smoke test ran successfully.")
+    except Exception as e:
+        print(f"\n  Word2VecEmbedder smoke test FAILED: {e}")
+        raise
+    finally:
+        # Restore original settings
+        config.SEQUENCE_FILE_PATHS = original_fasta_paths
+        config.RESULTS_W2V_EMBEDDINGS_DIR = original_w2v_output_dir
+        config.W2V_EPOCHS = original_epochs
+        # Clean up temporary files
+        if os.path.exists(base_test_dir):
+            shutil.rmtree(base_test_dir)
+    print("--- Word2Vec Pipeline Smoke Test Complete ---")
 
 
 def test_transformer_embedder_pipeline_run():
-     print("\n" + "=" * 80)
-     DataUtils.print_header("Transformer Embedder Pipeline Smoke Test")
-     print("=" * 80)
-     config = Config()
-     base_test_dir = tempfile.mkdtemp()
-     # FIX: The input directory for the test should be where the dummy FASTA is, not the output dir.
-     dummy_input_dir = Path(base_test_dir) / "input"
-     dummy_input_dir.mkdir()
-     _create_dummy_fasta_for_testing(str(dummy_input_dir), "transformer_test.fasta", num_seqs=2)
+    print("\n" + "=" * 80)
+    DataUtils.print_header("Transformer Embedder Pipeline Smoke Test")
+    print("=" * 80)
+    config = Config()
+    base_test_dir = tempfile.mkdtemp()
+    # FIX: The input directory for the test should be where the dummy FASTA is, not the output dir.
+    dummy_input_dir = Path(base_test_dir) / "input"
+    dummy_input_dir.mkdir()
+    _create_dummy_fasta_for_testing(str(dummy_input_dir), "transformer_test.fasta", num_seqs=2)
 
-     # Store original paths and settings
-     original_sequence_paths = config.SEQUENCE_FILE_PATHS
-     original_transformer_output_dir = config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR
+    # Store original paths and settings
+    original_sequence_paths = config.SEQUENCE_FILE_PATHS
+    original_transformer_output_dir = config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR
 
-     # Override with temporary test settings
-     config.SEQUENCE_FILE_PATHS = [dummy_input_dir / "transformer_test.fasta"]
-     config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = Path(base_test_dir) / "test_transformer_embeddings"
-     config.APPLY_PCA_TO_TRANSFORMER = False
-     config.TRANSFORMER_BASE_BATCH_SIZE = 1
+    # Override with temporary test settings
+    config.SEQUENCE_FILE_PATHS = [dummy_input_dir / "transformer_test.fasta"]
+    config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = Path(base_test_dir) / "test_transformer_embeddings"
+    config.APPLY_PCA_TO_TRANSFORMER = False
+    config.TRANSFORMER_BASE_BATCH_SIZE = 1
 
-     try:
-         embedder = TransformerEmbedder(config)
-         embedder.run()
-         print("\n  TransformerEmbedder smoke test ran successfully.")
-     except Exception as e:
-         print(f"\n  TransformerEmbedder smoke test FAILED: {e}")
-         raise
-     finally:
-         # Restore original settings
-         config.SEQUENCE_FILE_PATHS = original_sequence_paths
-         config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = original_transformer_output_dir
-         # Clean up temporary files
-         if os.path.exists(base_test_dir):
-             shutil.rmtree(base_test_dir)
-     print("--- Transformer Embedder Pipeline Smoke Test Complete ---")
+    try:
+        embedder = TransformerEmbedder(config)
+        embedder.run()
+        print("\n  TransformerEmbedder smoke test ran successfully.")
+    except Exception as e:
+        print(f"\n  TransformerEmbedder smoke test FAILED: {e}")
+        raise
+    finally:
+        # Restore original settings
+        config.SEQUENCE_FILE_PATHS = original_sequence_paths
+        config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = original_transformer_output_dir
+        # Clean up temporary files
+        if os.path.exists(base_test_dir):
+            shutil.rmtree(base_test_dir)
+    print("--- Transformer Embedder Pipeline Smoke Test Complete ---")
 
 
 def test_gnn_benchmarker_run():

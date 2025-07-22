@@ -1,6 +1,5 @@
-# src/models/directgcn.py
 # ==============================================================================
-# MODULE: models/directgcn.py
+# MODULE: models/gnn/directgcn.py
 # PURPOSE: Contains the PyTorch class definitions for the custom GCN model.
 # VERSION: 8.3 (Stable & Corrected - Cleaned up hierarchical gating and dual-path logic)
 # AUTHOR: Islam Ebeid
@@ -104,33 +103,35 @@ class DirectGCNLayer(MessagePassing):
 
         # --- 1. Directed Incoming Path ---
         h_main_in = self.propagate(edge_index_in, x=self.lin_main_in(x), edge_weight=edge_weight_in)
-        # h_shared_in = self.propagate(edge_index_in, x=self.lin_shared(x), edge_weight=edge_weight_in)
+        # The shared transformation is applied to the original features, not the propagated ones.
         ic_combined = (h_main_in + self.bias_main_in) + (self.lin_shared(x) + self.bias_shared_in)
 
         # --- 2. Directed Outgoing Path ---
         h_main_out = self.propagate(edge_index_out, x=self.lin_main_out(x), edge_weight=edge_weight_out)
-        # h_shared_out = self.propagate(edge_index_out, x=self.lin_shared(x), edge_weight=edge_weight_out)
         oc_combined = (h_main_out + self.bias_main_out) + (self.lin_shared(x) + self.bias_shared_out)
 
         # --- 3. Undirected Structural Path ---
         h_main_undir = self.propagate(edge_index_undirected, x=self.lin_undirected(x), edge_weight=edge_weight_undirected)
-        # h_shared_undir = self.propagate(edge_index_undirected, x=self.lin_shared(x), edge_weight=edge_weight_undirected)
         uc_combined = (h_main_undir + self.bias_undirected) + (self.lin_shared(x) + self.bias_shared_undir)
 
         # --- 4. Get Coefficients and Constant ---
         if self.use_vector_coeffs and original_indices is not None:
+            # When using Cluster-GCN, we need to select the coefficients for the nodes in the current subgraph
             c_in, c_out = self.C_in_vec[original_indices], self.C_out_vec[original_indices]
-            c_directed, c_undirected = self.C_directed_vec[original_indices], self.C_undirected_vec[original_indices]
+            c_undirected = self.C_undirected_vec[original_indices]
             constant_term = self.constant[original_indices] if self.constant is not None else 0
         elif self.use_vector_coeffs:
+            # Full-batch training
             c_in, c_out = self.C_in_vec, self.C_out_vec
-            c_directed, c_undirected = self.C_directed_vec, self.C_undirected_vec
+            c_undirected = self.C_undirected_vec
             constant_term = self.constant if self.constant is not None else 0
         else:
-            c_in, c_out, c_directed, c_undirected = self.C_in, self.C_out, self.C_directed, self.C_undirected
+            # Using scalar coefficients
+            c_in, c_out, c_undirected = self.C_in, self.C_out, self.C_undirected
             constant_term = 0
 
         # --- 5. Final Hierarchical Combination ---
+        # Combine the three paths using the learned coefficients
         final_combination = (c_undirected * uc_combined) + (c_in * ic_combined) + (c_out * oc_combined) + constant_term
 
         return final_combination
@@ -141,7 +142,7 @@ class DirectGCNLayer(MessagePassing):
         return edge_weight.view(-1, 1) * x_j
 
 
-class ProtGramDirectGCN(nn.Module):
+class DirectGCN(nn.Module):
     """The main GCN architecture, adapted for the new layer."""
 
     def __init__(self, layer_dims: List[int], num_graph_nodes: Optional[int],
@@ -169,6 +170,7 @@ class ProtGramDirectGCN(nn.Module):
             current_num_nodes = num_graph_nodes if num_graph_nodes is not None else 0
             effective_use_vector_coeffs = use_vector_coeffs and current_num_nodes > 0
             self.convs.append(DirectGCNLayer(in_dim, out_dim, current_num_nodes, effective_use_vector_coeffs))
+            # Add a projection layer for the residual connection if dimensions don't match
             self.res_projs.append(nn.Linear(in_dim, out_dim) if in_dim != out_dim else nn.Identity())
 
         final_embedding_dim = layer_dims[-1]
@@ -181,7 +183,9 @@ class ProtGramDirectGCN(nn.Module):
         )
 
     def _apply_pe(self, x: torch.Tensor) -> torch.Tensor:
+        """Applies positional embeddings to the input features if applicable."""
         if self.pe_layer is None: return x
+        # Check if the input feature dimension matches the expected format for PE
         if self.n_gram_len > 0 and self.one_gram_dim > 0 and x.shape[1] == self.n_gram_len * self.one_gram_dim:
             x_with_pe = x.clone()
             x_reshaped = x_with_pe.view(-1, self.n_gram_len, self.one_gram_dim)
@@ -204,7 +208,7 @@ class ProtGramDirectGCN(nn.Module):
         original_indices = getattr(data, 'original_indices', None)
 
         if x is None or ei_in is None or ei_out is None or ei_undir is None:
-            raise ValueError("ProtGramDirectGCN requires 'x', 'edge_index_in', 'edge_index_out', and 'edge_index_undirected_norm' in the Data object.")
+            raise ValueError("DirectGCN requires 'x', 'edge_index_in', 'edge_index_out', and 'edge_index_undirected_norm' in the Data object.")
 
         h = self._apply_pe(x)
 
@@ -218,6 +222,8 @@ class ProtGramDirectGCN(nn.Module):
 
         final_embed_for_task = h
         task_logits = self.decoder_fc(final_embed_for_task)
+        # The final embeddings for downstream tasks are L2 normalized
         final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
 
-        return F.log_softmax(task_logits, dim=-1), final_normalized_embeddings
+        # Return raw logits for compatibility with F.cross_entropy loss
+        return task_logits, final_normalized_embeddings

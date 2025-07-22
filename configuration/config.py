@@ -1,13 +1,13 @@
 # ==============================================================================
-# MODULE: config.py
+# MODULE: configuration/config.py
 # PURPOSE: Centralized configuration for the entire PPI trainers.
-# VERSION: 1.13 (Automated cluster count based on target nodes per cluster and automated data_builders download)
+# VERSION: 2.0 (Centralized more parameters from trainers/benchmarkers)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
-from typing import Optional, Dict
 from pathlib import Path
+from typing import Optional, Dict, List
 
 
 class Config:
@@ -47,7 +47,7 @@ class Config:
         self._setup_mlflow_params()
 
     def _setup_paths(self):
-        """Sets up all base, data_builders, and results paths for the project."""
+        """Sets up all base, data, and results paths for the project."""
         # Base Paths
         self.PROJECT_ROOT = Path(__file__).parent.parent.resolve()
         self.BASE_CONFIG_DIR = self.PROJECT_ROOT / "configuration"
@@ -77,8 +77,6 @@ class Config:
         self.SEQUENCE_FILE_PATHS = [
             self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta"
         ]
-        # Directory for temporary, downsampled FASTA files created at runtime
-        self.TEMP_SAMPLED_DIR = self.DATA_SEQUENCES_DIR / "temp_sampled"
         self.POS_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "positive_interactions.csv"
         self.NEG_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "negative_interactions.csv"
         self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "idmapping_selected.tab"
@@ -94,14 +92,14 @@ class Config:
         self.RUN_NETWORK_EMBEDDING_BENCHMARKING = True
         self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers
-        self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data_builders
+        self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data
         self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = 0.1  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
         self.CLEANUP_DUMMY_DATA = True
         self.ENABLE_FILE_LOGGING = True
 
     def _setup_data_sources(self):
         """
-        Defines the data_builders sources for automatic download.
+        Defines the data sources for automatic download.
         The key is a unique identifier, and 'path' is the final destination.
         """
         self.DATA_SOURCES: Dict[str, Dict] = {
@@ -143,12 +141,17 @@ class Config:
             "KarateClub", "Cora", "CiteSeer", "PubMed",
             "Cornell", "Texas", "Wisconsin"
         ]
+        # List of GNN models to run in the benchmark suite.
+        # Options: "GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "TongDiGCN", "DirectGCN"
+        self.BENCHMARK_GNN_MODELS_TO_RUN: List[str] = ["GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "TongDiGCN"]
         self.BENCHMARK_SAVE_EMBEDDINGS = True
         self.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS = True
         self.BENCHMARK_TEST_ON_UNDIRECTED = True
         self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8}
         self.BENCHMARK_PCA_TARGET_DIM = 64
         self.BENCHMARK_NE_MODELS_TO_RUN = ["Node2Vec", "MetaPath2Vec"]
+        # Number of epochs for the network embedding benchmark (Node2Vec, etc.)
+        self.BENCHMARK_NE_EPOCHS = 5
         self.BENCHMARK_NE_EMBEDDING_DIM = 128
         self.BENCHMARK_NE_WALK_LENGTH = 20
         self.BENCHMARK_NE_CONTEXT_SIZE = 10
@@ -158,7 +161,6 @@ class Config:
         # Graph Building
         self.GCN_NGRAM_MAX_N = 3
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
-
 
         # ID Mapping
         self.ID_MAPPING_MODE = 'regex'
@@ -245,6 +247,7 @@ class Config:
         self.LSTM_NUM_LAYERS = 2
         self.LSTM_EPOCHS = 5
         self.LSTM_BATCH_SIZE = 64
+        self.LSTM_TRAIN_SEQ_LEN = 50  # The sequence length for the next-character prediction task
         self.LSTM_LEARNING_RATE = 0.001
 
     def _setup_evaluation_params(self):
@@ -282,9 +285,8 @@ class Config:
     def _setup_mlflow_params(self):
         """Sets parameters for MLflow experiment tracking."""
         self.USE_MLFLOW = True
-        # FIX: The mlruns_path variable must be defined from the base output directory.
         mlruns_path = self.BASE_OUTPUT_DIR / "mlruns"
-        self.MLFLOW_TRACKING_URI = mlruns_path.as_uri() # Use as_uri() for proper file URI scheme.
+        self.MLFLOW_TRACKING_URI = mlruns_path.as_uri()  # Use as_uri() for proper file URI scheme.
         self.MLFLOW_EXPERIMENT_NAME = "PPI-Link-Prediction"
         self.MLFLOW_BENCHMARK_EXPERIMENT_NAME = "GNN-Benchmarking"
         self.MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME = "Network_Embedding_Benchmarking"

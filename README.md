@@ -98,6 +98,33 @@ The process may take several minutes as it downloads and installs many large pac
 
 ## Configuration Guide (`configuration/config.py`)
 
+
+This script will automate the entire installation process within your active `ppi-env`. It will:
+
+- Install the correct versions of the CUDA toolkit and cuDNN.
+- Install TensorFlow and PyTorch with GPU support.
+- Install all other required data science and bioinformatics libraries like `scikit-learn`, `pandas`, and `torch-geometric`.
+
+The process may take several minutes as it downloads and installs many large packages.
+
+### A Note on Environment Variables and Paths
+
+> [!WARNING]
+> **Do Not Manually Edit `.bashrc` or `.zshrc`**
+>
+> This project is designed to be **self-contained**. The `setup-environment.py` script installs all necessary components, including the CUDA Toolkit, cuDNN, and compilers, directly into the Conda environment (e.g., into the `.../ppi-env/` folder).
+>
+> You **should not** add lines like `export CUDA_HOME=/usr/local/cuda-12.5` to your `.bashrc` file. This is because:
+>
+> 1.  **It Points to the Wrong Location**: The `export` commands you mentioned refer to a system-wide CUDA installation in `/usr/local/`. This project uses the CUDA toolkit installed and managed by Conda inside the `ppi-env`.
+> 2.  **It Can Cause Conflicts**: Manually setting these paths can override the Conda environment's settings, forcing the project to use a conflicting or non-existent CUDA version, which will lead to compilation or runtime errors.
+>
+> The correct paths are handled for you automatically when you run `conda activate ppi-env` and when the `main.py` script executes. If you encounter "command not found" errors, the first step should always be to ensure your Conda environment is activated correctly.
+
+---
+
+## Configuration Guide (`configuration/config.py`)
+
 Before running the main pipeline via `python main.py`, you can customize the pipeline's behavior by editing the `configuration/config.py` file. This guide explains the key parameters you can adjust.
 
 ### 1. Pipeline Control Flags
@@ -177,6 +204,7 @@ These sections control the alternative embedding generation methods used for com
 - **LSTM (`_setup_lstm_params`)**:
     - `LSTM_EMBEDDING_DIM`: (`int`) The dimensionality of the initial token embeddings.
     - `LSTM_HIDDEN_DIM`: (`int`) The number of units in the LSTM hidden layers.
+    - `LSTM_TRAIN_SEQ_LEN`: (`int`) The length of the subsequences used for the next-character prediction task.
 
 ### 5. PPI Evaluation Parameters
 This section configures the final link prediction task.
@@ -196,15 +224,3 @@ This section configures the final link prediction task.
 ## Running the Project
 
 Once the installation and data setup are complete, you can execute the main pipeline.
-
-```sh
-# (Assuming you are in the project's root directory)
-python main.py
-```
-
-When you run this command, the script will:
-1.  **Verify Data**: Check for required data files and download any that are missing based on your `configuration/config.py`.
-2.  **Run Integrated Tests**: Execute a series of checks to ensure your environment is working correctly (if `RUN_INTEGRATED_TESTS` is `True`).
-3.  **Execute Pipelines**: Run the main experimental pipelines (ProtGram-DirectGCN, benchmarks, etc.) as enabled by the control flags in your configuration.
-
-Monitor the console for progress. All results, plots, models, and logs will be saved in the `results/` directory, organized into subfolders based on the pipeline.

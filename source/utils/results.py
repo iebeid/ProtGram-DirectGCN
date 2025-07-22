@@ -2,8 +2,8 @@
 # MODULE: utils/results.py
 # PURPOSE: Contains all functions for plotting results and writing summary
 #          files for the PPI evaluation trainers.
-# VERSION: 3.0 (Integrated t-SNE visualization)
-# AUTHOR: Islam Ebeid (Integration by Coding Partner)
+# VERSION: 3.1 (Added error bars to comparison charts for better visualization)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import os
@@ -19,16 +19,13 @@ import seaborn as sns
 from scipy.stats import wilcoxon, pearsonr
 from sklearn.manifold import TSNE
 
-# --- Configuration for t-SNE plotting (from visualization_worker) ---
+# --- Configuration for t-SNE plotting ---
 TSNE_PERPLEXITY = 30
 TSNE_N_ITER = 1000
 TSNE_RANDOM_STATE = 42
 TSNE_INIT_PCA = True
 TSNE_LEARNING_RATE = 'auto'
 SAMPLE_N_FOR_COMBINED_TSNE = 2000
-
-
-# --- End t-SNE Configuration ---
 
 
 class EvaluationReporter:
@@ -57,6 +54,9 @@ class EvaluationReporter:
         """
         Calculates ranking metrics like Hits@k (as Recall@k) and NDCG@k.
         """
+        if len(y_true) != len(y_score):
+            raise ValueError("y_true and y_score must have the same length.")
+
         combined = np.stack([y_score, y_true], axis=1)
         sorted_combined = combined[np.argsort(combined[:, 0])[::-1]]
         sorted_true_labels = sorted_combined[:, 1]
@@ -93,10 +93,10 @@ class EvaluationReporter:
 
     def plot_training_history(self, history_dict: Dict[str, Any], model_name: str) -> Optional[Path]:
         """
-        Plots the trainers and validation loss/accuracy from a Keras history object.
+        Plots the training and validation loss/accuracy from a Keras history object.
         """
         if not history_dict:
-            print(f"Plotting: No history data_builders for {model_name} to plot.")
+            print(f"Plotting: No history data for {model_name} to plot.")
             return None
 
         plot_filename = self.plots_output_dir / f"history_{model_name.replace(' ', '_')}.png"
@@ -115,12 +115,18 @@ class EvaluationReporter:
         plt.grid(True)
 
         plt.subplot(1, 2, 2)
-        if 'accuracy' in history_dict and history_dict['accuracy']:
-            plt.plot(history_dict['accuracy'], label='Training Accuracy')
-        if 'val_accuracy' in history_dict and history_dict['val_accuracy']:
-            plt.plot(history_dict['val_accuracy'], label='Validation Accuracy')
-        plt.title(f'Model Accuracy: {model_name} (Fold 1)')
-        plt.ylabel('Accuracy')
+        # FIX: Robustly find the primary metric (e.g., 'accuracy', 'auc')
+        metric_key = next((k for k in ['accuracy', 'auc'] if k in history_dict), None)
+        val_metric_key = next((k for k in [f'val_{metric_key}'] if k in history_dict), None)
+
+        if metric_key and metric_key in history_dict and history_dict[metric_key]:
+            plt.plot(history_dict[metric_key], label=f'Training {metric_key.capitalize()}')
+        if val_metric_key and val_metric_key in history_dict and history_dict[val_metric_key]:
+            plt.plot(history_dict[val_metric_key], label=f'Validation {metric_key.capitalize()}')
+
+        metric_title = metric_key.capitalize() if metric_key else "Metric"
+        plt.title(f'Model {metric_title}: {model_name} (Fold 1)')
+        plt.ylabel(metric_title)
         plt.xlabel('Epoch')
         plt.legend()
         plt.grid(True)
@@ -129,7 +135,7 @@ class EvaluationReporter:
         plt.tight_layout(rect=[0, 0, 1, 0.95])
         try:
             plt.savefig(plot_filename)
-            print(f"  Saved trainers history plot to {plot_filename}")
+            print(f"  Saved training history plot to {plot_filename}")
         except Exception as e:
             print(f"  Error saving plot {plot_filename}: {e}")
         plt.close()
@@ -151,7 +157,7 @@ class EvaluationReporter:
                 plotted_anything = True
 
         if not plotted_anything:
-            print("Plotting: No valid ROC data_builders available for any model.")
+            print("Plotting: No valid ROC data available for any model.")
             plt.close()
             return None
 
@@ -174,10 +180,11 @@ class EvaluationReporter:
 
     def plot_comparison_charts(self, results_list: List[Dict[str, Any]]) -> Optional[Path]:
         """
-        Generates a set of bar charts comparing key performance metrics across all models.
+        Generates a set of bar charts comparing key performance metrics across all models,
+        including error bars for standard deviation.
         """
         if not results_list:
-            print("Plotting: No results data_builders provided for comparison charts.")
+            print("Plotting: No results data provided for comparison charts.")
             return None
 
         plot_filename = self.plots_output_dir / "comparison_metrics_barchart.png"
@@ -196,11 +203,15 @@ class EvaluationReporter:
         for i, (name, key) in enumerate(metrics.items()):
             plt.subplot(rows, cols, i + 1)
             values = [res.get(key, 0) for res in results_list]
-            bars = plt.bar(names, values, color=plt.cm.viridis(np.linspace(0.1, 0.9, len(names))))
+            # FIX: Add error bars using the standard deviation from cross-validation
+            std_dev_key = f"{key}_std"
+            errors = [res.get(std_dev_key, 0) for res in results_list]
+
+            bars = plt.bar(names, values, yerr=errors, capsize=5, color=plt.cm.viridis(np.linspace(0.1, 0.9, len(names))), alpha=0.8)
             plt.ylabel('Score')
             plt.title(name)
             plt.xticks(rotation=45, ha="right")
-            plt.ylim(bottom=0)
+            plt.ylim(bottom=0, top=max(1.0, max(values) * 1.1))
             for bar in bars:
                 yval = bar.get_height()
                 plt.text(bar.get_x() + bar.get_width() / 2.0, yval, f'{yval:.3f}', ha='center', va='bottom', fontsize=8)
@@ -221,7 +232,7 @@ class EvaluationReporter:
         Writes a formatted summary table and statistical test results to a text file.
         """
         if not results_list:
-            print("Reporting: No results data_builders provided for summary file.")
+            print("Reporting: No results data provided for summary file.")
             return None
 
         filepath = self.summary_file_output_dir / "evaluation_summary.txt"
@@ -250,15 +261,16 @@ class EvaluationReporter:
 
             f.write(f"--- Statistical Comparison vs '{main_emb_name}' on '{test_metric}' (alpha={alpha}) ---\n")
             main_res = next((r for r in results_list if r.get('embedding_name') == main_emb_name), None)
-            scores_key = 'fold_auc_scores' if test_metric == 'test_auc_sklearn' else 'fold_f1_scores'
+            scores_key = 'fold_auc_scores' if 'auc' in test_metric else 'fold_f1_scores'
 
-            if main_res and scores_key in main_res and main_res[scores_key]:
+            if main_res and scores_key in main_res:
                 main_scores = [s for s in main_res[scores_key] if not np.isnan(s)]
                 f.write(f"{'Compared Embedding':<30} | {'p-value (Wilcoxon)':<20} | {'Significantly Different?':<25} | {'Pearson r':<10}\n")
                 f.write("-" * 95 + "\n")
 
                 for other_res in [r for r in results_list if r.get('embedding_name') != main_emb_name]:
                     other_scores = [s for s in other_res.get(scores_key, []) if not np.isnan(s)]
+                    # FIX: Ensure there's enough data for a meaningful test
                     if len(main_scores) == len(other_scores) and len(main_scores) > 1:
                         try:
                             if np.allclose(main_scores, other_scores):
@@ -283,15 +295,6 @@ class EvaluationReporter:
     def plot_tsne_from_embedding_file(self, h5_path: str, embedding_type: str = 'per_protein') -> Optional[Path]:
         """
         Loads an H5 embedding file and generates a t-SNE visualization plot.
-        This is the primary new function integrated from the visualization worker.
-
-        Args:
-            h5_path (str): The path to the H5 embedding file.
-            embedding_type (str): The type of embeddings, e.g., 'per_protein'.
-                                  Currently supports 'per_protein' for visualization.
-
-        Returns:
-            Optional[Path]: The path to the saved plot, or None if plotting failed.
         """
         print(f"\n--- Generating t-SNE plot for {os.path.basename(h5_path)} ---")
         if not os.path.exists(h5_path):
@@ -307,26 +310,13 @@ class EvaluationReporter:
 
                 print(f"  Found {len(all_keys)} items. Processing as '{embedding_type}'.")
 
-                embeddings_list = []
-                # For 'per_protein' type, we assume each key is a protein and its value is a 1D vector.
-                if embedding_type == 'per_protein':
-                    for key_id in all_keys:
-                        data = hf[key_id][:]
-                        if data.ndim == 1:
-                            embeddings_list.append(data)
-                else:
-                    print(f"  Warning: t-SNE plotting for type '{embedding_type}' is not fully implemented in this reporter. Treating as 'per_protein'.")
-                    for key_id in all_keys:
-                        data = hf[key_id][:]
-                        if data.ndim == 1:
-                            embeddings_list.append(data)
+                embeddings_list = [hf[key_id][:] for key_id in all_keys if hf[key_id][:].ndim == 1]
 
                 if not embeddings_list:
                     raise ValueError("No valid 1D embeddings found for t-SNE plot.")
 
                 embeddings_array = np.vstack(embeddings_list)
 
-                # Sample if the dataset is too large
                 if embeddings_array.shape[0] > SAMPLE_N_FOR_COMBINED_TSNE:
                     print(f"  Sampling {SAMPLE_N_FOR_COMBINED_TSNE} points from {embeddings_array.shape[0]} for performance.")
                     indices = np.random.choice(embeddings_array.shape[0], SAMPLE_N_FOR_COMBINED_TSNE, replace=False)
@@ -335,7 +325,6 @@ class EvaluationReporter:
                 base_filename = os.path.splitext(os.path.basename(h5_path))[0]
                 title = f"t-SNE of Per-Protein Embeddings\n(Source: {base_filename})"
 
-                # --- Generate Figure ---
                 num_samples = embeddings_array.shape[0]
                 if num_samples <= 1:
                     raise ValueError(f"Not enough samples ({num_samples}) for t-SNE.")
@@ -353,15 +342,12 @@ class EvaluationReporter:
 
                 fig = plt.figure(figsize=(10, 8))
                 ax = fig.add_subplot(111)
-
                 sns.scatterplot(x="tsne_1", y="tsne_2", data=df_tsne, legend=False, s=50, alpha=0.7, ax=ax)
-
                 ax.set_title(title, fontsize=16)
                 ax.set_xlabel('t-SNE Component 1', fontsize=12)
                 ax.set_ylabel('t-SNE Component 2', fontsize=12)
                 fig.tight_layout(rect=[0, 0, 1, 0.96])
 
-                # --- Save Figure ---
                 plot_filename = self.plots_output_dir / f"tsne_{base_filename}.png"
                 plt.savefig(plot_filename)
                 plt.close(fig)

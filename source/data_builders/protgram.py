@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: data_builders/protgram.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 6.5 (Added check to skip graph building if files already exist)
+# VERSION: 7.0 (Renamed class, improved memory management for Dask edge aggregation)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -12,7 +12,7 @@ import sys
 import time
 from functools import partial
 from pathlib import Path
-from typing import Tuple, Dict, Iterator
+from typing import Tuple, Iterator
 
 import dask.bag as db
 import dask.dataframe as dd
@@ -21,11 +21,11 @@ import pyarrow
 import pyarrow.parquet as pq
 
 from configuration.config import Config
-from source.utils.data import DataUtils, DataLoader
 from source.data_builders.graph import DirectedNgramGraph
+from source.utils.data import DataUtils, FastaUtils, ProtgramDaskHelpers
 
 
-class GraphBuilder:
+class ProtGramBuilder:
     def __init__(self, config: Config):
         self.config = config
         self.protein_sequence_files = [str(p) for p in config.SEQUENCE_FILE_PATHS]
@@ -35,14 +35,15 @@ class GraphBuilder:
         self.temp_dir = os.path.join(str(config.BASE_OUTPUT_DIR), "temp_graph_builder")
         self.gcn_propagation_epsilon = getattr(config, 'GCN_PROPAGATION_EPSILON', 1e-9)
 
-        print(f"GraphBuilder initialized: n_max={self.n_max}, configured_workers={self.num_workers_config}, output_dir='{self.output_dir}'")
+        print(
+            f"GraphBuilder initialized: n_max={self.n_max}, configured_workers={self.num_workers_config}, output_dir='{self.output_dir}'")
         DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
 
     def run(self):
         overall_start_time = time.monotonic()
         DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs")
 
-        # --- NEW: Check if all final graph objects already exist ---
+        # --- Check if all final graph objects already exist ---
         all_graphs_exist = True
         for n in range(1, self.n_max + 1):
             expected_graph_file = os.path.join(self.output_dir, f"ngram_graph_n{n}.pkl")
@@ -55,7 +56,7 @@ class GraphBuilder:
             print("\nAll required n-gram graph objects already exist in the output directory.")
             DataUtils.print_header(f"N-gram Graph Building SKIPPED (Files exist)")
             return
-        # --- END NEW ---
+        # --- END Check ---
 
         if os.path.exists(self.temp_dir):
             print(f"Cleaning up existing temporary directory: {self.temp_dir}")
@@ -72,8 +73,10 @@ class GraphBuilder:
 
         if self.num_workers_config > 1:
             print("\n" + "=" * 80)
-            print(f"GraphBuilder is configured for parallel processing (GRAPH_BUILDER_WORKERS={self.num_workers_config}).")
-            print(f"Attempting to use Dask with a THREADED scheduler ({effective_dask_workers} threads) for most ops.")
+            print(
+                f"GraphBuilder is configured for parallel processing (GRAPH_BUILDER_WORKERS={self.num_workers_config}).")
+            print(
+                f"Attempting to use Dask with a THREADED scheduler ({effective_dask_workers} threads) for most ops.")
             print("This aims to improve speed while potentially avoiding multiprocessing-related memory issues.")
             print("=" * 80 + "\n")
         else:
@@ -81,7 +84,7 @@ class GraphBuilder:
 
         def get_preprocessed_sequence_stream() -> Iterator[Tuple[Tuple[str, str], bool]]:
             first_sequence = True
-            for seq_tuple in DataLoader.parse_sequences(self.protein_sequence_files):
+            for seq_tuple in FastaUtils.parse_sequences(self.protein_sequence_files):
                 yield seq_tuple, first_sequence
                 if first_sequence:
                     first_sequence = False
@@ -101,7 +104,8 @@ class GraphBuilder:
 
         num_partitions_for_bag = effective_dask_workers if effective_dask_workers > 1 else 1
         raw_sequence_bag_with_flag = db.from_sequence(sequence_stream_list, npartitions=num_partitions_for_bag)
-        preprocessed_sequence_bag_unpersisted = raw_sequence_bag_with_flag.starmap(DataLoader._preprocess_sequence_tuple_for_bag)
+        preprocessed_sequence_bag_unpersisted = raw_sequence_bag_with_flag.starmap(
+            ProtgramDaskHelpers._preprocess_sequence_tuple_for_bag)
 
         final_preprocessed_input_bag = preprocessed_sequence_bag_unpersisted
         if dask_scheduler_general != 'sync':
@@ -110,7 +114,8 @@ class GraphBuilder:
                 scheduler=dask_scheduler_general, num_workers=effective_dask_workers
             )
             try:
-                persisted_bag_count = final_preprocessed_input_bag.count().compute(scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
+                persisted_bag_count = final_preprocessed_input_bag.count().compute(
+                    scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
                 print(f"  DEBUG: Count of items in persisted preprocessed_sequence_bag: {persisted_bag_count}")
             except Exception as e_count:
                 print(f"  DEBUG: Error counting persisted bag items: {e_count}")
@@ -124,7 +129,8 @@ class GraphBuilder:
             print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations.")
 
         for n_val_loop in n_values:
-            DataUtils.print_header(f"Processing N-gram Level n = {n_val_loop} (Dask scheduler general: {dask_scheduler_general})")
+            DataUtils.print_header(
+                f"Processing N-gram Level n = {n_val_loop} (Dask scheduler general: {dask_scheduler_general})")
             phase1_level_start_time = time.monotonic()
 
             output_ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n_val_loop}.parquet')
@@ -133,7 +139,7 @@ class GraphBuilder:
             print(f"  [n={n_val_loop}] Generating n-grams using Dask Bag (source: final_preprocessed_input_bag)...")
             sys.stdout.flush()
 
-            extract_ngrams_partial = partial(DataLoader._extract_ngrams_from_sequence_tuple, n_val=n_val_loop)
+            extract_ngrams_partial = partial(ProtgramDaskHelpers._extract_ngrams_from_sequence_tuple, n_val=n_val_loop)
             all_ngrams_bag_flattened = final_preprocessed_input_bag.map(extract_ngrams_partial).flatten()
 
             print(f"    Computing unique n-grams using Dask Bag's distinct()...")
@@ -148,10 +154,12 @@ class GraphBuilder:
                 else:
                     unique_ngrams_df = pd.DataFrame(sorted(unique_ngrams_list), columns=['ngram'])
             except MemoryError as e_mem_distinct_ngrams:
-                print(f"  [n={n_val_loop}] MEMORY ERROR during Dask compute for distinct n-grams: {e_mem_distinct_ngrams}")
+                print(
+                    f"  [n={n_val_loop}] MEMORY ERROR during Dask compute for distinct n-grams: {e_mem_distinct_ngrams}")
                 continue
             except Exception as e_compute_distinct_ngrams:
-                print(f"  [n={n_val_loop}] ERROR during Dask compute for distinct n-grams: {e_compute_distinct_ngrams}")
+                print(
+                    f"  [n={n_val_loop}] ERROR during Dask compute for distinct n-grams: {e_compute_distinct_ngrams}")
                 continue
 
             unique_ngrams_df = unique_ngrams_df.sort_values('ngram').reset_index(drop=True)
@@ -185,7 +193,7 @@ class GraphBuilder:
             print(f"  [n={n_val_loop}] Generating edge strings using Dask Bag (source: final_preprocessed_input_bag)...")
             sys.stdout.flush()
 
-            extract_edges_partial = partial(DataLoader._extract_edges_from_sequence_tuple,
+            extract_edges_partial = partial(ProtgramDaskHelpers._extract_edges_from_sequence_tuple,
                                             n_val=n_val_loop,
                                             ngram_to_id_map=ngram_to_id_map)
             all_edges_str_bag_flattened = final_preprocessed_input_bag.map(extract_edges_partial).flatten()
@@ -194,7 +202,8 @@ class GraphBuilder:
                 shutil.rmtree(temp_edge_output_dir)
 
             scheduler_for_to_textfiles = 'sync'
-            print(f"    Writing edge strings to directory: {temp_edge_output_dir} using Dask scheduler: '{scheduler_for_to_textfiles}'...")
+            print(
+                f"    Writing edge strings to directory: {temp_edge_output_dir} using Dask scheduler: '{scheduler_for_to_textfiles}'...")
 
             try:
                 all_edges_str_bag_flattened.to_textfiles(
@@ -255,22 +264,25 @@ class GraphBuilder:
                     weighted_ddf_series = ddf.groupby(['source', 'target']).size()
                     weighted_ddf = weighted_ddf_series.to_frame(name='weight').reset_index()
                     print(f"    Computing aggregated weighted edges for n={n}...")
-                    weighted_edge_df_computed = weighted_ddf.compute(scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
+                    weighted_edge_df_computed = weighted_ddf.compute(scheduler=dask_scheduler_general,
+                                                                     num_workers=effective_dask_workers)
                     print(f"    Finished computing aggregated weighted edges for n={n}.")
                 else:
                     print(f"  ℹ️ Info: Edge parts directory for n={n} is empty or not found.")
             except Exception as e_ddf:
                 print(f"  ❌ Error: Dask DataFrame processing error for edges n={n}: {e_ddf}. Assuming no edges.")
 
-            # --- MODIFICATION: Save to file to break memory chain ---
+            # --- MEMORY OPTIMIZATION: Save to file to break memory chain ---
             temp_edge_file_path = os.path.join(self.temp_dir, f'aggregated_edges_n{n}.parquet')
             if not weighted_edge_df_computed.empty:
-                print(f"  Aggregated raw transitions into {len(weighted_edge_df_computed)} unique weighted edges for n={n}.")
+                print(
+                    f"  Aggregated raw transitions into {len(weighted_edge_df_computed)} unique weighted edges for n={n}.")
                 print(f"  Saving aggregated edges to temporary file: {os.path.basename(temp_edge_file_path)}")
                 try:
                     weighted_edge_df_computed.to_parquet(temp_edge_file_path, index=False)
                 except Exception as e:
-                    print(f"  ❌ Error saving temporary aggregated edge file: {e}. Skipping graph creation for n={n}.")
+                    print(
+                        f"  ❌ Error saving temporary aggregated edge file: {e}. Skipping graph creation for n={n}.")
                     continue
             else:
                 if os.path.exists(temp_edge_file_path):
@@ -290,13 +302,12 @@ class GraphBuilder:
 
             if os.path.exists(temp_edge_file_path):
                 os.remove(temp_edge_file_path)
-            # --- END MODIFICATION ---
+            # --- END MEMORY OPTIMIZATION ---
 
             output_path = os.path.join(self.output_dir, f'ngram_graph_n{n}.pkl')
             DataUtils.save_object(graph_object, output_path)
             print(f"  Graph for n={n} saved to {output_path}")
 
-            # ... (Statistics generation logic remains the same) ...
             print(f"    --- Graph Statistics for n={n} ---")
             num_nodes = graph_object.number_of_nodes
             num_edges = graph_object.number_of_edges

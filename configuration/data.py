@@ -1,17 +1,19 @@
 # ==============================================================================
 # MODULE: configuration/data.py
 # PURPOSE: Handles the verification and acquisition of all external data files.
-# VERSION: 1.0
+# VERSION: 1.1 (Corrected validation logic)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import gzip
 import shutil
-import requests
-from tqdm.auto import tqdm
 from pathlib import Path
 
+import requests
+from tqdm.auto import tqdm
+
 from configuration.config import Config
+
 
 def _is_file_valid(file_path: Path) -> bool:
     """
@@ -48,7 +50,7 @@ def _is_file_valid(file_path: Path) -> bool:
                             return False
                         break  # Found a header, it's probably fine
         except Exception:
-            return False # Not a valid text-based FASTA
+            return False  # Not a valid text-based FASTA
 
     # If all checks pass, the file is considered valid
     return True
@@ -91,7 +93,7 @@ def setup_data(config: Config):
 
         # 3. If neither exists, attempt to download.
         url = source_info.get('url')
-        if not url or 'example.com' in url:
+        if not url or 'YOUR_FILE_ID' in url:
             print(f"❓ Skipped '{key}': URL is a placeholder or not provided.")
             continue
 
@@ -100,7 +102,8 @@ def setup_data(config: Config):
             response = requests.get(url, stream=True)
             response.raise_for_status()
             total_size = int(response.headers.get('content-length', 0))
-            with open(download_path, 'wb') as f, tqdm(total=total_size, unit='iB', unit_scale=True, desc=download_path.name) as pbar:
+            with open(download_path, 'wb') as f, tqdm(total=total_size, unit='iB', unit_scale=True,
+                                                      desc=download_path.name) as pbar:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
                     pbar.update(len(chunk))
