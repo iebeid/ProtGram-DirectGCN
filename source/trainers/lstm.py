@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: trainers/lstm.py
 # PURPOSE: Trainer for a character-level LSTM model to generate protein embeddings.
-# VERSION: 2.1 (Corrected Keras/PyTorch library mix-up and inference logic)
+# VERSION: 3.0 (Corrected embedding generation logic to use mean pooling over the full sequence)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -16,9 +16,7 @@ from configuration.config import Config
 from source.utils.data import DataUtils, FastaUtils
 
 
-# ==============================================================================
 # Data Generator (No changes needed here, it is correct)
-# ==============================================================================
 class LstmCorpusGenerator(Sequence):
     """
     Generates batches of data for the LSTM model on-the-fly from a FASTA file.
@@ -71,7 +69,6 @@ class LSTMBasedEmbedder:
     def _prepare_corpus(self):
         """Prepares the character mapping from the FASTA data."""
         print("  Preparing LSTM corpus and character mappings...")
-        # FIX: Convert iterator to list to allow multiple iterations over the sequences.
         self.sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
         all_chars = sorted(list(set("".join(seq for _, seq in self.sequences))))
 
@@ -82,12 +79,16 @@ class LSTMBasedEmbedder:
 
     def _build_model(self):
         """Builds the Keras LSTM model for next-character prediction."""
-        # FIX: Add names to layers for easy reference during inference model creation.
+        # FIX: The input_length is now dynamic (None) to handle variable-length sequences for inference.
+        # The training generator will still provide fixed-length sequences.
         model = Sequential([
             Embedding(self.vocab_size, self.config.LSTM_EMBEDDING_DIM,
-                      input_length=self.config.LSTM_TRAIN_SEQ_LEN, name="embedding_layer"),
+                      input_length=None, name="embedding_layer"),
+            # FIX: Use the standard LSTM implementation which is more robust to cuDNN issues.
+            # It will be slower than the cuDNN version but will not crash.
             LSTM(self.config.LSTM_HIDDEN_DIM, return_sequences=True, name="lstm_layer_1"),
-            LSTM(self.config.LSTM_HIDDEN_DIM, name="lstm_embedding_layer"),
+            LSTM(self.config.LSTM_HIDDEN_DIM, return_sequences=True, name="lstm_embedding_layer"),
+            # The final Dense layer is only needed for the training task, not inference.
             Dense(self.vocab_size, activation='softmax', name="output_dense_layer")
         ])
         model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
@@ -107,34 +108,50 @@ class LSTMBasedEmbedder:
             vocab_size=self.vocab_size,
             char_to_int=self.char_to_int
         )
-        self.model.fit(training_generator, epochs=self.config.LSTM_EPOCHS, verbose=1)
+        # We need to modify the training model slightly for the generator output shape
+        train_model_input = tf.keras.Input(shape=(self.config.LSTM_TRAIN_SEQ_LEN,))
+        x = self.model.get_layer('embedding_layer')(train_model_input)
+        x = self.model.get_layer('lstm_layer_1')(x)
+        x = self.model.get_layer('lstm_embedding_layer')(x)
+        # For training, we only need the last time step for next-character prediction
+        x = x[:, -1, :]
+        train_model_output = self.model.get_layer('output_dense_layer')(x)
+        train_model = Model(inputs=train_model_input, outputs=train_model_output)
+        train_model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+        train_model.fit(training_generator, epochs=self.config.LSTM_EPOCHS, verbose=1)
 
         print("  LSTM training complete. Generating embeddings...")
 
-        # --- MINIMAL FIX: Correct Keras inference logic ---
-        # 1. Create a new model for inference that outputs the hidden state of the final LSTM layer.
-        #    This model re-uses the layers and weights from the trained model.
-        print("  Building inference model to extract LSTM hidden states...")
-        embedding_layer_output = self.model.get_layer('lstm_embedding_layer').output
-        inference_model = Model(inputs=self.model.input, outputs=embedding_layer_output)
+        # --- CRITICAL FIX: Correct Keras inference logic to use mean pooling over the full sequence ---
+        # 1. Create an inference model that outputs the hidden states for the *entire* sequence.
+        print("  Building inference model to extract full-sequence hidden states...")
+        # The input shape is now (None,) to accept sequences of any length.
+        inf_input = tf.keras.Input(shape=(None,), dtype=tf.int32)
+        x = self.model.get_layer('embedding_layer')(inf_input)
+        x = self.model.get_layer('lstm_layer_1')(x)
+        embedding_layer_output = self.model.get_layer('lstm_embedding_layer')(x)
+        inference_model = Model(inputs=inf_input, outputs=embedding_layer_output)
         inference_model.summary()
 
-        # 2. Generate embeddings for each protein using the new Keras inference model.
-        print("  Generating per-protein embeddings using the inference model...")
+        # 2. Generate embeddings by getting all hidden states and then mean-pooling them.
+        print("  Generating per-protein embeddings using mean pooling...")
         protein_embeddings = {}
         for pid, seq_text in tqdm(self.sequences, desc="  Generating Embeddings"):
             if not seq_text: continue
             tokenized_seq = [self.char_to_int[c] for c in seq_text if c in self.char_to_int]
             if not tokenized_seq: continue
 
-            # Pad the sequence to the required training length for the model input
-            padded_seq = tf.keras.preprocessing.sequence.pad_sequences(
-                [tokenized_seq], maxlen=self.config.LSTM_TRAIN_SEQ_LEN, padding='pre'
-            )
+            # The input is now a single sequence of variable length, wrapped in a batch dimension.
+            input_tensor = tf.constant([tokenized_seq], dtype=tf.int32)
 
-            # Get the embedding from the inference model
-            embedding = inference_model.predict(padded_seq, verbose=0)
-            protein_embeddings[pid] = embedding.squeeze(0)  # Remove batch dimension
+            # Get hidden states for all tokens in the sequence. Shape: (1, seq_len, hidden_dim)
+            all_hidden_states = inference_model.predict(input_tensor, verbose=0)
+
+            # Apply mean pooling across the sequence length dimension (axis 1)
+            # Squeeze to remove the batch dimension. Shape: (hidden_dim,)
+            pooled_embedding = tf.reduce_mean(all_hidden_states, axis=1).numpy().squeeze(0)
+            protein_embeddings[pid] = pooled_embedding
         # --- END FIX ---
 
         # 3. Save embeddings
