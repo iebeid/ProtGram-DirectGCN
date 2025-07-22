@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: trainers/lstm.py
 # PURPOSE: Trainer for a character-level LSTM model to generate protein embeddings.
-# VERSION: 3.0 (Corrected embedding generation logic to use mean pooling over the full sequence)
+# VERSION: 3.1 (Added recurrent_dropout to ensure compatibility with mismatched cuDNN versions)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -79,16 +79,15 @@ class LSTMBasedEmbedder:
 
     def _build_model(self):
         """Builds the Keras LSTM model for next-character prediction."""
-        # FIX: The input_length is now dynamic (None) to handle variable-length sequences for inference.
-        # The training generator will still provide fixed-length sequences.
         model = Sequential([
             Embedding(self.vocab_size, self.config.LSTM_EMBEDDING_DIM,
                       input_length=None, name="embedding_layer"),
-            # FIX: Use the standard LSTM implementation which is more robust to cuDNN issues.
-            # It will be slower than the cuDNN version but will not crash.
-            LSTM(self.config.LSTM_HIDDEN_DIM, return_sequences=True, name="lstm_layer_1"),
-            LSTM(self.config.LSTM_HIDDEN_DIM, return_sequences=True, name="lstm_embedding_layer"),
-            # The final Dense layer is only needed for the training task, not inference.
+            # --- MINIMAL FIX: Add recurrent_dropout to disable the failing cuDNN kernel ---
+            # This forces Keras to use its standard, more compatible implementation, preventing
+            # the "Dnn is not supported" error with mismatched cuDNN versions.
+            LSTM(self.config.LSTM_HIDDEN_DIM, return_sequences=True, name="lstm_layer_1", recurrent_dropout=0.1),
+            LSTM(self.config.LSTM_HIDDEN_DIM, return_sequences=True, name="lstm_embedding_layer", recurrent_dropout=0.1),
+            # --- END FIX ---
             Dense(self.vocab_size, activation='softmax', name="output_dense_layer")
         ])
         model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
@@ -123,10 +122,8 @@ class LSTMBasedEmbedder:
 
         print("  LSTM training complete. Generating embeddings...")
 
-        # --- CRITICAL FIX: Correct Keras inference logic to use mean pooling over the full sequence ---
-        # 1. Create an inference model that outputs the hidden states for the *entire* sequence.
+        # Create an inference model that outputs the hidden states for the *entire* sequence.
         print("  Building inference model to extract full-sequence hidden states...")
-        # The input shape is now (None,) to accept sequences of any length.
         inf_input = tf.keras.Input(shape=(None,), dtype=tf.int32)
         x = self.model.get_layer('embedding_layer')(inf_input)
         x = self.model.get_layer('lstm_layer_1')(x)
@@ -134,7 +131,7 @@ class LSTMBasedEmbedder:
         inference_model = Model(inputs=inf_input, outputs=embedding_layer_output)
         inference_model.summary()
 
-        # 2. Generate embeddings by getting all hidden states and then mean-pooling them.
+        # Generate embeddings by getting all hidden states and then mean-pooling them.
         print("  Generating per-protein embeddings using mean pooling...")
         protein_embeddings = {}
         for pid, seq_text in tqdm(self.sequences, desc="  Generating Embeddings"):
@@ -142,19 +139,12 @@ class LSTMBasedEmbedder:
             tokenized_seq = [self.char_to_int[c] for c in seq_text if c in self.char_to_int]
             if not tokenized_seq: continue
 
-            # The input is now a single sequence of variable length, wrapped in a batch dimension.
             input_tensor = tf.constant([tokenized_seq], dtype=tf.int32)
-
-            # Get hidden states for all tokens in the sequence. Shape: (1, seq_len, hidden_dim)
             all_hidden_states = inference_model.predict(input_tensor, verbose=0)
-
-            # Apply mean pooling across the sequence length dimension (axis 1)
-            # Squeeze to remove the batch dimension. Shape: (hidden_dim,)
             pooled_embedding = tf.reduce_mean(all_hidden_states, axis=1).numpy().squeeze(0)
             protein_embeddings[pid] = pooled_embedding
-        # --- END FIX ---
 
-        # 3. Save embeddings
+        # Save embeddings
         output_path = self.config.RESULTS_LSTM_EMBEDDINGS_DIR / "lstm_generated_embeddings.h5"
         DataUtils.write_h5(protein_embeddings, output_path, "Writing LSTM Embeddings")
         print(f"\nSUCCESS: LSTM embeddings saved to: {output_path}")
