@@ -2,7 +2,7 @@
 # MODULE: configuration/setup-environment.py
 # PURPOSE: Sets up the Python environment for the project using a robust,
 #          conda-first strategy for managing GPU dependencies.
-# VERSION: 3.0 (Consolidated conda/pip installs for stability and speed)
+# VERSION: 4.0 (Final - Unified conda/pip installs for maximum stability)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
