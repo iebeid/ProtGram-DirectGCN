@@ -16,8 +16,8 @@ import sys
 # This script uses Conda to create a stable environment with a specific CUDA version.
 # Both PyTorch and TensorFlow will be installed to use these shared libraries.
 PYTHON_VERSION = "3.11"
-CUDA_VERSION_MAJOR_MINOR = "12.5"
-CUDNN_VERSION_MAJOR = "9.3"  # Conda will select the latest compatible minor version.
+CUDA_VERSION_MAJOR_MINOR = "12.1"
+CUDNN_VERSION_MAJOR = "8.9"  # Conda will select the latest compatible minor version.
 
 # PyTorch versions should be compatible with the target CUDA version.
 PYTORCH_VERSION = "2.4.0"
@@ -133,9 +133,9 @@ if __name__ == "__main__":
         (
             f"conda install -c pytorch -c conda-forge -y "
             f"pytorch={PYTORCH_VERSION} torchvision={TORCHVISION_VERSION} torchaudio={TORCHAUDIO_VERSION} "
-            # This metapackage ensures PyTorch links against the right CUDA version.
-            # The driver from the system/conda env (12.5) is forward-compatible with the 12.1 runtime.
-            f"pytorch-cuda=12.1 tensorflow"
+            # REMOVED: pytorch-cuda=12.1. This was the source of the conflict.
+            # Conda will now automatically find versions compatible with the CUDA toolkit already installed.
+            f"tensorflow"
         ),
 
         # --- 3. PyG (PyTorch Geometric): Install from its own channel for best compatibility ---
