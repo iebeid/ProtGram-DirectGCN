@@ -2,7 +2,7 @@
 # MODULE: configuration/setup-environment.py
 # PURPOSE: Sets up the Python environment for the project using a robust,
 #          sequential installation strategy based on a proven working configuration.
-# VERSION: 5.0 (Adopted user-provided sequential installation logic)
+# VERSION: 5.1 (Corrected CUDA package name for the nvidia channel)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -120,7 +120,8 @@ if __name__ == "__main__":
 
         # --- Stage 1: Install CUDA Toolkit and cuDNN from Conda ---
         "echo '--- Stage 1: Installing CUDA Toolkit and cuDNN from nvidia channel ---'",
-        "conda install -c nvidia -c conda-forge -y cudatoolkit=12.5 cudnn=9.3",
+        # FIX: Use the correct package name 'cuda' instead of 'cudatoolkit' for the nvidia channel.
+        "conda install -c nvidia -c conda-forge -y cuda=12.5 cudnn=9.3",
 
         # --- Stage 2: Install TensorFlow from Conda ---
         # This uses conda-forge, which is known to work in this sequence.
