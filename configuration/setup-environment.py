@@ -124,19 +124,20 @@ if __name__ == "__main__":
         "conda update --all -y",
         *compiler_commands,
 
-        # --- 1. GPU LIBRARIES & ML FRAMEWORKS: Install in a single, coherent step for a consistent solve ---
-        "echo '--- Installing PyTorch, TensorFlow, and their CUDA dependencies via Conda ---'",
+        # --- 1. GPU LIBRARIES & PYTORCH: Install the PyTorch ecosystem via Conda for robust dependency handling ---
+        "echo '--- Installing PyTorch and its CUDA dependencies via Conda ---'",
         (
             # Prioritize pytorch, then nvidia, then conda-forge to find all packages correctly.
             f"conda install -c pytorch -c nvidia -c conda-forge -y "
             # Specify the PyTorch packages.
             f"pytorch={PYTORCH_VERSION} torchvision={TORCHVISION_VERSION} torchaudio={TORCHAUDIO_VERSION} "
-            # This is the key: the pytorch-cuda metapackage tells conda to install a compatible
-            # cuda-toolkit and cudnn as dependencies from the nvidia channel.
-            f"pytorch-cuda={CUDA_VERSION_MAJOR_MINOR} "
-            # Add TensorFlow to the same transaction.
-            f"tensorflow"
+            # This metapackage installs a compatible cuda-toolkit and cudnn from the nvidia channel.
+            f"pytorch-cuda={CUDA_VERSION_MAJOR_MINOR}"
         ),
+
+        # --- 2. TENSORFLOW: Install via pip for the latest compatible version ---
+        "echo '--- Installing TensorFlow and tf-keras via pip ---'",
+        "pip install tensorflow tf-keras",
 
         # --- 3. PyG (PyTorch Geometric): Install from its own channel for best compatibility ---
         "echo '--- Installing PyTorch Geometric (PyG) ---'",
