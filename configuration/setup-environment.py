@@ -124,18 +124,17 @@ if __name__ == "__main__":
         "conda update --all -y",
         *compiler_commands,
 
-        # --- 1. GPU LIBRARIES: Establish a single, authoritative source for CUDA/cuDNN ---
-        "echo '--- Installing CUDA and cuDNN from the official nvidia channel ---'",
-        # FIX: Add '-c conda-forge' to allow the solver to find dependencies while prioritizing the 'nvidia' channel.
-        f"conda install -c nvidia -c conda-forge -y cuda-toolkit={CUDA_VERSION_MAJOR_MINOR} cudnn={CUDNN_VERSION_MAJOR}",
-
-        # --- 2. ML FRAMEWORKS: Install PyTorch and TensorFlow from their recommended Conda channels ---
-        "echo '--- Installing PyTorch and TensorFlow via Conda ---'",
+        # --- 1. GPU LIBRARIES & ML FRAMEWORKS: Install in a single, coherent step for a consistent solve ---
+        "echo '--- Installing PyTorch, TensorFlow, and their CUDA dependencies via Conda ---'",
         (
-            f"conda install -c pytorch -c conda-forge -y "
+            # Prioritize pytorch, then nvidia, then conda-forge to find all packages correctly.
+            f"conda install -c pytorch -c nvidia -c conda-forge -y "
+            # Specify the PyTorch packages.
             f"pytorch={PYTORCH_VERSION} torchvision={TORCHVISION_VERSION} torchaudio={TORCHAUDIO_VERSION} "
-            # REMOVED: pytorch-cuda=12.1. This was the source of the conflict.
-            # Conda will now automatically find versions compatible with the CUDA toolkit already installed.
+            # This is the key: the pytorch-cuda metapackage tells conda to install a compatible
+            # cuda-toolkit and cudnn as dependencies from the nvidia channel.
+            f"pytorch-cuda={CUDA_VERSION_MAJOR_MINOR} "
+            # Add TensorFlow to the same transaction.
             f"tensorflow"
         ),
 
