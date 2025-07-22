@@ -89,9 +89,10 @@ if __name__ == "__main__":
         "conda install -c conda-forge dask tqdm biopython matplotlib scipy scikit-learn mlflow transformers=4.41.2 gensim python-louvain seaborn pycuda networkx=3.2.1 -y",
         "echo '--- Installing TensorFlow with its own CUDA libraries via pip ---'",
         "pip install \"tensorflow[and-cuda]\"",
+        "echo '--- Installing tf-keras for Keras 2 API compatibility ---'",
+        "pip install tf-keras",
         "echo '--- Installing PyTorch with its own CUDA libraries via pip ---'",
-        f"pip install torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio --index-url https://download.pytorch.org/whl/{PYTORCH_CUDA_SUFFIX}",
-        "echo '--- Installing PyG dependencies ---'",
+        f"pip install torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio --index-url https://download.pytorch.org/whl/{PYTORCH_CUDA_SUFFIX}",        "echo '--- Installing PyG dependencies ---'",
         f"pip install pyg_lib torch-scatter torch-sparse torch-geometric -f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}+{PYTORCH_CUDA_SUFFIX}.html",
         "echo '--- Verifying installations ---'",
 

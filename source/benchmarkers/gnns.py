@@ -83,7 +83,12 @@ class GNNBenchmarker:
         if name == "GCN":
             return GCN(**model_params)
         elif name == "GAT":
-            return GAT(**model_params, heads=8, dropout_rate=0.6)
+            # The dropout_rate is already in model_params.
+            # We can override it if needed, but not pass it twice.
+            # Let's create a copy and update it to be safe.
+            gat_params = model_params.copy()
+            gat_params.update({'heads': 8, 'dropout_rate': 0.6})
+            return GAT(**gat_params)
         elif name == "GraphSAGE":
             return GraphSAGE(**model_params)
         elif name == "GIN":
@@ -144,9 +149,10 @@ class GNNBenchmarker:
         history = {'epoch': [], 'loss': [], 'val_acc': [], 'test_acc': []}
 
         # Ensure masks are boolean and 1D
-        train_mask = data.train_mask.bool().flatten()
-        val_mask = data.val_mask.bool().flatten()
-        test_mask = data.test_mask.bool().flatten()
+        # For datasets with multiple splits (like WebKB), select the first one [:, 0]
+        train_mask = data.train_mask[:, 0].bool() if data.train_mask.dim() > 1 else data.train_mask.bool()
+        val_mask = data.val_mask[:, 0].bool() if data.val_mask.dim() > 1 else data.val_mask.bool()
+        test_mask = data.test_mask[:, 0].bool() if data.test_mask.dim() > 1 else data.test_mask.bool()
 
         for epoch in range(1, self.config.EVAL_EPOCHS + 1):
             model.train()
