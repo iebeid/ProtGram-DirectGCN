@@ -2,8 +2,8 @@
 # MODULE: configuration/setup-environment.py
 # PURPOSE: Sets up the Python environment for the project using a robust,
 #          conda-first strategy for managing GPU dependencies.
-# VERSION: 2.0
-# AUTHOR: Islam Ebeid
+# VERSION: 3.0 (Consolidated conda/pip installs for stability and speed)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import argparse
@@ -17,7 +17,6 @@ import sys
 # Both PyTorch and TensorFlow will be installed to use these shared libraries.
 PYTHON_VERSION = "3.11"
 CUDA_VERSION_MAJOR_MINOR = "12.1"
-CUDNN_VERSION_MAJOR = "8.9"  # Conda will select the latest compatible minor version.
 
 # PyTorch versions should be compatible with the target CUDA version.
 PYTORCH_VERSION = "2.4.0"
@@ -114,51 +113,39 @@ if __name__ == "__main__":
         ])
 
     # This command sequence is designed for robustness and clarity.
-    # 1. Establish the base CUDA environment using Conda from the official NVIDIA channel.
-    # 2. Install the main ML frameworks (PyTorch, TF) and other heavy dependencies using Conda.
-    #    Conda is better at managing the complex binary dependencies for these packages.
-    # 3. Install PyG and its dependencies, which are also best handled by Conda.
-    # 4. Use pip only for packages not available on Conda or for which pip is preferred (like tf-keras).
+    # 1. A single, unified Conda command installs all complex binary dependencies.
+    #    This allows Conda's solver to create a consistent environment one time.
+    # 2. A single, unified Pip command installs the remaining packages.
     command_sequence = [
         "conda clean --all -y",
         "conda update --all -y",
         *compiler_commands,
 
-        # --- 1. GPU LIBRARIES & PYTORCH: Install the PyTorch ecosystem via Conda for robust dependency handling ---
-        "echo '--- Installing PyTorch and its CUDA dependencies via Conda ---'",
+        # --- 1. UNIFIED CONDA INSTALL: Install all conda packages in a single, coherent step. ---
+        "echo '--- Installing PyTorch, PyG, and Core Libraries via Conda ---'",
         (
-            # Prioritize pytorch, then nvidia, then conda-forge to find all packages correctly.
-            f"conda install -c pytorch -c nvidia -c conda-forge -y "
-            # Specify the PyTorch packages.
+            # Prioritize channels correctly for the solver: specific (pytorch, pyg) before general (nvidia, conda-forge)
+            f"conda install -c pytorch -c pyg -c nvidia -c conda-forge -y "
+            # PyTorch Ecosystem
             f"pytorch={PYTORCH_VERSION} torchvision={TORCHVISION_VERSION} torchaudio={TORCHAUDIO_VERSION} "
-            # This metapackage installs a compatible cuda-toolkit and cudnn from the nvidia channel.
-            f"pytorch-cuda={CUDA_VERSION_MAJOR_MINOR}"
+            # This metapackage tells conda to install a compatible cuda-toolkit and cudnn as dependencies.
+            f"pytorch-cuda={CUDA_VERSION_MAJOR_MINOR} "
+            # PyG Ecosystem
+            f"pyg "
+            # Core Libraries
+            f"dask tqdm biopython matplotlib scipy scikit-learn "
+            f"gensim python-louvain seaborn pycuda networkx=3.2.1 "
+            f"pandas h5py"
         ),
 
-        # --- 2. TENSORFLOW: Install via pip for the latest compatible version ---
-        "echo '--- Installing TensorFlow and tf-keras via pip ---'",
-        "pip install tensorflow tf-keras",
-
-        # --- 3. PyG (PyTorch Geometric): Install from its own channel for best compatibility ---
-        "echo '--- Installing PyTorch Geometric (PyG) ---'",
-        "conda install -c pyg -y pyg",
-
-        # --- 4. CORE LIBRARIES: Install remaining packages via Conda ---
-        "echo '--- Installing core data science and ML libraries via Conda ---'",
+        # --- 2. UNIFIED PIP INSTALL: Install all remaining packages via pip. ---
+        "echo '--- Installing TensorFlow and other pip packages ---'",
         (
-            "conda install -c conda-forge -y "
-            "dask tqdm biopython matplotlib scipy scikit-learn "
-            "gensim python-louvain seaborn pycuda networkx=3.2.1 "
-            "pandas h5py"
+            # Install TensorFlow and other packages that are best sourced from pip.
+            "pip install tensorflow tf-keras mlflow transformers==4.41.2"
         ),
 
-        # --- 5. PIP PACKAGES: Use pip for packages not available/ideal on Conda ---
-        "echo '--- Installing remaining packages via pip ---'",
-        (
-            "pip install mlflow transformers==4.41.2 tf-keras"
-        ),
-
-        # --- 6. VERIFICATION & CLEANUP ---
+        # --- 3. VERIFICATION & CLEANUP ---
         "echo '--- Verifying installations ---'",
         "python -c \"import tensorflow as tf; print('TensorFlow GPUs found: ' + str(len(tf.config.list_physical_devices('GPU'))))\"",
         "python -c \"import torch; print('PyTorch CUDA available: ' + str(torch.cuda.is_available()))\"",
