@@ -2,7 +2,7 @@
 # MODULE: configuration/setup-environment.py
 # PURPOSE: Sets up the Python environment for the project using a robust,
 #          sequential installation strategy based on a proven working configuration.
-# VERSION: 5.2 (Isolated PyG installation for resolver stability)
+# VERSION: 5.3 (Corrected pip index URL flag for stability)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -132,7 +132,8 @@ if __name__ == "__main__":
             f"pip install "
             f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} "
             f"mlflow transformers==4.41.2 tf-keras "
-            f"--index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"
+            # FIX: Use --extra-index-url to ADD the PyTorch index, not replace the default PyPI.
+            f"--extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"
         ),
 
         # --- Stage 4: Install PyTorch Geometric (PyG) separately ---
