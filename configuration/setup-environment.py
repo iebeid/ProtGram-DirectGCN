@@ -1,3 +1,10 @@
+# ==============================================================================
+# MODULE: configuration/setup.py
+# PURPOSE: Sets up the Python environment for the project.
+# VERSION: 1.0
+# AUTHOR: Islam Ebeid
+# ==============================================================================
+
 import os
 import platform
 import subprocess
