@@ -126,7 +126,8 @@ if __name__ == "__main__":
 
         # --- 1. GPU LIBRARIES: Establish a single, authoritative source for CUDA/cuDNN ---
         "echo '--- Installing CUDA and cuDNN from the official nvidia channel ---'",
-        f"conda install -c nvidia -y cuda-toolkit={CUDA_VERSION_MAJOR_MINOR} cudnn={CUDNN_VERSION_MAJOR}",
+        # FIX: Add '-c conda-forge' to allow the solver to find dependencies while prioritizing the 'nvidia' channel.
+        f"conda install -c nvidia -c conda-forge -y cuda-toolkit={CUDA_VERSION_MAJOR_MINOR} cudnn={CUDNN_VERSION_MAJOR}",
 
         # --- 2. ML FRAMEWORKS: Install PyTorch and TensorFlow from their recommended Conda channels ---
         "echo '--- Installing PyTorch and TensorFlow via Conda ---'",
