@@ -380,17 +380,24 @@ class ProtGramXGCNTrainer:
             sub_y = full_data.y[nodes_tensor_cpu] if full_data.y.numel() > 0 else torch.empty(0, dtype=torch.long)
             subgraph_data = Data(x=sub_x, y=sub_y, original_indices=nodes_tensor_cpu)
 
+            mathcal_A_in_cpu = graph.mathcal_A_in.cpu()
+            mathcal_A_out_cpu = graph.mathcal_A_out.cpu()
+            A_undir_cpu = graph.A_undirected_norm_sparse.cpu()
+            A_out_w_cpu = graph.A_out_w.cpu()
+            A_in_w_cpu = graph.A_in_w.cpu()
+
             for model_type in self.config.PROTGRAM_MODELS_TO_TRAIN:
                 if model_type == 'directgcn':
-                    sub_edge_index_in, sub_edge_weight_in = subgraph(nodes_tensor_cpu, graph.mathcal_A_in.indices(), graph.mathcal_A_in.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
-                    sub_edge_index_out, sub_edge_weight_out = subgraph(nodes_tensor_cpu, graph.mathcal_A_out.indices(), graph.mathcal_A_out.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
-                    sub_edge_index_undir, sub_edge_weight_undir = subgraph(nodes_tensor_cpu, graph.A_undirected_norm_sparse.indices(), graph.A_undirected_norm_sparse.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+                    sub_edge_index_in, sub_edge_weight_in = subgraph(nodes_tensor_cpu, mathcal_A_in_cpu.indices(), mathcal_A_in_cpu.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+                    sub_edge_index_out, sub_edge_weight_out = subgraph(nodes_tensor_cpu, mathcal_A_out_cpu.indices(), mathcal_A_out_cpu.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+                    sub_edge_index_undir, sub_edge_weight_undir = subgraph(nodes_tensor_cpu, A_undir_cpu.indices(), A_undir_cpu.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+                    # ... (assign to subgraph_data) ...
                     subgraph_data.edge_index_in, subgraph_data.edge_weight_in = sub_edge_index_in, sub_edge_weight_in
                     subgraph_data.edge_index_out, subgraph_data.edge_weight_out = sub_edge_index_out, sub_edge_weight_out
                     subgraph_data.edge_index_undirected_norm, subgraph_data.edge_weight_undirected_norm = sub_edge_index_undir, sub_edge_weight_undir
                 elif model_type == 'tongdigcn':
-                    sub_edge_index_fwd, _ = subgraph(nodes_tensor_cpu, graph.A_out_w.indices(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
-                    sub_edge_index_bwd, _ = subgraph(nodes_tensor_cpu, graph.A_in_w.indices(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+                    sub_edge_index_fwd, _ = subgraph(nodes_tensor_cpu, A_out_w_cpu.indices(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
+                    sub_edge_index_bwd, _ = subgraph(nodes_tensor_cpu, A_in_w_cpu.indices(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
                     subgraph_data.edge_index, subgraph_data.edge_index_backward = sub_edge_index_fwd, sub_edge_index_bwd
             subgraphs.append(subgraph_data)
         return subgraphs

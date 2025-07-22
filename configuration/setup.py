@@ -1,8 +1,8 @@
 # ==============================================================================
-# MODULE: configuration/setup-environment.py
+# MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment for the project using a robust,
 #          sequential installation strategy based on a proven working configuration.
-# VERSION: 5.3 (Corrected pip index URL flag for stability)
+# VERSION: 6.0 (Final - Optimized installation order for maximum stability)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -111,49 +111,43 @@ if __name__ == "__main__":
             "rm -rf ~/.config/pycuda"
         ])
 
-    # This command sequence follows the user-provided successful installation logic.
-    # It installs components in a specific order to ensure a working, albeit complex, environment.
+    # This command sequence follows the "Conda first, Pip last" principle for maximum stability.
     command_sequence = [
         "conda clean --all -y",
         "conda update --all -y",
         *compiler_commands,
 
-        # --- Stage 1: Install CUDA Toolkit and cuDNN from Conda ---
-        "echo '--- Stage 1: Installing CUDA Toolkit and cuDNN from nvidia channel ---'",
-        "conda install -c nvidia -c conda-forge -y cuda=12.5 cudnn=9.3",
+        # --- Stage 1: Install ALL Conda-managed packages ---
+        # This includes CUDA, TensorFlow, and all core libraries in one go.
+        # This allows the conda solver to create a single, consistent environment.
+        "echo '--- Stage 1: Installing all Conda-managed packages (CUDA, TF, Core Libs) ---'",
+        (
+            "conda install -c nvidia -c conda-forge -y "
+            "cuda=12.5 cudnn=9.3 tensorflow "  # GPU and TensorFlow
+            "dask tqdm biopython matplotlib scipy scikit-learn "  # Core libraries
+            "gensim python-louvain seaborn pycuda networkx=3.2.1 "
+            "pandas h5py"
+        ),
 
-        # --- Stage 2: Install TensorFlow from Conda ---
-        "echo '--- Stage 2: Installing TensorFlow from conda-forge ---'",
-        "conda install -c conda-forge -y tensorflow",
-
-        # --- Stage 3: Install PyTorch and other standard pip packages ---
-        "echo '--- Stage 3: Installing PyTorch and other standard pip-managed packages ---'",
+        # --- Stage 2: Install PyTorch and other standard pip packages ---
+        "echo '--- Stage 2: Installing PyTorch and other standard pip-managed packages ---'",
         (
             f"pip install "
             f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} "
             f"mlflow transformers==4.41.2 tf-keras "
-            # FIX: Use --extra-index-url to ADD the PyTorch index, not replace the default PyPI.
+            # Use --extra-index-url to ADD the PyTorch index, not replace the default PyPI.
             f"--extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"
         ),
 
-        # --- Stage 4: Install PyTorch Geometric (PyG) separately ---
+        # --- Stage 3: Install PyTorch Geometric (PyG) separately ---
         # This is more robust as it allows pip to resolve against the already-installed torch version.
-        "echo '--- Stage 4: Installing PyTorch Geometric (PyG) ---'",
+        "echo '--- Stage 3: Installing PyTorch Geometric (PyG) ---'",
         (
             f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
             f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}.html"
         ),
 
-        # --- Stage 5: Install remaining core libraries from Conda ---
-        "echo '--- Stage 5: Installing remaining core libraries from conda-forge ---'",
-        (
-            "conda install -c conda-forge -y "
-            "dask tqdm biopython matplotlib scipy scikit-learn "
-            "gensim python-louvain seaborn pycuda networkx=3.2.1 "
-            "pandas h5py"
-        ),
-
-        # --- Stage 6: Verification & Cleanup ---
+        # --- Stage 4: Verification & Cleanup ---
         "echo '--- Verifying installations ---'",
         "python -c \"import tensorflow as tf; print('TensorFlow GPUs found: ' + str(len(tf.config.list_physical_devices('GPU'))))\"",
         "python -c \"import torch; print('PyTorch CUDA available: ' + str(torch.cuda.is_available()))\"",
