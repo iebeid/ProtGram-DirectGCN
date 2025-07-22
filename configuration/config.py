@@ -203,7 +203,7 @@ class Config:
 
         # Cluster-GCN Strategy
         self.GCN_USE_CLUSTER_TRAINING = True
-        self.GCN_CLUSTER_TRAINING_THRESHOLD_NODES = 10000
+        self.GCN_CLUSTER_TRAINING_THRESHOLD_NODES = 5000
         self.GCN_TARGET_NODES_PER_CLUSTER = 2000
         self.GCN_MIN_CLUSTERS = 2
         self.GCN_MAX_CLUSTERS = 500

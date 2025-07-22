@@ -1,24 +1,31 @@
+# ==============================================================================
+# MODULE: configuration/setup-environment.py
+# PURPOSE: Sets up the Python environment for the project using a robust,
+#          sequential installation strategy based on a proven working configuration.
+# VERSION: 5.3 (Corrected pip index URL flag for stability)
+# AUTHOR: Islam Ebeid
+# ==============================================================================
+
+import argparse
 import os
 import platform
 import subprocess
 import sys
-import argparse
 
 # --- Configuration ---
+# This script uses a sequential installation process to ensure compatibility.
 PYTHON_VERSION = "3.11"
-CUDA_TOOLKIT_VERSION = "12.5"
-CUDNN_VERSION = "9.3"
-
-# Define PyTorch versions to align with the CUDA toolkit
-# For CUDA 12.5 from conda, PyTorch uses the cu124 wheels.
-PYTORCH_VERSION = "2.4.0" # A recent version compatible with CUDA 12.x
+# These versions are now used for documentation and to guide pip,
+# while the core CUDA/cuDNN is installed first via conda.
+CUDA_VERSION_FOR_PYTORCH = "12.1"
+PYTORCH_VERSION = "2.4.0"
 TORCHVISION_VERSION = "0.19.0"
-PYTORCH_CUDA_SUFFIX = "cu124"
+TORCHAUDIO_VERSION = "2.4.0"
 
 
 # --- End Configuration ---
 
-def create_setup_script(commands):
+def create_setup_script(commands: list[str]) -> str:
     """Creates a platform-specific shell script from a list of commands."""
     is_windows = platform.system() == "Windows"
     script_extension = ".bat" if is_windows else ".sh"
@@ -26,34 +33,29 @@ def create_setup_script(commands):
 
     with open(script_filename, "w") as f:
         if not is_windows:
-            # Add shebang for Linux/macOS
             f.write("#!/bin/bash\n")
-            # Exit on any error
+            # Exit immediately if a command exits with a non-zero status.
             f.write("set -e\n")
-
-        # Add commands to the script
         for command in commands:
             f.write(command + "\n")
 
     # Make the script executable on non-Windows systems
     if not is_windows:
         os.chmod(script_filename, 0o755)
-
     return script_filename
 
 
-def run_script(script_filename):
-    """Executes the setup script."""
+def run_script(script_filename: str):
+    """Executes the setup script and streams its output."""
     is_windows = platform.system() == "Windows"
-
     print(f"--- Starting Environment Setup using '{script_filename}' ---")
-
     try:
-        # For Windows, use 'cmd /c', for others, execute directly
         executor = ['cmd', '/c'] if is_windows else []
+        # For Linux/macOS, execute the script directly from the current directory
+        script_path = script_filename if is_windows else f"./{script_filename}"
 
         process = subprocess.Popen(
-            executor + ([script_filename] if is_windows else [f"./{script_filename}"]),
+            executor + [script_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -74,19 +76,14 @@ def run_script(script_filename):
         else:
             print("\n--- Environment setup completed successfully! ---")
 
-    except FileNotFoundError:
-        print(f"Error: Could not find '{script_filename}'. Please ensure it was created correctly.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        sys.exit(1)
-    # Clean up the generated script file
-    if os.path.exists(script_filename):
-        os.remove(script_filename)
-        print(f"--- Cleaned up temporary script file: {script_filename} ---")
+    finally:
+        # Clean up the generated script file
+        if os.path.exists(script_filename):
+            os.remove(script_filename)
+            print(f"--- Cleaned up temporary script file: {script_filename} ---")
 
 
-def check_conda_installed():
+def check_conda_installed() -> bool:
     """Checks if conda is installed and available in the system's PATH."""
     try:
         subprocess.run(["conda", "--version"], check=True, capture_output=True, text=True, shell=False)
@@ -94,107 +91,75 @@ def check_conda_installed():
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         print("--- ERROR: Conda is not installed or not in your system's PATH. ---")
-        print("Please install Miniconda or Anaconda and try again.")
-        print("Installation instructions: https://docs.conda.io/projects/miniconda/en/latest/")
         return False
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Install required project packages into the currently active Conda environment. "
-                    "Please ensure you have created and activated a suitable environment first (e.g., 'conda activate my-env')."
-    )
-    parser.parse_args()  # No arguments needed, but this allows for --help
-    print("--- Starting package installation into the currently active Conda environment. ---")
 
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Install required packages into the active Conda environment.")
+    parser.parse_args()
     if not check_conda_installed():
         sys.exit(1)
 
-    # Platform-specific step to ensure compilers are available in the environment.
-    # This prevents build errors for packages that need to be compiled from source.
     system = platform.system()
     compiler_commands = []
     if system == "Linux":
         # For Linux, install the GNU compiler toolchain from conda-forge.
-        print("--- Adding commands to install GCC/G++ compilers for Linux. ---")
-        compiler_commands.append("conda install -c conda-forge gcc_linux-64 gxx_linux-64 -y")
-        # Also clear any stale PyCUDA cache that might point to the wrong compiler.
-        compiler_commands.append("echo '--- Clearing PyCUDA cache to prevent stale compiler paths ---'")
-        compiler_commands.append("rm -rf ~/.config/pycuda")
-    elif system == "Darwin":  # This is macOS
-        # For macOS, install the Clang compiler toolchain from conda-forge.
-        print("--- Adding commands to install Clang compilers for macOS. ---")
-        compiler_commands.append("conda install -c conda-forge clang_osx-64 clangxx_osx-64 -y")
-        # Also clear any stale PyCUDA cache that might point to the wrong compiler.
-        compiler_commands.append("echo '--- Clearing PyCUDA cache to prevent stale compiler paths ---'")
-        compiler_commands.append("rm -rf ~/.config/pycuda")
-    elif system == "Windows":
-        # For Windows, compilation often requires the MSVC build tools, which are
-        # best installed manually via the Visual Studio Installer.
-        print("\n--- INFO: On Windows, some packages may require the Microsoft C++ Build Tools. ---")
-        print("--- If you encounter compilation errors, please install them and try again. ---\n")
+        compiler_commands.extend([
+            "echo '--- Installing GCC/G++ compilers for Linux ---'",
+            "conda install -c conda-forge gcc_linux-64=12 gxx_linux-64=12 -y",
+            "echo '--- Clearing PyCUDA cache to prevent stale compiler paths ---'",
+            "rm -rf ~/.config/pycuda"
+        ])
 
-    # This command sequence will install all packages into the active environment.
+    # This command sequence follows the user-provided successful installation logic.
+    # It installs components in a specific order to ensure a working, albeit complex, environment.
     command_sequence = [
-        # Initial cleanup and update of the active environment
         "conda clean --all -y",
         "conda update --all -y",
-        "conda clean --all -y",
+        *compiler_commands,
 
-        # Install core GPU libraries (CUDA, cuDNN)
-        f"conda install -c nvidia cuda-toolkit={CUDA_TOOLKIT_VERSION} -y",
-        f"conda install -c nvidia cudnn={CUDNN_VERSION} -y",
+        # --- Stage 1: Install CUDA Toolkit and cuDNN from Conda ---
+        "echo '--- Stage 1: Installing CUDA Toolkit and cuDNN from nvidia channel ---'",
+        "conda install -c nvidia -c conda-forge -y cuda=12.5 cudnn=9.3",
 
-        # The platform-specific compiler commands will be inserted here
+        # --- Stage 2: Install TensorFlow from Conda ---
+        "echo '--- Stage 2: Installing TensorFlow from conda-forge ---'",
+        "conda install -c conda-forge -y tensorflow",
 
-        # Install and verify TensorFlow
-        "conda install -c conda-forge tensorflow -y",
-        # Install tf-keras for backwards compatibility with Keras 2, required by transformers
-        "echo '--- Installing tf-keras for Keras 2 API compatibility ---'",
-        "pip install tf-keras",
-        'python -c "import tensorflow as tf; print(\'Num GPUs Available: \', len(tf.config.list_physical_devices(\'GPU\')))"',
+        # --- Stage 3: Install PyTorch and other standard pip packages ---
+        "echo '--- Stage 3: Installing PyTorch and other standard pip-managed packages ---'",
+        (
+            f"pip install "
+            f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} "
+            f"mlflow transformers==4.41.2 tf-keras "
+            # FIX: Use --extra-index-url to ADD the PyTorch index, not replace the default PyPI.
+            f"--extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"
+        ),
 
-        # Install PyTorch using a specific index to match the conda-installed CUDA version. This is more robust.
-        (f"pip install torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio "
-         f"--index-url https://download.pytorch.org/whl/{PYTORCH_CUDA_SUFFIX}"),
-        'python -c "import torch; print(f\'PyTorch CUDA available: {torch.cuda.is_available()}\')"',
+        # --- Stage 4: Install PyTorch Geometric (PyG) separately ---
+        # This is more robust as it allows pip to resolve against the already-installed torch version.
+        "echo '--- Stage 4: Installing PyTorch Geometric (PyG) ---'",
+        (
+            f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
+            f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}.html"
+        ),
 
-        # Final cleanup
-        "conda clean --all -y",
-        "pip cache purge",
+        # --- Stage 5: Install remaining core libraries from Conda ---
+        "echo '--- Stage 5: Installing remaining core libraries from conda-forge ---'",
+        (
+            "conda install -c conda-forge -y "
+            "dask tqdm biopython matplotlib scipy scikit-learn "
+            "gensim python-louvain seaborn pycuda networkx=3.2.1 "
+            "pandas h5py"
+        ),
 
-        # Install remaining data science and ML libraries
-        "conda install -c conda-forge dask -y",
-        "conda install -c conda-forge tqdm -y",
-        "conda install -c conda-forge biopython -y",
-        # Install PyG dependencies pointing to the correct torch/cuda version
-        (f"pip install pyg_lib torch-scatter torch-sparse -f "
-         f"https://data.pyg.org/whl/torch-{PYTORCH_VERSION}+{PYTORCH_CUDA_SUFFIX}.html"),
-        "conda install -c conda-forge matplotlib -y",
-        "conda install -c conda-forge scipy -y",
-        "conda install -c conda-forge scikit-learn -y",
-        "pip install mlflow",
-        # FIX: Pin transformers to a version before the torch.load security check was added
-        "conda install -c conda-forge transformers=4.41.2 -y",
-        "conda install -c conda-forge gensim -y",
-        "conda install -c conda-forge python-louvain -y",
-        "pip install torch_geometric", # Now install the main package
-        "conda install -c conda-forge seaborn -y",
-        "conda install -c conda-forge pycuda -y",
-
-        # FIX: Explicitly install a stable version of networkx to prevent a known SyntaxError bug in v3.3
-        "echo '--- Installing a stable version of networkx to prevent runtime errors ---'",
-        "conda install -c conda-forge networkx=3.2.1 -y",
-
+        # --- Stage 6: Verification & Cleanup ---
+        "echo '--- Verifying installations ---'",
+        "python -c \"import tensorflow as tf; print('TensorFlow GPUs found: ' + str(len(tf.config.list_physical_devices('GPU'))))\"",
+        "python -c \"import torch; print('PyTorch CUDA available: ' + str(torch.cuda.is_available()))\"",
         "conda clean --all -y",
         "pip cache purge"
     ]
 
-    # Insert the compiler installation commands at the right place in the sequence.
-    # This happens after core setup and before packages that might need compilation.
-    command_sequence[5:5] = compiler_commands
-
-    # Create the platform-specific script
     script_file = create_setup_script(command_sequence)
-
-    # Execute the script
     run_script(script_file)

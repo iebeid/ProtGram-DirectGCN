@@ -119,8 +119,8 @@ class NetworkEmbeddingBenchmarker:
                 print(
                     f"  Generated custom seeded split for {dataset.name}. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
 
-            # Simple node classification evaluation
-            if data.train_mask.dim() > 1:
+            # FIX: Move mask access inside the if/else to prevent AttributeError on datasets without standard splits.
+            if hasattr(data, 'train_mask') and data.train_mask.dim() > 1:
                 train_mask = data.train_mask[:, 0].bool()
                 test_mask = data.test_mask[:, 0].bool()
             else:
