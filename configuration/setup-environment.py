@@ -1,9 +1,9 @@
 # ==============================================================================
 # MODULE: configuration/setup-environment.py
 # PURPOSE: Sets up the Python environment for the project using a robust,
-#          conda-first strategy for managing GPU dependencies.
-# VERSION: 4.0 (Final - Unified conda/pip installs for maximum stability)
-# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
+#          sequential installation strategy based on a proven working configuration.
+# VERSION: 5.0 (Adopted user-provided sequential installation logic)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import argparse
@@ -13,12 +13,11 @@ import subprocess
 import sys
 
 # --- Configuration ---
-# This script uses Conda to create a stable environment with a specific CUDA version.
-# Both PyTorch and TensorFlow will be installed to use these shared libraries.
+# This script uses a sequential installation process to ensure compatibility.
 PYTHON_VERSION = "3.11"
-CUDA_VERSION_MAJOR_MINOR = "12.1"
-
-# PyTorch versions should be compatible with the target CUDA version.
+# These versions are now used for documentation and to guide pip,
+# while the core CUDA/cuDNN is installed first via conda.
+CUDA_VERSION_FOR_PYTORCH = "12.1"
 PYTORCH_VERSION = "2.4.0"
 TORCHVISION_VERSION = "0.19.0"
 TORCHAUDIO_VERSION = "2.4.0"
@@ -112,40 +111,45 @@ if __name__ == "__main__":
             "rm -rf ~/.config/pycuda"
         ])
 
-    # This command sequence is designed for robustness and clarity.
-    # 1. A single, unified Conda command installs all complex binary dependencies.
-    #    This allows Conda's solver to create a consistent environment one time.
-    # 2. A single, unified Pip command installs the remaining packages.
+    # This command sequence follows the user-provided successful installation logic.
+    # It installs components in a specific order to ensure a working, albeit complex, environment.
     command_sequence = [
         "conda clean --all -y",
         "conda update --all -y",
         *compiler_commands,
 
-        # --- 1. UNIFIED CONDA INSTALL: Install all conda packages in a single, coherent step. ---
-        "echo '--- Installing PyTorch, PyG, and Core Libraries via Conda ---'",
+        # --- Stage 1: Install CUDA Toolkit and cuDNN from Conda ---
+        "echo '--- Stage 1: Installing CUDA Toolkit and cuDNN from nvidia channel ---'",
+        "conda install -c nvidia -c conda-forge -y cudatoolkit=12.5 cudnn=9.3",
+
+        # --- Stage 2: Install TensorFlow from Conda ---
+        # This uses conda-forge, which is known to work in this sequence.
+        "echo '--- Stage 2: Installing TensorFlow from conda-forge ---'",
+        "conda install -c conda-forge -y tensorflow",
+
+        # --- Stage 3: Install PyTorch, PyG, and other pip-first packages ---
+        # This will use pip and may install its own CUDA libraries, leading to the
+        # non-fatal cuDNN factory warnings, but results in a working setup.
+        "echo '--- Stage 3: Installing PyTorch, PyG, and other pip-managed packages ---'",
         (
-            # Prioritize channels correctly for the solver: specific (pytorch, pyg) before general (nvidia, conda-forge)
-            f"conda install -c pytorch -c pyg -c nvidia -c conda-forge -y "
-            # PyTorch Ecosystem
-            f"pytorch={PYTORCH_VERSION} torchvision={TORCHVISION_VERSION} torchaudio={TORCHAUDIO_VERSION} "
-            # This metapackage tells conda to install a compatible cuda-toolkit and cudnn as dependencies.
-            f"pytorch-cuda={CUDA_VERSION_MAJOR_MINOR} "
-            # PyG Ecosystem
-            f"pyg "
-            # Core Libraries
-            f"dask tqdm biopython matplotlib scipy scikit-learn "
-            f"gensim python-louvain seaborn pycuda networkx=3.2.1 "
-            f"pandas h5py"
+            f"pip install "
+            f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} "
+            f"torch-geometric pyg_lib torch-scatter torch-sparse "
+            f"mlflow transformers==4.41.2 tf-keras "
+            f"--index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')} "
+            f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}.html"
         ),
 
-        # --- 2. UNIFIED PIP INSTALL: Install all remaining packages via pip. ---
-        "echo '--- Installing TensorFlow and other pip packages ---'",
+        # --- Stage 4: Install remaining core libraries from Conda ---
+        "echo '--- Stage 4: Installing remaining core libraries from conda-forge ---'",
         (
-            # Install TensorFlow and other packages that are best sourced from pip.
-            "pip install tensorflow tf-keras mlflow transformers==4.41.2"
+            "conda install -c conda-forge -y "
+            "dask tqdm biopython matplotlib scipy scikit-learn "
+            "gensim python-louvain seaborn pycuda networkx=3.2.1 "
+            "pandas h5py"
         ),
 
-        # --- 3. VERIFICATION & CLEANUP ---
+        # --- Stage 5: Verification & Cleanup ---
         "echo '--- Verifying installations ---'",
         "python -c \"import tensorflow as tf; print('TensorFlow GPUs found: ' + str(len(tf.config.list_physical_devices('GPU'))))\"",
         "python -c \"import torch; print('PyTorch CUDA available: ' + str(torch.cuda.is_available()))\"",
