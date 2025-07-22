@@ -2,7 +2,7 @@
 # MODULE: configuration/setup-environment.py
 # PURPOSE: Sets up the Python environment for the project using a robust,
 #          sequential installation strategy based on a proven working configuration.
-# VERSION: 5.1 (Corrected CUDA package name for the nvidia channel)
+# VERSION: 5.2 (Isolated PyG installation for resolver stability)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -120,29 +120,31 @@ if __name__ == "__main__":
 
         # --- Stage 1: Install CUDA Toolkit and cuDNN from Conda ---
         "echo '--- Stage 1: Installing CUDA Toolkit and cuDNN from nvidia channel ---'",
-        # FIX: Use the correct package name 'cuda' instead of 'cudatoolkit' for the nvidia channel.
         "conda install -c nvidia -c conda-forge -y cuda=12.5 cudnn=9.3",
 
         # --- Stage 2: Install TensorFlow from Conda ---
-        # This uses conda-forge, which is known to work in this sequence.
         "echo '--- Stage 2: Installing TensorFlow from conda-forge ---'",
         "conda install -c conda-forge -y tensorflow",
 
-        # --- Stage 3: Install PyTorch, PyG, and other pip-first packages ---
-        # This will use pip and may install its own CUDA libraries, leading to the
-        # non-fatal cuDNN factory warnings, but results in a working setup.
-        "echo '--- Stage 3: Installing PyTorch, PyG, and other pip-managed packages ---'",
+        # --- Stage 3: Install PyTorch and other standard pip packages ---
+        "echo '--- Stage 3: Installing PyTorch and other standard pip-managed packages ---'",
         (
             f"pip install "
             f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} "
-            f"torch-geometric pyg_lib torch-scatter torch-sparse "
             f"mlflow transformers==4.41.2 tf-keras "
-            f"--index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')} "
+            f"--index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"
+        ),
+
+        # --- Stage 4: Install PyTorch Geometric (PyG) separately ---
+        # This is more robust as it allows pip to resolve against the already-installed torch version.
+        "echo '--- Stage 4: Installing PyTorch Geometric (PyG) ---'",
+        (
+            f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
             f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}.html"
         ),
 
-        # --- Stage 4: Install remaining core libraries from Conda ---
-        "echo '--- Stage 4: Installing remaining core libraries from conda-forge ---'",
+        # --- Stage 5: Install remaining core libraries from Conda ---
+        "echo '--- Stage 5: Installing remaining core libraries from conda-forge ---'",
         (
             "conda install -c conda-forge -y "
             "dask tqdm biopython matplotlib scipy scikit-learn "
@@ -150,7 +152,7 @@ if __name__ == "__main__":
             "pandas h5py"
         ),
 
-        # --- Stage 5: Verification & Cleanup ---
+        # --- Stage 6: Verification & Cleanup ---
         "echo '--- Verifying installations ---'",
         "python -c \"import tensorflow as tf; print('TensorFlow GPUs found: ' + str(len(tf.config.list_physical_devices('GPU'))))\"",
         "python -c \"import torch; print('PyTorch CUDA available: ' + str(torch.cuda.is_available()))\"",
