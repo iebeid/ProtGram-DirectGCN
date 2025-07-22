@@ -289,6 +289,7 @@ class EmbeddingProcessor:
 
             results = []
             for subgraph_data in tqdm(subgraphs, desc="  Inference on subgraphs", leave=False):
+                subgraph_data = subgraph_data.to(device)
                 with torch.no_grad():
                     _, subgraph_embeddings = model(data=subgraph_data)
                 results.append((subgraph_data.original_indices.cpu(), subgraph_embeddings.cpu()))

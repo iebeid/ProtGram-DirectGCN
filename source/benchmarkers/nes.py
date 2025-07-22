@@ -119,7 +119,7 @@ class NetworkEmbeddingBenchmarker:
                 print(
                     f"  Generated custom seeded split for {dataset.name}. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
 
-            # FIX: Move mask access inside the if/else to prevent AttributeError on datasets without standard splits.
+            # FIX: Access the masks *after* they are guaranteed to exist.
             if hasattr(data, 'train_mask') and data.train_mask.dim() > 1:
                 train_mask = data.train_mask[:, 0].bool()
                 test_mask = data.test_mask[:, 0].bool()
@@ -130,6 +130,7 @@ class NetworkEmbeddingBenchmarker:
             clf = LogisticRegression(
                 solver='lbfgs', multi_class='auto', random_state=self.config.RANDOM_STATE
             ).fit(z[train_mask].cpu().numpy(), data.y[train_mask].cpu().numpy())
+            # ... (rest of the function) ...
 
             test_acc = accuracy_score(data.y[test_mask].cpu().numpy(), clf.predict(z[test_mask].cpu().numpy()))
 
