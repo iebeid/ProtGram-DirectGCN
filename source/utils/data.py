@@ -103,6 +103,27 @@ class DataUtils:
         except Exception as e:
             print(f"An error occurred while checking HDF5 file '{h5_filepath}': {e}")
 
+    @staticmethod
+    def get_id_mapping(config: Config) -> Dict[str, str]:
+        """
+        Loads the UniProt ID mapping file into a dictionary.
+        """
+        id_map = {}
+        mapping_file = config.ID_MAPPING_PATH
+        if not mapping_file.exists():
+            print(f"  - WARNING: ID mapping file not found at {mapping_file}. Returning empty map.")
+            return id_map
+
+        print(f"  Loading Protein ID Mapping from: {mapping_file.name}")
+        with open(mapping_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                parts = line.strip().split('\t')
+                if len(parts) == 2:
+                    from_id, to_id = parts
+                    id_map[from_id] = to_id
+        print(f"  ID mapping loaded with {len(id_map)} entries.")
+        return id_map
+
 
 # ==============================================================================
 # 2. FASTA File Utilities

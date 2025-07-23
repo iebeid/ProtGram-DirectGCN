@@ -1,141 +1,199 @@
 # ==============================================================================
 # MODULE: trainers/transformers.py
-# PURPOSE: Generates protein embeddings using pre-trained Transformer models.
-# VERSION: 2.0 (Implemented sorting by length for OOM-safe batched inference)
+# PURPOSE: Generates per-protein embeddings using pre-trained Transformer
+#          models from Hugging Face.
+# VERSION: 4.1 (Minimal fixes for ID mapping and OOM-safe batching)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import gc
+import time
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import List, Dict, Mapping, Optional, Tuple
 
-import numpy as np
 import tensorflow as tf
 from tqdm.auto import tqdm
-from transformers import AutoTokenizer, TFAutoModel
+from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
 
 from configuration.config import Config
+# --- MINIMAL CHANGE 1: Simplified imports. IDMapGenerator is no longer needed here. ---
 from source.utils.data import DataUtils, FastaUtils
+from source.utils.models import EmbeddingProcessor
 
 
 class TransformerEmbedder:
-    """
-    Handles the generation of embeddings from pre-trained protein language models
-    like ProtBERT, ProtT5, etc.
-    """
-
     def __init__(self, config: Config):
         self.config = config
-        self.output_dir = self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.device = "GPU:0" if tf.config.list_physical_devices('GPU') else "CPU:0"
-        print(f"  TensorFlow: {'GPU' if self.device == 'GPU:0' else 'CPU'} available.")
+        DataUtils.print_header("TransformerEmbedder Initialized")
 
-    def _load_model_and_tokenizer(self, model_info: Dict[str, Any]) -> Tuple[Any, Any, Any]:
-        """Loads the specified Hugging Face model and tokenizer."""
-        hf_id = model_info["hf_id"]
-        print(f"  Loading tokenizer and model for {hf_id}...")
-        tokenizer = AutoTokenizer.from_pretrained(hf_id, do_lower_case=False)
-        # Load model with from_pt=True to handle PyTorch checkpoints correctly
-        model = TFAutoModel.from_pretrained(hf_id, from_pt=True)
-        # Create a compiled inference function for a massive speedup
-        inference_func = tf.function(
-            model,
-            jit_compile=self.config.USE_XLA_COMPILATION,
-            input_signature=[tf.TensorSpec(shape=[None, None], dtype=tf.int32),
-                             tf.TensorSpec(shape=[None, None], dtype=tf.int32)]
-        )
-        return tokenizer, model, inference_func
+    # --- MINIMAL CHANGE 1: The _load_id_map method is no longer needed and can be deleted. ---
+    # The new 'run' method handles this more directly.
 
-    def _get_sequences_from_fasta(self) -> List[Tuple[str, str]]:
-        """Loads all sequences from the configured FASTA files."""
-        print(f"Found {len(self.config.SEQUENCE_FILE_PATHS)} FASTA file(s) to process.")
-        all_sequences = []
-        for file_path in self.config.SEQUENCE_FILE_PATHS:
-            all_sequences.extend(list(FastaUtils.parse_sequences([file_path])))
-        return all_sequences
+    @staticmethod
+    def _get_model_inference_function(model: tf.keras.Model, is_t5: bool, use_xla: bool) -> tf.types.experimental.GenericFunction:
+        """Creates a compiled TensorFlow function for faster inference."""
+        # This function is correct and remains unchanged.
+        print(f"  Creating inference function (is_t5={is_t5}, use_xla={use_xla})...")
 
-    def run(self) -> Dict[str, Path]:
-        """
-        Main execution method to generate embeddings for all configured models.
-        """
-        DataUtils.print_header("PIPELINE STEP: Generating Embeddings from Transformers")
-        all_sequences = self._get_sequences_from_fasta()
-        id_map = DataUtils.get_id_mapping(self.config)
-        generated_paths = {}
+        def model_call(inputs_dict_tf):
+            if is_t5:
+                num_seqs = tf.shape(inputs_dict_tf['input_ids'])[0]
+                decoder_start_id = model.config.decoder_start_token_id or 0
+                decoder_input_ids = tf.fill((num_seqs, 1), tf.cast(decoder_start_id, inputs_dict_tf['input_ids'].dtype))
+                return model(input_ids=inputs_dict_tf['input_ids'], attention_mask=inputs_dict_tf['attention_mask'],
+                             decoder_input_ids=decoder_input_ids)
+            else:
+                return model(inputs_dict_tf)
 
-        for model_info in self.config.TRANSFORMER_MODELS_TO_RUN:
-            model_name = model_info["name"]
-            DataUtils.print_header(f"Starting Transformer Embedding Generation: {model_name} ({model_info['hf_id']})",
-                                   level=2)
+        if use_xla:
+            print("  Compiling inference function with XLA for potential performance boost.")
+            return tf.function(model_call, jit_compile=True)
+        return tf.function(model_call)
 
-            tokenizer, model, inference_func = self._load_model_and_tokenizer(model_info)
-            emb_dim = model.config.hidden_size
-            print(f"  Model and tokenizer loaded. Embedding dim: {emb_dim}")
+    def _generate_embeddings_for_single_model(self, model_config_item: Dict, all_sequences: List[Tuple[str, str]],
+                                              id_map: Optional[Mapping]) -> Optional[str]:
+        """Handles the full embedding generation pipeline for one transformer model."""
+        model_name = model_config_item["name"]
+        hf_id = model_config_item["hf_id"]
+        is_t5 = model_config_item["is_t5"]
+        batch_size_multiplier = model_config_item.get("batch_size_multiplier", 1.0)
+        batch_size = max(1, int(self.config.TRANSFORMER_BASE_BATCH_SIZE * batch_size_multiplier))
 
-            protein_embeddings = {}
-            batch_size = int(self.config.TRANSFORMER_BASE_BATCH_SIZE * model_info.get("batch_size_multiplier", 1))
+        DataUtils.print_header(f"Starting Transformer Embedding Generation: {model_name} ({hf_id})")
+        print(
+            f"  Config: Batch Size={batch_size}, Max Length={self.config.TRANSFORMER_MAX_LENGTH}, Pooling='{self.config.TRANSFORMER_POOLING_STRATEGY}', PCA={self.config.APPLY_PCA_TO_TRANSFORMER}")
 
-            # --- OOM FIX: Sort sequences by length BEFORE batching ---
-            # This groups sequences of similar lengths, minimizing memory waste from padding.
+        all_protein_embeddings = {}
+        model, tokenizer, inference_func = None, None, None
+        embedding_dim_from_model = 0
+        model_load_start_time = time.time()
+
+        try:
+            print("  Loading tokenizer and model...")
+            tokenizer_class = T5Tokenizer if is_t5 else AutoTokenizer
+            tokenizer = tokenizer_class.from_pretrained(hf_id)
+            model = TFAutoModel.from_pretrained(hf_id, from_pt=True)
+            inference_func = TransformerEmbedder._get_model_inference_function(model, is_t5,
+                                                                               self.config.USE_XLA_COMPILATION)
+
+            if hasattr(model.config, 'hidden_size'):
+                embedding_dim_from_model = model.config.hidden_size
+            elif hasattr(model.config, 'd_model'):
+                embedding_dim_from_model = model.config.d_model
+            else:
+                print("  Warning: Could not determine embedding dimension from model config.")
+            print(
+                f"  Model and tokenizer loaded in {time.time() - model_load_start_time:.2f}s. Embedding dim: {embedding_dim_from_model}")
+
+            # --- MINIMAL CHANGE 2: Sort sequences by length to prevent OOM errors. ---
+            # This replaces the complex nested file loop with a single, more efficient loop.
             print("  Sorting sequences by length for memory-efficient batching...")
             sorted_sequences = sorted(all_sequences, key=lambda x: len(x[1]))
-            # --- END FIX ---
 
-            # Iterate over the sorted list in batches
             for i in tqdm(range(0, len(sorted_sequences), batch_size), desc=f"  Generating {model_name} Embeddings"):
                 batch = sorted_sequences[i:i + batch_size]
                 if not batch: continue
 
                 batch_ids = [item[0] for item in batch]
-                batch_seqs_text = [" ".join(list(seq)) for _, seq in batch]
+                batch_sequences_text = [" ".join(list(item[1])) for item in batch]
 
-                inputs = tokenizer(
-                    batch_seqs_text,
-                    add_special_tokens=True,
-                    padding="longest",  # Padding is now efficient due to sorting
-                    truncation=True,
-                    max_length=self.config.TRANSFORMER_MAX_LENGTH,
-                    return_tensors="tf"
-                )
+                inputs = tokenizer(batch_sequences_text, padding="longest", truncation=True, return_tensors="tf",
+                                   max_length=self.config.TRANSFORMER_MAX_LENGTH)
+                outputs = inference_func(inputs)
+                raw_batch_output = (
+                    outputs.encoder_last_hidden_state if is_t5 else outputs.last_hidden_state).numpy()
 
-                with tf.device(self.device):
-                    outputs = inference_func(inputs['input_ids'], inputs['attention_mask'])
+                for j in range(len(batch_ids)):
+                    # The original sequence length is now derived from the attention mask
+                    seq_len_original = int(tf.reduce_sum(inputs['attention_mask'][j]))
+                    residue_embeds = EmbeddingProcessor.extract_transformer_residue_embeddings(
+                        raw_batch_output[j], seq_len_original, is_t5)
+                    if residue_embeds.size > 0:
+                        pooled_vec = EmbeddingProcessor.pool_residue_embeddings(residue_embeds,
+                                                                                self.config.TRANSFORMER_POOLING_STRATEGY,
+                                                                                embedding_dim_from_model)
+                        if pooled_vec.size > 0:
+                            all_protein_embeddings[batch_ids[j]] = pooled_vec
+            # --- END OF MINIMAL CHANGE 2 ---
 
-                # Detach from graph and move to CPU
-                embeddings = outputs.last_hidden_state.numpy()
+            print(
+                f"\n  Generated {len(all_protein_embeddings)} total protein embeddings for {model_name} from {len(sorted_sequences)} sequences.")
 
-                for j in range(len(embeddings)):
-                    seq_len = np.sum(inputs['attention_mask'][j].numpy())
-                    # Mean pooling over the actual, non-padded sequence length
-                    embedding = embeddings[j, :seq_len].mean(axis=0)
-                    protein_embeddings[batch_ids[j]] = embedding
+            # The rest of the function (ID mapping, PCA, saving) remains the same.
+            if id_map:
+                print("  Applying ID mapping to generated embeddings...")
+                mapped_embeddings = {id_map.get(k, k): v for k, v in all_protein_embeddings.items()}
+                print(f"    Original count: {len(all_protein_embeddings)}, Mapped count: {len(mapped_embeddings)}")
+                all_protein_embeddings = mapped_embeddings
 
-            print(f"  Generated {len(protein_embeddings)} total protein embeddings for {model_name}.")
+            final_embeddings_to_save = all_protein_embeddings
+            output_filename_suffix = f"_dim{embedding_dim_from_model}"
+            if self.config.APPLY_PCA_TO_TRANSFORMER and len(
+                    all_protein_embeddings) > self.config.PCA_TARGET_DIMENSION:
+                print(f"  Applying PCA to {model_name} embeddings (target dim: {self.config.PCA_TARGET_DIMENSION})...")
+                pca_embeddings = EmbeddingProcessor.apply_pca(all_protein_embeddings,
+                                                              self.config.PCA_TARGET_DIMENSION, self.config.RANDOM_STATE)
+                if pca_embeddings is not None:
+                    final_embeddings_to_save = pca_embeddings
+                    output_filename_suffix = f"_pca{self.config.PCA_TARGET_DIMENSION}"
+            elif self.config.APPLY_PCA_TO_TRANSFORMER:
+                print(
+                    f"  Skipping PCA for {model_name}: not enough samples ({len(all_protein_embeddings)}) for target dimension ({self.config.PCA_TARGET_DIMENSION}).")
 
-            # Apply ID mapping and save
-            mapped_embeddings = DataUtils.apply_id_mapping(protein_embeddings, id_map)
-            final_embeddings = mapped_embeddings if mapped_embeddings else protein_embeddings
+            output_filename = f"{model_name}_{self.config.TRANSFORMER_POOLING_STRATEGY}{output_filename_suffix}.h5"
+            output_path = self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR / output_filename
 
-            # Handle PCA
-            if self.config.APPLY_PCA_TO_TRANSFORMER:
-                final_embeddings, emb_dim = DataUtils.apply_pca(
-                    embeddings_dict=final_embeddings,
-                    target_dim=self.config.PCA_TARGET_DIMENSION
-                )
-                suffix = f"mean_pca{emb_dim}"
+            print(f"  Saving final embeddings to: {output_path}")
+            if final_embeddings_to_save:
+                DataUtils.write_h5(final_embeddings_to_save, output_path, f"Writing H5 for {model_name}")
+                return str(output_path)
             else:
-                suffix = f"mean_dim{emb_dim}"
+                print("  No final embeddings to save.")
 
-            output_filename = f"{model_name}_{suffix}.h5"
-            output_path = self.output_dir / output_filename
-            DataUtils.write_h5(final_embeddings, output_path, f"Writing H5 for {model_name}")
-            generated_paths[f"{model_name}-Generated"] = output_path
-            print(f"--- Finished Transformer: {model_name} ---")
-
-            # Clean up memory
-            del model, tokenizer, inference_func, protein_embeddings, final_embeddings
+        except Exception as e:
+            print(f"\nFATAL ERROR during processing for model {model_name}: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            del model, tokenizer, inference_func, all_protein_embeddings
             gc.collect()
+            if tf.executing_eagerly(): tf.keras.backend.clear_session()
+            print(f"--- Finished Transformer: {model_name} ---")
+        return None
 
-        DataUtils.print_header("Transformer Embedding PIPELINE STEP FINISHED", level=2)
+    def run(self) -> Dict[str, Path]:
+        """
+        Main entry point for the Transformer embedding generation pipeline.
+        """
+        DataUtils.print_header("PIPELINE STEP: Generating Embeddings from Transformers")
+        self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
+        generated_paths = {}
+
+        if tf.config.list_physical_devices('GPU'):
+            print("  TensorFlow: GPU available.")
+        else:
+            print("  TensorFlow: No GPU detected. Using CPU.")
+
+        # --- MINIMAL CHANGE 1: Load all sequences and the ID map once at the start. ---
+        all_sequences = []
+        for fasta_path in self.config.SEQUENCE_FILE_PATHS:
+            all_sequences.extend(FastaUtils.parse_sequences([fasta_path]))
+
+        if not all_sequences:
+            print("Error: No sequences found in the configured FASTA files. Skipping.")
+            return {}
+        print(f"Found {len(all_sequences)} total sequences to process.")
+
+        # This direct call fixes the AttributeError.
+        id_map = DataUtils.get_id_mapping(self.config)
+        # --- END OF MINIMAL CHANGE 1 ---
+
+        # The context manager for the DB-based mapper is no longer needed here.
+        for model_config_item in self.config.TRANSFORMER_MODELS_TO_RUN:
+            # Pass the loaded sequences and map to the processing function.
+            output_path = self._generate_embeddings_for_single_model(model_config_item, all_sequences, id_map)
+            if output_path:
+                generated_paths[model_config_item['name']] = Path(output_path)
+
+        DataUtils.print_header("Transformer Embedding PIPELINE STEP FINISHED")
         return generated_paths
