@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: trainers/lstm.py
 # PURPOSE: Trainer for a character-level LSTM model to generate protein embeddings.
-# VERSION: 6.0 (Implemented batched inference for massive speedup)
+# VERSION: 7.0 (Optimized batched inference by sorting sequences by length)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -153,19 +153,22 @@ class LSTMBasedEmbedder:
         inference_model = Model(inputs=inf_input, outputs=embedding_layer_output)
         inference_model.summary()
 
-        # --- PERFORMANCE FIX: Implement Batched Inference ---
         print("  Generating per-protein embeddings using BATCHED mean pooling...")
         protein_embeddings = {}
         batch_size = self.config.LSTM_BATCH_SIZE
 
-        for i in tqdm(range(0, len(self.sequences), batch_size), desc="  Generating Embeddings in Batches"):
-            batch = self.sequences[i:i + batch_size]
+        # --- OOM FIX: Sort sequences by length before batching to minimize padding ---
+        print("  Sorting sequences by length for efficient batching...")
+        sorted_sequences = sorted(self.sequences, key=lambda x: len(x[1]))
+        # --- END FIX ---
+
+        for i in tqdm(range(0, len(sorted_sequences), batch_size), desc="  Generating Embeddings in Batches"):
+            batch = sorted_sequences[i:i + batch_size]
             if not batch: continue
 
             batch_ids = [item[0] for item in batch]
             batch_seqs_text = [item[1] for item in batch]
 
-            # Tokenize and store original lengths
             tokenized_batch = []
             original_lengths = []
             for seq_text in batch_seqs_text:
@@ -176,21 +179,14 @@ class LSTMBasedEmbedder:
 
             if not tokenized_batch: continue
 
-            # Pad sequences to the max length in the current batch
             padded_batch = pad_sequences(tokenized_batch, padding='post', dtype='int32')
-
-            # Get hidden states for the entire batch in one call
             all_hidden_states_batch = inference_model.predict_on_batch(padded_batch)
 
-            # Process each item in the batch result
             for j in range(len(all_hidden_states_batch)):
                 original_len = original_lengths[j]
-                # Slice the output to only include the original, unpadded sequence
                 valid_hidden_states = all_hidden_states_batch[j, :original_len, :]
-                # Perform mean pooling
                 pooled_embedding = np.mean(valid_hidden_states, axis=0)
                 protein_embeddings[batch_ids[j]] = pooled_embedding
-        # --- END FIX ---
 
         output_path = self.config.RESULTS_LSTM_EMBEDDINGS_DIR / "lstm_generated_embeddings.h5"
         DataUtils.write_h5(protein_embeddings, output_path, "Writing LSTM Embeddings")
