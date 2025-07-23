@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/data.py
 # PURPOSE: Handles the verification and acquisition of all external data files.
-# VERSION: 1.1 (Corrected validation logic)
+# VERSION: 1.2 (Corrected validation logic to be non-destructive)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -69,18 +69,19 @@ def setup_data(config: Config):
         # Determine the potential path of the downloaded (possibly compressed) file
         download_path = Path(str(final_path) + ".gz") if source_info.get('post_process') == 'ungzip' else final_path
 
-        # 1. Check if the final, processed file already exists.
+        # 1. Check if the final, processed file already exists and is valid.
         if _is_file_valid(final_path):
             print(f"☑ Found and verified: {final_path.relative_to(config.PROJECT_ROOT)}")
             continue
+
+        # --- FIX: Replaced destructive deletion with a non-destructive warning ---
+        # If a file exists but is invalid, we now warn the user instead of deleting it.
         elif final_path.exists():
-            # File exists but is invalid (e.g., empty or HTML). Delete it to trigger re-download.
-            print(f"⚠ Found invalid or corrupt file at '{final_path.name}'. Deleting and re-downloading.")
-            try:
-                final_path.unlink()
-            except OSError as e:
-                print(f"  Error deleting corrupt file: {e}. Skipping this file.")
-                continue
+            print(f"⚠ WARNING: File '{final_path.name}' exists but failed validation (e.g., it might be empty or corrupt).")
+            print(f"  The pipeline will attempt to use it, but may fail later if it's unreadable.")
+            print(f"  Please check the file at: {final_path}")
+            continue
+        # --- END FIX ---
 
         # 2. Check if the compressed file exists but the final one doesn't.
         if not final_path.exists() and download_path.exists() and source_info.get('post_process') == 'ungzip':
