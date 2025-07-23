@@ -2,7 +2,7 @@
 # MODULE: trainers/transformers.py
 # PURPOSE: Generates per-protein embeddings using pre-trained Transformer
 #          models from Hugging Face.
-# VERSION: 4.3 (Final fix for both OOM and performance via flexible tf.function)
+# VERSION: 4.4 (Definitive fix for OOM and performance with flexible input_signature)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -30,6 +30,7 @@ class TransformerEmbedder:
         """Creates a compiled TensorFlow function for faster inference."""
         print(f"  Creating inference function (is_t5={is_t5}, use_xla={use_xla})...")
 
+        @tf.function
         def model_call(inputs_dict_tf):
             if is_t5:
                 num_seqs = tf.shape(inputs_dict_tf['input_ids'])[0]
@@ -40,14 +41,21 @@ class TransformerEmbedder:
             else:
                 return model(inputs_dict_tf)
 
-        # --- MINIMAL FIX 1: Remove the strict input_signature. ---
-        # This allows TensorFlow to cache graphs for different batch shapes, which is efficient
-        # because we have already sorted the sequences by length.
+        # --- MINIMAL & FINAL FIX: Use a flexible input_signature. ---
+        # This tells TensorFlow to create ONE graph that can handle variable batch sizes
+        # and variable sequence lengths, which completely prevents retracing.
+        input_signature = {
+            'input_ids': tf.TensorSpec(shape=[None, None], dtype=tf.int32),
+            'attention_mask': tf.TensorSpec(shape=[None, None], dtype=tf.int32)
+        }
+
+        # The concrete function is created once with the flexible signature.
+        concrete_function = model_call.get_concrete_function(input_signature)
         if use_xla:
-            print("  Compiling inference function with XLA for potential performance boost.")
-            # Note: JIT compilation without a signature can be less effective but is safer here.
-            return tf.function(model_call, jit_compile=True)
-        return tf.function(model_call)
+            print("  JIT Compiling concrete function with XLA...")
+            concrete_function = tf.function(concrete_function, jit_compile=True)
+
+        return concrete_function
         # --- END FIX ---
 
     def _generate_embeddings_for_single_model(self, model_config_item: Dict, all_sequences: List[Tuple[str, str]],
@@ -73,7 +81,7 @@ class TransformerEmbedder:
             tokenizer_class = T5Tokenizer if is_t5 else AutoTokenizer
             tokenizer = tokenizer_class.from_pretrained(hf_id)
             model = TFAutoModel.from_pretrained(hf_id, from_pt=True)
-            # The call no longer needs max_length
+
             inference_func = TransformerEmbedder._get_model_inference_function(model, is_t5,
                                                                                self.config.USE_XLA_COMPILATION)
 
@@ -96,15 +104,14 @@ class TransformerEmbedder:
                 batch_ids = [item[0] for item in batch]
                 batch_sequences_text = [" ".join(list(item[1])) for item in batch]
 
-                # --- MINIMAL FIX 2: Revert to memory-efficient padding. ---
+                # Padding is now memory-efficient because we sorted the sequences.
                 inputs = tokenizer(
                     batch_sequences_text,
-                    padding="longest",  # This is memory-safe when combined with sorting.
+                    padding="longest",
                     truncation=True,
                     return_tensors="tf",
                     max_length=self.config.TRANSFORMER_MAX_LENGTH
                 )
-                # --- END FIX ---
 
                 outputs = inference_func(inputs)
                 raw_batch_output = (
