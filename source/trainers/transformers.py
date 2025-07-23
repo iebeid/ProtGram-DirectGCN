@@ -2,7 +2,7 @@
 # MODULE: trainers/transformers.py
 # PURPOSE: Generates per-protein embeddings using pre-trained Transformer
 #          models from Hugging Face.
-# VERSION: 4.4 (Definitive fix for OOM and performance with flexible input_signature)
+# VERSION: 4.5 (Final fix for TypeError by correcting the tf.function signature)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -36,27 +36,35 @@ class TransformerEmbedder:
                 num_seqs = tf.shape(inputs_dict_tf['input_ids'])[0]
                 decoder_start_id = model.config.decoder_start_token_id or 0
                 decoder_input_ids = tf.fill((num_seqs, 1), tf.cast(decoder_start_id, inputs_dict_tf['input_ids'].dtype))
+                # For T5, we explicitly do not pass token_type_ids
                 return model(input_ids=inputs_dict_tf['input_ids'], attention_mask=inputs_dict_tf['attention_mask'],
                              decoder_input_ids=decoder_input_ids)
             else:
+                # BERT-like models accept token_type_ids
                 return model(inputs_dict_tf)
 
-        # --- MINIMAL & FINAL FIX: Use a flexible input_signature. ---
-        # This tells TensorFlow to create ONE graph that can handle variable batch sizes
-        # and variable sequence lengths, which completely prevents retracing.
-        input_signature = {
-            'input_ids': tf.TensorSpec(shape=[None, None], dtype=tf.int32),
-            'attention_mask': tf.TensorSpec(shape=[None, None], dtype=tf.int32)
-        }
+        # --- MINIMAL & FINAL FIX: Correct the input_signature to match the tokenizer's output ---
+        # The tokenizer for BERT produces 'token_type_ids', which was missing from our signature.
+        # This flexible signature handles variable batch and sequence lengths.
+        if is_t5:
+            input_signature = {
+                'input_ids': tf.TensorSpec(shape=[None, None], dtype=tf.int32),
+                'attention_mask': tf.TensorSpec(shape=[None, None], dtype=tf.int32)
+            }
+        else:
+            input_signature = {
+                'input_ids': tf.TensorSpec(shape=[None, None], dtype=tf.int32),
+                'attention_mask': tf.TensorSpec(shape=[None, None], dtype=tf.int32),
+                'token_type_ids': tf.TensorSpec(shape=[None, None], dtype=tf.int32)  # This was the missing key
+            }
+        # --- END FIX ---
 
-        # The concrete function is created once with the flexible signature.
         concrete_function = model_call.get_concrete_function(input_signature)
         if use_xla:
             print("  JIT Compiling concrete function with XLA...")
             concrete_function = tf.function(concrete_function, jit_compile=True)
 
         return concrete_function
-        # --- END FIX ---
 
     def _generate_embeddings_for_single_model(self, model_config_item: Dict, all_sequences: List[Tuple[str, str]],
                                               id_map: Optional[Mapping]) -> Optional[str]:
@@ -104,7 +112,6 @@ class TransformerEmbedder:
                 batch_ids = [item[0] for item in batch]
                 batch_sequences_text = [" ".join(list(item[1])) for item in batch]
 
-                # Padding is now memory-efficient because we sorted the sequences.
                 inputs = tokenizer(
                     batch_sequences_text,
                     padding="longest",
