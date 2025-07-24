@@ -157,6 +157,7 @@ class LSTMBasedEmbedder:
         protein_embeddings = {}
         batch_size = self.config.LSTM_BATCH_SIZE
 
+
         # --- OOM FIX: Sort sequences by length before batching to minimize padding ---
         print("  Sorting sequences by length for efficient batching...")
         sorted_sequences = sorted(self.sequences, key=lambda x: len(x[1]))

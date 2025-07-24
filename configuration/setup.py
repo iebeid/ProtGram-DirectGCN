@@ -1,8 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
-# PURPOSE: Sets up the Python environment for the project using a robust,
-#          sequential installation strategy based on a proven working configuration.
-# VERSION: 6.0 (Final - Optimized installation order for maximum stability)
+# PURPOSE: Sets up the Python environment and generates a validation file.
+# VERSION: 7.0 (Generates environment.yml on success for validation)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -13,14 +12,13 @@ import subprocess
 import sys
 
 # --- Configuration ---
-# This script uses a sequential installation process to ensure compatibility.
 PYTHON_VERSION = "3.11"
-# These versions are now used for documentation and to guide pip,
-# while the core CUDA/cuDNN is installed first via conda.
 CUDA_VERSION_FOR_PYTORCH = "12.1"
 PYTORCH_VERSION = "2.4.0"
 TORCHVISION_VERSION = "0.19.0"
 TORCHAUDIO_VERSION = "2.4.0"
+# The name of the file that will store the environment's "fingerprint".
+ENVIRONMENT_YML_FILE = "environment.yml"
 
 
 # --- End Configuration ---
@@ -34,12 +32,10 @@ def create_setup_script(commands: list[str]) -> str:
     with open(script_filename, "w") as f:
         if not is_windows:
             f.write("#!/bin/bash\n")
-            # Exit immediately if a command exits with a non-zero status.
             f.write("set -e\n")
         for command in commands:
             f.write(command + "\n")
 
-    # Make the script executable on non-Windows systems
     if not is_windows:
         os.chmod(script_filename, 0o755)
     return script_filename
@@ -51,7 +47,6 @@ def run_script(script_filename: str):
     print(f"--- Starting Environment Setup using '{script_filename}' ---")
     try:
         executor = ['cmd', '/c'] if is_windows else []
-        # For Linux/macOS, execute the script directly from the current directory
         script_path = script_filename if is_windows else f"./{script_filename}"
 
         process = subprocess.Popen(
@@ -63,11 +58,9 @@ def run_script(script_filename: str):
             universal_newlines=True
         )
 
-        # Stream the output in real-time
         if process.stdout:
             for line in process.stdout:
                 print(line, end='')
-
         process.wait()
 
         if process.returncode != 0:
@@ -77,7 +70,6 @@ def run_script(script_filename: str):
             print("\n--- Environment setup completed successfully! ---")
 
     finally:
-        # Clean up the generated script file
         if os.path.exists(script_filename):
             os.remove(script_filename)
             print(f"--- Cleaned up temporary script file: {script_filename} ---")
@@ -103,7 +95,6 @@ if __name__ == "__main__":
     system = platform.system()
     compiler_commands = []
     if system == "Linux":
-        # For Linux, install the GNU compiler toolchain from conda-forge.
         compiler_commands.extend([
             "echo '--- Installing GCC/G++ compilers for Linux ---'",
             "conda install -c conda-forge gcc_linux-64=12 gxx_linux-64=12 -y",
@@ -111,46 +102,43 @@ if __name__ == "__main__":
             "rm -rf ~/.config/pycuda"
         ])
 
-    # This command sequence follows the "Conda first, Pip last" principle for maximum stability.
     command_sequence = [
         "conda clean --all -y",
         "conda update --all -y",
         *compiler_commands,
 
-        # --- Stage 1: Install ALL Conda-managed packages ---
-        # This includes CUDA, TensorFlow, and all core libraries in one go.
-        # This allows the conda solver to create a single, consistent environment.
         "echo '--- Stage 1: Installing all Conda-managed packages (CUDA, TF, Core Libs) ---'",
         (
             "conda install -c nvidia -c conda-forge -y "
-            "cuda=12.5 cudnn=9.3 tensorflow "  # GPU and TensorFlow
-            "dask tqdm biopython matplotlib scipy scikit-learn "  # Core libraries
+            "cuda=12.5 cudnn=9.3 tensorflow "
+            "dask tqdm biopython matplotlib scipy scikit-learn "
             "gensim python-louvain seaborn pycuda networkx=3.2.1 "
-            "pandas h5py"
+            "pandas h5py pyyaml"  # Added PyYAML for the validation script
         ),
 
-        # --- Stage 2: Install PyTorch and other standard pip packages ---
         "echo '--- Stage 2: Installing PyTorch and other standard pip-managed packages ---'",
         (
             f"pip install "
             f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} "
             f"mlflow transformers==4.41.2 tf-keras "
-            # Use --extra-index-url to ADD the PyTorch index, not replace the default PyPI.
             f"--extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"
         ),
 
-        # --- Stage 3: Install PyTorch Geometric (PyG) separately ---
-        # This is more robust as it allows pip to resolve against the already-installed torch version.
         "echo '--- Stage 3: Installing PyTorch Geometric (PyG) ---'",
         (
             f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
             f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}.html"
         ),
 
-        # --- Stage 4: Verification & Cleanup ---
         "echo '--- Verifying installations ---'",
         "python -c \"import tensorflow as tf; print('TensorFlow GPUs found: ' + str(len(tf.config.list_physical_devices('GPU'))))\"",
         "python -c \"import torch; print('PyTorch CUDA available: ' + str(torch.cuda.is_available()))\"",
+
+        # --- MINIMAL CHANGE: Add the final step to generate the environment file ---
+        "echo '--- Stage 4: Generating environment validation file ---'",
+        f"conda env export > ../../{ENVIRONMENT_YML_FILE}",
+        # --- END CHANGE ---
+
         "conda clean --all -y",
         "pip cache purge"
     ]

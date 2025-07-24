@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: main.py
 # PURPOSE: Pipeline entry point
-# VERSION: 2.3 (Corrected PPI pipeline instantiation order and improved clarity)
+# VERSION: 3.0 (Integrated bootstrapper logic and automatic MLflow UI launch)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -12,6 +12,8 @@ import copy
 import platform
 import os
 import tempfile
+import subprocess
+import webbrowser
 from pathlib import Path
 from typing import List, Dict
 
@@ -45,9 +47,7 @@ def _run_embedding_generation_pipelines(config: Config) -> List[Dict[str, str]]:
     """Runs all configured embedding generation pipelines and returns a list of generated file paths."""
     generated_files = []
     if config.RUN_GCN_PIPELINE:
-        # First, build the graphs
         ProtGramBuilder(config).run()
-        # Then, train the GCNs on those graphs
         if gcn_paths := ProtGramXGCNTrainer(config).run():
             for name, path in gcn_paths.items():
                 generated_files.append({"name": name, "path": path})
@@ -107,29 +107,29 @@ def run_pipeline_for_dataset(base_config: Config, fasta_path: Path):
 
     DataUtils.print_header(f"PROCESSING DATASET: {dataset_name.upper()}")
 
-    # --- 1. Modify Configuration to be Dataset-Specific ---
     config.SEQUENCE_FILE_PATHS = [fasta_path]
     print(f"  - This run will process sequences from: {fasta_path}")
 
-    config.RESULTS_GRAPH_OBJECTS_DIR /= dataset_name
-    config.RESULTS_GCN_EMBEDDINGS_DIR /= dataset_name
-    config.RESULTS_W2V_EMBEDDINGS_DIR /= dataset_name
-    config.RESULTS_LSTM_EMBEDDINGS_DIR /= dataset_name
-    config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR /= dataset_name
-    config.RESULTS_EVALUATION_DIR /= dataset_name
+    # Programmatically update all relevant output paths
+    paths_to_specialize = [
+        'RESULTS_GRAPH_OBJECTS_DIR', 'RESULTS_GCN_EMBEDDINGS_DIR',
+        'RESULTS_W2V_EMBEDDINGS_DIR', 'RESULTS_LSTM_EMBEDDINGS_DIR',
+        'RESULTS_TRANSFORMER_EMBEDDINGS_DIR', 'RESULTS_EVALUATION_DIR'
+    ]
+    for path_attr in paths_to_specialize:
+        if hasattr(config, path_attr):
+            original_path = getattr(config, path_attr)
+            setattr(config, path_attr, original_path / dataset_name)
 
-    # --- 2. Run Embedding Generation Pipelines for this Dataset ---
+
     generated_embedding_files = _run_embedding_generation_pipelines(config)
 
-    # --- 3. Run PPI Evaluation for this Dataset ---
-    # CRITICAL FIX: Finalize the list of embeddings BEFORE instantiating the pipeline.
     final_evaluation_list = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_embedding_files
     config.LP_EMBEDDING_FILES_TO_EVALUATE = final_evaluation_list
 
     if config.RUN_MAIN_PPI_EVALUATION:
         if config.LP_EMBEDDING_FILES_TO_EVALUATE:
             DataUtils.print_header(f"Running Main Evaluation for Dataset: {dataset_name}")
-            # Instantiate the evaluator HERE, with the complete config
             ppi_evaluator = PPIPipeline(config)
             if config.USE_MLFLOW:
                 mlflow.set_experiment(f"{config.MLFLOW_EXPERIMENT_NAME}-{dataset_name}")
@@ -146,21 +146,38 @@ def run_pipeline_for_dataset(base_config: Config, fasta_path: Path):
     DataUtils.print_header(f"COMPLETED FULL PIPELINE FOR DATASET: {dataset_name.upper()}")
 
 
+def _launch_mlflow_ui(config: Config):
+    """Starts the MLflow UI and opens a browser if in a desktop environment."""
+    if not config.USE_MLFLOW:
+        return
+
+    DataUtils.print_header("Launching MLflow UI")
+    tracking_uri = config.MLFLOW_TRACKING_URI
+    is_desktop_env = os.environ.get('DISPLAY') or platform.system() == "Windows"
+
+    if is_desktop_env:
+        print("Desktop environment detected. Starting MLflow UI in the background...")
+        # Use Popen to run in the background. Redirect output to hide it.
+        subprocess.Popen(
+            ["mlflow", "ui", "--backend-store-uri", tracking_uri],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        # Give the server a moment to start
+        time.sleep(5)
+        webbrowser.open("http://127.0.0.1:5000")
+        print("\nMLflow UI has been launched in your web browser.")
+        print("The server is running in the background. It will terminate when you close this terminal.")
+    else:
+        print("--- Headless/SSH environment detected. ---")
+        print("To view the MLflow UI, run the following command on your local machine:")
+        print(f"\n  mlflow ui --backend-store-uri {tracking_uri}\n")
+        print("If running on a remote server, you may need to use SSH port forwarding, for example:")
+        print("  ssh -L 5000:localhost:5000 your_user@your_server")
+
+
 def main():
     script_start_time = time.monotonic()
-
-    if platform.system() == "Linux":
-        conda_prefix = os.environ.get("CONDA_PREFIX")
-        if conda_prefix:
-            conda_bin_path = os.path.join(conda_prefix, "bin")
-            cc_path = os.path.join(conda_bin_path, "x86_64-conda-linux-gnu-cc")
-            cxx_path = os.path.join(conda_bin_path, "x86_64-conda-linux-gnu-c++")
-            if os.path.exists(conda_bin_path) and os.path.exists(cxx_path):
-                print("--- Forcing environment to use compilers from active Conda env ---")
-                os.environ["PATH"] = conda_bin_path + os.pathsep + os.environ.get("PATH", "")
-                os.environ["CC"] = cc_path
-                os.environ["CXX"] = cxx_path
-
     base_config = Config()
     logger = FileLogger(base_config.LOG_DIR, enabled=base_config.ENABLE_FILE_LOGGING)
 
@@ -175,8 +192,6 @@ def main():
                 print("--------------------------")
 
             if base_config.USE_MLFLOW:
-                mlruns_path = base_config.BASE_OUTPUT_DIR / "mlruns"
-                mlruns_path.mkdir(parents=True, exist_ok=True)
                 mlflow.set_tracking_uri(base_config.MLFLOW_TRACKING_URI)
 
             setup_data(base_config)
@@ -206,6 +221,9 @@ def main():
                         run_pipeline_for_dataset(base_config, fasta_file_path)
 
             DataUtils.print_header(f"Full Orchestration Finished in {time.monotonic() - script_start_time:.2f} seconds.")
+
+            # Launch MLflow UI at the very end
+            _launch_mlflow_ui(base_config)
 
         except Exception as e:
             print(f"\n--- PIPELINE FAILED ---")
