@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 8.1 (Harmonized PyTorch/TensorFlow CUDA dependencies via Conda)
+# VERSION: 8.2 (Hybrid Conda/Pip install to fix PyG resolution)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -127,33 +127,33 @@ if __name__ == "__main__":
     # Using a full path in the command makes it robust, regardless of where the script runs.
     env_yml_output_path = config_dir / ENVIRONMENT_YML_FILE
 
-    # --- FIX: Install PyTorch and PyG via Conda to harmonize CUDA/cuDNN dependencies ---
+    # --- FIX: Revert to the stable, multi-stage installation process ---
     command_sequence = [
         "conda clean --all -y",
         "conda update --all -y",
         *compiler_commands,
 
-        "echo '--- Stage 1: Installing PyTorch, TensorFlow, and all CUDA/cuDNN dependencies via Conda ---'",
+        "echo '--- Stage 1: Installing all Conda-managed packages (CUDA, TF, Core Libs) ---'",
         (
-            f"conda install -c pytorch -c nvidia -c conda-forge -y "
-            f"python={PYTHON_VERSION} "
-            f"pytorch={PYTORCH_VERSION} torchvision={TORCHVISION_VERSION} torchaudio={TORCHAUDIO_VERSION} "
-            f"pytorch-cuda={CUDA_VERSION_FOR_PYTORCH} "
-            f"tensorflow cudnn=9.3 " # Explicitly request cuDNN 9.3 for TF
-            f"pyg" # PyG will be pulled from conda-forge
-        ),
-
-        "echo '--- Stage 2: Installing remaining packages ---'",
-        (
-            "conda install -c conda-forge -y "
+            "conda install -c nvidia -c conda-forge -y "
+            "cuda=12.5 cudnn=9.3 tensorflow "
             "dask tqdm biopython matplotlib scipy scikit-learn "
             "gensim python-louvain seaborn pycuda networkx=3.2.1 "
             "pandas h5py pyyaml"
         ),
 
-        "echo '--- Stage 3: Installing pip-only packages ---'",
+        "echo '--- Stage 2: Installing PyTorch and other standard pip-managed packages ---'",
         (
-            "pip install mlflow transformers==4.41.2 tf-keras"
+            f"pip install "
+            f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} "
+            f"mlflow transformers==4.41.2 tf-keras "
+            f"--extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"
+        ),
+
+        "echo '--- Stage 3: Installing PyTorch Geometric (PyG) ---'",
+        (
+            f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
+            f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}.html"
         ),
 
         "echo '--- Verifying installations ---'",
