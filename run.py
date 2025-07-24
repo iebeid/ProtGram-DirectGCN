@@ -1,8 +1,8 @@
 # ==============================================================================
 # MODULE: run.py
 # PURPOSE: Project entry point and environment setup bootstrapper.
-# VERSION: 3.0 (Integrated global logging and corrected validation logic)
-# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
+# VERSION: 3.1 (Corrected YAML parsing in validation logic)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import json
@@ -47,16 +47,25 @@ def is_environment_valid(project_root: Path) -> bool:
             lines = f.readlines()
 
         required_packages = set()
-        in_pip_section = False
+        in_dependencies_section = False
         for line in lines:
             line = line.strip()
+
+            if line.startswith("dependencies:"):
+                in_dependencies_section = True
+                continue
+
+            if not in_dependencies_section:
+                continue
+
             if not line or line.startswith(('#', 'name:', 'channels:', 'prefix:')):
                 continue
-            if line == "dependencies:":
-                continue
-            if "pip:" in line:
-                in_pip_section = True
-                continue
+
+            # --- MINIMAL FIX: Remove the YAML list marker '- ' before parsing ---
+            # This was the source of the validation error.
+            if line.startswith('- '):
+                line = line[2:]
+            # --- END FIX ---
 
             # Handle package strings like 'numpy=1.26.4=pypi_0' or 'numpy==1.26.4'
             # We only care about the package name for this validation.
@@ -68,7 +77,7 @@ def is_environment_valid(project_root: Path) -> bool:
                 package_name = line.strip()
 
             # The package name in yml (e.g., scikit-learn) should match conda list output.
-            if package_name:
+            if package_name and 'pip:' not in package_name:
                 required_packages.add(package_name)
 
         # 3. Check if all required packages are installed

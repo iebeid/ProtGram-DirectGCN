@@ -1,12 +1,13 @@
 #!/bin/bash
 
 # ==============================================================================
-# SCRIPT: reset_and_run.sh
-# PURPOSE: Completely resets the project by removing the Conda environment
-#          and the project directory, then re-clones, re-installs, and runs.
+# SCRIPT: reset.sh
+# PURPOSE: Completely resets the project by creating a standard directory
+#          structure in the user's home (~/Documents/Projects), removing the
+#          old environment and project, then re-cloning and running.
 # WARNING: This is a DESTRUCTIVE script. It will delete your local
-#          'ppi-env' Conda environment and the 'ProtGram-DirectGCN' folder.
-# USAGE: Place this in the project root and run with 'bash reset_and_run.sh'
+#          'ppi-env' Conda environment and the '~/Documents/Projects/ProtGram-DirectGCN' folder.
+# USAGE: Run with 'bash reset.sh' from any location.
 # ==============================================================================
 
 # Exit immediately if a command exits with a non-zero status.
@@ -19,13 +20,15 @@ PROJECT_DIR_NAME="ProtGram-DirectGCN"
 PYTHON_VERSION="3.11"
 GIT_BRANCH="v2"
 
-# --- Step 0: Find Conda and the Project's Parent Directory ---
-# This makes the script runnable from anywhere inside the project.
-PROJECT_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
-PARENT_DIR=$(dirname "$PROJECT_ROOT")
+# --- Step 0: Define Project Structure and Find Conda ---
+# Define the standard project location within the user's home directory.
+DOCUMENTS_DIR="$HOME/documents"
+PROJECTS_DIR="$DOCUMENTS_DIR/projects"
 
-echo "INFO: Project Root detected as: $PROJECT_ROOT"
-echo "INFO: Parent Directory is: $PARENT_DIR"
+echo "INFO: Ensuring project directory structure exists: $PROJECTS_DIR"
+# The '-p' flag creates parent directories (like Documents) as needed.
+mkdir -p "$PROJECTS_DIR"
+echo "SUCCESS: Project root will be in: $PROJECTS_DIR"
 
 # Find the base conda directory to source the activation script
 CONDA_BASE=$(conda info --base)
@@ -63,14 +66,18 @@ python --version
 
 # --- Step 3: Re-clone the Repository ---
 echo -e "\n--- STEP 3: Removing Old Project Directory and Re-cloning ---"
-# Navigate OUTSIDE the project directory to delete it
-cd "$PARENT_DIR"
+# Navigate to the standard projects directory
+cd "$PROJECTS_DIR"
 echo "INFO: Current directory: $(pwd)"
 
-echo "INFO: Removing old project directory: $PROJECT_DIR_NAME/"
-# Use 'rm -rf' instead of sudo, assuming you have permissions.
-# If you created the folder with sudo, you will need sudo here.
-rm -rf "$PROJECT_DIR_NAME"
+# Check if the project directory exists before trying to remove it
+if [ -d "$PROJECT_DIR_NAME" ]; then
+    echo "INFO: Removing old project directory: $PROJECT_DIR_NAME/"
+    # No sudo needed as it's in the user's home directory.
+    rm -rf "$PROJECT_DIR_NAME"
+else
+    echo "INFO: Old project directory not found. Skipping removal."
+fi
 
 echo "INFO: Cloning fresh repository from $REPO_URL..."
 git clone "$REPO_URL"
