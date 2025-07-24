@@ -34,12 +34,49 @@ echo "SUCCESS: Project root will be in: $PROJECTS_DIR"
 CONDA_BASE=$(conda info --base)
 if [ -z "$CONDA_BASE" ]; then
     echo "ERROR: Could not find Conda base directory. Is Conda installed?"
+    echo "Please install Anaconda or Miniconda and ensure it is in your system's PATH."
     exit 1
 fi
 echo "INFO: Conda base found at: $CONDA_BASE"
 
 # Source the conda script to make 'conda activate' available
 source "$CONDA_BASE/etc/profile.d/conda.sh"
+
+# --- Step 0.5: Install Git and Git LFS if needed (for Debian/Ubuntu) ---
+echo -e "\n--- STEP 0.5: Checking for Git and Git LFS ---"
+# Check for apt package manager (Debian/Ubuntu)
+if command -v apt &> /dev/null; then
+    echo "INFO: 'apt' package manager found. Checking dependencies..."
+    # Install git if not present
+    if ! command -v git &> /dev/null; then
+        echo "INFO: Git not found. Installing git..."
+        sudo apt update
+        sudo apt install git -y
+        echo "SUCCESS: Git installed."
+    else
+        echo "INFO: Git is already installed."
+    fi
+
+    # Install git-lfs if not present
+    if ! command -v git-lfs &> /dev/null; then
+        echo "INFO: Git LFS not found. Installing git-lfs..."
+        sudo apt install git-lfs -y
+        echo "SUCCESS: Git LFS installed."
+    else
+        echo "INFO: Git LFS is already installed."
+    fi
+else
+    echo "INFO: 'apt' not found. Assuming Git and Git LFS are already installed."
+fi
+
+# Initialize Git LFS if it's available
+if command -v git-lfs &> /dev/null; then
+    echo "INFO: Initializing Git LFS..."
+    git lfs install
+    echo "SUCCESS: Git LFS initialized."
+else
+    echo "WARNING: git-lfs command not found. Large files might not be downloaded correctly."
+fi
 
 # --- Step 1: Deactivate and Remove Old Environment ---
 echo -e "\n--- STEP 1: Deactivating and Removing Conda Environment '$ENV_NAME' ---"
