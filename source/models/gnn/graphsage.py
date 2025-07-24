@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: models/gnn/graphsage.py
 # PURPOSE: A standard implementation of the GraphSAGE model.
-# VERSION: 2.0 (Refactored to return both logits and embeddings)
+# VERSION: 3.0 (Corrected embedding extraction)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -41,13 +41,17 @@ class GraphSAGE(BaseGNN):
         if num_layers <= 0:
             raise ValueError("num_layers must be positive")
 
-        current_dim = in_channels
-        # Hidden layers
-        for _ in range(num_layers - 1):
-            self.convs.append(SAGEConv(current_dim, hidden_channels))
-            current_dim = hidden_channels
-        # Output layer
-        self.convs.append(SAGEConv(current_dim, out_channels))
+        if num_layers == 1:
+            # A single layer goes directly from input to output
+            self.convs.append(SAGEConv(in_channels, out_channels))
+        else:
+            # Input layer
+            self.convs.append(SAGEConv(in_channels, hidden_channels))
+            # Hidden layers
+            for _ in range(num_layers - 2):
+                self.convs.append(SAGEConv(hidden_channels, hidden_channels))
+            # Output layer
+            self.convs.append(SAGEConv(hidden_channels, out_channels))
 
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -56,19 +60,26 @@ class GraphSAGE(BaseGNN):
         Returns:
             A tuple containing:
             - The final logits for classification.
-            - The node embeddings (which are the same as the logits in this architecture).
+            - The node embeddings from the last hidden layer.
         """
         x, edge_index = data.x, data.edge_index
 
-        for i, conv in enumerate(self.convs):
-            x = conv(x, edge_index)
-            # Apply activation and dropout to all but the last layer
-            if i < len(self.convs) - 1:
-                x = F.relu(x)
-                x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        # Handle the single-layer case where logits are the embeddings
+        if len(self.convs) == 1:
+            logits = self.convs[0](x, edge_index)
+            self.embedding_output = logits
+            return logits, self.embedding_output
 
-        # The output of the final layer serves as both logits and embeddings
+        # Process all but the final layer
+        for conv in self.convs[:-1]:
+            x = conv(x, edge_index)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout_rate, training=self.training)
+
+        # The output of the last hidden layer is the embedding
         self.embedding_output = x
-        logits = x
+
+        # Apply the final layer to get logits
+        logits = self.convs[-1](self.embedding_output, edge_index)
 
         return logits, self.embedding_output

@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: benchmarkers/nes.py
 # PURPOSE: Handles benchmarking of traditional network embedding methods.
-# VERSION: 2.2 (Verified fix for datasets without pre-defined splits)
+# VERSION: 2.3 (Corrected mask generation for datasets without splits)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -91,23 +91,24 @@ class NetworkEmbeddingBenchmarker:
             with torch.no_grad():
                 z = model().detach()
 
-            # --- FIX: Check for and create data splits if they don't exist (e.g., for KarateClub) ---
-            if not hasattr(data, 'train_mask') or data.train_mask is None:
+            # --- FIX: Robustly check for all three masks before using them ---
+            if not all(hasattr(data, mask) and getattr(data, mask) is not None for mask in ['train_mask', 'val_mask', 'test_mask']):
                 print(f"  - No predefined splits found for {dataset_name}. Creating random splits.")
                 num_nodes = data.num_nodes
                 indices = np.random.permutation(num_nodes)
                 train_size = int(num_nodes * 0.1)
                 val_size = int(num_nodes * 0.1)
 
-                data.train_mask = torch.zeros(num_nodes, dtype=torch.bool)
-                data.val_mask = torch.zeros(num_nodes, dtype=torch.bool)
-                data.test_mask = torch.zeros(num_nodes, dtype=torch.bool)
+                data.train_mask = torch.zeros(num_nodes, dtype=torch.bool, device=self.device)
+                data.val_mask = torch.zeros(num_nodes, dtype=torch.bool, device=self.device)
+                data.test_mask = torch.zeros(num_nodes, dtype=torch.bool, device=self.device)
 
                 data.train_mask[indices[:train_size]] = True
                 data.val_mask[indices[train_size:train_size + val_size]] = True
                 data.test_mask[indices[train_size + val_size:]] = True
                 print(
                     f"  Generated custom seeded split for {dataset_name}. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
+            # --- END FIX ---
 
             # Access the masks *after* they are guaranteed to exist.
             if hasattr(data, 'train_mask') and data.train_mask.dim() > 1:
