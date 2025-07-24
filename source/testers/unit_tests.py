@@ -714,8 +714,8 @@ def test_ppi_pipeline_run():
         config.EVAL_N_FOLDS = original_folds
         # FIX: Restore the correct config variable
         config.RESULTS_EVALUATION_DIR = original_eval_results_dir
-        if os.path.exists(test_ppi_output_dir): shutil.rmtree(test_ppi_output_dir)
-        dummy_data_created_path = Path(config.BASE_OUTPUT_DIR) / "dummy_data_temp"
+        # FIX: The dummy data is created relative to the temporary output dir, not the main one.
+        dummy_data_created_path = test_ppi_output_dir / "dummy_data_temp"
         if os.path.exists(dummy_data_created_path) and config.CLEANUP_DUMMY_DATA:
             shutil.rmtree(dummy_data_created_path)
     print("--- PPI Pipeline (Dummy Run) Smoke Test Complete ---")

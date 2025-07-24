@@ -34,10 +34,21 @@ class FileLogger:
             self.files = files
 
         def write(self, obj: Text):
+            # --- FIX for tqdm progress bar clutter in logs ---
+            # tqdm uses carriage returns ('\r') to update a line in-place.
+            # We detect these updates and only write them to TTY streams (the console),
+            # not to the log file, which prevents repeated lines in the log.
+            is_progress_bar_update = '\r' in obj
+
             for f in self.files:
                 if f:
+                    # If it's a progress bar update, only write it to TTYs.
+                    # The log file handler's isatty() will be False.
+                    if is_progress_bar_update and not f.isatty():
+                        continue
                     f.write(obj)
                     f.flush()  # Ensure output is written immediately
+            # --- END FIX ---
 
         def flush(self):
             for f in self.files:

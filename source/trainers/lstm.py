@@ -99,6 +99,11 @@ class LSTMBasedEmbedder:
         else:
             self.sequences = all_loaded_sequences
 
+        if not self.sequences:
+            print("  WARNING: No sequences available for LSTM training after downsampling. Skipping.")
+            self.vocab_size = 0
+            return
+
         all_chars = sorted(list(set("".join(seq for _, seq in self.sequences))))
         self.char_to_int = {c: i for i, c in enumerate(all_chars)}
         self.int_to_char = {i: c for i, c in enumerate(all_chars)}
@@ -121,6 +126,10 @@ class LSTMBasedEmbedder:
     def run(self):
         DataUtils.print_header("PIPELINE: Training LSTM & Generating Embeddings")
         self._prepare_corpus()
+        if not self.sequences or self.vocab_size == 0:
+            print("  Aborting LSTM pipeline due to lack of data.")
+            return None
+
         self._build_model()
 
         print(f"  Training LSTM model for {self.config.LSTM_EPOCHS} epochs using a data generator...")

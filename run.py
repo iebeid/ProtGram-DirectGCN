@@ -1,14 +1,19 @@
 # ==============================================================================
 # MODULE: run.py
 # PURPOSE: Project entry point and environment setup bootstrapper.
-# VERSION: 2.0 (Added environment validation against environment.yml)
-# AUTHOR: Islam Ebeid
+# VERSION: 3.0 (Integrated global logging and corrected validation logic)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import json
 import subprocess
 import sys
 from pathlib import Path
+
+# Local imports must come after the environment is validated and potentially set up.
+# We make an exception for Config and FileLogger which are needed for the bootstrapper itself.
+from configuration.config import Config
+from source.utils.logging import FileLogger
 
 # --- Configuration ---
 # This YAML file is the "source of truth" for a valid environment.
@@ -19,52 +24,58 @@ ENVIRONMENT_YML_FILE = "environment.yml"
 def is_environment_valid(project_root: Path) -> bool:
     """
     Checks if the current Conda environment matches the required packages
-    and versions specified in the environment.yml file.
+    specified in the environment.yml file.
     """
-    env_file = project_root / ENVIRONMENT_YML_FILE
+    env_file = project_root / "configuration" / ENVIRONMENT_YML_FILE
     if not env_file.exists():
-        print("--- Validation file not found. Assuming first-time setup. ---")
+        print("--- Validation file not found. Assuming first-time setup is required. ---")
         return False
 
     try:
         # 1. Get the list of currently installed packages from Conda
-        print("--- Validating current environment... ---")
+        print(f"--- Validating current environment against '{env_file.relative_to(project_root)}'... ---")
         result = subprocess.run(
             ["conda", "list", "--json"],
-            capture_output=True, text=True, check=True
+            capture_output=True, text=True, check=True, shell=False
         )
-        installed_packages = {pkg['name']: pkg['version'] for pkg in json.loads(result.stdout)}
+        # Create a set for faster lookups
+        installed_packages = {pkg['name'] for pkg in json.loads(result.stdout)}
 
         # 2. Parse the required packages from the environment.yml file
         # We use a simple parser to avoid depending on PyYAML before it's installed.
         with open(env_file, 'r') as f:
             lines = f.readlines()
 
-        required_conda = []
-        required_pip = []
+        required_packages = set()
         in_pip_section = False
         for line in lines:
             line = line.strip()
+            if not line or line.startswith(('#', 'name:', 'channels:', 'prefix:')):
+                continue
             if line == "dependencies:":
                 continue
             if "pip:" in line:
                 in_pip_section = True
                 continue
-            if not line or line.startswith('#') or line.startswith("name:") or line.startswith("channels:") or line.startswith("prefix:"):
-                continue
 
             # Handle package strings like 'numpy=1.26.4=pypi_0' or 'numpy==1.26.4'
-            package_name = line.split('=')[0].replace('-', '').strip()
-            if in_pip_section:
-                required_pip.append(package_name)
-            else:
-                required_conda.append(package_name)
+            # We only care about the package name for this validation.
+            if '==' in line:  # pip format
+                package_name = line.split('==')[0].strip()
+            elif '=' in line:  # conda format
+                package_name = line.split('=')[0].strip()
+            else:  # package name only
+                package_name = line.strip()
+
+            # The package name in yml (e.g., scikit-learn) should match conda list output.
+            if package_name:
+                required_packages.add(package_name)
 
         # 3. Check if all required packages are installed
-        for req_pkg in required_conda + required_pip:
-            if req_pkg not in installed_packages:
-                print(f"--- Validation FAILED: Required package '{req_pkg}' is not installed. ---")
-                return False
+        missing_packages = required_packages - installed_packages
+        if missing_packages:
+            print(f"--- Validation FAILED. Missing required packages: {', '.join(sorted(list(missing_packages)))} ---")
+            return False
 
         print("--- Environment validation PASSED. ---")
         return True
@@ -81,45 +92,63 @@ def is_environment_valid(project_root: Path) -> bool:
 def run_command(command: list[str]):
     """Runs a command and streams its output, exiting on failure."""
     try:
+        # Use Popen to stream output in real-time.
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             bufsize=1,
             universal_newlines=True
         )
+        # The 'if process.stdout:' check is crucial.
         if process.stdout:
-            for line in process.stdout:
-                print(line, end='')
+            for line in iter(process.stdout.readline, ''):
+                print(line, end='', flush=True)
+
         process.wait()
         if process.returncode != 0:
             print(f"\n--- Command failed with exit code {process.returncode}. Aborting. ---")
             sys.exit(process.returncode)
+
     except FileNotFoundError:
         print(f"--- ERROR: Command '{command[0]}' not found. Is it in your PATH? ---")
         sys.exit(1)
     except Exception as e:
-        print(f"--- An unexpected error occurred: {e} ---")
+        print(f"--- An unexpected error occurred while running a command: {e} ---")
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    project_root = Path(__file__).parent.resolve()
+    # Initialize config and logger at the very beginning to capture all output.
+    base_config = Config()
+    logger = FileLogger(base_config.LOG_DIR, enabled=base_config.ENABLE_FILE_LOGGING)
 
-    # 1. Validate the environment. If it's not valid, run the setup.
-    if not is_environment_valid(project_root):
-        print("--- Environment is invalid or not yet set up. Running installation... ---")
-        print("This may take several minutes.")
+    # Use the logger as a context manager to ensure it's always closed properly.
+    with logger:
+        project_root = Path(__file__).parent.resolve()
 
-        setup_script_path = str(project_root / "configuration" / "setup.py")
-        run_command([sys.executable, setup_script_path])
+        # 1. Validate the environment. If it's not valid, run the setup script.
+        # The output of the setup script will be captured by the logger.
+        if not is_environment_valid(project_root):
+            print("\n--- Environment is invalid or not yet set up. Running installation... ---")
+            print("--- This may take several minutes. All output is being logged. ---")
 
-        print("\n--- Environment setup complete. ---")
-        print("--- Starting the main pipeline... ---")
-    else:
-        print("--- Environment already set up. Starting main pipeline... ---")
+            setup_script_path = str(project_root / "configuration" / "setup.py")
+            run_command([sys.executable, setup_script_path])
 
-    # 2. Run the main pipeline script.
-    main_script_path = str(project_root / "main.py")
-    run_command([sys.executable, main_script_path])
+            print("\n--- Environment setup complete. Re-validating... ---")
+            if not is_environment_valid(project_root):
+                print("\n--- FATAL: Environment is still invalid after setup. Please check the logs. ---")
+                sys.exit(1)
+            print("--- Re-validation successful. Starting the main pipeline... ---")
+        else:
+            print("--- Environment is already set up and valid. Starting main pipeline... ---")
+
+        # 2. Run the main pipeline script as a separate process.
+        # This ensures it runs in the now-validated environment with a clean state.
+        # Its output will also be captured by the logger.
+        main_script_path = str(project_root / "main.py")
+        run_command([sys.executable, main_script_path])

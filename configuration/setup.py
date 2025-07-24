@@ -1,8 +1,8 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 7.0 (Generates environment.yml on success for validation)
-# AUTHOR: Islam Ebeid
+# VERSION: 8.0 (Refactored for path robustness and clarity)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import argparse
@@ -10,6 +10,7 @@ import os
 import platform
 import subprocess
 import sys
+from pathlib import Path
 
 # --- Configuration ---
 PYTHON_VERSION = "3.11"
@@ -23,66 +24,81 @@ ENVIRONMENT_YML_FILE = "environment.yml"
 
 # --- End Configuration ---
 
-def create_setup_script(commands: list[str]) -> str:
-    """Creates a platform-specific shell script from a list of commands."""
+def create_setup_script(commands: list[str], project_root: Path) -> Path:
+    """
+    Creates a platform-specific shell script from a list of commands.
+    This approach is used to ensure that a sequence of shell commands can be
+    executed reliably across different platforms (Windows vs. Linux/macOS).
+    """
     is_windows = platform.system() == "Windows"
     script_extension = ".bat" if is_windows else ".sh"
-    script_filename = f"setup_script{script_extension}"
+    # Create the script in the project root to ensure consistent execution paths.
+    script_path = project_root / f"temp_setup_script{script_extension}"
 
-    with open(script_filename, "w") as f:
+    with open(script_path, "w", encoding='utf-8') as f:
         if not is_windows:
             f.write("#!/bin/bash\n")
+            # 'set -e' ensures the script will exit immediately if a command fails.
             f.write("set -e\n")
         for command in commands:
             f.write(command + "\n")
 
     if not is_windows:
-        os.chmod(script_filename, 0o755)
-    return script_filename
+        # Make the script executable on Unix-like systems.
+        os.chmod(script_path, 0o755)
+    return script_path
 
 
-def run_script(script_filename: str):
+def run_script(script_path: Path):
     """Executes the setup script and streams its output."""
     is_windows = platform.system() == "Windows"
-    print(f"--- Starting Environment Setup using '{script_filename}' ---")
+    print(f"--- Starting Environment Setup using temporary script: '{script_path.name}' ---")
     try:
+        # On Windows, 'cmd /c' is needed to run .bat files.
+        # On Linux/macOS, we execute the .sh file directly.
         executor = ['cmd', '/c'] if is_windows else []
-        script_path = script_filename if is_windows else f"./{script_filename}"
+        command_to_run = executor + [str(script_path)]
 
+        # Use Popen to stream output in real-time.
         process = subprocess.Popen(
-            executor + [script_path],
+            command_to_run,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             bufsize=1,
-            universal_newlines=True
+            universal_newlines=True,
+            cwd=script_path.parent  # Ensure script runs from the project root
         )
 
         if process.stdout:
-            for line in process.stdout:
-                print(line, end='')
+            for line in iter(process.stdout.readline, ''):
+                print(line, end='', flush=True)
         process.wait()
 
         if process.returncode != 0:
-            print(f"\n--- Script failed with exit code {process.returncode} ---")
+            print(f"\n--- Script failed with exit code {process.returncode}. Please check the logs above. ---")
             sys.exit(process.returncode)
         else:
             print("\n--- Environment setup completed successfully! ---")
 
     finally:
-        if os.path.exists(script_filename):
-            os.remove(script_filename)
-            print(f"--- Cleaned up temporary script file: {script_filename} ---")
+        # Always clean up the temporary script file.
+        if os.path.exists(script_path):
+            os.remove(script_path)
+            print(f"--- Cleaned up temporary script file: {script_path.name} ---")
 
 
 def check_conda_installed() -> bool:
     """Checks if conda is installed and available in the system's PATH."""
     try:
         subprocess.run(["conda", "--version"], check=True, capture_output=True, text=True, shell=False)
-        print("--- Conda is installed. ---")
+        print("--- Conda is installed and detected. ---")
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         print("--- ERROR: Conda is not installed or not in your system's PATH. ---")
+        print("--- Please install Anaconda/Miniconda and ensure it's activated. ---")
         return False
 
 
@@ -92,15 +108,24 @@ if __name__ == "__main__":
     if not check_conda_installed():
         sys.exit(1)
 
+    # Determine the project root from this script's location.
+    # This script is in 'configuration/', so the root is its parent's parent.
+    project_root = Path(__file__).parent.parent.resolve()
+    config_dir = project_root / "configuration"
+
     system = platform.system()
     compiler_commands = []
     if system == "Linux":
         compiler_commands.extend([
-            "echo '--- Installing GCC/G++ compilers for Linux ---'",
+            "echo '--- Installing GCC/G++ compilers for Linux (required by PyCUDA) ---'",
             "conda install -c conda-forge gcc_linux-64=12 gxx_linux-64=12 -y",
             "echo '--- Clearing PyCUDA cache to prevent stale compiler paths ---'",
             "rm -rf ~/.config/pycuda"
         ])
+
+    # Define the full path for the output environment file.
+    # Using a full path in the command makes it robust, regardless of where the script runs.
+    env_yml_output_path = config_dir / ENVIRONMENT_YML_FILE
 
     command_sequence = [
         "conda clean --all -y",
@@ -113,7 +138,7 @@ if __name__ == "__main__":
             "cuda=12.5 cudnn=9.3 tensorflow "
             "dask tqdm biopython matplotlib scipy scikit-learn "
             "gensim python-louvain seaborn pycuda networkx=3.2.1 "
-            "pandas h5py pyyaml"  # Added PyYAML for the validation script
+            "pandas h5py pyyaml"
         ),
 
         "echo '--- Stage 2: Installing PyTorch and other standard pip-managed packages ---'",
@@ -134,14 +159,15 @@ if __name__ == "__main__":
         "python -c \"import tensorflow as tf; print('TensorFlow GPUs found: ' + str(len(tf.config.list_physical_devices('GPU'))))\"",
         "python -c \"import torch; print('PyTorch CUDA available: ' + str(torch.cuda.is_available()))\"",
 
-        # --- MINIMAL CHANGE: Add the final step to generate the environment file ---
+        # --- CORRECTED PATH: Generate the environment file in the 'configuration' directory ---
         "echo '--- Stage 4: Generating environment validation file ---'",
-        f"conda env export > ../../{ENVIRONMENT_YML_FILE}",
-        # --- END CHANGE ---
+        f'conda env export > "{env_yml_output_path}"',
+        # --- END CORRECTION ---
 
         "conda clean --all -y",
         "pip cache purge"
     ]
 
-    script_file = create_setup_script(command_sequence)
+    # Create and run the setup script from the project root for consistency.
+    script_file = create_setup_script(command_sequence, project_root)
     run_script(script_file)

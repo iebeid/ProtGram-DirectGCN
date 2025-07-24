@@ -150,12 +150,13 @@ class ProtGramXGCNTrainer:
             optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=self.config.GCN_WEIGHT_DECAY if l2_lambda_val <= 0 else 0.0)
 
             if self.config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
-                subgraphs = self._create_clustered_subgraphs(graph_obj, data)
+                subgraphs = self._create_clustered_subgraphs(graph_obj, data, model_type)
                 self._train_model_clustered(model, subgraphs, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, l2_lambda_val, total_nodes_in_level_graph=graph_obj.number_of_nodes)
             else:
                 self._train_model_full_batch(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, l2_lambda_val)
 
-            ngram_embeddings_per_level[n] = EmbeddingProcessor.extract_gcn_node_embeddings(model, data, graph_obj, self.config, self.device, self._create_clustered_subgraphs)
+            ngram_embeddings_per_level[n] = EmbeddingProcessor.extract_gcn_node_embeddings(model, data, graph_obj, self.config, self.device, lambda g, d: self._create_clustered_subgraphs(g, d, model_type))
+
             print(f"  Generated {ngram_embeddings_per_level[n].shape[0]} embeddings of dim {ngram_embeddings_per_level[n].shape[1]} for n={n}.")
             del model, data, graph_obj, initial_features, labels, optimizer
             gc.collect()
@@ -275,7 +276,8 @@ class ProtGramXGCNTrainer:
                 print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
                 break
 
-    def _create_clustered_subgraphs(self, graph: DirectedNgramGraph, full_data: Data) -> List[Data]:
+    def _create_clustered_subgraphs(self, graph: DirectedNgramGraph, full_data: Data, model_type: str) -> List[Data]:
+
         """Partitions the graph into subgraphs, including all necessary matrices."""
         if graph.number_of_nodes == 0: return []
         num_clusters_calculated = math.ceil(graph.number_of_nodes / self.config.GCN_TARGET_NODES_PER_CLUSTER)
@@ -318,11 +320,11 @@ class ProtGramXGCNTrainer:
             A_in_w_cpu = graph.A_in_w.cpu()
 
             for model_type in self.config.PROTGRAM_MODELS_TO_TRAIN:
+                # Only add the edge formats required for the specific model being trained.
                 if model_type == 'directgcn':
                     sub_edge_index_in, sub_edge_weight_in = subgraph(nodes_tensor_cpu, mathcal_A_in_cpu.indices(), mathcal_A_in_cpu.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
                     sub_edge_index_out, sub_edge_weight_out = subgraph(nodes_tensor_cpu, mathcal_A_out_cpu.indices(), mathcal_A_out_cpu.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
                     sub_edge_index_undir, sub_edge_weight_undir = subgraph(nodes_tensor_cpu, A_undir_cpu.indices(), A_undir_cpu.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
-                    # ... (assign to subgraph_data) ...
                     subgraph_data.edge_index_in, subgraph_data.edge_weight_in = sub_edge_index_in, sub_edge_weight_in
                     subgraph_data.edge_index_out, subgraph_data.edge_weight_out = sub_edge_index_out, sub_edge_weight_out
                     subgraph_data.edge_index_undirected_norm, subgraph_data.edge_weight_undirected_norm = sub_edge_index_undir, sub_edge_weight_undir
@@ -330,6 +332,7 @@ class ProtGramXGCNTrainer:
                     sub_edge_index_fwd, _ = subgraph(nodes_tensor_cpu, A_out_w_cpu.indices(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
                     sub_edge_index_bwd, _ = subgraph(nodes_tensor_cpu, A_in_w_cpu.indices(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
                     subgraph_data.edge_index, subgraph_data.edge_index_backward = sub_edge_index_fwd, sub_edge_index_bwd
+
             subgraphs.append(subgraph_data)
         return subgraphs
 
