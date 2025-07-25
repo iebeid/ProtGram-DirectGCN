@@ -7,11 +7,20 @@
 #          system services, removing the old environment, then re-cloning and running.
 # WARNING: This is a DESTRUCTIVE script. It will delete your local
 #          'ppi-env' Conda environment.
-# VERSION: 2.2 (Added system service setup for SSH, VSFTPD, and WSL mounts)
+# VERSION: 2.3 (Added sudo pre-authentication for non-interactive execution)
 # ==============================================================================
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
+
+# --- Pre-flight Check: Refresh sudo timestamp ---
+echo "INFO: This script uses 'sudo' to manage system services and mounts."
+echo "You may be prompted for your password once at the beginning."
+# The 'sudo -v' command will refresh the user's sudo timestamp,
+# preventing password prompts during the rest of the script's execution.
+sudo -v
+echo "SUCCESS: Sudo credentials refreshed."
+
 
 # --- Configuration ---
 ENV_NAME="ppi-env"
