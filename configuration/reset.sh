@@ -96,7 +96,8 @@ echo "SUCCESS: Conda cache cleaned."
 
 # --- Step 2: Re-create Environment and Activate ---
 echo -e "\n--- STEP 2: Re-creating Conda Environment '$ENV_NAME' ---"
-conda create -n "$ENV_NAME" python="$PYTHON_VERSION" -y
+# FIX: Create the environment using conda-forge from the start to ensure consistency.
+conda create -n "$ENV_NAME" -c conda-forge python="$PYTHON_VERSION" -y
 conda activate "$ENV_NAME"
 echo "SUCCESS: Environment '$ENV_NAME' created and activated."
 python --version
