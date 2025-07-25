@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 8.2 (Hybrid Conda/Pip install to fix PyG resolution)
+# VERSION: 8.3 (Split large conda install for network robustness)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -127,16 +127,21 @@ if __name__ == "__main__":
     # Using a full path in the command makes it robust, regardless of where the script runs.
     env_yml_output_path = config_dir / ENVIRONMENT_YML_FILE
 
-    # --- FIX: Revert to the stable, multi-stage installation process ---
+    # --- FIX: Split the large conda install command into smaller, more robust stages ---
     command_sequence = [
         "conda clean --all -y",
         "conda update --all -y",
         *compiler_commands,
 
-        "echo '--- Stage 1: Installing all Conda-managed packages (CUDA, TF, Core Libs) ---'",
+        "echo '--- Stage 1a: Installing GPU drivers and core TensorFlow ---'",
         (
             "conda install -c nvidia -c conda-forge -y "
-            "cuda=12.5 cudnn=9.3 tensorflow "
+            "cuda=12.5 cudnn=9.3 tensorflow"
+        ),
+
+        "echo '--- Stage 1b: Installing core data science and utility libraries ---'",
+        (
+            "conda install -c conda-forge -y "
             "dask tqdm biopython matplotlib scipy scikit-learn "
             "gensim python-louvain seaborn pycuda networkx=3.2.1 "
             "pandas h5py pyyaml"
