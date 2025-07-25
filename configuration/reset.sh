@@ -103,24 +103,25 @@ echo "SUCCESS: Environment '$ENV_NAME' created and activated."
 python --version
 
 # --- Step 3: Re-clone the Repository ---
-echo -e "\n--- STEP 3: Removing Old Project Directory and Re-cloning ---"
+echo -e "\n--- STEP 3: Resetting Project Directory ---"
 # Navigate to the standard projects directory
 cd "$PROJECTS_DIR"
 echo "INFO: Current directory: $(pwd)"
 
-# Check if the project directory exists before trying to remove it
+# --- FIX: Make the reset non-destructive to preserve LFS files ---
+# If the directory exists, clean it with git. Otherwise, clone it.
 if [ -d "$PROJECT_DIR_NAME" ]; then
-    echo "INFO: Removing old project directory: $PROJECT_DIR_NAME/"
-    # No sudo needed as it's in the user's home directory.
-    rm -rf "$PROJECT_DIR_NAME"
+    echo "INFO: Project directory exists. Resetting to a clean state..."
+    cd "$PROJECT_DIR_NAME"
+    git reset --hard HEAD  # Discard all local changes
+    git clean -fdx         # Remove all untracked files and directories
+    echo "SUCCESS: Project directory has been reset."
 else
-    echo "INFO: Old project directory not found. Skipping removal."
+    echo "INFO: Project directory not found. Cloning fresh repository..."
+    git clone "$REPO_URL"
+    cd "$PROJECT_DIR_NAME"
+    echo "SUCCESS: Repository cloned."
 fi
-
-echo "INFO: Cloning fresh repository from $REPO_URL..."
-git clone "$REPO_URL"
-cd "$PROJECT_DIR_NAME"
-echo "SUCCESS: Repository cloned. Current directory: $(pwd)"
 
 # --- Step 4: Checkout Branch and Pull Latest ---
 echo -e "\n--- STEP 4: Checking out branch '$GIT_BRANCH' and pulling data ---"
