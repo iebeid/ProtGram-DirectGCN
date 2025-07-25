@@ -3,11 +3,11 @@
 # ==============================================================================
 # SCRIPT: reset.sh
 # PURPOSE: Completely resets the project by creating a standard directory
-#          structure in the user's home (~/Documents/Projects), removing the
-#          old environment and project, then re-cloning and running.
+#          structure in the user's home (~/Documents/Projects), setting up
+#          system services, removing the old environment, then re-cloning and running.
 # WARNING: This is a DESTRUCTIVE script. It will delete your local
 #          'ppi-env' Conda environment.
-# VERSION: 2.1 (Non-destructive Git reset to preserve LFS data)
+# VERSION: 2.2 (Added system service setup for SSH, VSFTPD, and WSL mounts)
 # ==============================================================================
 
 # Exit immediately if a command exits with a non-zero status.
@@ -77,6 +77,59 @@ if command -v git-lfs &> /dev/null; then
 else
     echo "WARNING: git-lfs command not found. Large files might not be downloaded correctly."
 fi
+
+# --- Step 0.7: Setting up System Services (SSH, VSFTPD, Mounts) ---
+echo -e "\n--- STEP 0.7: Setting up System Services (SSH, VSFTPD, Mounts) ---"
+
+# This section is primarily for Debian/Ubuntu-based systems
+if command -v apt &> /dev/null; then
+    # --- SSH Server ---
+    echo "INFO: Attempting to start the SSH server..."
+    sudo service ssh start &> /dev/null
+    if pgrep -x "sshd" &> /dev/null; then
+      echo "SUCCESS: SSH server process is running."
+    else
+      echo "WARNING: SSH server does not appear to be running."
+    fi
+
+    # --- VSFTPD Server ---
+    echo "INFO: Checking for vsftpd..."
+    if ! command -v vsftpd &> /dev/null; then
+        echo "INFO: vsftpd not found. Installing..."
+        sudo apt install vsftpd -y
+        echo "SUCCESS: vsftpd installed."
+    else
+        echo "INFO: vsftpd is already installed."
+    fi
+    echo "INFO: Restarting vsftpd service..."
+    sudo systemctl restart vsftpd.service
+    echo "SUCCESS: vsftpd service restarted."
+
+else
+    echo "INFO: 'apt' not found. Skipping system service setup (SSH, VSFTPD)."
+fi
+
+# --- WSL-Specific Drive Mount ---
+# Check if running in a WSL environment by looking for 'Microsoft' in /proc/version
+if grep -q -i "microsoft" /proc/version &> /dev/null; then
+    echo "INFO: WSL environment detected. Attempting to mount G: drive..."
+    MOUNT_POINT="/mnt/g"
+    echo "INFO: Ensuring mount point directory '$MOUNT_POINT' exists."
+    sudo mkdir -p "$MOUNT_POINT"
+    echo "INFO: Attempting to unmount '$MOUNT_POINT' to ensure a clean state."
+    # The '|| true' prevents the script from exiting if the drive wasn't mounted.
+    sudo umount "$MOUNT_POINT" &> /dev/null || true
+    echo "INFO: Executing mount command..."
+    sudo mount -t drvfs G: "$MOUNT_POINT" -o metadata
+    if mountpoint -q "$MOUNT_POINT"; then
+        echo "SUCCESS: The G: drive has been mounted to $MOUNT_POINT."
+    else
+        echo "ERROR: The mount command failed. The drive is not mounted."
+    fi
+else
+    echo "INFO: Not a WSL environment. Skipping Windows drive mount."
+fi
+
 
 # --- Step 1: Deactivate and Remove Old Environment ---
 echo -e "\n--- STEP 1: Deactivating and Removing Conda Environment '$ENV_NAME' ---"
