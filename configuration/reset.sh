@@ -109,25 +109,19 @@ else
     echo "INFO: 'apt' not found. Skipping system service setup (SSH, VSFTPD)."
 fi
 
-# --- WSL-Specific Drive Mount ---
-# Check if running in a WSL environment by looking for 'Microsoft' in /proc/version
-if grep -q -i "microsoft" /proc/version &> /dev/null; then
-    echo "INFO: WSL environment detected. Attempting to mount G: drive..."
-    MOUNT_POINT="/mnt/g"
-    echo "INFO: Ensuring mount point directory '$MOUNT_POINT' exists."
-    sudo mkdir -p "$MOUNT_POINT"
-    echo "INFO: Attempting to unmount '$MOUNT_POINT' to ensure a clean state."
-    # The '|| true' prevents the script from exiting if the drive wasn't mounted.
-    sudo umount "$MOUNT_POINT" &> /dev/null || true
-    echo "INFO: Executing mount command..."
-    sudo mount -t drvfs G: "$MOUNT_POINT" -o metadata
-    if mountpoint -q "$MOUNT_POINT"; then
-        echo "SUCCESS: The G: drive has been mounted to $MOUNT_POINT."
-    else
-        echo "ERROR: The mount command failed. The drive is not mounted."
-    fi
+# --- Drive Mount ---
+echo "INFO: Attempting to mount G: drive..."
+MOUNT_POINT="/mnt/g"
+echo "INFO: Ensuring mount point directory '$MOUNT_POINT' exists."
+sudo mkdir -p "$MOUNT_POINT"
+echo "INFO: Attempting to unmount '$MOUNT_POINT' to ensure a clean state."
+# The '|| true' prevents the script from exiting if the drive wasn't mounted.
+echo "INFO: Executing mount command..."
+sudo mount -t drvfs G: "$MOUNT_POINT" -o metadata
+if mountpoint -q "$MOUNT_POINT"; then
+    echo "SUCCESS: The G: drive has been mounted to $MOUNT_POINT."
 else
-    echo "INFO: Not a WSL environment. Skipping Windows drive mount."
+    echo "ERROR: The mount command failed. The drive is not mounted."
 fi
 
 
