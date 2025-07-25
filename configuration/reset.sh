@@ -6,8 +6,8 @@
 #          structure in the user's home (~/Documents/Projects), removing the
 #          old environment and project, then re-cloning and running.
 # WARNING: This is a DESTRUCTIVE script. It will delete your local
-#          'ppi-env' Conda environment and the '~/Documents/Projects/ProtGram-DirectGCN' folder.
-# USAGE: Run with 'bash reset.sh' from any location.
+#          'ppi-env' Conda environment.
+# VERSION: 2.1 (Non-destructive Git reset to preserve LFS data)
 # ==============================================================================
 
 # Exit immediately if a command exits with a non-zero status.
@@ -96,26 +96,27 @@ echo "SUCCESS: Conda cache cleaned."
 
 # --- Step 2: Re-create Environment and Activate ---
 echo -e "\n--- STEP 2: Re-creating Conda Environment '$ENV_NAME' ---"
-# FIX: Create the environment using conda-forge from the start to ensure consistency.
+# Create the environment using conda-forge from the start to ensure consistency.
 conda create -n "$ENV_NAME" -c conda-forge python="$PYTHON_VERSION" -y
 conda activate "$ENV_NAME"
 echo "SUCCESS: Environment '$ENV_NAME' created and activated."
 python --version
 
-# --- Step 3: Re-clone the Repository ---
+# --- Step 3: Reset or Clone the Repository ---
 echo -e "\n--- STEP 3: Resetting Project Directory ---"
 # Navigate to the standard projects directory
 cd "$PROJECTS_DIR"
 echo "INFO: Current directory: $(pwd)"
 
-# --- FIX: Make the reset non-destructive to preserve LFS files ---
 # If the directory exists, clean it with git. Otherwise, clone it.
 if [ -d "$PROJECT_DIR_NAME" ]; then
     echo "INFO: Project directory exists. Resetting to a clean state..."
     cd "$PROJECT_DIR_NAME"
-    git reset --hard HEAD  # Discard all local changes
-    git clean -fdx         # Remove all untracked files and directories
+    # --- FIX: This is the minimal change ---
+    # Reset any changes to tracked files, but leave untracked (e.g., manual LFS) files alone.
+    git reset --hard HEAD
     echo "SUCCESS: Project directory has been reset."
+    # --- END FIX ---
 else
     echo "INFO: Project directory not found. Cloning fresh repository..."
     git clone "$REPO_URL"
@@ -130,7 +131,7 @@ echo "INFO: Checked out branch '$GIT_BRANCH'."
 git pull
 echo "INFO: Pulled latest changes for the branch."
 git lfs pull
-echo "INFO: Pulled LFS data."
+echo "INFO: Attempted to pull LFS data. This may show errors for files over budget, which is expected."
 
 # --- Step 5: Run the Main Application ---
 echo -e "\n--- STEP 5: Executing the main application via run.py ---"
