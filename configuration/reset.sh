@@ -169,11 +169,17 @@ echo "INFO: Current directory: $(pwd)"
 if [ -d "$PROJECT_DIR_NAME" ]; then
     echo "INFO: Project directory exists. Resetting to a clean state..."
     cd "$PROJECT_DIR_NAME"
-    # --- FIX: This is the minimal change ---
-    # Reset any changes to tracked files, but leave untracked (e.g., manual LFS) files alone.
-    git reset --hard HEAD
-    echo "SUCCESS: Project directory has been reset."
-    # --- END FIX ---
+     # --- FIX: A more robust reset sequence to handle any starting state ---
+     # 1. Fetch the latest changes from the remote repository.
+     git fetch --all
+     # 2. Forcefully checkout the correct branch, discarding any local changes.
+     git checkout -f "$GIT_BRANCH"
+     # 3. Reset the local branch to exactly match the remote branch.
+     git reset --hard "origin/$GIT_BRANCH"
+     # 4. Remove all untracked files and directories, EXCEPT the 'data' directory.
+     git clean -fd --exclude='data/'
+     echo "SUCCESS: Project directory has been forcefully reset to branch '$GIT_BRANCH', preserving the data directory."
+
 else
     echo "INFO: Project directory not found. Cloning fresh repository..."
     git clone "$REPO_URL"
@@ -182,11 +188,9 @@ else
 fi
 
 # --- Step 4: Checkout Branch and Pull Latest ---
-echo -e "\n--- STEP 4: Checking out branch '$GIT_BRANCH' and pulling data ---"
-git checkout "$GIT_BRANCH"
-echo "INFO: Checked out branch '$GIT_BRANCH'."
-git pull
-echo "INFO: Pulled latest changes for the branch."
+echo -e "\n--- STEP 4: Pulling LFS data ---"
+# The main branch content was already handled by the forceful reset in Step 3.
+# We only need to ensure the LFS files are up-to-date.
 git lfs pull
 echo "INFO: Attempted to pull LFS data. This may show errors for files over budget, which is expected."
 
