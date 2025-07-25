@@ -94,7 +94,7 @@ echo -e "\n--- STEP 0.7: Setting up System Services (SSH, VSFTPD, Mounts) ---"
 if command -v apt &> /dev/null; then
     # --- SSH Server ---
     echo "INFO: Attempting to start the SSH server..."
-    sudo service ssh start &> /dev/null
+    sudo service ssh start || true # Allow to fail gracefully if already running
     if pgrep -x "sshd" &> /dev/null; then
       echo "SUCCESS: SSH server process is running."
     else
@@ -111,7 +111,7 @@ if command -v apt &> /dev/null; then
         echo "INFO: vsftpd is already installed."
     fi
     echo "INFO: Restarting vsftpd service..."
-    sudo systemctl restart vsftpd.service
+    sudo systemctl restart vsftpd.service || true # Allow to fail gracefully
     echo "SUCCESS: vsftpd service restarted."
 
 else
@@ -124,7 +124,8 @@ MOUNT_POINT="/mnt/g"
 echo "INFO: Ensuring mount point directory '$MOUNT_POINT' exists."
 sudo mkdir -p "$MOUNT_POINT"
 echo "INFO: Attempting to unmount '$MOUNT_POINT' to ensure a clean state."
-# The '|| true' prevents the script from exiting if the drive wasn't mounted.
+# The '|| true' prevents the script from exiting if the drive wasn't mounted. We keep it for robustness.
+sudo umount "$MOUNT_POINT" || true
 echo "INFO: Executing mount command..."
 sudo mount -t drvfs G: "$MOUNT_POINT" -o metadata
 if mountpoint -q "$MOUNT_POINT"; then
