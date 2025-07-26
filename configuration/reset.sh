@@ -3,11 +3,12 @@
 # ==============================================================================
 # SCRIPT: reset.sh
 # PURPOSE: Completely resets the project by creating a standard directory
-#          structure in the user's home (~/Documents/Projects), setting up
-#          system services, removing the old environment, then re-cloning and running.
+#          structure, setting up system services, removing the old environment,
+#          then re-cloning and running. This version is hardened against
+#          Git LFS budget errors.
 # WARNING: This is a DESTRUCTIVE script. It will delete your local
 #          'ppi-env' Conda environment.
-# VERSION: 2.3 (Added sudo pre-authentication for non-interactive execution)
+# VERSION: 3.0 (Resilient to Git LFS smudge filter errors)
 # ==============================================================================
 
 # Exit immediately if a command exits with a non-zero status.
@@ -169,17 +170,20 @@ echo "INFO: Current directory: $(pwd)"
 if [ -d "$PROJECT_DIR_NAME" ]; then
     echo "INFO: Project directory exists. Resetting to a clean state..."
     cd "$PROJECT_DIR_NAME"
-     # --- FIX: A more robust reset sequence to handle any starting state ---
-     # 1. Fetch the latest changes from the remote repository.
-     git fetch --all
-     # 2. Forcefully checkout the correct branch, discarding any local changes.
-     git checkout -f "$GIT_BRANCH"
-     # 3. Reset the local branch to exactly match the remote branch.
-     git reset --hard "origin/$GIT_BRANCH"
-     # 4. Remove all untracked files and directories, EXCEPT the 'data' directory.
-     git clean -fd --exclude='data/'
-     echo "SUCCESS: Project directory has been forcefully reset to branch '$GIT_BRANCH', preserving the data directory."
-
+    # --- FIX: The most robust reset sequence, resilient to LFS smudge errors ---
+    # 1. Fetch the latest changes from the remote repository.
+    git fetch --all
+    # 2. Temporarily disable the LFS smudge filter to prevent download errors on reset.
+    # This is the key to handling the "LFS budget exceeded" error gracefully.
+    export GIT_LFS_SKIP_SMUDGE=1
+    # 3. Forcefully checkout the correct branch and reset it to match the remote.
+    git checkout -f "$GIT_BRANCH"
+    git reset --hard "origin/$GIT_BRANCH"
+    # 4. Re-enable the smudge filter for subsequent commands (like 'git lfs pull').
+    unset GIT_LFS_SKIP_SMUDGE
+    # 5. Remove all untracked files and directories, EXCEPT the 'data' directory.
+    git clean -fd --exclude='data/'
+    echo "SUCCESS: Project directory has been forcefully reset to branch '$GIT_BRANCH', preserving the data directory."
 else
     echo "INFO: Project directory not found. Cloning fresh repository..."
     git clone "$REPO_URL"
@@ -187,7 +191,7 @@ else
     echo "SUCCESS: Repository cloned."
 fi
 
-# --- Step 4: Checkout Branch and Pull Latest ---
+# --- Step 4: Pull LFS data ---
 echo -e "\n--- STEP 4: Pulling LFS data ---"
 # The main branch content was already handled by the forceful reset in Step 3.
 # We only need to ensure the LFS files are up-to-date.
