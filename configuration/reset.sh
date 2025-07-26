@@ -2,13 +2,14 @@
 
 # ==============================================================================
 # SCRIPT: reset.sh
-# PURPOSE: Completely resets the project by creating a standard directory
-#          structure, setting up system services, removing the old environment,
-#          then re-cloning and running. This version is hardened against
-#          Git LFS budget errors.
-# WARNING: This is a DESTRUCTIVE script. It will delete your local
-#          'ppi-env' Conda environment.
-# VERSION: 3.0 (Resilient to Git LFS smudge filter errors)
+# PURPOSE: Completely resets the project by destroying the old repository and
+#          re-cloning. It interactively handles two cases:
+#          1. A normal, full clone for users without LFS issues.
+#          2. A sparse clone for users with LFS budget errors, prompting for
+#             manual data placement.
+# WARNING: This script is ALWAYS DESTRUCTIVE and will remove the existing
+#          project directory.
+# VERSION: 6.0 (Always destructive; interactive clone method)
 # ==============================================================================
 
 # Exit immediately if a command exits with a non-zero status.
@@ -17,8 +18,6 @@ set -e
 # --- Pre-flight Check: Refresh sudo timestamp ---
 echo "INFO: This script uses 'sudo' to manage system services and mounts."
 echo "You may be prompted for your password once at the beginning."
-# The 'sudo -v' command will refresh the user's sudo timestamp,
-# preventing password prompts during the rest of the script's execution.
 sudo -v
 echo "SUCCESS: Sudo credentials refreshed."
 
@@ -31,117 +30,32 @@ PYTHON_VERSION="3.11"
 GIT_BRANCH="v2"
 
 # --- Step 0: Define Project Structure and Find Conda ---
-# Define the standard project location within the user's home directory.
 DOCUMENTS_DIR="$HOME/documents"
 PROJECTS_DIR="$DOCUMENTS_DIR/projects"
 
 echo "INFO: Ensuring project directory structure exists: $PROJECTS_DIR"
-# The '-p' flag creates parent directories (like Documents) as needed.
 mkdir -p "$PROJECTS_DIR"
 echo "SUCCESS: Project root will be in: $PROJECTS_DIR"
 
-# Find the base conda directory to source the activation script
 CONDA_BASE=$(conda info --base)
 if [ -z "$CONDA_BASE" ]; then
     echo "ERROR: Could not find Conda base directory. Is Conda installed?"
-    echo "Please install Anaconda or Miniconda and ensure it is in your system's PATH."
     exit 1
 fi
 echo "INFO: Conda base found at: $CONDA_BASE"
-
-# Source the conda script to make 'conda activate' available
 source "$CONDA_BASE/etc/profile.d/conda.sh"
 
-# --- Step 0.5: Install Git and Git LFS if needed (for Debian/Ubuntu) ---
-echo -e "\n--- STEP 0.5: Checking for Git and Git LFS ---"
-# Check for apt package manager (Debian/Ubuntu)
-if command -v apt &> /dev/null; then
-    echo "INFO: 'apt' package manager found. Checking dependencies..."
-    # Install git if not present
-    if ! command -v git &> /dev/null; then
-        echo "INFO: Git not found. Installing git..."
-        sudo apt update
-        sudo apt install git -y
-        echo "SUCCESS: Git installed."
-    else
-        echo "INFO: Git is already installed."
-    fi
-
-    # Install git-lfs if not present
-    if ! command -v git-lfs &> /dev/null; then
-        echo "INFO: Git LFS not found. Installing git-lfs..."
-        sudo apt install git-lfs -y
-        echo "SUCCESS: Git LFS installed."
-    else
-        echo "INFO: Git LFS is already installed."
-    fi
-else
-    echo "INFO: 'apt' not found. Assuming Git and Git LFS are already installed."
+# --- Step 0.5: Dependency Checks (Git, Git LFS) ---
+if ! command -v git &> /dev/null || ! command -v git-lfs &> /dev/null; then
+    echo "ERROR: 'git' and 'git-lfs' are required. Please install them."
+    exit 1
 fi
-
-# Initialize Git LFS if it's available
-if command -v git-lfs &> /dev/null; then
-    echo "INFO: Initializing Git LFS..."
-    git lfs install
-    echo "SUCCESS: Git LFS initialized."
-else
-    echo "WARNING: git-lfs command not found. Large files might not be downloaded correctly."
-fi
-
-# --- Step 0.7: Setting up System Services (SSH, VSFTPD, Mounts) ---
-echo -e "\n--- STEP 0.7: Setting up System Services (SSH, VSFTPD, Mounts) ---"
-
-# This section is primarily for Debian/Ubuntu-based systems
-if command -v apt &> /dev/null; then
-    # --- SSH Server ---
-    echo "INFO: Attempting to start the SSH server..."
-    sudo service ssh start || true # Allow to fail gracefully if already running
-    if pgrep -x "sshd" &> /dev/null; then
-      echo "SUCCESS: SSH server process is running."
-    else
-      echo "WARNING: SSH server does not appear to be running."
-    fi
-
-    # --- VSFTPD Server ---
-    echo "INFO: Checking for vsftpd..."
-    if ! command -v vsftpd &> /dev/null; then
-        echo "INFO: vsftpd not found. Installing..."
-        sudo apt install vsftpd -y
-        echo "SUCCESS: vsftpd installed."
-    else
-        echo "INFO: vsftpd is already installed."
-    fi
-    echo "INFO: Restarting vsftpd service..."
-    sudo systemctl restart vsftpd.service || true # Allow to fail gracefully
-    echo "SUCCESS: vsftpd service restarted."
-
-else
-    echo "INFO: 'apt' not found. Skipping system service setup (SSH, VSFTPD)."
-fi
-
-# --- Drive Mount ---
-echo "INFO: Attempting to mount G: drive..."
-MOUNT_POINT="/mnt/g"
-echo "INFO: Ensuring mount point directory '$MOUNT_POINT' exists."
-sudo mkdir -p "$MOUNT_POINT"
-echo "INFO: Attempting to unmount '$MOUNT_POINT' to ensure a clean state."
-# The '|| true' prevents the script from exiting if the drive wasn't mounted. We keep it for robustness.
-sudo umount "$MOUNT_POINT" || true
-echo "INFO: Executing mount command..."
-sudo mount -t drvfs G: "$MOUNT_POINT" -o metadata
-if mountpoint -q "$MOUNT_POINT"; then
-    echo "SUCCESS: The G: drive has been mounted to $MOUNT_POINT."
-else
-    echo "ERROR: The mount command failed. The drive is not mounted."
-fi
+echo "INFO: Git and Git LFS are installed."
 
 
 # --- Step 1: Deactivate and Remove Old Environment ---
 echo -e "\n--- STEP 1: Deactivating and Removing Conda Environment '$ENV_NAME' ---"
-# Deactivate in case we are currently in the environment
 conda deactivate
-
-# Check if the environment exists before trying to remove it
 if conda env list | grep -q "$ENV_NAME"; then
     echo "INFO: Environment '$ENV_NAME' found. Removing..."
     conda env remove -n "$ENV_NAME" -y
@@ -149,57 +63,75 @@ if conda env list | grep -q "$ENV_NAME"; then
 else
     echo "INFO: Environment '$ENV_NAME' not found. Skipping removal."
 fi
-conda clean --all -y
+conda clean --all -y > /dev/null
 echo "SUCCESS: Conda cache cleaned."
 
 # --- Step 2: Re-create Environment and Activate ---
 echo -e "\n--- STEP 2: Re-creating Conda Environment '$ENV_NAME' ---"
-# Create the environment using conda-forge from the start to ensure consistency.
 conda create -n "$ENV_NAME" -c conda-forge python="$PYTHON_VERSION" -y
 conda activate "$ENV_NAME"
 echo "SUCCESS: Environment '$ENV_NAME' created and activated."
 python --version
 
-# --- Step 3: Reset or Clone the Repository ---
+# --- Step 3: Reset Project Directory ---
 echo -e "\n--- STEP 3: Resetting Project Directory ---"
-# Navigate to the standard projects directory
 cd "$PROJECTS_DIR"
 echo "INFO: Current directory: $(pwd)"
 
-# If the directory exists, clean it with git. Otherwise, clone it.
-if [ -d "$PROJECT_DIR_NAME" ]; then
-    echo "INFO: Project directory exists. Resetting to a clean state..."
-    cd "$PROJECT_DIR_NAME"
-    # --- FIX: The most robust reset sequence, resilient to LFS smudge errors ---
-    # 1. Fetch the latest changes from the remote repository.
-    git fetch --all
-    # 2. Temporarily disable the LFS smudge filter to prevent download errors on reset.
-    # This is the key to handling the "LFS budget exceeded" error gracefully.
-    export GIT_LFS_SKIP_SMUDGE=1
-    # 3. Forcefully checkout the correct branch and reset it to match the remote.
-    git checkout -f "$GIT_BRANCH"
-    git reset --hard "origin/$GIT_BRANCH"
-    # 4. Re-enable the smudge filter for subsequent commands (like 'git lfs pull').
-    unset GIT_LFS_SKIP_SMUDGE
-    # 5. Remove all untracked files and directories, EXCEPT the 'data' directory.
-    git clean -fd --exclude='data/'
-    echo "SUCCESS: Project directory has been forcefully reset to branch '$GIT_BRANCH', preserving the data directory."
-else
-    echo "INFO: Project directory not found. Cloning fresh repository..."
-    git clone "$REPO_URL"
-    cd "$PROJECT_DIR_NAME"
-    echo "SUCCESS: Repository cloned."
+# --- INTERACTIVE CHOICE FOR LFS HANDLING ---
+LFS_ISSUE=false
+read -r -p "Are you experiencing Git LFS budget errors that prevent 'git lfs pull' from working? (y/n): " lfs_response
+if [[ "$lfs_response" == "y" || "$lfs_response" == "Y" ]]; then
+    LFS_ISSUE=true
 fi
 
-# --- Step 4: Pull LFS data ---
-echo -e "\n--- STEP 4: Pulling LFS data ---"
-# The main branch content was already handled by the forceful reset in Step 3.
-# We only need to ensure the LFS files are up-to-date.
-git lfs pull
-echo "INFO: Attempted to pull LFS data. This may show errors for files over budget, which is expected."
+# This is a reset script. If the directory exists, it will be destroyed to ensure a clean slate.
+if [ -d "$PROJECT_DIR_NAME" ]; then
+    echo "INFO: Existing project directory found. It will be completely removed for a clean reset."
+    rm -rf "$PROJECT_DIR_NAME"
+    echo "SUCCESS: Old project directory removed."
+fi
 
-# --- Step 5: Run the Main Application ---
-echo -e "\n--- STEP 5: Executing the main application via run.py ---"
+# Now, clone the repository based on the user's LFS situation.
+if [ "$LFS_ISSUE" = true ]; then
+    # --- CASE 2: LFS PROBLEM (SPARSE CLONE) ---
+    echo "INFO: LFS issue detected. Performing a sparse clone to exclude the 'data' directory."
+    echo "INFO: Cloning repository structure without checking out files..."
+    git clone --filter=blob:none --no-checkout "$REPO_URL"
+    cd "$PROJECT_DIR_NAME"
+    git sparse-checkout init --cone
+    git sparse-checkout set '/*' '!data/'
+    echo "INFO: Checking out branch '$GIT_BRANCH'..."
+    git checkout "$GIT_BRANCH"
+else
+    # --- CASE 1: NO LFS PROBLEM (FULL CLONE) ---
+    echo "INFO: No LFS issues. Performing a standard, full clone..."
+    git clone --branch "$GIT_BRANCH" "$REPO_URL"
+    cd "$PROJECT_DIR_NAME"
+    echo "INFO: Downloading LFS data..."
+    git lfs pull
+fi
+
+# --- USER INTERVENTION STEP FOR LFS ISSUES ---
+if [ "$LFS_ISSUE" = true ]; then
+    echo -e "\n\n\n--- USER ACTION REQUIRED ---"
+    echo "The repository has been set up WITHOUT the 'data' directory to avoid LFS errors."
+    echo "Please manually place your complete 'data' directory into the following location:"
+    echo "  -> $(pwd)"
+    echo "You can download the files from the GitHub repository webpage and create the directory structure."
+    read -p "Once the 'data' directory is in place, press [Enter] to continue the script..."
+
+    if [ ! -d "data" ]; then
+        echo "ERROR: The 'data' directory was not found. Aborting."
+        exit 1
+    fi
+    echo "INFO: 'data' directory found. Proceeding with the pipeline."
+fi
+
+echo "SUCCESS: Project repository is ready."
+
+# --- Step 4: Run the Main Application ---
+echo -e "\n--- STEP 4: Executing the main application via run.py ---"
 # The run.py script will handle the rest of the setup and execution.
 python run.py
 
