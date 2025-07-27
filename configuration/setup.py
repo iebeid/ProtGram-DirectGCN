@@ -1,8 +1,8 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 8.3 (Split large conda install for network robustness)
-# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
+# VERSION: 9.0 (Ensures self-contained environment activation in temp script)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import argparse
@@ -13,38 +13,31 @@ import sys
 from pathlib import Path
 
 # --- Configuration ---
+ENV_NAME = "ppi-env"  # The name of the conda environment
 PYTHON_VERSION = "3.11"
 CUDA_VERSION_FOR_PYTORCH = "12.1"
 PYTORCH_VERSION = "2.4.0"
 TORCHVISION_VERSION = "0.19.0"
 TORCHAUDIO_VERSION = "2.4.0"
-# The name of the file that will store the environment's "fingerprint".
 ENVIRONMENT_YML_FILE = "environment.yml"
 
 
 # --- End Configuration ---
 
 def create_setup_script(commands: list[str], project_root: Path) -> Path:
-    """
-    Creates a platform-specific shell script from a list of commands.
-    This approach is used to ensure that a sequence of shell commands can be
-    executed reliably across different platforms (Windows vs. Linux/macOS).
-    """
+    """Creates a platform-specific shell script from a list of commands."""
     is_windows = platform.system() == "Windows"
     script_extension = ".bat" if is_windows else ".sh"
-    # Create the script in the project root to ensure consistent execution paths.
     script_path = project_root / f"temp_setup_script{script_extension}"
 
     with open(script_path, "w", encoding='utf-8') as f:
         if not is_windows:
             f.write("#!/bin/bash\n")
-            # 'set -e' ensures the script will exit immediately if a command fails.
             f.write("set -e\n")
         for command in commands:
             f.write(command + "\n")
 
     if not is_windows:
-        # Make the script executable on Unix-like systems.
         os.chmod(script_path, 0o755)
     return script_path
 
@@ -54,12 +47,9 @@ def run_script(script_path: Path):
     is_windows = platform.system() == "Windows"
     print(f"--- Starting Environment Setup using temporary script: '{script_path.name}' ---")
     try:
-        # On Windows, 'cmd /c' is needed to run .bat files.
-        # On Linux/macOS, we execute the .sh file directly.
         executor = ['cmd', '/c'] if is_windows else []
         command_to_run = executor + [str(script_path)]
 
-        # Use Popen to stream output in real-time.
         process = subprocess.Popen(
             command_to_run,
             stdout=subprocess.PIPE,
@@ -69,7 +59,7 @@ def run_script(script_path: Path):
             errors='replace',
             bufsize=1,
             universal_newlines=True,
-            cwd=script_path.parent  # Ensure script runs from the project root
+            cwd=script_path.parent
         )
 
         if process.stdout:
@@ -84,34 +74,38 @@ def run_script(script_path: Path):
             print("\n--- Environment setup completed successfully! ---")
 
     finally:
-        # Always clean up the temporary script file.
         if os.path.exists(script_path):
             os.remove(script_path)
             print(f"--- Cleaned up temporary script file: {script_path.name} ---")
 
 
-def check_conda_installed() -> bool:
-    """Checks if conda is installed and available in the system's PATH."""
+def get_conda_base_path() -> str | None:
+    """Checks if conda is installed and returns the base path if found."""
     try:
-        subprocess.run(["conda", "--version"], check=True, capture_output=True, text=True, shell=False)
-        print("--- Conda is installed and detected. ---")
-        return True
+        result = subprocess.run(
+            ["conda", "info", "--base"],
+            check=True, capture_output=True, text=True, shell=False
+        )
+        conda_base_path = result.stdout.strip()
+        print(f"--- Conda is installed and detected. Base path: {conda_base_path} ---")
+        return conda_base_path
     except (subprocess.CalledProcessError, FileNotFoundError):
         print("--- ERROR: Conda is not installed or not in your system's PATH. ---")
         print("--- Please install Anaconda/Miniconda and ensure it's activated. ---")
-        return False
+        return None
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Install required packages into the active Conda environment.")
     parser.parse_args()
-    if not check_conda_installed():
+
+    conda_base = get_conda_base_path()
+    if not conda_base:
         sys.exit(1)
 
-    # Determine the project root from this script's location.
-    # This script is in 'configuration/', so the root is its parent's parent.
     project_root = Path(__file__).parent.parent.resolve()
     config_dir = project_root / "configuration"
+    env_yml_output_path = config_dir / ENVIRONMENT_YML_FILE
 
     system = platform.system()
     compiler_commands = []
@@ -119,52 +113,44 @@ if __name__ == "__main__":
         compiler_commands.extend([
             "echo '--- Installing GCC/G++ compilers for Linux (required by PyCUDA) ---'",
             "conda install -c conda-forge gcc_linux-64=12 gxx_linux-64=12 -y",
-            # --- FIX: Export compiler paths within the installation script itself ---
-            # This guarantees the environment is set for the subsequent pip/conda commands.
-            "echo '--- Exporting compiler paths for the installation process ---'",
-            'export CC="$CONDA_PREFIX/bin/gcc"',
-            'export CXX="$CONDA_PREFIX/bin/g++"',
             "echo '--- Clearing PyCUDA cache to prevent stale compiler paths ---'",
             "rm -rf ~/.config/pycuda"
         ])
 
-    # Define the full path for the output environment file.
-    # Using a full path in the command makes it robust, regardless of where the script runs.
-    env_yml_output_path = config_dir / ENVIRONMENT_YML_FILE
-
-    # --- FIX: Split the large conda install command into smaller, more robust stages ---
+    # --- DEFINITIVE FIX: Create a self-contained script that activates its own environment ---
     command_sequence = [
+        # 1. Source the main conda script to make 'conda activate' available
+        f'source "{conda_base}/etc/profile.d/conda.sh"',
+        # 2. Activate the specific environment for this project
+        f'conda activate {ENV_NAME}',
+        # 3. Now that the environment is active, export the compiler paths.
+        #    $CONDA_PREFIX is now guaranteed to be set correctly.
+        'export CC="$CONDA_PREFIX/bin/gcc"',
+        'export CXX="$CONDA_PREFIX/bin/g++"',
+
+        # 4. Proceed with all other installation commands
         "conda clean --all -y",
         "conda update --all -y",
         *compiler_commands,
 
         "echo '--- Stage 1a: Installing GPU drivers and core TensorFlow ---'",
-        (
-            "conda install -c nvidia -c conda-forge -y "
-            "cuda=12.5 cudnn=9.3 tensorflow"
-        ),
+        "conda install -c nvidia -c conda-forge -y cuda=12.5 cudnn=9.3 tensorflow",
 
         "echo '--- Stage 1b: Installing core data science and utility libraries ---'",
-        (
-            "conda install -c conda-forge -y "
-            "dask tqdm biopython matplotlib scipy scikit-learn "
-            "gensim python-louvain seaborn pycuda networkx=3.2.1 "
-            "pandas h5py pyyaml"
-        ),
+        ("conda install -c conda-forge -y "
+         "dask tqdm biopython matplotlib scipy scikit-learn "
+         "gensim python-louvain seaborn pycuda networkx=3.2.1 "
+         "pandas h5py pyyaml"),
 
         "echo '--- Stage 2: Installing PyTorch and other standard pip-managed packages ---'",
-        (
-            f"pip install "
-            f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} "
-            f"mlflow transformers==4.41.2 tf-keras "
-            f"--extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"
-        ),
+        (f"pip install "
+         f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} "
+         f"mlflow transformers==4.41.2 tf-keras "
+         f"--extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"),
 
         "echo '--- Stage 3: Installing PyTorch Geometric (PyG) ---'",
-        (
-            f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
-            f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}.html"
-        ),
+        (f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
+         f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}.html"),
 
         "echo '--- Verifying installations ---'",
         "python -c \"import tensorflow as tf; print('TensorFlow GPUs found: ' + str(len(tf.config.list_physical_devices('GPU'))))\"",
@@ -178,6 +164,5 @@ if __name__ == "__main__":
     ]
     # --- END FIX ---
 
-    # Create and run the setup script from the project root for consistency.
     script_file = create_setup_script(command_sequence, project_root)
     run_script(script_file)
