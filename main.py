@@ -19,6 +19,18 @@ from typing import List, Dict
 
 import tensorflow as tf
 
+# --- FIX: Ensure nvcc can find the conda-installed gcc ---
+# This code runs at the start of main.py to fix the environment for this specific process.
+# It directly modifies the PATH to ensure subprocesses like nvcc can find the compiler.
+conda_prefix = os.environ.get("CONDA_PREFIX")
+if conda_prefix:
+    conda_bin_path = os.path.join(conda_prefix, "bin")
+    current_path = os.environ.get("PATH", "")
+    if conda_bin_path not in current_path.split(os.pathsep):
+        print(f"--- (main.py) Prepending Conda bin directory to PATH: {conda_bin_path} ---")
+        os.environ["PATH"] = f"{conda_bin_path}{os.pathsep}{current_path}"
+# --- END FIX ---
+
 # --- Robustness Improvement: Configure GPU Memory Growth for TensorFlow ---
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
