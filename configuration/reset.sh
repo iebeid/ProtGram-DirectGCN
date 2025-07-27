@@ -99,8 +99,11 @@ if [ "$LFS_ISSUE" = true ]; then
     echo "INFO: Cloning repository structure without checking out files..."
     git clone --filter=blob:none --no-checkout "$REPO_URL"
     cd "$PROJECT_DIR_NAME"
-    git sparse-checkout init --cone
-    git sparse-checkout set '/*' '!data/'
+    # Manually configure sparse-checkout for maximum compatibility, bypassing the 'set' command.
+    git sparse-checkout init
+    # This writes the patterns directly to the config file, which is more robust.
+    echo "/*" > .git/info/sparse-checkout
+    echo "!/data" >> .git/info/sparse-checkout
     echo "INFO: Checking out branch '$GIT_BRANCH'..."
     git checkout "$GIT_BRANCH"
 else

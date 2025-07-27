@@ -119,6 +119,11 @@ if __name__ == "__main__":
         compiler_commands.extend([
             "echo '--- Installing GCC/G++ compilers for Linux (required by PyCUDA) ---'",
             "conda install -c conda-forge gcc_linux-64=12 gxx_linux-64=12 -y",
+            # --- FIX: Export compiler paths within the installation script itself ---
+            # This guarantees the environment is set for the subsequent pip/conda commands.
+            "echo '--- Exporting compiler paths for the installation process ---'",
+            'export CC="$CONDA_PREFIX/bin/gcc"',
+            'export CXX="$CONDA_PREFIX/bin/g++"',
             "echo '--- Clearing PyCUDA cache to prevent stale compiler paths ---'",
             "rm -rf ~/.config/pycuda"
         ])
