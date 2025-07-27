@@ -19,16 +19,17 @@ from typing import List, Dict
 
 import tensorflow as tf
 
-# --- FIX: Ensure nvcc can find the conda-installed gcc ---
-# This code runs at the start of main.py to fix the environment for this specific process.
-# It directly modifies the PATH to ensure subprocesses like nvcc can find the compiler.
+# --- FIX: Force PyCUDA to use the conda-installed gcc ---
+# This is a more robust fix that directly tells nvcc where to find the host compiler,
+# bypassing any potential PATH issues.
 conda_prefix = os.environ.get("CONDA_PREFIX")
 if conda_prefix:
-    conda_bin_path = os.path.join(conda_prefix, "bin")
-    current_path = os.environ.get("PATH", "")
-    if conda_bin_path not in current_path.split(os.pathsep):
-        print(f"--- (main.py) Prepending Conda bin directory to PATH: {conda_bin_path} ---")
-        os.environ["PATH"] = f"{conda_bin_path}{os.pathsep}{current_path}"
+    compiler_dir = os.path.join(conda_prefix, "bin")
+    if os.path.exists(compiler_dir):
+        print(f"--- (main.py) Forcing nvcc to use compiler directory: {compiler_dir} ---")
+        # Get existing flags, if any, and append the new one.
+        existing_flags = os.environ.get("PYCUDA_DEFAULT_NVCC_FLAGS", "")
+        os.environ["PYCUDA_DEFAULT_NVCC_FLAGS"] = f"{existing_flags} --compiler-bindir {compiler_dir}"
 # --- END FIX ---
 
 # --- Robustness Improvement: Configure GPU Memory Growth for TensorFlow ---
