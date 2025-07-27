@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 9.0 (Ensures self-contained environment activation in temp script)
+# VERSION: 10.0 (Corrected order of compiler installation and environment export)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -87,7 +87,7 @@ def get_conda_base_path() -> str | None:
             check=True, capture_output=True, text=True, shell=False
         )
         conda_base_path = result.stdout.strip()
-        print(f"--- Conda is installed and detected. Base path: {conda_base_path} ---")
+        print(f"--- Conda is installed and detected. ---")
         return conda_base_path
     except (subprocess.CalledProcessError, FileNotFoundError):
         print("--- ERROR: Conda is not installed or not in your system's PATH. ---")
@@ -108,31 +108,40 @@ if __name__ == "__main__":
     env_yml_output_path = config_dir / ENVIRONMENT_YML_FILE
 
     system = platform.system()
-    compiler_commands = []
+
+    # --- DEFINITIVE FIX: Correct the order of operations ---
+    compiler_install_commands = []
+    compiler_export_commands = []
     if system == "Linux":
-        compiler_commands.extend([
+        compiler_install_commands.extend([
             "echo '--- Installing GCC/G++ compilers for Linux (required by PyCUDA) ---'",
             "conda install -c conda-forge gcc_linux-64=12 gxx_linux-64=12 -y",
+        ])
+        compiler_export_commands.extend([
+            "echo '--- Exporting compiler paths for the installation process ---'",
+            'export CC="$CONDA_PREFIX/bin/gcc"',
+            'export CXX="$CONDA_PREFIX/bin/g++"',
             "echo '--- Clearing PyCUDA cache to prevent stale compiler paths ---'",
             "rm -rf ~/.config/pycuda"
         ])
 
-    # --- DEFINITIVE FIX: Create a self-contained script that activates its own environment ---
     command_sequence = [
         # 1. Source the main conda script to make 'conda activate' available
         f'source "{conda_base}/etc/profile.d/conda.sh"',
         # 2. Activate the specific environment for this project
         f'conda activate {ENV_NAME}',
-        # 3. Now that the environment is active, export the compiler paths.
-        #    $CONDA_PREFIX is now guaranteed to be set correctly.
-        'export CC="$CONDA_PREFIX/bin/gcc"',
-        'export CXX="$CONDA_PREFIX/bin/g++"',
 
-        # 4. Proceed with all other installation commands
+        # 3. General cleanup first
         "conda clean --all -y",
         "conda update --all -y",
-        *compiler_commands,
 
+        # 4. Install the compilers FIRST.
+        *compiler_install_commands,
+
+        # 5. NOW that the compilers exist, export their paths.
+        *compiler_export_commands,
+
+        # 6. Proceed with all other installation commands, which will now inherit the correct environment.
         "echo '--- Stage 1a: Installing GPU drivers and core TensorFlow ---'",
         "conda install -c nvidia -c conda-forge -y cuda=12.5 cudnn=9.3 tensorflow",
 
