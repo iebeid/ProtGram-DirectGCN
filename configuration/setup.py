@@ -107,23 +107,25 @@ if __name__ == "__main__":
     config_dir = project_root / "configuration"
     env_yml_output_path = config_dir / ENVIRONMENT_YML_FILE
 
-    system = platform.system()
+    # system = platform.system()
+    #
+    # # --- DEFINITIVE FIX: Correct the order of operations ---
+    # compiler_install_commands = []
+    # compiler_export_commands = []
+    # if system == "Linux":
+    #     compiler_install_commands.extend([
+    #         "echo '--- Installing GCC/G++ compilers for Linux (required by PyCUDA) ---'",
+    #         "conda install -c conda-forge gcc_linux-64=12 gxx_linux-64=12 -y",
+    #     ])
+    #     compiler_export_commands.extend([
+    #         "echo '--- Exporting compiler paths for the installation process ---'",
+    #         'export CC="$CONDA_PREFIX/bin/gcc"',
+    #         'export CXX="$CONDA_PREFIX/bin/g++"',
+    #         "echo '--- Clearing PyCUDA cache to prevent stale compiler paths ---'",
+    #         "rm -rf ~/.config/pycuda"
+    #     ])
 
-    # --- DEFINITIVE FIX: Correct the order of operations ---
-    compiler_install_commands = []
-    compiler_export_commands = []
-    if system == "Linux":
-        compiler_install_commands.extend([
-            "echo '--- Installing GCC/G++ compilers for Linux (required by PyCUDA) ---'",
-            "conda install -c conda-forge gcc_linux-64=12 gxx_linux-64=12 -y",
-        ])
-        compiler_export_commands.extend([
-            "echo '--- Exporting compiler paths for the installation process ---'",
-            'export CC="$CONDA_PREFIX/bin/gcc"',
-            'export CXX="$CONDA_PREFIX/bin/g++"',
-            "echo '--- Clearing PyCUDA cache to prevent stale compiler paths ---'",
-            "rm -rf ~/.config/pycuda"
-        ])
+    pycuda_cache_clear_command = ["echo '--- Clearing PyCUDA cache ---'", "rm -rf ~/.config/pycuda"]
 
     command_sequence = [
         # 1. Source the main conda script to make 'conda activate' available
@@ -135,11 +137,13 @@ if __name__ == "__main__":
         "conda clean --all -y",
         "conda update --all -y",
 
-        # 4. Install the compilers FIRST.
-        *compiler_install_commands,
+        # # 4. Install the compilers FIRST.
+        # *compiler_install_commands,
+        #
+        # # 5. NOW that the compilers exist, export their paths.
+        # *compiler_export_commands,
 
-        # 5. NOW that the compilers exist, export their paths.
-        *compiler_export_commands,
+        *pycuda_cache_clear_command,
 
         # 6. Proceed with all other installation commands, which will now inherit the correct environment.
         "echo '--- Stage 1a: Installing GPU drivers and core TensorFlow ---'",

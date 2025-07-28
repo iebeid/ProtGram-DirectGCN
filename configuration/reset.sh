@@ -20,7 +20,11 @@ echo "INFO: This script uses 'sudo' to manage system services and mounts."
 echo "You may be prompted for your password once at the beginning."
 sudo -v
 echo "SUCCESS: Sudo credentials refreshed."
-
+ # --- NEW STRATEGY: Install system-level compilers ---
+ # This is more robust than relying on conda's compilers, which can conflict.
+ echo "INFO: Installing system-level build tools (gcc, g++, make)..."
+ sudo apt-get update && sudo apt-get install -y build-essential
+ echo "SUCCESS: System-level build tools are installed."
 
 # --- Configuration ---
 ENV_NAME="ppi-env"
