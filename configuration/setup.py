@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 15.0 (Final WSL fix: Force pip to use conda's include/lib paths for PyCUDA)
+# VERSION: 16.0 (Final WSL fix: Correctly expand CONDA_PREFIX path in Python)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -107,7 +107,16 @@ if __name__ == "__main__":
     config_dir = project_root / "configuration"
     env_yml_output_path = config_dir / ENVIRONMENT_YML_FILE
 
-    # --- DEFINITIVE FIX: Force pip to use the correct include/lib paths for PyCUDA build ---
+    # --- DEFINITIVE FIX: Get the CONDA_PREFIX path from the environment ---
+    # The run.py script ensures this script is run inside the activated environment.
+    conda_prefix = os.environ.get("CONDA_PREFIX")
+    if not conda_prefix:
+        print("FATAL ERROR: CONDA_PREFIX environment variable not found.")
+        print("This script must be run from within an activated conda environment.")
+        sys.exit(1)
+
+    print(f"--- Using Conda prefix for library paths: {conda_prefix} ---")
+
     command_sequence = [
         # 1. Activate the environment for a consistent session.
         f'source "{conda_base}/etc/profile.d/conda.sh"',
@@ -133,13 +142,13 @@ if __name__ == "__main__":
          f"--extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"),
 
         # 5. CRITICAL STEP: Install PyCUDA by forcing the compiler and linker to use the
-        #    conda environment's paths. This overrides any incorrect auto-detection.
+        #    conda environment's paths. The path is expanded here in Python.
         "echo '--- Stage 2b: Installing PyCUDA with forced library paths ---'",
-        ("pip install "
-         "--global-option=build_ext "
-         "--global-option='-I$CONDA_PREFIX/include' "
-         "--global-option='-L$CONDA_PREFIX/lib' "
-         "pycuda"),
+        (f"pip install "
+         f"--global-option=build_ext "
+         f"--global-option='-I{conda_prefix}/include' "
+         f"--global-option='-L{conda_prefix}/lib' "
+         f"pycuda"),
 
         # 6. Install the remaining pip packages.
         "echo '--- Stage 2c: Installing remaining pip packages ---'",
