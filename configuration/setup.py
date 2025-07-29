@@ -147,7 +147,8 @@ if __name__ == "__main__":
         "pip install --no-cache-dir pytools appdirs",
 
         "echo '--- Stage 2c: Installing PyCUDA with forced library paths and legacy setup ---'",
-        (f"CUDA_HOME=\"{conda_prefix}\" "
+        (f"PATH=\"{conda_prefix}/bin:$PATH\" "
+         f"CUDA_HOME=\"{conda_prefix}\" "
          f"LDFLAGS=\"-L{conda_prefix}/lib -L{conda_prefix}/lib/stubs\" "
          f"CPPFLAGS=\"-I{conda_prefix}/include\" "
          f"pip install --no-cache-dir --no-binary :all: --no-deps --no-use-pep517 pycuda"),
