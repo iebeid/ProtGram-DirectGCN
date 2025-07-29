@@ -1,11 +1,12 @@
 # ==============================================================================
 # MODULE: benchmarkers/gnns.py
 # PURPOSE: Handles benchmarking of various GNN models on standard datasets.
-# VERSION: 2.1 (Corrected DirectGCN instantiation for benchmark compatibility)
+# VERSION: 4.0 (Final refactoring with centralized run logic)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
+import traceback
 from typing import Dict, List, Any, Tuple
 
 import numpy as np
@@ -83,9 +84,6 @@ class GNNBenchmarker:
         if name == "GCN":
             return GCN(**model_params)
         elif name == "GAT":
-            # The dropout_rate is already in model_params.
-            # We can override it if needed, but not pass it twice.
-            # Let's create a copy and update it to be safe.
             gat_params = model_params.copy()
             gat_params.update({'heads': 8, 'dropout_rate': 0.6})
             return GAT(**gat_params)
@@ -101,7 +99,7 @@ class GNNBenchmarker:
         elif name == "TongDiGCN":
             return TongDiGCN(**model_params)
         elif name == "DirectGCN":
-            # CRITICAL FIX: The DirectGCN model has a complex signature that must be
+            # The DirectGCN model has a complex signature that must be
             # adapted for standard benchmark datasets.
             layer_dims = [data.num_features, 128, num_classes]
             return DirectGCN(
@@ -138,6 +136,12 @@ class GNNBenchmarker:
         data.edge_weight_in = None  # No explicit weights for standard benchmarks
         return data
 
+    def _get_1d_mask(self, mask_tensor: torch.Tensor) -> torch.Tensor:
+        """Helper to handle masks from datasets that may have multiple splits (e.g., WebKB)."""
+        if mask_tensor.dim() > 1:
+            return mask_tensor[:, 0].bool()
+        return mask_tensor.bool()
+
     def train_and_evaluate(self, model: torch.nn.Module, data: Data) -> Tuple[float, float, pd.DataFrame]:
         """Handles the training and evaluation loop for a given model and data."""
         model.to(self.device)
@@ -148,11 +152,9 @@ class GNNBenchmarker:
         test_acc_at_best_val = -1
         history = {'epoch': [], 'loss': [], 'val_acc': [], 'test_acc': []}
 
-        # Ensure masks are boolean and 1D
-        # For datasets with multiple splits (like WebKB), select the first one [:, 0]
-        train_mask = data.train_mask[:, 0].bool() if data.train_mask.dim() > 1 else data.train_mask.bool()
-        val_mask = data.val_mask[:, 0].bool() if data.val_mask.dim() > 1 else data.val_mask.bool()
-        test_mask = data.test_mask[:, 0].bool() if data.test_mask.dim() > 1 else data.test_mask.bool()
+        train_mask = self._get_1d_mask(data.train_mask)
+        val_mask = self._get_1d_mask(data.val_mask)
+        test_mask = self._get_1d_mask(data.test_mask)
 
         for epoch in range(1, self.config.EVAL_EPOCHS + 1):
             model.train()
@@ -221,7 +223,7 @@ class GNNBenchmarker:
         DataUtils.write_h5(emb_dict, h5_path, f"Writing H5 for {model.__class__.__name__}")
         print(f"      Saved embeddings to {h5_path}")
 
-    def run_on_dataset_variant(self, dataset: Any, variant_name: str) -> List[Dict]:
+    def _run_on_dataset_variant(self, dataset: Any, variant_name: str) -> List[Dict]:
         """Runs all configured models on a single dataset variant."""
         print(f"\n" + "=" * 50)
         print(f"### Benchmarking on Dataset: {variant_name} ###")
@@ -270,7 +272,6 @@ class GNNBenchmarker:
 
             except Exception as e:
                 print(f"ERROR during training/evaluation of {model_name} on {variant_name}: {e}")
-                import traceback
                 traceback.print_exc()
                 results.append({"dataset": variant_name, "model": model_name, "best_val_accuracy": None, "test_accuracy": None, "error": str(e)})
         return results
@@ -283,14 +284,19 @@ class GNNBenchmarker:
 
         for dataset_name in self.config.BENCHMARK_NODE_CLASSIFICATION_DATASETS:
             dataset_results = []
-            dataset = self._get_dataset(dataset_name, undirected=False)
-            if dataset:
-                dataset_results.extend(self.run_on_dataset_variant(dataset, f"{dataset_name}_Original"))
+
+            # --- Run on Original (potentially directed) Graph ---
+            dataset_original = self._get_dataset(dataset_name, undirected=False)
+            if dataset_original:
+                dataset_results.extend(self._run_on_dataset_variant(dataset_original, f"{dataset_name}_Original"))
+
+            # --- Run on Undirected Graph (if configured) ---
             if self.config.BENCHMARK_TEST_ON_UNDIRECTED:
                 dataset_undirected = self._get_dataset(dataset_name, undirected=True)
                 if dataset_undirected:
-                    dataset_results.extend(self.run_on_dataset_variant(dataset_undirected, f"{dataset_name}_Undirected"))
+                    dataset_results.extend(self._run_on_dataset_variant(dataset_undirected, f"{dataset_name}_Undirected"))
 
+            # --- Save summary for the current dataset ---
             if dataset_results:
                 summary_df = pd.DataFrame(dataset_results)
                 summary_path = self.output_dir / f"benchmark_summary_{dataset_name}.csv"
@@ -299,6 +305,7 @@ class GNNBenchmarker:
                 print(summary_df.to_string())
                 all_results.extend(dataset_results)
 
+        # --- Save a final, grand summary of all results ---
         if all_results:
             full_summary_df = pd.DataFrame(all_results)
             full_summary_path = self.output_dir / "gnn_benchmark_FULL_SUMMARY.csv"

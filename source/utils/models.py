@@ -2,7 +2,7 @@
 # MODULE: utils/models.py
 # PURPOSE: Contains tools for loading and post-processing embeddings, such as PCA,
 #          normalization, pooling, and edge feature creation.
-# VERSION: 5.0 (Integrated file-based PCA processing from post.py)
+# VERSION: 6.0 (Refactored BaseGNN to reduce code duplication in models)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -13,6 +13,7 @@ import h5py
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from torch_geometric.data import Data
@@ -30,13 +31,70 @@ if TYPE_CHECKING:
 
 class BaseGNN(nn.Module):
     """
-    A base class for all GNN models in this project to ensure a consistent
-    interface for retrieving embeddings.
+    A generic base class for GNN models like GCN and GraphSAGE.
+    It handles the layer creation and forward pass logic to reduce code duplication.
     """
 
-    def __init__(self):
+    def __init__(self,
+                 conv_layer_class: type, in_channels: int, hidden_channels: int, out_channels: int,
+                 num_layers: int = 2, dropout_rate: float = 0.5, **conv_kwargs):
         super().__init__()
+        self.convs = nn.ModuleList()
+        self.dropout_rate = dropout_rate
         self.embedding_output = None
+        self.conv_kwargs = conv_kwargs
+
+        if num_layers <= 0:
+            raise ValueError("num_layers must be positive")
+
+        if num_layers == 1:
+            self.convs.append(conv_layer_class(in_channels, out_channels, **self.conv_kwargs))
+        else:
+            self.convs.append(conv_layer_class(in_channels, hidden_channels, **self.conv_kwargs))
+            for _ in range(num_layers - 2):
+                self.convs.append(conv_layer_class(hidden_channels, hidden_channels, **self.conv_kwargs))
+            self.convs.append(conv_layer_class(hidden_channels, out_channels, **self.conv_kwargs))
+
+    def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        A generic forward pass for GNN models. It intelligently handles whether
+        to pass edge_weights based on the convolution layer's signature.
+
+        Returns:
+            A tuple containing:
+            - The final logits for classification.
+            - The node embeddings from the last hidden layer.
+        """
+        x, edge_index, edge_weight = data.x, data.edge_index, getattr(data, 'edge_attr', None)
+
+        # Handle the single-layer case where logits are the embeddings
+        if len(self.convs) == 1:
+            try:
+                logits = self.convs[0](x, edge_index, edge_weight=edge_weight)
+            except TypeError:  # For layers like SAGEConv that don't accept edge_weight
+                logits = self.convs[0](x, edge_index)
+            self.embedding_output = logits
+            return logits, self.embedding_output
+
+        # Process all but the final layer
+        for conv in self.convs[:-1]:
+            try:
+                x = conv(x, edge_index, edge_weight=edge_weight)
+            except TypeError:
+                x = conv(x, edge_index)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout_rate, training=self.training)
+
+        # The output of the last hidden layer is the embedding
+        self.embedding_output = x
+
+        # Apply the final layer to get logits
+        try:
+            logits = self.convs[-1](self.embedding_output, edge_index, edge_weight=edge_weight)
+        except TypeError:
+            logits = self.convs[-1](self.embedding_output, edge_index)
+
+        return logits, self.embedding_output
 
     def get_embeddings(self, data: Data) -> Optional[torch.Tensor]:
         """

@@ -144,7 +144,7 @@ if __name__ == "__main__":
         #    that the compiler and linker will use directly. This is more
         #    robust than passing options through pip.
         "echo '--- Stage 2b: Installing PyCUDA with forced library paths via environment variables ---'",
-        (f"LDFLAGS=\"-L{conda_prefix}/lib\" "
+        (f"LDFLAGS=\"-L{conda_prefix}/lib/stubs\" "
          f"CPPFLAGS=\"-I{conda_prefix}/include\" "
          f"pip install --no-cache-dir pycuda"),
 
