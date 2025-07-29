@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: main.py
 # PURPOSE: Pipeline entry point
-# VERSION: 3.0 (Integrated bootstrapper logic and automatic MLflow UI launch)
+# VERSION: 4.0 (Removed all environment hacks; relies on system compiler)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -19,20 +19,8 @@ from typing import List, Dict
 
 import tensorflow as tf
 
-# # --- FIX: Force PyCUDA to use the conda-installed gcc ---
-# # This is a more robust fix that directly tells nvcc where to find the host compiler,
-# # bypassing any potential PATH issues.
-# conda_prefix = os.environ.get("CONDA_PREFIX")
-# if conda_prefix:
-#     compiler_dir = os.path.join(conda_prefix, "bin")
-#     if os.path.exists(compiler_dir):
-#         print(f"--- (main.py) Forcing nvcc to use compiler directory: {compiler_dir} ---")
-#         # Get existing flags, if any, and append the new one.
-#         existing_flags = os.environ.get("PYCUDA_DEFAULT_NVCC_FLAGS", "")
-#         os.environ["PYCUDA_DEFAULT_NVCC_FLAGS"] = f"{existing_flags} --compiler-bindir {compiler_dir}"
-# # --- END FIX ---
-
 # --- Robustness Improvement: Configure GPU Memory Growth for TensorFlow ---
+# This should be done early, before TensorFlow allocates any memory.
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:

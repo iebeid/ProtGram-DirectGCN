@@ -9,7 +9,7 @@
 #             manual data placement.
 # WARNING: This script is ALWAYS DESTRUCTIVE and will remove the existing
 #          project directory.
-# VERSION: 6.0 (Always destructive; interactive clone method)
+# VERSION: 7.0 (Installs system-level compilers for robustness)
 # ==============================================================================
 
 # Exit immediately if a command exits with a non-zero status.
@@ -20,11 +20,12 @@ echo "INFO: This script uses 'sudo' to manage system services and mounts."
 echo "You may be prompted for your password once at the beginning."
 sudo -v
 echo "SUCCESS: Sudo credentials refreshed."
- # --- NEW STRATEGY: Install system-level compilers ---
- # This is more robust than relying on conda's compilers, which can conflict.
- echo "INFO: Installing system-level build tools (gcc, g++, make)..."
- sudo apt-get update && sudo apt-get install -y build-essential
- echo "SUCCESS: System-level build tools are installed."
+
+# --- NEW STRATEGY: Install system-level compilers ---
+# This is more robust than relying on conda's compilers, which can conflict.
+echo "INFO: Installing system-level build tools (gcc, g++, make)..."
+sudo apt-get update && sudo apt-get install -y build-essential
+echo "SUCCESS: System-level build tools are installed."
 
 # --- Configuration ---
 ENV_NAME="ppi-env"
