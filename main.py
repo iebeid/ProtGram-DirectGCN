@@ -78,21 +78,20 @@ def _get_fasta_files_to_process(config: Config, temp_dir: Path) -> List[Path]:
         random.seed(config.RANDOM_STATE)
 
         for original_path in config.ORIGINAL_SEQUENCE_FILE_PATHS:
-            # Memory-efficient sampling: get all IDs first without storing sequences.
-            all_ids = [seq_id for seq_id, _ in FastaUtils.parse_sequences([original_path])]
-            if not all_ids:
+            # More efficient: Read all sequences into memory once, then sample.
+            all_sequences = list(FastaUtils.parse_sequences([original_path]))
+            if not all_sequences:
                 print(f"  - WARNING: No sequences found in {original_path.name}. Skipping.")
                 continue
-            sample_size = int(len(all_ids) * config.SEQUENCE_DOWNSAMPLE_FRACTION)
-            print(f"  - Sampling {sample_size} of {len(all_ids)} sequences from {original_path.name}")
-            sampled_ids = set(random.sample(all_ids, sample_size))
+
+            sample_size = int(len(all_sequences) * config.SEQUENCE_DOWNSAMPLE_FRACTION)
+            print(f"  - Sampling {sample_size} of {len(all_sequences)} sequences from {original_path.name}")
+            sampled_sequences = random.sample(all_sequences, sample_size)
 
             temp_fasta_path = temp_dir / f"{original_path.stem}_sampled.fasta"
             with open(temp_fasta_path, "w") as f:
-                # Second pass to write only the sampled sequences
-                for seq_id, sequence in FastaUtils.parse_sequences([original_path]):
-                    if seq_id in sampled_ids:
-                        f.write(f">{seq_id}\n{sequence}\n")
+                for seq_id, sequence in sampled_sequences:
+                    f.write(f">{seq_id}\n{sequence}\n")
             files_to_process.append(temp_fasta_path)
     else:
         print("\nNo downsampling requested. Using original FASTA files for experiments.")

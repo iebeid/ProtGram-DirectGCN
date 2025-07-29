@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 18.0 (Definitive fix: Install full CUDA toolkit via Conda)
+# VERSION: 19.0 (Definitive fix: Use flexible version matching for cudatoolkit)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -15,10 +15,8 @@ from pathlib import Path
 # --- Configuration ---
 ENV_NAME = "ppi-env"
 PYTHON_VERSION = "3.11"
-# Version for PyTorch wheel URL (e.g., '12.1' -> 'cu121')
-CUDA_VERSION_FOR_PYTORCH = "12.1"
-# Exact version for conda install from nvidia channel
-CUDA_VERSION_FOR_CONDA = "12.1.1"
+# This version is used for both the PyTorch wheel URL and the Conda toolkit installation.
+CUDA_VERSION = "12.1"
 PYTORCH_VERSION = "2.4.0"
 TORCHVISION_VERSION = "0.19.0"
 TORCHAUDIO_VERSION = "2.4.0"
@@ -139,16 +137,16 @@ if __name__ == "__main__":
         # 4. Install the complete CUDA toolkit from NVIDIA's official conda channel.
         # This is the most robust way to ensure all libraries (like libcuda.so)
         # are present in the main conda lib directory, resolving linker issues.
-        # We add conda-forge as a secondary channel for dependency resolution.
+        # We use a wildcard to let conda find the best available patch version.
         "echo '--- Stage 2a: Installing CUDA Toolkit via Conda ---'",
-        f"conda install -c nvidia -c conda-forge -y cudatoolkit={CUDA_VERSION_FOR_CONDA}",
+        f"conda install -c nvidia -c conda-forge -y 'cudatoolkit={CUDA_VERSION}.*'",
 
         # 5. Install PyTorch and TensorFlow. They will now use the conda-installed CUDA toolkit.
         "echo '--- Stage 2b: Installing PyTorch & TensorFlow ---'",
         (f"pip install "
          f"tensorflow "
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} "
-         f"--extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"),
+         f"--extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"),
 
         # 6. CRITICAL STEP: Install PyCUDA by setting environment variables
         #    that the compiler and linker will use directly. We install its
@@ -172,7 +170,7 @@ if __name__ == "__main__":
         # 8. Install PyG, which depends on the PyTorch version just installed.
         "echo '--- Stage 3: Installing PyTorch Geometric (PyG) ---'",
         (f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
-         f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}.html"),
+         f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION.replace('.', '')}.html"),
 
         # 9. Final verification and cleanup.
         "echo '--- Verifying installations ---'",
