@@ -74,9 +74,12 @@ class Config:
         self.RESULTS_BENCHMARK_EMBEDDINGS_DIR = self.RESULTS_BENCHMARKING_DIR / "embeddings"
 
         # Key File Paths
-        self.SEQUENCE_FILE_PATHS = [
+        # This is the master list of original, unmodified sequence files.
+        self.ORIGINAL_SEQUENCE_FILE_PATHS = [
             self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta"
         ]
+        # This is the "working" list of paths, which can be modified for downsampling during a run.
+        self.SEQUENCE_FILE_PATHS = self.ORIGINAL_SEQUENCE_FILE_PATHS.copy()
         self.POS_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "positive_interactions.csv"
         self.NEG_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "negative_interactions.csv"
         self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "idmapping_selected.tab"

@@ -141,16 +141,19 @@ if __name__ == "__main__":
          f"--extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"),
 
         # 5. CRITICAL STEP: Install PyCUDA by setting environment variables
-        #    that the compiler and linker will use directly. This is more
-        #    robust than passing options through pip.
-        "echo '--- Stage 2b: Installing PyCUDA with forced library paths via environment variables ---'",
+        #    that the compiler and linker will use directly. We install its
+        #    dependencies first to avoid PEP 517 conflicts.
+        "echo '--- Stage 2b: Installing PyCUDA dependencies (pytools, appdirs) ---'",
+        "pip install --no-cache-dir pytools appdirs",
+
+        "echo '--- Stage 2c: Installing PyCUDA with forced library paths and legacy setup ---'",
         (f"CUDA_HOME=\"{conda_prefix}\" "
          f"LDFLAGS=\"-L{conda_prefix}/lib -L{conda_prefix}/lib/stubs\" "
          f"CPPFLAGS=\"-I{conda_prefix}/include\" "
-         f"pip install --no-cache-dir --no-binary :all: --no-use-pep517 pycuda"),
+         f"pip install --no-cache-dir --no-binary :all: --no-deps --no-use-pep517 pycuda"),
 
-        # 6. Install the remaining pip packages.
-        "echo '--- Stage 2c: Installing remaining pip packages ---'",
+        # 6. Install other pip packages.
+        "echo '--- Stage 2d: Installing remaining pip packages ---'",
         "pip install mlflow transformers==4.41.2 tf-keras",
 
         # 7. Install PyG, which depends on the PyTorch version just installed.
