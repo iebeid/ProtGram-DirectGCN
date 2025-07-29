@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 13.0 (Definitive linker fix: Set LD_LIBRARY_PATH before PyCUDA install)
+# VERSION: 14.0 (Definitive WSL fix: Set CUDA_HOME to force use of conda's CUDA toolkit)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -20,6 +20,8 @@ PYTORCH_VERSION = "2.4.0"
 TORCHVISION_VERSION = "0.19.0"
 TORCHAUDIO_VERSION = "2.4.0"
 ENVIRONMENT_YML_FILE = "environment.yml"
+
+
 # --- End Configuration ---
 
 def create_setup_script(commands: list[str], project_root: Path) -> Path:
@@ -38,6 +40,7 @@ def create_setup_script(commands: list[str], project_root: Path) -> Path:
     if not is_windows:
         os.chmod(script_path, 0o755)
     return script_path
+
 
 def run_script(script_path: Path):
     """Executes the setup script and streams its output."""
@@ -75,6 +78,7 @@ def run_script(script_path: Path):
             os.remove(script_path)
             print(f"--- Cleaned up temporary script file: {script_path.name} ---")
 
+
 def get_conda_base_path() -> str | None:
     """Checks if conda is installed and returns the base path if found."""
     try:
@@ -90,6 +94,7 @@ def get_conda_base_path() -> str | None:
         print("--- Please install Anaconda/Miniconda and ensure it's activated. ---")
         return None
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Install required packages into the active Conda environment.")
     parser.parse_args()
@@ -102,7 +107,7 @@ if __name__ == "__main__":
     config_dir = project_root / "configuration"
     env_yml_output_path = config_dir / ENVIRONMENT_YML_FILE
 
-    # --- DEFINITIVE FIX: Correctly ordered installation with linker path export ---
+    # --- DEFINITIVE FIX: Correctly ordered installation with CUDA_HOME and linker path export ---
     command_sequence = [
         # 1. Activate the environment for a consistent session.
         f'source "{conda_base}/etc/profile.d/conda.sh"',
@@ -120,31 +125,36 @@ if __name__ == "__main__":
          "dask tqdm biopython matplotlib scipy scikit-learn "
          "gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"),
 
-        # 4. Install PyTorch and TensorFlow first. These packages bring the required CUDA libraries (.so files).
-        "echo '--- Stage 2a: Installing PyTorch & TensorFlow to provide CUDA libraries ---'",
+        # 4. Install PyTorch and TensorFlow first. These packages bring the required CUDA toolkit.
+        "echo '--- Stage 2a: Installing PyTorch & TensorFlow to provide CUDA toolkit ---'",
         (f"pip install "
          f"tensorflow "
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} "
          f"--extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"),
 
-        # 5. CRITICAL STEP: Export the library path so the linker can find the .so files for the *next* command.
-        "echo '--- Stage 2b: Setting linker path to find CUDA libraries for PyCUDA build ---'",
+        # 5. CRITICAL STEP: Force PyCUDA to use the conda-provided CUDA toolkit by setting CUDA_HOME.
+        # This overrides any incorrect paths inherited from the host system (e.g., in WSL).
+        "echo '--- Stage 2b: Setting CUDA_HOME to the conda environment for PyCUDA build ---'",
+        'export CUDA_HOME=$CONDA_PREFIX',
+
+        # 6. Also set the linker path as a robust fallback.
+        "echo '--- Stage 2c: Setting linker path to find CUDA libraries ---'",
         'export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"',
 
-        # 6. Now, install PyCUDA. It will compile and link against the libraries installed in the previous step.
-        "echo '--- Stage 2c: Installing PyCUDA ---'",
+        # 7. Now, install PyCUDA. It will compile and link against the libraries in CUDA_HOME.
+        "echo '--- Stage 2d: Installing PyCUDA ---'",
         "pip install pycuda",
 
-        # 7. Install the remaining pip packages.
-        "echo '--- Stage 2d: Installing remaining pip packages ---'",
+        # 8. Install the remaining pip packages.
+        "echo '--- Stage 2e: Installing remaining pip packages ---'",
         "pip install mlflow transformers==4.41.2 tf-keras",
 
-        # 8. Install PyG, which depends on the PyTorch version just installed.
+        # 9. Install PyG, which depends on the PyTorch version just installed.
         "echo '--- Stage 3: Installing PyTorch Geometric (PyG) ---'",
         (f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
          f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}.html"),
 
-        # 9. Final verification and cleanup.
+        # 10. Final verification and cleanup.
         "echo '--- Verifying installations ---'",
         "python -c \"import tensorflow as tf; print('TensorFlow GPUs found: ' + str(len(tf.config.list_physical_devices('GPU'))))\"",
         "python -c \"import torch; print('PyTorch CUDA available: ' + str(torch.cuda.is_available()))\"",
