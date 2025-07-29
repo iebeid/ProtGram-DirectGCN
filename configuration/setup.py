@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 16.0 (Final WSL fix: Correctly expand CONDA_PREFIX path in Python)
+# VERSION: 17.0 (Final WSL fix: Use LDFLAGS/CPPFLAGS for robust PyCUDA build)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -107,7 +107,6 @@ if __name__ == "__main__":
     config_dir = project_root / "configuration"
     env_yml_output_path = config_dir / ENVIRONMENT_YML_FILE
 
-    # --- DEFINITIVE FIX: Get the CONDA_PREFIX path from the environment ---
     # The run.py script ensures this script is run inside the activated environment.
     conda_prefix = os.environ.get("CONDA_PREFIX")
     if not conda_prefix:
@@ -141,14 +140,13 @@ if __name__ == "__main__":
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} "
          f"--extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION_FOR_PYTORCH.replace('.', '')}"),
 
-        # 5. CRITICAL STEP: Install PyCUDA by forcing the compiler and linker to use the
-        #    conda environment's paths. The path is expanded here in Python.
-        "echo '--- Stage 2b: Installing PyCUDA with forced library paths ---'",
-        (f"pip install "
-         f"--global-option=build_ext "
-         f"--global-option='-I{conda_prefix}/include' "
-         f"--global-option='-L{conda_prefix}/lib' "
-         f"pycuda"),
+        # 5. CRITICAL STEP: Install PyCUDA by setting environment variables
+        #    that the compiler and linker will use directly. This is more
+        #    robust than passing options through pip.
+        "echo '--- Stage 2b: Installing PyCUDA with forced library paths via environment variables ---'",
+        (f"LDFLAGS=\"-L{conda_prefix}/lib\" "
+         f"CPPFLAGS=\"-I{conda_prefix}/include\" "
+         f"pip install --no-cache-dir pycuda"),
 
         # 6. Install the remaining pip packages.
         "echo '--- Stage 2c: Installing remaining pip packages ---'",
