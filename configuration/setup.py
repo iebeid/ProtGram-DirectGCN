@@ -15,7 +15,10 @@ from pathlib import Path
 # --- Configuration ---
 ENV_NAME = "ppi-env"
 PYTHON_VERSION = "3.11"
+# Version for PyTorch wheel URL (e.g., '12.1' -> 'cu121')
 CUDA_VERSION_FOR_PYTORCH = "12.1"
+# Exact version for conda install from nvidia channel
+CUDA_VERSION_FOR_CONDA = "12.1.1"
 PYTORCH_VERSION = "2.4.0"
 TORCHVISION_VERSION = "0.19.0"
 TORCHAUDIO_VERSION = "2.4.0"
@@ -136,8 +139,9 @@ if __name__ == "__main__":
         # 4. Install the complete CUDA toolkit from NVIDIA's official conda channel.
         # This is the most robust way to ensure all libraries (like libcuda.so)
         # are present in the main conda lib directory, resolving linker issues.
+        # We add conda-forge as a secondary channel for dependency resolution.
         "echo '--- Stage 2a: Installing CUDA Toolkit via Conda ---'",
-        f"conda install -c nvidia -y cudatoolkit={CUDA_VERSION_FOR_PYTORCH}",
+        f"conda install -c nvidia -c conda-forge -y cudatoolkit={CUDA_VERSION_FOR_CONDA}",
 
         # 5. Install PyTorch and TensorFlow. They will now use the conda-installed CUDA toolkit.
         "echo '--- Stage 2b: Installing PyTorch & TensorFlow ---'",
