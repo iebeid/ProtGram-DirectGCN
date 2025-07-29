@@ -147,7 +147,8 @@ if __name__ == "__main__":
         "pip install --no-cache-dir pytools appdirs",
 
         "echo '--- Stage 2c: Installing PyCUDA with forced library paths and legacy setup ---'",
-        (f"PATH=\"{conda_prefix}/bin:$PATH\" "
+        (f"CXXFLAGS=\"-std=c++14\" "  # Force a compatible C++ standard
+         f"PATH=\"{conda_prefix}/bin:$PATH\" "
          f"CUDA_HOME=\"{conda_prefix}\" "
          f"LDFLAGS=\"-L{conda_prefix}/lib -L{conda_prefix}/lib/stubs\" "
          f"CPPFLAGS=\"-I{conda_prefix}/include\" "

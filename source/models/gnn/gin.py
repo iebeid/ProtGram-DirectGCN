@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: models/gnn/gin.py
 # PURPOSE: A standard implementation of the Graph Isomorphism Network (GIN).
-# VERSION: 2.0 (Refactored to return both logits and embeddings)
+# VERSION: 3.0 (Maintained custom logic due to GINConv's unique MLP constructor)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -21,6 +21,11 @@ class GIN(BaseGNN):
     A standard implementation of the Graph Isomorphism Network (GIN) model.
     This architecture uses a multi-layer perceptron to update node features,
     providing high expressive power.
+
+    Note: This model uses a custom __init__ and forward pass instead of the
+    generic BaseGNN methods. This is necessary because the GINConv layer
+    requires a full `nn.Sequential` module as its primary argument, which
+    differs from other standard PyG convolution layers.
     """
 
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int,
@@ -80,7 +85,7 @@ class GIN(BaseGNN):
 
         # Handle the single-layer case
         if len(self.convs) == 1:
-            logits = self.convs[0](x, edge_index)
+            logits = self.convs0
             # For a single-layer model, the logits are also the embeddings
             self.embedding_output = logits
             return logits, self.embedding_output
@@ -95,6 +100,6 @@ class GIN(BaseGNN):
         self.embedding_output = x
 
         # Apply the final layer to get logits
-        logits = self.convs[-1](self.embedding_output, edge_index)
+        logits = self.convs-1
 
         return logits, self.embedding_output
