@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: benchmarkers/gnns.py
 # PURPOSE: Handles benchmarking of various GNN models on standard datasets.
-# VERSION: 4.0 (Final refactoring with centralized run logic)
+# VERSION: 4.1 (Corrected model inheritance and typos)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -19,6 +19,8 @@ from torch_geometric.transforms import ToUndirected
 from torch_geometric.utils import to_undirected
 
 from configuration.config import Config
+# Renamed to BaseGNN to avoid confusion with model classes like GCN, GAT, etc.
+from source.models.gnn.base import GNN as BaseGNN
 from source.models.gnn.spectral.chebnet import ChebNet
 from source.models.gnn.spectral.directgcn import DirectGCN
 from source.models.gnn.spatial.gat import GAT
