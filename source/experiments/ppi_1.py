@@ -22,7 +22,7 @@ from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_sco
 from sklearn.model_selection import StratifiedKFold
 
 from configuration.config import Config
-from source.models.ml.mlp import MLP
+from source.models.fnn.mlp import MLP
 # Refactored: FileUtils is now DataUtils and lives in data.py
 from source.utils.data import DataUtils, GroundTruthLoader
 # Refactored: Dummy data creation is now in a dedicated helper file

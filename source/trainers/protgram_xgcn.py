@@ -1,8 +1,8 @@
 # ==============================================================================
 # MODULE: trainers/protgram_xgcn.py
 # PURPOSE: Unified trainer for GNNs on ProtGram n-gram graphs.
-# VERSION: 4.0 (Refactored for maintainability; helpers and labelgen moved)
-# AUTHOR: Islam Ebeid
+# VERSION: 5.0 (Refactored hierarchical training for clarity and maintainability)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import gc
@@ -27,27 +27,8 @@ from source.models.gnn.rgcn import RGCN
 from source.models.gnn.tongidigcn import TongDiGCN
 from source.utils.post import PostUtils
 from source.utils.data import DataUtils, IDMapGenerator
-from source.utils.models import EmbeddingProcessor
+from source.utils.models import EmbeddingProcessor, EarlyStopper
 from source.data_builders.xgcn import XGCNDataset
-
-
-class EarlyStopper:
-    """A simple early stopper to monitor loss and stop training when it stops improving."""
-    def __init__(self, patience: int = 1, min_delta: float = 0):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.best_loss = float('inf')
-
-    def early_stop(self, validation_loss: float) -> bool:
-        if validation_loss < self.best_loss - self.min_delta:
-            self.best_loss = validation_loss
-            self.counter = 0
-        else:
-            self.counter += 1
-            if self.counter >= self.patience:
-                return True
-        return False
 
 
 class ProtGramXGCNTrainer:
@@ -66,7 +47,7 @@ class ProtGramXGCNTrainer:
     def run(self) -> Dict[str, str]:
         """
         Main execution function. Loops through n-gram levels, trains models,
-        and generates final protein embeddings.
+        and generates final protein-level embeddings.
         """
         DataUtils.print_header("PIPELINE STEP: Training ProtGram Models & Generating Embeddings")
 
@@ -99,63 +80,83 @@ class ProtGramXGCNTrainer:
         DataUtils.print_header("ProtGram Embedding PIPELINE STEP FINISHED")
         return output_paths
 
+    def _load_graph_for_level(self, n: int) -> Optional[DirectedNgramGraph]:
+        """Loads the graph object for a specific n-gram level and prepares it for the GPU."""
+        graph_obj_path = self.config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{n}.pkl"
+        if not graph_obj_path.exists():
+            print(f"  Graph object not found for n={n}. Skipping.")
+            return None
+
+        graph_obj: DirectedNgramGraph = DataUtils.load_object(str(graph_obj_path))
+        if graph_obj is None or graph_obj.number_of_nodes == 0:
+            print(f"  Failed to load graph object or graph is empty for n={n}. Skipping.")
+            return None
+
+        print(f"  Graph for n={n} loaded. Nodes: {graph_obj.number_of_nodes}")
+        graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
+        graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
+        graph_obj.A_undirected_norm_sparse = graph_obj.A_undirected_norm_sparse.to(self.device)
+        graph_obj._create_propagation_matrices_for_gcn()
+        return graph_obj
+
+    def _get_initial_features_for_level(self, n: int, graph_obj: DirectedNgramGraph,
+                                        prev_level_embeddings: Optional[np.ndarray],
+                                        prev_level_map: Optional[Dict[str, int]]) -> Optional[torch.Tensor]:
+        """Generates the initial node features for the current n-gram level."""
+        if n == 1:
+            return torch.randn((graph_obj.number_of_nodes, self.config.GCN_1GRAM_INIT_DIM), device=self.device)
+        else:
+            if prev_level_embeddings is None or prev_level_embeddings.size == 0 or prev_level_map is None:
+                print(f"  Cannot proceed for n={n}, previous level embeddings not found or empty.")
+                return None
+            initial_features = self.helpers.pool_lower_level_embeddings(graph_obj, prev_level_embeddings, prev_level_map)
+            return initial_features.to(self.device) if initial_features is not None else None
+
+    def _train_single_level(self, model: nn.Module, graph_obj: DirectedNgramGraph, data: Data, optimizer: torch.optim.Optimizer, model_type: str):
+        """Orchestrates the training for a single level, choosing between full-batch and clustered training."""
+        l2_lambda_val = getattr(self.config, 'GCN_L2_REG_LAMBDA', 0.0)
+        task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(graph_obj.n_value, self.config.GCN_DEFAULT_TASK_TYPE)
+
+        if self.config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
+            subgraphs = self._create_clustered_subgraphs(graph_obj, data)
+            self._train_single_level_clustered(model, subgraphs, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, l2_lambda_val,
+                                               total_nodes_in_level_graph=graph_obj.number_of_nodes, model_type=model_type, graph_obj=graph_obj)
+        else:
+            self._train_single_level_full_batch(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, l2_lambda_val)
+
     def _train_gnns_hierarchically(self, model_type: str) -> Dict[int, np.ndarray]:
+        """The main hierarchical training loop, now refactored to use helper methods."""
         ngram_embeddings_per_level: Dict[int, np.ndarray] = {}
         level_ngram_to_idx: Dict[int, Dict[str, int]] = {}
-        l2_lambda_val = getattr(self.config, 'GCN_L2_REG_LAMBDA', 0.0)
 
         for n in range(1, self.config.GCN_NGRAM_MAX_N + 1):
             DataUtils.print_header(f"Processing N-gram Level: n = {n} for model '{model_type}'")
 
-            graph_obj_path = self.config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{n}.pkl"
-            if not graph_obj_path.exists():
-                print(f"  Graph object not found for n={n}. Skipping.")
-                continue
-
-            graph_obj: DirectedNgramGraph = DataUtils.load_object(str(graph_obj_path))
-            if graph_obj is None:
-                print(f"  Failed to load graph object for n={n}. Skipping.")
-                continue
-
-            graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
-            graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
-            graph_obj.A_undirected_norm_sparse = graph_obj.A_undirected_norm_sparse.to(self.device)
-            graph_obj._create_propagation_matrices_for_gcn()
+            graph_obj = self._load_graph_for_level(n)
+            if not graph_obj: continue
 
             level_ngram_to_idx[n] = graph_obj.node_to_idx
-            print(f"  Graph for n={n} loaded. Nodes: {graph_obj.number_of_nodes}")
-            if graph_obj.number_of_nodes == 0:
-                continue
+            prev_embeds = ngram_embeddings_per_level.get(n - 1)
+            prev_map = level_ngram_to_idx.get(n - 1)
 
-            if n == 1:
-                initial_features = torch.randn((graph_obj.number_of_nodes, self.config.GCN_1GRAM_INIT_DIM), device=self.device)
-            else:
-                prev_level_embeds = ngram_embeddings_per_level.get(n - 1)
-                prev_level_map = level_ngram_to_idx.get(n - 1)
-                if prev_level_embeds is None or prev_level_embeds.size == 0 or prev_level_map is None:
-                    print(f"  Cannot proceed for n={n}, previous level embeddings not found or empty.")
-                    continue
-                initial_features = self.helpers.pool_lower_level_embeddings(graph_obj, prev_level_embeds, prev_level_map)
-                if initial_features is None: continue
-                initial_features = initial_features.to(self.device)
+            initial_features = self._get_initial_features_for_level(n, graph_obj, prev_embeds, prev_map)
+            if initial_features is None: continue
 
             task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(n, self.config.GCN_DEFAULT_TASK_TYPE)
             labels, num_classes_for_task = self.label_generator.generate_task_labels(graph_obj, task_type)
 
             model = self._build_model(model_type, n, initial_features.shape[1], num_classes_for_task, graph_obj.number_of_nodes)
             if model is None: continue
-            model.to(self.device)
 
             data = self._prepare_data_for_model(model_type, graph_obj, initial_features, labels)
-            optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=self.config.GCN_WEIGHT_DECAY if l2_lambda_val <= 0 else 0.0)
+            optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=self.config.GCN_WEIGHT_DECAY if self.config.GCN_L2_REG_LAMBDA <= 0 else 0.0)
 
-            if self.config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
-                subgraphs = self._create_clustered_subgraphs(graph_obj, data, model_type)
-                self._train_model_clustered(model, subgraphs, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, l2_lambda_val, total_nodes_in_level_graph=graph_obj.number_of_nodes)
-            else:
-                self._train_model_full_batch(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, l2_lambda_val)
+            self._train_single_level(model, graph_obj, data, optimizer, model_type)
 
-            ngram_embeddings_per_level[n] = EmbeddingProcessor.extract_gcn_node_embeddings(model, data, graph_obj, self.config, self.device, lambda g, d: self._create_clustered_subgraphs(g, d, model_type))
+            ngram_embeddings_per_level[n] = EmbeddingProcessor.extract_gcn_node_embeddings(
+                model, data, graph_obj, self.config, self.device,
+                lambda g, d: self._create_clustered_subgraphs(g, d)
+            )
 
             print(f"  Generated {ngram_embeddings_per_level[n].shape[0]} embeddings of dim {ngram_embeddings_per_level[n].shape[1]} for n={n}.")
             del model, data, graph_obj, initial_features, labels, optimizer
@@ -210,16 +211,15 @@ class ProtGramXGCNTrainer:
             raise ValueError(f"Cannot prepare data for unknown model type: {model_type}")
         return Data.from_dict(data_dict)
 
-    def _train_model_full_batch(self, model: nn.Module, data: Data, optimizer: torch.optim.Optimizer, epochs: int,
-                                task_type: str, l2_lambda: float = 0.0):
-        """Full-batch training logic."""
+    def _train_single_level_full_batch(self, model: nn.Module, data: Data, optimizer: torch.optim.Optimizer, epochs: int,
+                                       task_type: str, l2_lambda: float = 0.0):
+        """Full-batch training logic for a single GNN level."""
         model.train()
         model.to(self.device)
         data = data.to(self.device)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE, factor=self.config.GCN_LR_SCHEDULER_FACTOR) if self.config.GCN_USE_LR_SCHEDULER else None
         early_stopper = EarlyStopper(patience=self.config.GCN_EARLY_STOPPING_PATIENCE, min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA) if self.config.GCN_USE_EARLY_STOPPING else None
         scaler = torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
-        # CRITICAL FIX: Use cross_entropy for models outputting raw logits. This is more robust.
         criterion = F.cross_entropy
         print(f"  Starting full-batch training for up to {epochs} epochs (Task: {task_type}, L2 lambda: {l2_lambda})...")
         for epoch in range(1, epochs + 1):
@@ -239,22 +239,24 @@ class ProtGramXGCNTrainer:
                 print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
                 break
 
-    def _train_model_clustered(self, model: nn.Module, subgraphs: List[Data], optimizer: torch.optim.Optimizer,
-                               epochs: int, task_type: str, l2_lambda: float = 0.0,
-                               total_nodes_in_level_graph: int = 1):
-        """Clustered training logic."""
+    def _train_single_level_clustered(self, model: nn.Module, subgraphs: List[Data], optimizer: torch.optim.Optimizer,
+                                      epochs: int, task_type: str, l2_lambda: float = 0.0,
+                                      total_nodes_in_level_graph: int = 1, model_type: str = '', graph_obj: Optional[DirectedNgramGraph] = None):
+        """Clustered training logic for a single GNN level."""
         model.train()
         model.to(self.device)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE, factor=self.config.GCN_LR_SCHEDULER_FACTOR) if self.config.GCN_USE_LR_SCHEDULER else None
         early_stopper = EarlyStopper(patience=self.config.GCN_EARLY_STOPPING_PATIENCE, min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA) if self.config.GCN_USE_EARLY_STOPPING else None
         scaler = torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
-        # CRITICAL FIX: Use cross_entropy for models outputting raw logits.
         criterion = F.cross_entropy
         print(f"  Starting Cluster-GCN style training for up to {epochs} epochs on {len(subgraphs)} subgraphs (Task: {task_type})...")
         for epoch in range(1, epochs + 1):
             random.shuffle(subgraphs)
             epoch_loss = 0.0
-            for batch_data in tqdm(subgraphs, desc=f"  Epoch {epoch}", leave=False, disable=not self.config.DEBUG_VERBOSE):
+            for base_subgraph_data in tqdm(subgraphs, desc=f"  Epoch {epoch}", leave=False, disable=not self.config.DEBUG_VERBOSE):
+                if graph_obj is None: continue
+                batch_data = self._prepare_data_for_model(model_type, graph_obj, base_subgraph_data.x, base_subgraph_data.y)
+                batch_data.original_indices = base_subgraph_data.original_indices
                 batch_data = batch_data.to(self.device)
                 optimizer.zero_grad()
                 with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
@@ -276,16 +278,17 @@ class ProtGramXGCNTrainer:
                 print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
                 break
 
-    def _create_clustered_subgraphs(self, graph: DirectedNgramGraph, full_data: Data, model_type: str) -> List[Data]:
-
-        """Partitions the graph into subgraphs, including all necessary matrices."""
+    def _create_clustered_subgraphs(self, graph: DirectedNgramGraph, full_data: Data) -> List[Data]:
+        """
+        Partitions the graph into subgraphs.
+        This version is now model-agnostic and only returns the core node data.
+        """
         if graph.number_of_nodes == 0: return []
         num_clusters_calculated = math.ceil(graph.number_of_nodes / self.config.GCN_TARGET_NODES_PER_CLUSTER)
         num_clusters = max(self.config.GCN_MIN_CLUSTERS, num_clusters_calculated)
         num_clusters = min(num_clusters, self.config.GCN_MAX_CLUSTERS, graph.number_of_nodes)
-        print(f"  Partitioning graph with {graph.number_of_nodes} nodes into {num_clusters} clusters (target nodes/cluster: {self.config.GCN_TARGET_NODES_PER_CLUSTER})...")
+        print(f"  Partitioning graph with {graph.number_of_nodes} nodes into {num_clusters} clusters...")
 
-        # This method requires METIS or python-louvain, which are imported at the top of the original file
         from torch_geometric.utils import to_networkx
         import community as community_louvain
 
@@ -311,28 +314,8 @@ class ProtGramXGCNTrainer:
             nodes_tensor_cpu = torch.tensor(cluster_nodes, dtype=torch.long, device='cpu')
             sub_x = full_data.x[nodes_tensor_cpu]
             sub_y = full_data.y[nodes_tensor_cpu] if full_data.y.numel() > 0 else torch.empty(0, dtype=torch.long)
+            # Create a simple, generic subgraph
             subgraph_data = Data(x=sub_x, y=sub_y, original_indices=nodes_tensor_cpu)
-
-            mathcal_A_in_cpu = graph.mathcal_A_in.cpu()
-            mathcal_A_out_cpu = graph.mathcal_A_out.cpu()
-            A_undir_cpu = graph.A_undirected_norm_sparse.cpu()
-            A_out_w_cpu = graph.A_out_w.cpu()
-            A_in_w_cpu = graph.A_in_w.cpu()
-
-            for model_type in self.config.PROTGRAM_MODELS_TO_TRAIN:
-                # Only add the edge formats required for the specific model being trained.
-                if model_type == 'directgcn':
-                    sub_edge_index_in, sub_edge_weight_in = subgraph(nodes_tensor_cpu, mathcal_A_in_cpu.indices(), mathcal_A_in_cpu.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
-                    sub_edge_index_out, sub_edge_weight_out = subgraph(nodes_tensor_cpu, mathcal_A_out_cpu.indices(), mathcal_A_out_cpu.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
-                    sub_edge_index_undir, sub_edge_weight_undir = subgraph(nodes_tensor_cpu, A_undir_cpu.indices(), A_undir_cpu.values(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
-                    subgraph_data.edge_index_in, subgraph_data.edge_weight_in = sub_edge_index_in, sub_edge_weight_in
-                    subgraph_data.edge_index_out, subgraph_data.edge_weight_out = sub_edge_index_out, sub_edge_weight_out
-                    subgraph_data.edge_index_undirected_norm, subgraph_data.edge_weight_undirected_norm = sub_edge_index_undir, sub_edge_weight_undir
-                elif model_type == 'tongdigcn':
-                    sub_edge_index_fwd, _ = subgraph(nodes_tensor_cpu, A_out_w_cpu.indices(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
-                    sub_edge_index_bwd, _ = subgraph(nodes_tensor_cpu, A_in_w_cpu.indices(), relabel_nodes=True, num_nodes=graph.number_of_nodes)
-                    subgraph_data.edge_index, subgraph_data.edge_index_backward = sub_edge_index_fwd, sub_edge_index_bwd
-
             subgraphs.append(subgraph_data)
         return subgraphs
 

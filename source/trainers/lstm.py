@@ -17,7 +17,7 @@ from tqdm.auto import tqdm
 
 from configuration.config import Config
 from source.utils.data import DataUtils, FastaUtils
-from source.models.ml.lstm import LSTM
+from source.models.rnn.lstm import LSTM
 
 
 class _LstmPytorchDataset(Dataset):

@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: models/ml/lstm.py
+# MODULE: models/rnn/lstm.py
 # PURPOSE: Defines the PyTorch LSTM model for next-character prediction.
 # VERSION: 1.1 (Clarified docstrings and method purposes)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)

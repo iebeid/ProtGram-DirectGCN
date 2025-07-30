@@ -7,7 +7,7 @@
 
 import random
 from functools import partial
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional
 from pathlib import Path
 import numpy as np
 import torch
@@ -25,7 +25,7 @@ except ImportError:
 
 from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
-from source.models.ml.mlp import MLP
+from source.models.fnn.mlp import MLP
 from source.utils.data import DataUtils, FastaUtils, GroundTruthLoader
 from source.utils.models import EmbeddingProcessor, EmbeddingLoader
 

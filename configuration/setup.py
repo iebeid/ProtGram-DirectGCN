@@ -139,7 +139,7 @@ if __name__ == "__main__":
          # CRITICAL: Install both the runtime and development CUDA toolkits.
          # Pin the version to match what PyTorch and TF expect. Use a wildcard
          # to get the latest patch release for that version.
-         f"'cudatoolkit={CUDA_VERSION}.*' 'cudatoolkit-dev={CUDA_VERSION}.*' "
+         f"'cudatoolkit={CUDA_VERSION}.*' 'cuda-compiler={CUDA_VERSION}.*' "
          # Other data science libraries
          f"dask tqdm biopython matplotlib scipy scikit-learn gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"),
 

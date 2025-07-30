@@ -27,7 +27,7 @@ from configuration.config import Config
 from source.benchmarkers.gnns import GNNBenchmarker
 from source.data_builders.protgram import ProtGramBuilder
 from source.experiments.ppi_1 import PPIPipeline
-from source.models.ml.mlp import MLP
+from source.models.fnn.mlp import MLP
 from source.trainers.transformers import TransformerEmbedder
 from source.trainers.word2vec import Word2VecEmbedder
 from source.utils.data import DataUtils, IDMapGenerator

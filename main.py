@@ -1,8 +1,8 @@
 # ==============================================================================
 # MODULE: main.py
 # PURPOSE: Pipeline entry point
-# VERSION: 4.0 (Removed all environment hacks; relies on system compiler)
-# AUTHOR: Islam Ebeid
+# VERSION: 5.0 (Refactored pipeline execution to be data-driven)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import time
@@ -45,23 +45,31 @@ from source.utils.logging import FileLogger
 
 
 def _run_embedding_generation_pipelines(config: Config) -> List[Dict[str, str]]:
-    """Runs all configured embedding generation pipelines and returns a list of generated file paths."""
+    """Runs all configured embedding generation pipelines using a data-driven approach."""
+
+    # Define all pipelines in a list of dictionaries for easy extension
+    pipelines = [
+        {"flag": "RUN_GCN_PIPELINE", "pre_runner": lambda: ProtGramBuilder(config).run(),
+         "runner": lambda: ProtGramXGCNTrainer(config).run(),
+         "formatter": lambda paths: [{"name": name, "path": path} for name, path in paths.items()]},
+        {"flag": "RUN_WORD2VEC_PIPELINE", "runner": lambda: Word2VecEmbedder(config).run(),
+         "formatter": lambda path: [{"name": "Word2Vec-Generated", "path": path}]},
+        {"flag": "RUN_LSTM_PIPELINE", "runner": lambda: LSTMBasedEmbedder(config).run(),
+         "formatter": lambda path: [{"name": "LSTM-Generated", "path": path}]},
+        {"flag": "RUN_TRANSFORMER_PIPELINE", "runner": lambda: TransformerEmbedder(config).run(),
+         "formatter": lambda paths: [{"name": f"{name}-Generated", "path": str(path)} for name, path in paths.items()]}
+    ]
+
     generated_files = []
-    if config.RUN_GCN_PIPELINE:
-        ProtGramBuilder(config).run()
-        if gcn_paths := ProtGramXGCNTrainer(config).run():
-            for name, path in gcn_paths.items():
-                generated_files.append({"name": name, "path": path})
-    if config.RUN_WORD2VEC_PIPELINE:
-        if w2v_path := Word2VecEmbedder(config).run():
-            generated_files.append({"name": "Word2Vec-Generated", "path": w2v_path})
-    if config.RUN_LSTM_PIPELINE:
-        if lstm_path := LSTMBasedEmbedder(config).run():
-            generated_files.append({"name": "LSTM-Generated", "path": lstm_path})
-    if config.RUN_TRANSFORMER_PIPELINE:
-        if transformer_paths := TransformerEmbedder(config).run():
-            for name, path in transformer_paths.items():
-                generated_files.append({"name": f"{name}-Generated", "path": str(path)})
+    for p_config in pipelines:
+        if getattr(config, p_config["flag"], False):
+            if "pre_runner" in p_config:
+                p_config["pre_runner"]()
+
+            result = p_config["runner"]()
+            if result:
+                generated_files.extend(p_config["formatter"](result))
+
     return generated_files
 
 
