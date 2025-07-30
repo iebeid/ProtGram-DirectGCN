@@ -85,10 +85,10 @@ class GIN(BaseGNN):
 
         # Handle the single-layer case
         if len(self.convs) == 1:
-            logits = self.convs0
+            logits = self.convs[0](x, edge_index)
             # For a single-layer model, the logits are also the embeddings
             self.embedding_output = logits
-            return logits, self.embedding_output
+            return logits, self.embedding_output.clone()
 
         # Process all but the final layer
         for conv in self.convs[:-1]:
@@ -100,6 +100,6 @@ class GIN(BaseGNN):
         self.embedding_output = x
 
         # Apply the final layer to get logits
-        logits = self.convs-1
+        logits = self.convs[-1](self.embedding_output, edge_index)
 
-        return logits, self.embedding_output
+        return logits, self.embedding_output.clone()

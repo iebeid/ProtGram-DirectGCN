@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 20.0 (Definitive fix: Unified Conda install with pytorch-cuda meta-package)
+# VERSION: 22.0 (Definitive fix: Decouple Conda toolkit from Pip frameworks)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -127,28 +127,31 @@ if __name__ == "__main__":
         "echo '--- Clearing PyCUDA cache to ensure rediscovery of system compiler ---'",
         "rm -rf ~/.config/pycuda",
 
-        # 3. UNIFIED CONDA INSTALLATION
-        # This is the most robust step. We install all major packages at once,
-        # letting conda's solver handle the complex dependencies between PyTorch,
-        # TensorFlow, and the correct CUDA toolkit version.
-        "echo '--- Stage 1: Unified Conda installation for all core packages ---'",
+        # 3. CONDA INSTALLATION FOR CUDA TOOLKIT AND CORE LIBRARIES
+        # This is the most robust step. We install all non-python ML libraries
+        # and the complete, version-matched CUDA toolkit from the best channels.
+        "echo '--- Stage 1: Installing CUDA Toolkit and core data science libraries ---'",
         (f"conda install -y "
-         f"-c pytorch -c nvidia -c conda-forge "
+         # Channel priority: nvidia for cuda, conda-forge for everything else.
+         f"-c nvidia -c conda-forge "
          # Core dependencies
          f"python={PYTHON_VERSION} "
-         # PyTorch stack with CUDA meta-package
-         f"pytorch={PYTORCH_VERSION} torchvision={TORCHVISION_VERSION} torchaudio={TORCHAUDIO_VERSION} pytorch-cuda={CUDA_VERSION} cudatoolkit-dev "
-         # TensorFlow for GPU
-         f"tensorflow-gpu "
+         # CRITICAL: Install both the runtime and development CUDA toolkits.
+         # Pin the version to match what PyTorch and TF expect. Use a wildcard
+         # to get the latest patch release for that version.
+         f"'cudatoolkit={CUDA_VERSION}.*' 'cudatoolkit-dev={CUDA_VERSION}.*' "
          # Other data science libraries
          f"dask tqdm biopython matplotlib scipy scikit-learn gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"),
 
-        # 4. Pip installations for packages not on Conda or requiring specific versions.
-        "echo '--- Stage 2: Installing pip packages ---'",
-
-        # 4a. Install PyCUDA dependencies first
-        "echo '--- Stage 2a: Installing PyCUDA dependencies (pytools, appdirs) ---'",
-        "pip install --no-cache-dir pytools appdirs",
+        # 4. PIP INSTALLATIONS FOR FRAMEWORKS AND REMAINING PACKAGES
+        # They will now use the single, consistent CUDA toolkit installed by Conda.
+        "echo '--- Stage 2: Installing ML Frameworks (PyTorch, TensorFlow) via pip ---'",
+        (f"pip install --no-cache-dir "
+         # Install TensorFlow. It will find the system (conda) CUDA libraries.
+         f"tensorflow tf-keras "
+         # Install PyTorch, pointing to the correct CUDA version wheel.
+         f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} --extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"
+        ),
 
         # 4b. Build PyCUDA from source, now that the full CUDA toolkit is in the environment.
         "echo '--- Stage 2b: Installing PyCUDA with forced library paths and legacy setup ---'",
@@ -157,11 +160,13 @@ if __name__ == "__main__":
          f"CUDA_HOME=\"{conda_prefix}\" "
          f"LDFLAGS=\"-L{conda_prefix}/lib\" "
          f"CPPFLAGS=\"-I{conda_prefix}/include\" "
+         # We need to install pytools first, as it's a build dependency for pycuda sometimes.
+         f"pip install --no-cache-dir pytools appdirs && "
          f"pip install --no-cache-dir --no-binary :all: --no-deps --no-use-pep517 pycuda"),
 
         # 4c. Install other pip packages
         "echo '--- Stage 2c: Installing remaining pip packages ---'",
-        "pip install mlflow transformers==4.41.2 tf-keras",
+        "pip install mlflow transformers==4.41.2",
 
         # 5. Install PyG, which depends on the PyTorch version just installed.
         "echo '--- Stage 3: Installing PyTorch Geometric (PyG) ---'",
