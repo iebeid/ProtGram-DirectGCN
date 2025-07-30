@@ -13,7 +13,7 @@ from tqdm.auto import tqdm
 from pathlib import Path
 
 # Local imports are safe here as this is a core utility module
-from .data import DataUtils
+from source.utils.data import DataUtils
 
 if TYPE_CHECKING:
     from gensim.models import Word2Vec
