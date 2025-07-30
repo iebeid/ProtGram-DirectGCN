@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 24.0 (Definitive fix: Unified Conda install from pytorch channel)
+# VERSION: 26.0 (Definitive fix: Staged hybrid install with forced linker path)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -122,30 +122,33 @@ if __name__ == "__main__":
         "echo '--- Clearing PyCUDA cache to ensure rediscovery of system compiler ---'",
         "rm -rf ~/.config/pycuda",
 
-        # STAGE 1: UNIFIED CONDA INSTALL
-        # This is the most robust method. We let Conda's solver handle the complex dependencies
-        # between PyTorch, its specific CUDA toolkit, and the compiler from the correct channels.
-        "echo '--- Stage 1: Unified Conda installation for all core packages ---'",
+        # STAGE 1: CONDA FOR THE CUDA FOUNDATION
+        # Install the CUDA toolkit and compiler from the official nvidia channel.
+        # This creates a stable, framework-agnostic base that other packages will link against.
+        "echo '--- Stage 1: Installing CUDA Toolkit and core data science libraries from Conda ---'",
         (f"conda install -y "
-         # CRITICAL: Prioritize the pytorch channel, then nvidia, then conda-forge.
-         f"-c pytorch -c nvidia -c conda-forge "
+         f"-c nvidia -c conda-forge "
          f"python={PYTHON_VERSION} "
-         # Install PyTorch, its CUDA toolkit, and other libraries in one go.
-         # `pytorch-cuda` is a meta-package that ensures the correct CUDA runtime and cuDNN are installed.
-         f"pytorch={PYTORCH_VERSION} torchvision={TORCHVISION_VERSION} torchaudio={TORCHAUDIO_VERSION} pytorch-cuda={CUDA_VERSION} "
+         # CRITICAL: Use the correct package names 'cuda-toolkit' and 'cuda-compiler'.
+         f"'cuda-toolkit={CUDA_VERSION}' 'cuda-compiler={CUDA_VERSION}' "
          # Other data science libraries
          f"dask tqdm biopython matplotlib scipy scikit-learn gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"),
 
-        # STAGE 2: PIP INSTALLATIONS
-        # Install packages not available on Conda or that need specific versions.
-        # TensorFlow will now find the consistent CUDA toolkit installed by Conda in Stage 1.
-        "echo '--- Stage 2: Installing remaining packages via pip ---'",
-        "pip install --no-cache-dir tensorflow tf-keras mlflow transformers==4.41.2",
+        # STAGE 2: PIP INSTALLATIONS FOR ML FRAMEWORKS
+        # Install the main ML frameworks. They will find and use the CUDA toolkit provided by Conda.
+        # This avoids the library conflicts seen when installing pytorch+cuda from conda and tensorflow from pip.
+        "echo '--- Stage 2: Installing ML Frameworks (PyTorch, TensorFlow) via pip ---'",
+        (f"pip install --no-cache-dir "
+         f"tensorflow "
+         f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} --extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"
+        ),
 
         # STAGE 3: PYCUDA INSTALL
-        # This must come after the main conda install, which provides the CUDA compiler.
-        "echo '--- Stage 3: Building PyCUDA from source ---'",
-        (f"CXXFLAGS=\"-std=c++14\" "
+        # This must come after Stage 1. We add LD_LIBRARY_PATH to force the linker to use the Conda env's libraries.
+        "echo '--- Stage 3: Building PyCUDA from source with forced library paths ---'",
+        (f"# CRITICAL: Add LD_LIBRARY_PATH to force the linker to use the Conda env's libraries.\n"
+         f"LD_LIBRARY_PATH=\"{conda_prefix}/lib:$LD_LIBRARY_PATH\" "
+         f"CXXFLAGS=\"-std=c++14\" "
          f"PATH=\"{conda_prefix}/bin:$PATH\" "
          f"CUDA_HOME=\"{conda_prefix}\" "
          f"LDFLAGS=\"-L{conda_prefix}/lib\" "
@@ -154,16 +157,38 @@ if __name__ == "__main__":
          f"pip install --no-cache-dir pytools appdirs && "
          f"pip install --no-cache-dir --no-binary :all: --no-deps --no-use-pep517 pycuda"),
 
-        # STAGE 4: PYG INSTALL
-        "echo '--- Stage 4: Installing PyTorch Geometric (PyG) ---'",
+        # STAGE 4: Install remaining pip packages that depend on the frameworks
+        "echo '--- Stage 4: Installing remaining pip packages (MLflow, Transformers, PyG) ---'",
+        "pip install --no-cache-dir tf-keras mlflow transformers==4.41.2",
         (f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
          f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION.replace('.', '')}.html"),
 
         # STAGE 5: VERIFICATION & CLEANUP
         "echo '--- Verifying installations ---'",
-        "python -c \"import tensorflow as tf; print('TensorFlow GPUs found: ' + str(len(tf.config.list_physical_devices('GPU'))))\"",
-        "python -c \"import torch; print('PyTorch CUDA available: ' + str(torch.cuda.is_available()))\"",
-        "python -c \"import pycuda.autoinit; print('PyCUDA initialized successfully.')\"",
+        # Use the robust, combined, multi-line test
+        (f"python -c '\n"
+         f"import sys\n"
+         f"print(\"--- Verifying GPU Libraries ---\")\n"
+         f"try:\n"
+         f"    import torch\n"
+         f"    print(\"\\n--- PyTorch ---\")\n"
+         f"    is_avail = torch.cuda.is_available()\n"
+         f"    print(f\"CUDA Available: {{is_avail}}\")\n"
+         f"    if is_avail: print(f\"Device Name: {{torch.cuda.get_device_name(0)}}\")\n"
+         f"except Exception as e: print(f\"\\n--- PyTorch ---\\nERROR: {{e}}\")\n"
+         f"try:\n"
+         f"    import tensorflow as tf\n"
+         f"    print(\"\\n--- TensorFlow ---\")\n"
+         f"    gpus = tf.config.list_physical_devices(\"GPU\")\n"
+         f"    print(f\"GPUs Found: {{len(gpus)}}\")\n"
+         f"except Exception as e: print(f\"\\n--- TensorFlow ---\\nERROR: {{e}}\")\n"
+         f"try:\n"
+         f"    import pycuda.autoinit\n"
+         f"    print(\"\\n--- PyCUDA ---\")\n"
+         f"    print(\"PyCUDA initialized successfully.\")\n"
+         f"except Exception as e: print(f\"\\n--- PyCUDA ---\\nERROR: {{e}}\")\n"
+         f"'"
+        ),
         "echo '--- Stage 5: Generating environment validation file ---'",
         f'conda env export > "{env_yml_output_path}"',
         "conda clean --all -y",

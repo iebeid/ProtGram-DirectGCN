@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: trainers/protgram_xgcn.py
 # PURPOSE: Unified trainer for GNNs on ProtGram n-gram graphs.
-# VERSION: 5.0 (Refactored hierarchical training for clarity and maintainability)
+# VERSION: 6.0 (Corrected clustered training logic to prevent GPU memory errors)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -17,9 +17,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch_geometric.data import Data
-from torch_geometric.utils import subgraph
+from torch_geometric.utils import subgraph, to_networkx
 from tqdm.auto import tqdm
 import collections
+import community as community_louvain
+
 from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
 from source.models.gnn.spectral.directgcn import DirectGCN
@@ -93,9 +95,10 @@ class ProtGramXGCNTrainer:
             return None
 
         print(f"  Graph for n={n} loaded. Nodes: {graph_obj.number_of_nodes}")
-        graph_obj.A_out_w = graph_obj.A_out_w.to(self.device)
-        graph_obj.A_in_w = graph_obj.A_in_w.to(self.device)
-        graph_obj.A_undirected_norm_sparse = graph_obj.A_undirected_norm_sparse.to(self.device)
+        # Keep adjacency matrices on CPU for subgraph creation, move to GPU inside the training loop
+        graph_obj.A_out_w = graph_obj.A_out_w.cpu()
+        graph_obj.A_in_w = graph_obj.A_in_w.cpu()
+        graph_obj.A_undirected_norm_sparse = graph_obj.A_undirected_norm_sparse.cpu()
         graph_obj._create_propagation_matrices_for_gcn()
         return graph_obj
 
@@ -104,25 +107,14 @@ class ProtGramXGCNTrainer:
                                         prev_level_map: Optional[Dict[str, int]]) -> Optional[torch.Tensor]:
         """Generates the initial node features for the current n-gram level."""
         if n == 1:
-            return torch.randn((graph_obj.number_of_nodes, self.config.GCN_1GRAM_INIT_DIM), device=self.device)
+            # Keep features on CPU initially
+            return torch.randn((graph_obj.number_of_nodes, self.config.GCN_1GRAM_INIT_DIM))
         else:
             if prev_level_embeddings is None or prev_level_embeddings.size == 0 or prev_level_map is None:
                 print(f"  Cannot proceed for n={n}, previous level embeddings not found or empty.")
                 return None
             initial_features = self.helpers.pool_lower_level_embeddings(graph_obj, prev_level_embeddings, prev_level_map)
-            return initial_features.to(self.device) if initial_features is not None else None
-
-    def _train_single_level(self, model: nn.Module, graph_obj: DirectedNgramGraph, data: Data, optimizer: torch.optim.Optimizer, model_type: str):
-        """Orchestrates the training for a single level, choosing between full-batch and clustered training."""
-        l2_lambda_val = getattr(self.config, 'GCN_L2_REG_LAMBDA', 0.0)
-        task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(graph_obj.n_value, self.config.GCN_DEFAULT_TASK_TYPE)
-
-        if self.config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
-            subgraphs = self._create_clustered_subgraphs(graph_obj, data)
-            self._train_single_level_clustered(model, subgraphs, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, l2_lambda_val,
-                                               total_nodes_in_level_graph=graph_obj.number_of_nodes, model_type=model_type, graph_obj=graph_obj)
-        else:
-            self._train_single_level_full_batch(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, l2_lambda_val)
+            return initial_features if initial_features is not None else None
 
     def _train_gnns_hierarchically(self, model_type: str) -> Dict[int, np.ndarray]:
         """The main hierarchical training loop, now refactored to use helper methods."""
@@ -148,14 +140,16 @@ class ProtGramXGCNTrainer:
             model = self._build_model(model_type, n, initial_features.shape[1], num_classes_for_task, graph_obj.number_of_nodes)
             if model is None: continue
 
-            data = self._prepare_data_for_model(model_type, graph_obj, initial_features, labels)
+            # The 'data' object now holds all features and labels on the CPU. It will be moved to the GPU in batches/subgraphs.
+            data = Data(x=initial_features, y=labels, graph_obj=graph_obj)
+
             optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=self.config.GCN_WEIGHT_DECAY if self.config.GCN_L2_REG_LAMBDA <= 0 else 0.0)
 
             self._train_single_level(model, graph_obj, data, optimizer, model_type)
 
             ngram_embeddings_per_level[n] = EmbeddingProcessor.extract_gcn_node_embeddings(
                 model, data, graph_obj, self.config, self.device,
-                lambda g, d: self._create_clustered_subgraphs(g, d)
+                lambda g, d: self._partition_graph(g)
             )
 
             print(f"  Generated {ngram_embeddings_per_level[n].shape[0]} embeddings of dim {ngram_embeddings_per_level[n].shape[1]} for n={n}.")
@@ -186,37 +180,25 @@ class ProtGramXGCNTrainer:
             print(f"  ERROR: Unknown model type '{model_type}' for ProtGram training.")
             return None
 
-    def _prepare_data_for_model(self, model_type: str, graph: DirectedNgramGraph, features: torch.Tensor, labels: torch.Tensor) -> Data:
-        """Prepares a PyG Data object tailored to the specific model's needs."""
-        data_dict = {'x': features, 'y': labels.to(self.device)}
+    def _train_single_level(self, model: nn.Module, graph_obj: DirectedNgramGraph, data: Data, optimizer: torch.optim.Optimizer, model_type: str):
+        """Orchestrates the training for a single level, choosing between full-batch and clustered training."""
+        l2_lambda_val = getattr(self.config, 'GCN_L2_REG_LAMBDA', 0.0)
+        task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(graph_obj.n_value, self.config.GCN_DEFAULT_TASK_TYPE)
 
-        if model_type == 'directgcn':
-            data_dict.update({
-                'edge_index_in': graph.mathcal_A_in.indices(), 'edge_weight_in': graph.mathcal_A_in.values(),
-                'edge_index_out': graph.mathcal_A_out.indices(), 'edge_weight_out': graph.mathcal_A_out.values(),
-                'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
-                'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values()
-            })
-        elif model_type == 'rgcn':
-            edge_index_out = graph.A_out_w.indices()
-            edge_index_in = graph.A_in_w.indices()
-            edge_type_out = torch.zeros(edge_index_out.size(1), dtype=torch.long, device=self.device)
-            edge_type_in = torch.ones(edge_index_in.size(1), dtype=torch.long, device=self.device)
-            data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
-            data_dict['edge_type'] = torch.cat([edge_type_out, edge_type_in], dim=0)
-        elif model_type == 'tongdigcn':
-            data_dict['edge_index'] = graph.A_out_w.indices()
-            data_dict['edge_index_backward'] = graph.A_in_w.indices()
+        if self.config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
+            node_partitions = self._partition_graph(graph_obj)
+            self._train_single_level_clustered(model, data, node_partitions, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, l2_lambda_val)
         else:
-            raise ValueError(f"Cannot prepare data for unknown model type: {model_type}")
-        return Data.from_dict(data_dict)
+            self._train_single_level_full_batch(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, l2_lambda_val)
 
     def _train_single_level_full_batch(self, model: nn.Module, data: Data, optimizer: torch.optim.Optimizer, epochs: int,
                                        task_type: str, l2_lambda: float = 0.0):
         """Full-batch training logic for a single GNN level."""
         model.train()
         model.to(self.device)
-        data = data.to(self.device)
+        # For full batch, we prepare the data once and move it to the device
+        full_data_gpu = self._prepare_data_for_model(model.__class__.__name__.lower(), data.graph_obj, data.x, data.y).to(self.device)
+
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE, factor=self.config.GCN_LR_SCHEDULER_FACTOR) if self.config.GCN_USE_LR_SCHEDULER else None
         early_stopper = EarlyStopper(patience=self.config.GCN_EARLY_STOPPING_PATIENCE, min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA) if self.config.GCN_USE_EARLY_STOPPING else None
         scaler = torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
@@ -225,8 +207,8 @@ class ProtGramXGCNTrainer:
         for epoch in range(1, epochs + 1):
             optimizer.zero_grad()
             with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
-                output, _ = model(data=data)
-                primary_loss = criterion(output, data.y)
+                output, _ = model(data=full_data_gpu)
+                primary_loss = criterion(output, full_data_gpu.y)
                 l2_reg = sum(p.norm(2).pow(2) for p in model.parameters() if p.requires_grad)
                 loss = primary_loss + l2_lambda * l2_reg
             scaler.scale(loss).backward()
@@ -239,9 +221,8 @@ class ProtGramXGCNTrainer:
                 print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
                 break
 
-    def _train_single_level_clustered(self, model: nn.Module, subgraphs: List[Data], optimizer: torch.optim.Optimizer,
-                                      epochs: int, task_type: str, l2_lambda: float = 0.0,
-                                      total_nodes_in_level_graph: int = 1, model_type: str = '', graph_obj: Optional[DirectedNgramGraph] = None):
+    def _train_single_level_clustered(self, model: nn.Module, full_data: Data, node_partitions: List[List[int]],
+                                      optimizer: torch.optim.Optimizer, epochs: int, task_type: str, l2_lambda: float = 0.0):
         """Clustered training logic for a single GNN level."""
         model.train()
         model.to(self.device)
@@ -249,28 +230,35 @@ class ProtGramXGCNTrainer:
         early_stopper = EarlyStopper(patience=self.config.GCN_EARLY_STOPPING_PATIENCE, min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA) if self.config.GCN_USE_EARLY_STOPPING else None
         scaler = torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
         criterion = F.cross_entropy
-        print(f"  Starting Cluster-GCN style training for up to {epochs} epochs on {len(subgraphs)} subgraphs (Task: {task_type})...")
+        print(f"  Starting Cluster-GCN style training for up to {epochs} epochs on {len(node_partitions)} subgraphs (Task: {task_type})...")
+
         for epoch in range(1, epochs + 1):
-            random.shuffle(subgraphs)
+            random.shuffle(node_partitions)
             epoch_loss = 0.0
-            for base_subgraph_data in tqdm(subgraphs, desc=f"  Epoch {epoch}", leave=False, disable=not self.config.DEBUG_VERBOSE):
-                if graph_obj is None: continue
-                batch_data = self._prepare_data_for_model(model_type, graph_obj, base_subgraph_data.x, base_subgraph_data.y)
-                batch_data.original_indices = base_subgraph_data.original_indices
-                batch_data = batch_data.to(self.device)
+            for node_idx_batch in tqdm(node_partitions, desc=f"  Epoch {epoch}", leave=False, disable=not self.config.DEBUG_VERBOSE):
+                # --- FIX: Create a self-contained subgraph for each batch ---
+                nodes_tensor = torch.tensor(node_idx_batch, dtype=torch.long)
+                subgraph_data = self._create_subgraph_data_for_model(
+                    model_type=model.__class__.__name__.lower(),
+                    full_graph_obj=full_data.graph_obj,
+                    full_features=full_data.x,
+                    full_labels=full_data.y,
+                    node_subset=nodes_tensor
+                ).to(self.device)
+                # --- END FIX ---
+
                 optimizer.zero_grad()
                 with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
-                    output, _ = model(data=batch_data)
-                    primary_loss_per_node_avg = criterion(output, batch_data.y)
-                    weight_factor = batch_data.num_nodes / total_nodes_in_level_graph if total_nodes_in_level_graph > 0 else 0.0
-                    weighted_primary_loss = primary_loss_per_node_avg * weight_factor
+                    output, _ = model(data=subgraph_data)
+                    primary_loss = criterion(output, subgraph_data.y)
                     l2_reg = sum(p.norm(2).pow(2) for p in model.parameters() if p.requires_grad)
-                    loss = weighted_primary_loss + l2_lambda * l2_reg
+                    loss = primary_loss + l2_lambda * l2_reg
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
                 epoch_loss += loss.item()
-            avg_epoch_loss = epoch_loss / len(subgraphs) if subgraphs else 0
+
+            avg_epoch_loss = epoch_loss / len(node_partitions) if node_partitions else 0
             if self.config.DEBUG_VERBOSE and (epoch == 1 or epoch % 10 == 0 or epoch == epochs):
                 print(f"    Epoch: {epoch:03d}, Avg Batch Loss: {avg_epoch_loss:.4f}")
             if scheduler: scheduler.step(avg_epoch_loss)
@@ -278,19 +266,16 @@ class ProtGramXGCNTrainer:
                 print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
                 break
 
-    def _create_clustered_subgraphs(self, graph: DirectedNgramGraph, full_data: Data) -> List[Data]:
+    def _partition_graph(self, graph: DirectedNgramGraph) -> List[List[int]]:
         """
-        Partitions the graph into subgraphs.
-        This version is now model-agnostic and only returns the core node data.
+        Partitions the graph into clusters of nodes for batch training.
+        This version is now model-agnostic and only returns the node indices for each partition.
         """
         if graph.number_of_nodes == 0: return []
         num_clusters_calculated = math.ceil(graph.number_of_nodes / self.config.GCN_TARGET_NODES_PER_CLUSTER)
         num_clusters = max(self.config.GCN_MIN_CLUSTERS, num_clusters_calculated)
         num_clusters = min(num_clusters, self.config.GCN_MAX_CLUSTERS, graph.number_of_nodes)
         print(f"  Partitioning graph with {graph.number_of_nodes} nodes into {num_clusters} clusters...")
-
-        from torch_geometric.utils import to_networkx
-        import community as community_louvain
 
         A_combined_cpu = (graph.A_in_w.cpu() + graph.A_out_w.cpu()).coalesce()
         g_nx = to_networkx(Data(edge_index=A_combined_cpu.indices(), edge_attr=A_combined_cpu.values(), num_nodes=graph.number_of_nodes), to_undirected=True, edge_attrs=['edge_attr'])
@@ -308,16 +293,70 @@ class ProtGramXGCNTrainer:
         for node, cluster_id in partition.items(): clusters[cluster_id].append(node)
         cluster_list = list(clusters.values())
         print(f"  Graph partitioned into {len(cluster_list)} clusters.")
+        return cluster_list
 
-        subgraphs = []
-        for cluster_nodes in tqdm(cluster_list, desc="  Creating subgraphs", leave=False):
-            nodes_tensor_cpu = torch.tensor(cluster_nodes, dtype=torch.long, device='cpu')
-            sub_x = full_data.x[nodes_tensor_cpu]
-            sub_y = full_data.y[nodes_tensor_cpu] if full_data.y.numel() > 0 else torch.empty(0, dtype=torch.long)
-            # Create a simple, generic subgraph
-            subgraph_data = Data(x=sub_x, y=sub_y, original_indices=nodes_tensor_cpu)
-            subgraphs.append(subgraph_data)
-        return subgraphs
+    def _create_subgraph_data_for_model(self, model_type: str, full_graph_obj: DirectedNgramGraph,
+                                        full_features: torch.Tensor, full_labels: torch.Tensor,
+                                        node_subset: torch.Tensor) -> Data:
+        """
+        Creates a valid, self-contained PyG Data object for a subgraph of nodes.
+        This is the critical fix for clustered training. It re-indexes edges.
+        """
+        sub_x = full_features[node_subset]
+        sub_y = full_labels[node_subset]
+
+        data_dict = {'x': sub_x, 'y': sub_y, 'original_indices': node_subset}
+
+        # Use torch_geometric.utils.subgraph to get re-indexed edges for the subset of nodes
+        if model_type == 'directgcn':
+            for name, matrix in [('in', full_graph_obj.mathcal_A_in), ('out', full_graph_obj.mathcal_A_out),
+                                 ('undirected_norm', full_graph_obj.A_undirected_norm_sparse)]:
+                sub_edge_index, sub_edge_weight = subgraph(
+                    subset=node_subset, edge_index=matrix.indices(), edge_attr=matrix.values(),
+                    relabel_nodes=True, num_nodes=full_graph_obj.number_of_nodes
+                )
+                data_dict[f'edge_index_{name}'] = sub_edge_index
+                data_dict[f'edge_weight_{name}'] = sub_edge_weight
+        elif model_type == 'rgcn':
+            sub_edge_index_out, _ = subgraph(node_subset, full_graph_obj.A_out_w.indices(), relabel_nodes=True, num_nodes=full_graph_obj.number_of_nodes)
+            sub_edge_index_in, _ = subgraph(node_subset, full_graph_obj.A_in_w.indices(), relabel_nodes=True, num_nodes=full_graph_obj.number_of_nodes)
+            data_dict['edge_index'] = torch.cat([sub_edge_index_out, sub_edge_index_in], dim=1)
+            data_dict['edge_type'] = torch.cat([
+                torch.zeros(sub_edge_index_out.size(1), dtype=torch.long),
+                torch.ones(sub_edge_index_in.size(1), dtype=torch.long)
+            ])
+        elif model_type == 'tongdigcn':
+            data_dict['edge_index'], _ = subgraph(node_subset, full_graph_obj.A_out_w.indices(), relabel_nodes=True, num_nodes=full_graph_obj.number_of_nodes)
+            data_dict['edge_index_backward'], _ = subgraph(node_subset, full_graph_obj.A_in_w.indices(), relabel_nodes=True, num_nodes=full_graph_obj.number_of_nodes)
+        else:
+            raise ValueError(f"Cannot create subgraph data for unknown model type: {model_type}")
+
+        return Data.from_dict(data_dict)
+
+    def _prepare_data_for_model(self, model_type: str, graph: DirectedNgramGraph, features: torch.Tensor, labels: torch.Tensor) -> Data:
+        """Prepares a PyG Data object tailored to the specific model's needs for full-batch training."""
+        data_dict = {'x': features, 'y': labels}
+
+        if model_type == 'directgcn':
+            data_dict.update({
+                'edge_index_in': graph.mathcal_A_in.indices(), 'edge_weight_in': graph.mathcal_A_in.values(),
+                'edge_index_out': graph.mathcal_A_out.indices(), 'edge_weight_out': graph.mathcal_A_out.values(),
+                'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
+                'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values()
+            })
+        elif model_type == 'rgcn':
+            edge_index_out = graph.A_out_w.indices()
+            edge_index_in = graph.A_in_w.indices()
+            edge_type_out = torch.zeros(edge_index_out.size(1), dtype=torch.long)
+            edge_type_in = torch.ones(edge_index_in.size(1), dtype=torch.long)
+            data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
+            data_dict['edge_type'] = torch.cat([edge_type_out, edge_type_in], dim=0)
+        elif model_type == 'tongdigcn':
+            data_dict['edge_index'] = graph.A_out_w.indices()
+            data_dict['edge_index_backward'] = graph.A_in_w.indices()
+        else:
+            raise ValueError(f"Cannot prepare data for unknown model type: {model_type}")
+        return Data.from_dict(data_dict)
 
     def _load_id_map(self) -> Optional[Mapping]:
         """Loads the UniProt ID mapping file if configured."""
