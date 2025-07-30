@@ -137,7 +137,7 @@ if __name__ == "__main__":
          # Core dependencies
          f"python={PYTHON_VERSION} "
          # PyTorch stack with CUDA meta-package
-         f"pytorch={PYTORCH_VERSION} torchvision={TORCHVISION_VERSION} torchaudio={TORCHAUDIO_VERSION} pytorch-cuda={CUDA_VERSION} "
+         f"pytorch={PYTORCH_VERSION} torchvision={TORCHVISION_VERSION} torchaudio={TORCHAUDIO_VERSION} pytorch-cuda={CUDA_VERSION} cudatoolkit-dev "
          # TensorFlow for GPU
          f"tensorflow-gpu "
          # Other data science libraries
