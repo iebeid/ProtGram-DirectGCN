@@ -13,10 +13,10 @@ import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import RGCNConv
 
-from source.utils.models import BaseGNN
+from source.models.gnn.base import GNN
 
 
-class RGCN(BaseGNN):
+class RGCN(GNN):
     """
     A standard Relational Graph Convolutional Network (RGCN) model.
     This architecture is designed for node classification on graphs with multiple

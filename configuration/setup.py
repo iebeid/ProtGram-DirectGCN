@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 22.0 (Definitive fix: Decouple Conda toolkit from Pip frameworks)
+# VERSION: 23.0 (Definitive fix: Corrected conda package names for CUDA toolkit)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -136,10 +136,9 @@ if __name__ == "__main__":
          f"-c nvidia -c conda-forge "
          # Core dependencies
          f"python={PYTHON_VERSION} "
-         # CRITICAL: Install both the runtime and development CUDA toolkits.
-         # Pin the version to match what PyTorch and TF expect. Use a wildcard
-         # to get the latest patch release for that version.
-         f"'cudatoolkit={CUDA_VERSION}.*' 'cuda-compiler={CUDA_VERSION}.*' "
+         # CRITICAL: Use the correct package names 'cuda-toolkit' and 'cuda-compiler'.
+         # Pin the version to match what PyTorch and TF expect.
+         f"'cuda-toolkit={CUDA_VERSION}' 'cuda-compiler={CUDA_VERSION}' "
          # Other data science libraries
          f"dask tqdm biopython matplotlib scipy scikit-learn gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"),
 

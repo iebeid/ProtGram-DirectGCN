@@ -22,9 +22,9 @@ from tqdm.auto import tqdm
 import collections
 from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
-from source.models.gnn.directgcn import DirectGCN
-from source.models.gnn.rgcn import RGCN
-from source.models.gnn.tongidigcn import TongDiGCN
+from source.models.gnn.spectral.directgcn import DirectGCN
+from source.models.gnn.spectral.rgcn import RGCN
+from source.models.gnn.spectral.tongidigcn import TongDiGCN
 from source.utils.post import PostUtils
 from source.utils.data import DataUtils, IDMapGenerator
 from source.utils.models import EmbeddingProcessor, EarlyStopper

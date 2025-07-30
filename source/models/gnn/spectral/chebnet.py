@@ -6,10 +6,10 @@
 # ==============================================================================
 from torch_geometric.nn import ChebConv
 
-from source.utils.models import BaseGNN
+from source.models.gnn.base import GNN
 
 
-class ChebNet(BaseGNN):
+class ChebNet(GNN):
     """
     A standard implementation of the Chebyshev Spectral CNN (ChebNet) model.
     This architecture uses Chebyshev polynomials to define convolutions in the

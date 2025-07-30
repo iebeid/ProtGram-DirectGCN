@@ -11,11 +11,11 @@ import torch
 import torch.nn as nn
 from torch_geometric.data import Data
 
-from source.models.gnn.gcn import GCN
-from source.utils.models import BaseGNN
+from source.models.gnn.spectral.gcn import GCN
+from source.models.gnn.base import GNN
 
 
-class TongDiGCN(BaseGNN):
+class TongDiGCN(GNN):
     """
     Implements the DiGCN model variant from "Harnessing the Power of Choices:
     A Survey on Selection Bias in Graph-based Recommender Systems" by Tong et al.

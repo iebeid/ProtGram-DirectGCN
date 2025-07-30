@@ -19,14 +19,14 @@ from torch_geometric.transforms import ToUndirected
 from torch_geometric.utils import to_undirected
 
 from configuration.config import Config
-from source.models.gnn.chebnet import ChebNet
-from source.models.gnn.directgcn import DirectGCN
-from source.models.gnn.gat import GAT
-from source.models.gnn.gcn import GCN
-from source.models.gnn.gin import GIN
-from source.models.gnn.graphsage import GraphSAGE
-from source.models.gnn.rgcn import RGCN
-from source.models.gnn.tongidigcn import TongDiGCN
+from source.models.gnn.spectral.chebnet import ChebNet
+from source.models.gnn.spectral.directgcn import DirectGCN
+from source.models.gnn.spatial.gat import GAT
+from source.models.gnn.spectral.gcn import GCN
+from source.models.gnn.spatial.gin import GIN
+from source.models.gnn.spatial.graphsage import GraphSAGE
+from source.models.gnn.spectral.rgcn import RGCN
+from source.models.gnn.spectral.tongidigcn import TongDiGCN
 from source.utils.data import DataUtils
 from source.utils.models import EmbeddingProcessor
 

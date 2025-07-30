@@ -6,10 +6,10 @@
 # ==============================================================================
 from torch_geometric.nn import GCNConv
 
-from source.utils.models import BaseGNN
+from source.models.gnn.base import GNN
 
 
-class GCN(BaseGNN):
+class GCN(GNN):
     """
     A standard implementation of the Graph Convolutional Network (GCN) model.
     """

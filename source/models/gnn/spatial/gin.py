@@ -13,10 +13,10 @@ import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import GINConv
 
-from source.utils.models import BaseGNN
+from source.models.gnn.base import GNN
 
 
-class GIN(BaseGNN):
+class GIN(GNN):
     """
     A standard implementation of the Graph Isomorphism Network (GIN) model.
     This architecture uses a multi-layer perceptron to update node features,

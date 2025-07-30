@@ -9,10 +9,10 @@ import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import GATConv
 
-from source.utils.models import BaseGNN
+from source.models.gnn.base import GNN
 
 
-class GAT(BaseGNN):
+class GAT(GNN):
     """
     A standard implementation of the Graph Attention Network (GAT) model.
     This architecture uses self-attention to weigh the importance of neighboring

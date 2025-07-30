@@ -6,10 +6,10 @@
 # ==============================================================================
 from torch_geometric.nn import SAGEConv
 
-from source.utils.models import BaseGNN
+from source.models.gnn.base import GNN
 
 
-class GraphSAGE(BaseGNN):
+class GraphSAGE(GNN):
     """
     A standard implementation of the GraphSAGE model.
     This architecture learns to aggregate feature information from a node's
