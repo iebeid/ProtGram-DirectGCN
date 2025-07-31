@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: models/gnn/gat.py
 # PURPOSE: A standard implementation of the Graph Attention Network (GAT).
-# VERSION: 9.0 (Refactored to use generic BaseGNN)
+# VERSION: 9.1 (Corrected to properly inherit from BaseGNN)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 import torch.nn as nn
@@ -33,22 +33,24 @@ class GAT(GNN):
             num_layers (int): The number of GAT layers. Defaults to 2.
             dropout_rate (float): The dropout rate. Defaults to 0.6.
         """
-        super().__init__()
-        self.dropout_rate = dropout_rate
-        self.convs = nn.ModuleList()
-
-        if num_layers <= 0:
-            raise ValueError("num_layers must be positive")
-
-        # Input layer
-        self.convs.append(GATConv(in_channels, hidden_channels, heads=heads, dropout=dropout_rate))
-
-        # Hidden layers
-        for _ in range(num_layers - 2):
-            self.convs.append(GATConv(hidden_channels * heads, hidden_channels, heads=heads, dropout=dropout_rate))
-
-        # Output layer: Averages the heads instead of concatenating
-        self.convs.append(GATConv(hidden_channels * heads, out_channels, heads=1, concat=False, dropout=dropout_rate))
+        # Defer to the BaseGNN constructor to build the layers.
+        # Pass GAT-specific arguments (heads, concat) via **conv_kwargs.
+        super().__init__(
+            conv_layer_class=GATConv,
+            in_channels=in_channels,
+            hidden_channels=hidden_channels,
+            out_channels=out_channels,
+            num_layers=num_layers,
+            dropout_rate=dropout_rate,
+            # GAT-specific kwargs for the constructor
+            heads=heads,
+            concat=True  # Concatenate heads for all but the last layer
+        )
+        # The last layer should average heads, so we rebuild it.
+        if num_layers > 1:
+            self.convs[-1] = GATConv(hidden_channels * heads, out_channels, heads=1, concat=False, dropout=dropout_rate)
+        else:  # Single layer case
+            self.convs[0] = GATConv(in_channels, out_channels, heads=1, concat=False, dropout=dropout_rate)
 
     def forward(self, data: Data):
         x, edge_index = data.x, data.edge_index

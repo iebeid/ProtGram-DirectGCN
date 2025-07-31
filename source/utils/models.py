@@ -302,9 +302,25 @@ class EmbeddingProcessor:
             return all_node_embeddings.numpy()
         else:
             print(f"  Extracting embeddings for {graph_obj.number_of_nodes} nodes using full-batch inference...")
-            full_data = full_data.to(device)
+            # --- FIX: The full_data object from the trainer only has x and y.
+            # We must prepare a new Data object with the required edge indices for the model,
+            # similar to the _prepare_data_for_model method in the trainer.
+            model_type = model.__class__.__name__.lower()
+            data_dict = {'x': full_data.x}
+            if model_type == 'directgcn':
+                data_dict.update({
+                    'edge_index_in': graph_obj.mathcal_A_in.indices(), 'edge_weight_in': graph_obj.mathcal_A_in.values(),
+                    'edge_index_out': graph_obj.mathcal_A_out.indices(), 'edge_weight_out': graph_obj.mathcal_A_out.values(),
+                    'edge_index_undirected_norm': graph_obj.A_undirected_norm_sparse.indices(),
+                    'edge_weight_undirected_norm': graph_obj.A_undirected_norm_sparse.values()
+                })
+            # This logic can be expanded for other model types if they are used in the main pipeline
+
+            prepared_data = Data.from_dict(data_dict).to(device)
+            # --- END FIX ---
+
             with torch.no_grad():
-                _, embeddings = model(data=full_data)
+                _, embeddings = model(data=prepared_data)
             return embeddings.cpu().numpy()
 
     @staticmethod

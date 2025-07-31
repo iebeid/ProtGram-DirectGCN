@@ -2,7 +2,7 @@
 # MODULE: models/gnn/rgcn.py
 # PURPOSE: A standard implementation of the Relational Graph Convolutional
 #          Network (RGCN).
-# VERSION: 4.0 (Corrected forward pass and maintained custom logic)
+# VERSION: 4.1 (Corrected forward pass and inheritance)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 

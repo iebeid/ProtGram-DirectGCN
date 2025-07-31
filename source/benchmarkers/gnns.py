@@ -20,7 +20,7 @@ from torch_geometric.utils import to_undirected
 
 from configuration.config import Config
 # Renamed to BaseGNN to avoid confusion with model classes like GCN, GAT, etc.
-from source.models.gnn.base import GNN
+
 from source.models.gnn.spectral.chebnet import ChebNet
 from source.models.gnn.spectral.directgcn import DirectGCN
 from source.models.gnn.spatial.gat import GAT

@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: models/gnn/gin.py
 # PURPOSE: A standard implementation of the Graph Isomorphism Network (GIN).
-# VERSION: 3.0 (Maintained custom logic due to GINConv's unique MLP constructor)
+# VERSION: 3.2 (Corrected inheritance and forward pass typos)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -13,19 +13,16 @@ import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import GINConv
 
-from source.models.gnn.base import GNN
 
-
-class GIN(GNN):
+class GIN(nn.Module):
     """
     A standard implementation of the Graph Isomorphism Network (GIN) model.
     This architecture uses a multi-layer perceptron to update node features,
     providing high expressive power.
 
-    Note: This model uses a custom __init__ and forward pass instead of the
-    generic BaseGNN methods. This is necessary because the GINConv layer
-    requires a full `nn.Sequential` module as its primary argument, which
-    differs from other standard PyG convolution layers.
+    Note: This model is standalone and does not inherit from the BaseGNN class.
+    This is necessary because the GINConv layer requires a full `nn.Sequential`
+    module as its primary argument, which differs from other standard PyG layers.
     """
 
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int,
@@ -41,6 +38,7 @@ class GIN(GNN):
             dropout_rate (float): The dropout rate to apply between layers. Defaults to 0.5.
         """
         super().__init__()
+        self.embedding_output = None
         self.convs = nn.ModuleList()
         self.dropout_rate = dropout_rate
         if num_layers <= 0:
@@ -85,7 +83,7 @@ class GIN(GNN):
 
         # Handle the single-layer case
         if len(self.convs) == 1:
-            logits = self.convs[0](x, edge_index)
+            logits = self.convs0
             # For a single-layer model, the logits are also the embeddings
             self.embedding_output = logits
             return logits, self.embedding_output.clone()
@@ -100,6 +98,6 @@ class GIN(GNN):
         self.embedding_output = x
 
         # Apply the final layer to get logits
-        logits = self.convs[-1](self.embedding_output, edge_index)
+        logits = self.convs-1
 
         return logits, self.embedding_output.clone()

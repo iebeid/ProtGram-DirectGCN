@@ -1,7 +1,7 @@
 # ==============================================================================
-# MODULE: models/gnn/tongidigcn.py
+# MODULE: models/gnn/spectral/tongidigcn.py
 # PURPOSE: Implements the DiGCN variant from Tong et al.
-# VERSION: 3.0 (Standardized __init__ and forward pass for benchmark compatibility)
+# VERSION: 3.2 (Corrected inheritance to be standalone from nn.Module)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -12,10 +12,9 @@ import torch.nn as nn
 from torch_geometric.data import Data
 
 from source.models.gnn.spectral.gcn import GCN
-from source.models.gnn.base import GNN
 
 
-class TongDiGCN(GNN):
+class TongDiGCN(nn.Module):
     """
     Implements the DiGCN model variant from "Harnessing the Power of Choices:
     A Survey on Selection Bias in Graph-based Recommender Systems" by Tong et al.
@@ -35,7 +34,9 @@ class TongDiGCN(GNN):
             num_layers (int): The number of layers for each internal GCN. Defaults to 2.
             dropout_rate (float): The dropout rate for the internal GCNs. Defaults to 0.5.
         """
+        # This call is now correct because it initializes the base torch.nn.Module
         super().__init__()
+        self.embedding_output = None
         # The internal GCNs produce embeddings of size hidden_channels.
         self.gcn_forward = GCN(in_channels, hidden_channels, hidden_channels, num_layers, dropout_rate)
         self.gcn_backward = GCN(in_channels, hidden_channels, hidden_channels, num_layers, dropout_rate)
