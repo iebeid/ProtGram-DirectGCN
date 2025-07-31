@@ -83,7 +83,7 @@ class GIN(nn.Module):
 
         # Handle the single-layer case
         if len(self.convs) == 1:
-            logits = self.convs0
+            logits = self.convs[0](x, edge_index)
             # For a single-layer model, the logits are also the embeddings
             self.embedding_output = logits
             return logits, self.embedding_output.clone()

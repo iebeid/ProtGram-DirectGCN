@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: trainers/lstm.py
 # PURPOSE: Trainer for a character-level LSTM model to generate protein embeddings.
-# VERSION: 8.0 (Refactored to use PyTorch model and training loop)
+# VERSION: 8.1 (Corrected EarlyStopper import path)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -11,6 +11,7 @@ from typing import List, Tuple, Dict, Optional
 import numpy as np
 import torch
 import torch.nn as nn
+from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from tqdm.auto import tqdm
@@ -18,6 +19,7 @@ from tqdm.auto import tqdm
 from configuration.config import Config
 from source.utils.data import DataUtils, FastaUtils
 from source.models.rnn.lstm import LSTM
+from source.utils.models import EarlyStopper  # Corrected import path
 
 
 class _LstmPytorchDataset(Dataset):
@@ -104,6 +106,76 @@ class LSTMBasedEmbedder:
         print("  PyTorch LSTM model built:")
         print(self.model)
 
+    def _train_model(self):
+        """
+        Handles the training loop for the LSTM model, including validation and early stopping.
+        """
+        assert self.model is not None, "Model must be built before training."
+
+        print(f"  Training LSTM model for up to {self.config.LSTM_EPOCHS} epochs...")
+        full_corpus_text = "".join([seq for _, seq in self.sequences])
+
+        # Create all possible (input, target) pairs first
+        all_inputs, all_targets = [], []
+        for i in range(0, len(full_corpus_text) - self.config.LSTM_TRAIN_SEQ_LEN - 1, self.config.LSTM_TRAIN_STEP):
+            all_inputs.append(full_corpus_text[i: i + self.config.LSTM_TRAIN_SEQ_LEN])
+            all_targets.append(full_corpus_text[i + self.config.LSTM_TRAIN_SEQ_LEN])
+
+        # Split the generated sequences into training and validation sets
+        train_inputs, val_inputs, train_targets, val_targets = train_test_split(
+            all_inputs, all_targets, test_size=0.1, random_state=self.config.RANDOM_STATE
+        )
+
+        train_dataset = _LstmPytorchDataset(
+            text="".join(train_inputs),
+            seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
+            step=self.config.LSTM_TRAIN_STEP,
+            char_to_int=self.char_to_int
+        )
+        val_dataset = _LstmPytorchDataset(
+            text="".join(val_inputs),
+            seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
+            step=self.config.LSTM_TRAIN_STEP,
+            char_to_int=self.char_to_int
+        )
+
+        num_workers = getattr(self.config, 'GRAPH_BUILDER_WORKERS', 0)
+        train_dataloader = DataLoader(train_dataset, batch_size=self.config.LSTM_BATCH_SIZE, shuffle=True, num_workers=num_workers)
+        val_dataloader = DataLoader(val_dataset, batch_size=self.config.LSTM_BATCH_SIZE, shuffle=False, num_workers=num_workers)
+
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config.LSTM_LEARNING_RATE)
+        criterion = nn.CrossEntropyLoss()
+        early_stopper = EarlyStopper(patience=self.config.EARLY_STOPPING_PATIENCE, min_delta=0.001)
+
+        for epoch in range(self.config.LSTM_EPOCHS):
+            self.model.train()
+            epoch_loss = 0
+            for inputs, targets in tqdm(train_dataloader, desc=f"  Epoch {epoch + 1}/{self.config.LSTM_EPOCHS}", leave=False):
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                optimizer.zero_grad()
+                outputs = self.model(inputs)
+                loss = criterion(outputs, targets)
+                loss.backward()
+                optimizer.step()
+                epoch_loss += loss.item()
+            avg_train_loss = epoch_loss / len(train_dataloader)
+
+            # Validation loop
+            self.model.eval()
+            val_loss = 0
+            with torch.no_grad():
+                for inputs, targets in val_dataloader:
+                    inputs, targets = inputs.to(self.device), targets.to(self.device)
+                    outputs = self.model(inputs)
+                    loss = criterion(outputs, targets)
+                    val_loss += loss.item()
+            avg_val_loss = val_loss / len(val_dataloader)
+            print(f"  Epoch {epoch + 1} finished. Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
+
+            if early_stopper.early_stop(avg_val_loss):
+                print(f"  Early stopping triggered at epoch {epoch + 1}.")
+                break
+
     def run(self) -> Optional[str]:
         DataUtils.print_header("PIPELINE: Training LSTM & Generating Embeddings (PyTorch)")
         self._prepare_corpus()
@@ -112,37 +184,11 @@ class LSTMBasedEmbedder:
             return None
 
         self._build_model()
-        assert self.model is not None, "Model must be built before running."
-
-        # --- PyTorch Training Loop ---
-        print(f"  Training LSTM model for {self.config.LSTM_EPOCHS} epochs...")
-        corpus_text = "".join([seq for _, seq in self.sequences])
-        dataset = _LstmPytorchDataset(
-            text=corpus_text,
-            seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
-            step=self.config.LSTM_TRAIN_STEP,
-            char_to_int=self.char_to_int
-        )
-        dataloader = DataLoader(dataset, batch_size=self.config.LSTM_BATCH_SIZE, shuffle=True, num_workers=4)
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config.LSTM_LEARNING_RATE)
-        criterion = nn.CrossEntropyLoss()
-
-        self.model.train()
-        for epoch in range(self.config.LSTM_EPOCHS):
-            epoch_loss = 0
-            for inputs, targets in tqdm(dataloader, desc=f"  Epoch {epoch + 1}/{self.config.LSTM_EPOCHS}", leave=False):
-                inputs, targets = inputs.to(self.device), targets.to(self.device)
-                optimizer.zero_grad()
-                outputs = self.model(inputs)
-                loss = criterion(outputs, targets)
-                loss.backward()
-                optimizer.step()
-                epoch_loss += loss.item()
-            avg_loss = epoch_loss / len(dataloader)
-            print(f"  Epoch {epoch + 1} finished. Average Loss: {avg_loss:.4f}")
+        self._train_model()
 
         # --- PyTorch Inference for Embeddings ---
         print("\n  LSTM training complete. Generating embeddings...")
+        assert self.model is not None, "Model must be trained before inference."
         self.model.eval()
         protein_embeddings = {}
         batch_size = self.config.LSTM_BATCH_SIZE

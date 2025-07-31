@@ -149,7 +149,7 @@ class ProtGramXGCNTrainer:
 
             ngram_embeddings_per_level[n] = EmbeddingProcessor.extract_gcn_node_embeddings(
                 model, data, graph_obj, self.config, self.device,
-                lambda g, d: self._partition_graph(g)
+                lambda g: self._partition_graph(g)
             )
 
             print(f"  Generated {ngram_embeddings_per_level[n].shape[0]} embeddings of dim {ngram_embeddings_per_level[n].shape[1]} for n={n}.")

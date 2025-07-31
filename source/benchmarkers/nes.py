@@ -76,7 +76,8 @@ class NetworkEmbeddingBenchmarker:
             else:
                 raise ValueError(f"Unknown model: {model_name}")
 
-            loader = model.loader(batch_size=128, shuffle=True, num_workers=4)
+            num_workers = getattr(self.config, 'GRAPH_BUILDER_WORKERS', 0)
+            loader = model.loader(batch_size=128, shuffle=True, num_workers=num_workers)
             optimizer = torch.optim.SparseAdam(list(model.parameters()), lr=0.01)
 
             for _ in range(1, self.config.BENCHMARK_NE_EPOCHS + 1):
