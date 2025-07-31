@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 27.0 (Integrated Conda activation scripts for LD_LIBRARY_PATH)
+# VERSION: 28.0 (Integrated Conda activation scripts for LD_LIBRARY_PATH)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -116,6 +116,7 @@ if __name__ == "__main__":
     print(f"--- Using Conda prefix for library paths: {conda_prefix} ---")
 
     # --- Define the content for the activation scripts ---
+    # This ensures LD_LIBRARY_PATH is set correctly whenever the environment is activated.
     activate_script_content = (
         'export OLD_LD_LIBRARY_PATH="${LD_LIBRARY_PATH}"\\n'
         'export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"'

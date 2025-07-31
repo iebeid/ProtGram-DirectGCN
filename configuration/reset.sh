@@ -9,7 +9,7 @@
 #             manual data placement.
 # WARNING: This script is ALWAYS DESTRUCTIVE and will remove the existing
 #          project directory.
-# VERSION: 9.0 (Installs a comprehensive system-level build toolchain)
+# VERSION: 9.1 (Added LD_LIBRARY_PATH export for runtime linking)
 # ==============================================================================
 
 # Exit immediately if a command exits with a non-zero status.
@@ -148,6 +148,12 @@ echo "SUCCESS: Project repository is ready."
 
 # --- Step 4: Run the Main Application ---
 echo -e "\n--- STEP 4: Executing the main application via run.py ---"
+
+# --- CRITICAL FIX: Export the Conda environment's library path. ---
+# This ensures that TensorFlow and other programs can find the CUDA libraries (.so files)
+# that were installed by Conda. This resolves the "Cannot dlopen" errors at runtime.
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+
 # The run.py script will handle the rest of the setup and execution.
 python run.py
 

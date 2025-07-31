@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: benchmarkers/gnns.py
 # PURPOSE: Handles benchmarking of various GNN models on standard datasets.
-# VERSION: 4.1 (Corrected model inheritance and typos)
+# VERSION: 4.2 (Fixed CUDA assert by deriving num_classes from data)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -19,8 +19,6 @@ from torch_geometric.transforms import ToUndirected
 from torch_geometric.utils import to_undirected
 
 from configuration.config import Config
-# Renamed to BaseGNN to avoid confusion with model classes like GCN, GAT, etc.
-
 from source.models.gnn.spectral.chebnet import ChebNet
 from source.models.gnn.spectral.directgcn import DirectGCN
 from source.models.gnn.spatial.gat import GAT
@@ -233,7 +231,12 @@ class GNNBenchmarker:
 
         data = dataset[0]
         data.name = variant_name
-        num_classes = dataset.num_classes
+
+        # --- FIX for CUDA device-side assert ---
+        # Instead of trusting dataset.num_classes, derive it directly from the labels.
+        # This prevents errors if labels are e.g., [1, 2, 3, 4] but num_classes is reported as 4.
+        num_classes = int(data.y.max().item()) + 1
+        # --- END FIX ---
 
         # Handle data splits
         if not all(hasattr(data, mask) and getattr(data, mask) is not None and getattr(data, mask).any() for mask in ['train_mask', 'val_mask', 'test_mask']):
