@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: models/gnn/gat.py
 # PURPOSE: A standard implementation of the Graph Attention Network (GAT).
-# VERSION: 9.1 (Corrected to properly inherit from BaseGNN)
+# VERSION: 9.2 (Corrected to properly inherit from BaseGNN)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 import torch.nn as nn

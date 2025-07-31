@@ -2,7 +2,7 @@
 # MODULE: models/gnn/rgcn.py
 # PURPOSE: A standard implementation of the Relational Graph Convolutional
 #          Network (RGCN).
-# VERSION: 4.1 (Corrected forward pass and inheritance)
+# VERSION: 4.2 (Corrected forward pass and inheritance)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -86,6 +86,6 @@ class RGCN(GNN):
         self.embedding_output = x
 
         # Apply the final layer to get logits
-        logits = self.convs-1
+        logits = self.convs[-1](self.embedding_output, edge_index, edge_type)
 
         return logits, self.embedding_output

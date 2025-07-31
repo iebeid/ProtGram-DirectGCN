@@ -141,7 +141,11 @@ if __name__ == "__main__":
         (f"pip install --no-cache-dir "
          f"tensorflow "
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} --extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"
-        ),
+         ),
+        # CRITICAL FIX: Forcefully uninstall the pip-installed cuDNN from the torch wheel.
+        # This forces PyTorch to use the system-wide cuDNN installed by Conda, resolving conflicts with TensorFlow.
+        "echo '--- Stage 2.5: Forcing library consistency by removing pip-installed cuDNN ---'",
+        "pip uninstall -y nvidia-cudnn-cu12",
 
         # STAGE 3: PYCUDA INSTALL
         # This must come after Stage 1. We add LD_LIBRARY_PATH to force the linker to use the Conda env's libraries.
@@ -188,7 +192,7 @@ if __name__ == "__main__":
          f"    print(\"PyCUDA initialized successfully.\")\n"
          f"except Exception as e: print(f\"\\n--- PyCUDA ---\\nERROR: {{e}}\")\n"
          f"'"
-        ),
+         ),
         "echo '--- Stage 5: Generating environment validation file ---'",
         f'conda env export > "{env_yml_output_path}"',
         "conda clean --all -y",

@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
 class EarlyStopper:
     """A simple early stopper to monitor loss and stop training when it stops improving."""
+
     def __init__(self, patience: int = 1, min_delta: float = 0):
         self.patience = patience
         self.min_delta = min_delta
@@ -46,6 +47,7 @@ class EarlyStopper:
             if self.counter >= self.patience:
                 return True
         return False
+
 
 class EmbeddingLoader:
     """
@@ -98,6 +100,7 @@ class EmbeddingLoader:
         if self._keys is None:
             raise RuntimeError("EmbeddingLoader used outside of context or after exit.")
         return set(self._keys)
+
 
 class EmbeddingProcessor:
     """
@@ -235,7 +238,7 @@ class EmbeddingProcessor:
 
     @staticmethod
     def pool_ngram_embeddings_for_protein_fast(protein_sequences: List[Tuple[str, str]], n_val: int,
-                                           ngram_map: Dict[str, int], ngram_embeddings: np.ndarray) -> Dict[str, np.ndarray]:
+                                               ngram_map: Dict[str, int], ngram_embeddings: np.ndarray) -> Dict[str, np.ndarray]:
         """A fast, array-based method for pooling n-gram embeddings to the protein level."""
         print("  Starting fast protein-level pooling using inverted index method...")
         if not protein_sequences: return {}
@@ -286,9 +289,19 @@ class EmbeddingProcessor:
             subgraphs = create_clustered_subgraphs_func(graph_obj, full_data)
             if not subgraphs: return np.array([])
 
+            # The function returns partitions (list of node lists), not Data objects.
+            # We must create the Data object for each partition here.
             results = []
-            for subgraph_data in tqdm(subgraphs, desc="  Inference on subgraphs", leave=False):
-                subgraph_data = subgraph_data.to(device)
+            for node_idx_batch in tqdm(subgraphs, desc="  Inference on subgraphs", leave=False):
+                nodes_tensor = torch.tensor(node_idx_batch, dtype=torch.long)
+                # This logic is now consistent with the trainer's clustered loop
+                subgraph_data = full_data.graph_obj.create_subgraph_data_for_model(
+                    model_type=model.__class__.__name__.lower(),
+                    full_features=full_data.x,
+                    full_labels=full_data.y,
+                    node_subset=nodes_tensor
+                ).to(device)
+
                 with torch.no_grad():
                     _, subgraph_embeddings = model(data=subgraph_data)
                 results.append((subgraph_data.original_indices.cpu(), subgraph_embeddings.cpu()))

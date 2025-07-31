@@ -98,6 +98,6 @@ class GIN(nn.Module):
         self.embedding_output = x
 
         # Apply the final layer to get logits
-        logits = self.convs-1
+        logits = self.convs[-1](self.embedding_output, edge_index)
 
         return logits, self.embedding_output.clone()
