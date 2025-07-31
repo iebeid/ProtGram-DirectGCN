@@ -86,6 +86,6 @@ class RGCN(GNN):
         self.embedding_output = x
 
         # Apply the final layer to get logits
-        logits = self.convs-1
+        logits = self.convs[-1](self.embedding_output, edge_index, edge_type)
 
         return logits, self.embedding_output

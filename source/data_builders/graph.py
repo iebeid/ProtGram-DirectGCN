@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch_geometric.utils import add_self_loops, degree
+from torch_geometric.utils import subgraph
 
 
 class Graph:
@@ -287,6 +288,38 @@ class DirectedNgramGraph(Graph):
         del mathcal_A_base_sparse, identity_sparse
 
         return mathcal_A_with_self_loops_sparse
+
+    def create_subgraph_data_for_model(self, model_type: str,
+                                       full_features: torch.Tensor, full_labels: torch.Tensor,
+                                       node_subset: torch.Tensor) -> 'Data':
+        """
+        Creates a valid, self-contained PyG Data object for a subgraph of nodes.
+        This is the critical fix for clustered training. It re-indexes edges.
+        """
+        from torch_geometric.data import Data
+        sub_x = full_features[node_subset]
+        sub_y = full_labels[node_subset]
+
+        data_dict = {'x': sub_x, 'y': sub_y, 'original_indices': node_subset}
+
+        # Use torch_geometric.utils.subgraph to get re-indexed edges for the subset of nodes
+        if model_type == 'directgcn':
+            for name, matrix in [('in', self.mathcal_A_in), ('out', self.mathcal_A_out),
+                                 ('undirected_norm', self.A_undirected_norm_sparse)]:
+                sub_edge_index, sub_edge_weight = subgraph(
+                    subset=node_subset, edge_index=matrix.indices(), edge_attr=matrix.values(),
+                    relabel_nodes=True, num_nodes=self.number_of_nodes
+                )
+                data_dict[f'edge_index_{name}'] = sub_edge_index
+                data_dict[f'edge_weight_{name}'] = sub_edge_weight
+        elif model_type == 'rgcn' or model_type == 'tongdigcn':
+            # This logic covers both RGCN and TongDiGCN which need standard edge indices
+            data_dict['edge_index'], _ = subgraph(node_subset, self.A_out_w.indices(), relabel_nodes=True, num_nodes=self.number_of_nodes)
+            data_dict['edge_index_backward'], _ = subgraph(node_subset, self.A_in_w.indices(), relabel_nodes=True, num_nodes=self.number_of_nodes)
+        else:
+            raise ValueError(f"Cannot create subgraph data for unknown model type: {model_type}")
+
+        return Data.from_dict(data_dict)
 
     def _create_propagation_matrices_for_gcn(self):
         """Computes the mathcal_A_out and mathcal_A_in propagation matrices sparsely."""

@@ -5,12 +5,14 @@
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
+import collections
 import gc
 import math
 import random
 from contextlib import nullcontext
 from typing import Dict, Optional, List, Mapping
 
+import community as community_louvain
 import numpy as np
 import torch
 import torch.nn as nn
@@ -19,18 +21,16 @@ import torch.optim as optim
 from torch_geometric.data import Data
 from torch_geometric.utils import subgraph, to_networkx
 from tqdm.auto import tqdm
-import collections
-import community as community_louvain
 
 from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
+from source.data_builders.xgcn import XGCNDataset
 from source.models.gnn.spectral.directgcn import DirectGCN
 from source.models.gnn.spectral.rgcn import RGCN
 from source.models.gnn.spectral.tongidigcn import TongDiGCN
-from source.utils.post import PostUtils
 from source.utils.data import DataUtils, IDMapGenerator
 from source.utils.models import EmbeddingProcessor, EarlyStopper
-from source.data_builders.xgcn import XGCNDataset
+from source.utils.post import PostUtils
 
 
 class ProtGramXGCNTrainer:
@@ -237,15 +237,12 @@ class ProtGramXGCNTrainer:
             epoch_loss = 0.0
             for node_idx_batch in tqdm(node_partitions, desc=f"  Epoch {epoch}", leave=False, disable=not self.config.DEBUG_VERBOSE):
                 # --- FIX: Create a self-contained subgraph for each batch ---
-                nodes_tensor = torch.tensor(node_idx_batch, dtype=torch.long)
-                subgraph_data = self._create_subgraph_data_for_model(
+                subgraph_data = full_data.graph_obj.create_subgraph_data_for_model(
                     model_type=model.__class__.__name__.lower(),
-                    full_graph_obj=full_data.graph_obj,
                     full_features=full_data.x,
                     full_labels=full_data.y,
-                    node_subset=nodes_tensor
+                    node_subset=torch.tensor(node_idx_batch, dtype=torch.long)
                 ).to(self.device)
-                # --- END FIX ---
 
                 optimizer.zero_grad()
                 with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
