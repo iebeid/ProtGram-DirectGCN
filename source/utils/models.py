@@ -2,23 +2,21 @@
 # MODULE: utils/models.py
 # PURPOSE: Contains tools for loading and post-processing embeddings, such as PCA,
 #          normalization, pooling, and edge feature creation.
-# VERSION: 6.1 (Corrected clustered inference logic in extract_gcn_node_embeddings)
-# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
+# VERSION: 6.2 (Final fix for embedding extraction for all GNN types)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
-import os
+from pathlib import Path
 from typing import Dict, Optional, List, Tuple, Set, Union, TYPE_CHECKING, Iterator
 
 import h5py
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from torch_geometric.data import Data
 from tqdm.auto import tqdm
-from pathlib import Path
 
 # Local imports are safe here as this is a core utility module
 from .data import DataUtils
@@ -286,42 +284,38 @@ class EmbeddingProcessor:
 
         if config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
             print(f"  Extracting embeddings for {graph_obj.number_of_nodes} nodes using clustered inference...")
-            # The function returns partitions (list of node lists), not Data objects.
-            partitions = create_clustered_subgraphs_func(graph_obj, full_data)
+            partitions = create_clustered_subgraphs_func(graph_obj)
             if not partitions:
                 return np.array([])
 
             results = []
-            # --- FIX: Create a valid Data object for each partition before inference ---
             for node_idx_batch in tqdm(partitions, desc="  Inference on subgraphs", leave=False):
                 nodes_tensor = torch.tensor(node_idx_batch, dtype=torch.long)
-                # This logic is now consistent with the trainer's clustered loop
                 subgraph_data = graph_obj.create_subgraph_data_for_model(
                     model_type=model.__class__.__name__.lower(),
                     full_features=full_data.x,
-                    full_labels=full_data.y,  # Labels are needed for the method signature, even if not used in forward pass
+                    full_labels=full_data.y,
                     node_subset=nodes_tensor
                 ).to(device)
 
                 with torch.no_grad():
                     _, subgraph_embeddings = model(data=subgraph_data)
                 results.append((subgraph_data.original_indices.cpu(), subgraph_embeddings.cpu()))
-            # --- END FIX ---
 
-            # Dynamically determine embedding dimension from the first result
             if not results: return np.array([])
             first_emb = results[0][1]
-            all_node_embeddings = torch.zeros(full_data.num_nodes, first_emb.shape[1], dtype=first_emb.dtype)
+            all_node_embeddings = torch.zeros(graph_obj.number_of_nodes, first_emb.shape[1], dtype=first_emb.dtype)
 
             for indices, embeddings in results:
                 all_node_embeddings[indices] = embeddings
             return all_node_embeddings.numpy()
         else:
             print(f"  Extracting embeddings for {graph_obj.number_of_nodes} nodes using full-batch inference...")
-            # The full_data object from the trainer only has x and y.
-            # We must prepare a new Data object with the required edge indices for the model.
+            # --- FINAL FIX: This block was incomplete and only handled 'directgcn'. ---
+            # It now correctly prepares the Data object for all supported model types.
             model_type = model.__class__.__name__.lower()
             data_dict = {'x': full_data.x}
+
             if model_type == 'directgcn':
                 data_dict.update({
                     'edge_index_in': graph_obj.mathcal_A_in.indices(), 'edge_weight_in': graph_obj.mathcal_A_in.values(),
@@ -329,7 +323,24 @@ class EmbeddingProcessor:
                     'edge_index_undirected_norm': graph_obj.A_undirected_norm_sparse.indices(),
                     'edge_weight_undirected_norm': graph_obj.A_undirected_norm_sparse.values()
                 })
-            # This logic can be expanded for other model types if they are used in the main pipeline
+            elif model_type == 'rgcn':
+                # RGCN needs a combined edge_index and an edge_type tensor
+                edge_index_out = graph_obj.A_out_w.indices()
+                edge_index_in = graph_obj.A_in_w.indices()
+                data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
+                data_dict['edge_type'] = torch.cat([
+                    torch.zeros(edge_index_out.size(1), dtype=torch.long),
+                    torch.ones(edge_index_in.size(1), dtype=torch.long)
+                ])
+            elif model_type == 'tongdigcn':
+                # TongDiGCN needs separate forward and backward edge indices
+                data_dict['edge_index'] = graph_obj.A_out_w.indices()
+                data_dict['edge_index_backward'] = graph_obj.A_in_w.indices()
+            else:
+                # Default for standard GNNs (GCN, GAT, etc.) is the undirected normalized matrix
+                data_dict['edge_index'] = graph_obj.A_undirected_norm_sparse.indices()
+                data_dict['edge_attr'] = graph_obj.A_undirected_norm_sparse.values()
+            # --- END FIX ---
 
             prepared_data = Data.from_dict(data_dict).to(device)
 

@@ -101,12 +101,18 @@ def verify_full_gpu_environment():
     # --- Part 3: cuDNN Library Check ---
     print("\n--- Verifying cuDNN Library ---")
     try:
-        import nvidia.cudnn
-        cudnn_version = torch.backends.cudnn.version()
-        print(f"  ✅ [Success] Found and imported 'nvidia.cudnn' library.")
-        print(f"  cuDNN Version reported by PyTorch backend: {cudnn_version}")
-    except ImportError:
-        print("  ❌ [Error] Could not import the 'nvidia.cudnn' library.")
+        # The most reliable check is whether the PyTorch backend can access it,
+        # as we intentionally remove the nvidia-cudnn pip package.
+        cudnn_available = torch.backends.cudnn.is_available()
+        if cudnn_available:
+            cudnn_version = torch.backends.cudnn.version()
+            print(f"  ✅ [Success] PyTorch backend reports cuDNN is available.")
+            print(f"  cuDNN Version reported by PyTorch: {cudnn_version}")
+        else:
+            print("  ❌ [Error] PyTorch backend reports cuDNN is NOT available.")
+            all_ok = False
+    except Exception as e:
+        print(f"  ❌ [Error] An unexpected error occurred during cuDNN verification: {e}")
         all_ok = False
 
     # --- Part 4: Final Summary ---
