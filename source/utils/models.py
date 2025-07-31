@@ -2,7 +2,7 @@
 # MODULE: utils/models.py
 # PURPOSE: Contains tools for loading and post-processing embeddings, such as PCA,
 #          normalization, pooling, and edge feature creation.
-# VERSION: 6.0 (Refactored BaseGNN to reduce code duplication in models)
+# VERSION: 6.1 (Corrected clustered inference logic in extract_gcn_node_embeddings)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -286,27 +286,30 @@ class EmbeddingProcessor:
 
         if config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
             print(f"  Extracting embeddings for {graph_obj.number_of_nodes} nodes using clustered inference...")
-            subgraphs = create_clustered_subgraphs_func(graph_obj, full_data)
-            if not subgraphs: return np.array([])
-
             # The function returns partitions (list of node lists), not Data objects.
-            # We must create the Data object for each partition here.
+            partitions = create_clustered_subgraphs_func(graph_obj, full_data)
+            if not partitions:
+                return np.array([])
+
             results = []
-            for node_idx_batch in tqdm(subgraphs, desc="  Inference on subgraphs", leave=False):
+            # --- FIX: Create a valid Data object for each partition before inference ---
+            for node_idx_batch in tqdm(partitions, desc="  Inference on subgraphs", leave=False):
                 nodes_tensor = torch.tensor(node_idx_batch, dtype=torch.long)
                 # This logic is now consistent with the trainer's clustered loop
-                subgraph_data = full_data.graph_obj.create_subgraph_data_for_model(
+                subgraph_data = graph_obj.create_subgraph_data_for_model(
                     model_type=model.__class__.__name__.lower(),
                     full_features=full_data.x,
-                    full_labels=full_data.y,
+                    full_labels=full_data.y,  # Labels are needed for the method signature, even if not used in forward pass
                     node_subset=nodes_tensor
                 ).to(device)
 
                 with torch.no_grad():
                     _, subgraph_embeddings = model(data=subgraph_data)
                 results.append((subgraph_data.original_indices.cpu(), subgraph_embeddings.cpu()))
+            # --- END FIX ---
 
             # Dynamically determine embedding dimension from the first result
+            if not results: return np.array([])
             first_emb = results[0][1]
             all_node_embeddings = torch.zeros(full_data.num_nodes, first_emb.shape[1], dtype=first_emb.dtype)
 
@@ -315,9 +318,8 @@ class EmbeddingProcessor:
             return all_node_embeddings.numpy()
         else:
             print(f"  Extracting embeddings for {graph_obj.number_of_nodes} nodes using full-batch inference...")
-            # --- FIX: The full_data object from the trainer only has x and y.
-            # We must prepare a new Data object with the required edge indices for the model,
-            # similar to the _prepare_data_for_model method in the trainer.
+            # The full_data object from the trainer only has x and y.
+            # We must prepare a new Data object with the required edge indices for the model.
             model_type = model.__class__.__name__.lower()
             data_dict = {'x': full_data.x}
             if model_type == 'directgcn':
@@ -330,7 +332,6 @@ class EmbeddingProcessor:
             # This logic can be expanded for other model types if they are used in the main pipeline
 
             prepared_data = Data.from_dict(data_dict).to(device)
-            # --- END FIX ---
 
             with torch.no_grad():
                 _, embeddings = model(data=prepared_data)

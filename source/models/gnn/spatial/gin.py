@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: models/gnn/gin.py
 # PURPOSE: A standard implementation of the Graph Isomorphism Network (GIN).
-# VERSION: 3.2 (Corrected inheritance and forward pass typos)
+# VERSION: 3.3 (Corrected forward pass indexing)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -98,6 +98,6 @@ class GIN(nn.Module):
         self.embedding_output = x
 
         # Apply the final layer to get logits
-        logits = self.convs[-1](self.embedding_output, edge_index)
+        logits = self.convs-1
 
         return logits, self.embedding_output.clone()

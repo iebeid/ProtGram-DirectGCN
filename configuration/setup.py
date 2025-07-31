@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 26.0 (Definitive fix: Staged hybrid install with forced linker path)
+# VERSION: 27.0 (Integrated Conda activation scripts for LD_LIBRARY_PATH)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -115,6 +115,16 @@ if __name__ == "__main__":
 
     print(f"--- Using Conda prefix for library paths: {conda_prefix} ---")
 
+    # --- Define the content for the activation scripts ---
+    activate_script_content = (
+        'export OLD_LD_LIBRARY_PATH="${LD_LIBRARY_PATH}"\\n'
+        'export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"'
+    )
+    deactivate_script_content = (
+        'export LD_LIBRARY_PATH="${OLD_LD_LIBRARY_PATH}"\\n'
+        'unset OLD_LD_LIBRARY_PATH'
+    )
+
     command_sequence = [
         f'source "{conda_base}/etc/profile.d/conda.sh"',
         f'conda activate {ENV_NAME}',
@@ -123,53 +133,45 @@ if __name__ == "__main__":
         "rm -rf ~/.config/pycuda",
 
         # STAGE 1: CONDA FOR THE CUDA FOUNDATION
-        # Install the CUDA toolkit and compiler from the official nvidia channel.
-        # This creates a stable, framework-agnostic base that other packages will link against.
         "echo '--- Stage 1: Installing CUDA Toolkit and core data science libraries from Conda ---'",
         (f"conda install -y "
          f"-c nvidia -c conda-forge "
          f"python={PYTHON_VERSION} "
-         # CRITICAL: Use the correct package names 'cuda-toolkit' and 'cuda-compiler'.
          f"'cuda-toolkit={CUDA_VERSION}' 'cuda-compiler={CUDA_VERSION}' 'cudnn' "
-         # Other data science libraries
          f"dask tqdm biopython matplotlib scipy scikit-learn gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"),
 
         # STAGE 2: PIP INSTALLATIONS FOR ML FRAMEWORKS
-        # Install the main ML frameworks. They will find and use the CUDA toolkit provided by Conda.
-        # This avoids the library conflicts seen when installing pytorch+cuda from conda and tensorflow from pip.
         "echo '--- Stage 2: Installing ML Frameworks (PyTorch, TensorFlow) via pip ---'",
         (f"pip install --no-cache-dir "
          f"tensorflow "
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} --extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"
          ),
-        # CRITICAL FIX: Forcefully uninstall the pip-installed cuDNN from the torch wheel.
-        # This forces PyTorch to use the system-wide cuDNN installed by Conda, resolving conflicts with TensorFlow.
+        # Forcefully remove the pip-installed cuDNN from the torch wheel to ensure consistency.
         "echo '--- Stage 2.5: Forcing library consistency by removing pip-installed cuDNN ---'",
         "pip uninstall -y nvidia-cudnn-cu12",
 
         # STAGE 3: PYCUDA INSTALL
-        # This must come after Stage 1. We add LD_LIBRARY_PATH to force the linker to use the Conda env's libraries.
-        "echo '--- Stage 3: Building PyCUDA from source with forced library paths ---'",
-        (f"# CRITICAL: Add LD_LIBRARY_PATH to force the linker to use the Conda env's libraries.\n"
-         f"LD_LIBRARY_PATH=\"{conda_prefix}/lib:$LD_LIBRARY_PATH\" "
-         f"CXXFLAGS=\"-std=c++14\" "
-         f"PATH=\"{conda_prefix}/bin:$PATH\" "
-         f"CUDA_HOME=\"{conda_prefix}\" "
-         f"LDFLAGS=\"-L{conda_prefix}/lib\" "
-         f"CPPFLAGS=\"-I{conda_prefix}/include\" "
-         # Install build deps first, then pycuda itself.
-         f"pip install --no-cache-dir pytools appdirs && "
+        "echo '--- Stage 3: Building PyCUDA from source ---'",
+        (f"pip install --no-cache-dir pytools appdirs && "
          f"pip install --no-cache-dir --no-binary :all: --no-deps --no-use-pep517 pycuda"),
 
-        # STAGE 4: Install remaining pip packages that depend on the frameworks
+        # STAGE 4: Install remaining pip packages
         "echo '--- Stage 4: Installing remaining pip packages (MLflow, Transformers, PyG) ---'",
         "pip install --no-cache-dir tf-keras mlflow transformers==4.41.2",
         (f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
          f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION.replace('.', '')}.html"),
 
-        # STAGE 5: VERIFICATION & CLEANUP
+        # STAGE 5: Create Conda activation scripts for LD_LIBRARY_PATH
+        "echo '--- Stage 5: Creating Conda activation scripts for library paths ---'",
+        f'mkdir -p "{conda_prefix}/etc/conda/activate.d"',
+        f'mkdir -p "{conda_prefix}/etc/conda/deactivate.d"',
+        f'printf \'{activate_script_content}\' > "{conda_prefix}/etc/conda/activate.d/env_vars.sh"',
+        f'printf \'{deactivate_script_content}\' > "{conda_prefix}/etc/conda/deactivate.d/env_vars.sh"',
+        f'chmod +x "{conda_prefix}/etc/conda/activate.d/env_vars.sh"',
+        f'chmod +x "{conda_prefix}/etc/conda/deactivate.d/env_vars.sh"',
+
+        # STAGE 6: VERIFICATION & CLEANUP
         "echo '--- Verifying installations ---'",
-        # Use the robust, combined, multi-line test
         (f"python -c '\n"
          f"import sys\n"
          f"print(\"--- Verifying GPU Libraries ---\")\n"
@@ -193,7 +195,7 @@ if __name__ == "__main__":
          f"except Exception as e: print(f\"\\n--- PyCUDA ---\\nERROR: {{e}}\")\n"
          f"'"
          ),
-        "echo '--- Stage 5: Generating environment validation file ---'",
+        "echo '--- Stage 6: Generating environment validation file ---'",
         f'conda env export > "{env_yml_output_path}"',
         "conda clean --all -y",
         "pip cache purge"
