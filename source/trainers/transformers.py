@@ -144,26 +144,12 @@ class TransformerEmbedder:
                 print(f"    Original count: {len(all_protein_embeddings)}, Mapped count: {len(mapped_embeddings)}")
                 all_protein_embeddings = mapped_embeddings
 
-            final_embeddings_to_save = all_protein_embeddings
-            output_filename_suffix = f"_dim{embedding_dim_from_model}"
-            if self.config.APPLY_PCA_TO_TRANSFORMER and len(
-                    all_protein_embeddings) > self.config.PCA_TARGET_DIMENSION:
-                print(f"  Applying PCA to {model_name} embeddings (target dim: {self.config.PCA_TARGET_DIMENSION})...")
-                pca_embeddings = EmbeddingProcessor.apply_pca(all_protein_embeddings,
-                                                              self.config.PCA_TARGET_DIMENSION, self.config.RANDOM_STATE)
-                if pca_embeddings is not None:
-                    final_embeddings_to_save = pca_embeddings
-                    output_filename_suffix = f"_pca{self.config.PCA_TARGET_DIMENSION}"
-            elif self.config.APPLY_PCA_TO_TRANSFORMER:
-                print(
-                    f"  Skipping PCA for {model_name}: not enough samples ({len(all_protein_embeddings)}) for target dimension ({self.config.PCA_TARGET_DIMENSION}).")
-
-            output_filename = f"{model_name}_{self.config.TRANSFORMER_POOLING_STRATEGY}{output_filename_suffix}.h5"
+            output_filename = f"{model_name}_{self.config.TRANSFORMER_POOLING_STRATEGY}_dim{embedding_dim_from_model}.h5"
             output_path = self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR / output_filename
 
             print(f"  Saving final embeddings to: {output_path}")
-            if final_embeddings_to_save:
-                DataUtils.write_h5(final_embeddings_to_save, output_path, f"Writing H5 for {model_name}")
+            if all_protein_embeddings:
+                DataUtils.write_h5(all_protein_embeddings, output_path, f"Writing H5 for {model_name}")
                 return str(output_path)
             else:
                 print("  No final embeddings to save.")

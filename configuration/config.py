@@ -146,7 +146,7 @@ class Config:
         ]
         # List of GNN models to run in the benchmark suite.
         # Options: "GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "TongDiGCN", "DirectGCN"
-        self.BENCHMARK_GNN_MODELS_TO_RUN: List[str] = ["GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "TongDiGCN"]
+        self.BENCHMARK_GNN_MODELS_TO_RUN: List[str] = ["GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "TongDiGCN", "DirectGCN"]
         self.BENCHMARK_SAVE_EMBEDDINGS = True
         self.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS = True
         self.BENCHMARK_TEST_ON_UNDIRECTED = True
@@ -213,7 +213,6 @@ class Config:
 
         # Post-Processing
         self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
-        self.APPLY_PCA_TO_GCN = True
         self.PCA_TARGET_DIMENSION = 64
 
         # Sanity Check
@@ -230,7 +229,6 @@ class Config:
         self.W2V_EPOCHS = 5
         self.W2V_WORKERS = 1
         self.W2V_POOLING_STRATEGY = 'mean'
-        self.APPLY_PCA_TO_W2V = True
 
     def _setup_transformer_params(self):
         """Sets parameters for the Transformer (e.g., ProtBERT) pipeline."""
@@ -240,7 +238,6 @@ class Config:
         self.TRANSFORMER_MAX_LENGTH = 1024
         self.TRANSFORMER_BASE_BATCH_SIZE = 16
         self.TRANSFORMER_POOLING_STRATEGY = 'mean'
-        self.APPLY_PCA_TO_TRANSFORMER = True
         self.USE_XLA_COMPILATION = False  # Set to False by default for stability
 
     def _setup_lstm_params(self):

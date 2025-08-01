@@ -93,22 +93,12 @@ class Word2VecEmbedder:
             return None
 
         print(f"  Generated {len(protein_embeddings)} protein embeddings using Word2Vec.")
-        final_embeddings_to_save = protein_embeddings
-        output_suffix = ""
 
-        if self.config.APPLY_PCA_TO_W2V:
-            DataUtils.print_header("Step 4: Applying PCA to Word2Vec Embeddings")
-            pca_embeds = EmbeddingProcessor.apply_pca(protein_embeddings, self.config.PCA_TARGET_DIMENSION,
-                                                      self.config.RANDOM_STATE)
-            if pca_embeds:
-                final_embeddings_to_save = pca_embeds
-                output_suffix = f"_pca{self.config.PCA_TARGET_DIMENSION}"
-
-        output_h5_path = self.config.RESULTS_W2V_EMBEDDINGS_DIR / f"word2vec_dim{self.config.W2V_VECTOR_SIZE}_{self.config.W2V_POOLING_STRATEGY}{output_suffix}.h5"
-        DataUtils.write_h5(final_embeddings_to_save, output_h5_path, "Writing Word2Vec H5 File")
+        output_h5_path = self.config.RESULTS_W2V_EMBEDDINGS_DIR / f"word2vec_dim{self.config.W2V_VECTOR_SIZE}_{self.config.W2V_POOLING_STRATEGY}.h5"
+        DataUtils.write_h5(protein_embeddings, output_h5_path, "Writing Word2Vec H5 File")
         print(f"\nSUCCESS: Word2Vec embeddings saved to: {output_h5_path}")
 
-        del w2v_model, corpus, protein_embeddings, final_embeddings_to_save
+        del w2v_model, corpus, protein_embeddings
         gc.collect()
         DataUtils.print_header("Word2Vec Embedding PIPELINE STEP FINISHED")
         return str(output_h5_path)

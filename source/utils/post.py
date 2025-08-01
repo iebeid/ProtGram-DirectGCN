@@ -87,25 +87,14 @@ class PostUtils:
         output_paths = {}
 
         for model_type, protein_embeddings in final_embeddings_per_model.items():
-            if not protein_embeddings:
+            if protein_embeddings:
+                base_filename = f"ProtGram{model_type.capitalize()}_n{self.config.GCN_NGRAM_MAX_N}_embeddings.h5"
+                output_path = self.config.RESULTS_GCN_EMBEDDINGS_DIR / base_filename
+                DataUtils.write_h5(protein_embeddings, output_path, f"Writing H5 File for {model_type}")
+                print(f"\nSUCCESS: Embeddings for '{model_type}' saved to: {output_path}")
+                output_paths[f"ProtGram{model_type.capitalize()}"] = str(output_path)
+            else:
                 print(f"  No embeddings to save for model type '{model_type}'.")
-                continue
-
-            base_filename = f"{model_type}_protgram_n{self.config.GCN_NGRAM_MAX_N}_embeddings.h5"
-            output_path = self.config.RESULTS_GCN_EMBEDDINGS_DIR / base_filename
-            DataUtils.write_h5(protein_embeddings, output_path, f"Writing H5 File for {model_type}")
-            print(f"\nSUCCESS: Primary embeddings for '{model_type}' saved to: {output_path}")
-            output_paths[model_type] = str(output_path)
-
-            if self.config.APPLY_PCA_TO_GCN:
-                DataUtils.print_header(f"Step 5: Applying PCA for '{model_type}'")
-                pca_embeddings = EmbeddingProcessor.apply_pca(protein_embeddings, self.config.PCA_TARGET_DIMENSION, self.config.RANDOM_STATE)
-                if pca_embeddings:
-                    pca_filename = f"{model_type}_protgram_n{self.config.GCN_NGRAM_MAX_N}_embeddings_pca{self.config.PCA_TARGET_DIMENSION}.h5"
-                    pca_output_path = self.config.RESULTS_GCN_EMBEDDINGS_DIR / pca_filename
-                    DataUtils.write_h5(pca_embeddings, pca_output_path, f"Writing PCA H5 for {model_type}")
-                    print(f"\nSUCCESS: PCA-reduced embeddings for '{model_type}' saved to: {pca_output_path}")
-                    output_paths[f"{model_type}_pca"] = str(pca_output_path)
         return output_paths
 
     def run_sanity_check_ppi(self, embedding_path: str):
