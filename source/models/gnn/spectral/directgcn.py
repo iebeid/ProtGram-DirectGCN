@@ -37,6 +37,11 @@ class DirectGCNLayer(MessagePassing):
         self.bias_main_out = nn.Parameter(torch.Tensor(out_channels))
         self.bias_undirected = nn.Parameter(torch.Tensor(out_channels))
 
+        # --- NEW: Projection layers for concatenated path features ---
+        self.proj_in = nn.Linear(out_channels * 2, out_channels)
+        self.proj_out = nn.Linear(out_channels * 2, out_channels)
+        self.proj_undir = nn.Linear(out_channels * 2, out_channels)
+
         # --- Shared Components (used by all paths) ---
         # A single shared linear layer for all paths to learn a general transformation
         self.lin_shared = nn.Linear(in_channels, out_channels, bias=False)
@@ -70,8 +75,12 @@ class DirectGCNLayer(MessagePassing):
 
     def reset_parameters(self):
         # Initialize all linear layers
-        for lin in [self.lin_main_in, self.lin_main_out, self.lin_undirected, self.lin_shared]:
+        for lin in [self.lin_main_in, self.lin_main_out, self.lin_undirected, self.lin_shared,
+                    self.proj_in, self.proj_out, self.proj_undir]:
             nn.init.xavier_uniform_(lin.weight)
+            if hasattr(lin, 'bias') and lin.bias is not None:
+                nn.init.zeros_(lin.bias)
+
         # Initialize all bias terms
         for bias in [self.bias_main_in, self.bias_main_out, self.bias_undirected,
                      self.bias_shared_in, self.bias_shared_out, self.bias_shared_undir]:
@@ -103,16 +112,24 @@ class DirectGCNLayer(MessagePassing):
 
         # --- 1. Directed Incoming Path ---
         h_main_in = self.propagate(edge_index_in, x=self.lin_main_in(x), edge_weight=edge_weight_in)
-        # The shared transformation is applied to the original features, not the propagated ones.
-        ic_combined = (h_main_in + self.bias_main_in) + (self.lin_shared(x) + self.bias_shared_in)
+        path_specific_in = h_main_in + self.bias_main_in
+        shared_in = self.lin_shared(x) + self.bias_shared_in
+        concatenated_in = torch.cat([path_specific_in, shared_in], dim=-1)
+        ic_combined = self.proj_in(concatenated_in)
 
         # --- 2. Directed Outgoing Path ---
         h_main_out = self.propagate(edge_index_out, x=self.lin_main_out(x), edge_weight=edge_weight_out)
-        oc_combined = (h_main_out + self.bias_main_out) + (self.lin_shared(x) + self.bias_shared_out)
+        path_specific_out = h_main_out + self.bias_main_out
+        shared_out = self.lin_shared(x) + self.bias_shared_out
+        concatenated_out = torch.cat([path_specific_out, shared_out], dim=-1)
+        oc_combined = self.proj_out(concatenated_out)
 
         # --- 3. Undirected Structural Path ---
         h_main_undir = self.propagate(edge_index_undirected, x=self.lin_undirected(x), edge_weight=edge_weight_undirected)
-        uc_combined = (h_main_undir + self.bias_undirected) + (self.lin_shared(x) + self.bias_shared_undir)
+        path_specific_undir = h_main_undir + self.bias_undirected
+        shared_undir = self.lin_shared(x) + self.bias_shared_undir
+        concatenated_undir = torch.cat([path_specific_undir, shared_undir], dim=-1)
+        uc_combined = self.proj_undir(concatenated_undir)
 
         # --- 4. Get Coefficients and Constant ---
         if self.use_vector_coeffs and original_indices is not None:

@@ -48,17 +48,11 @@ class PPIPipeline:
 
     def _preprocess_embeddings_with_pca(self, emb_configs: List[Dict]) -> List[Dict]:
         """
-        Applies PCA to a list of embedding files if configured, saving the
-        results to a new directory and returning updated configurations.
+        Applies PCA mandatorily to all embedding files before evaluation, saving
+        the results to a new directory and returning updated configurations.
         """
-        if not getattr(self.config, 'EVAL_ENFORCE_DIMENSIONALITY', False):
-            return emb_configs
-
-        DataUtils.print_header("Pre-processing: Enforcing Consistent Embedding Dimensionality")
-        target_dim = getattr(self.config, 'EVAL_TARGET_DIMENSION', None)
-        if not target_dim:
-            print("  ERROR: `EVAL_ENFORCE_DIMENSIONALITY` is True but `EVAL_TARGET_DIMENSION` is not set. Skipping.")
-            return emb_configs
+        DataUtils.print_header("Pre-processing: Applying Mandatory PCA to All Embeddings")
+        target_dim = self.config.PCA_TARGET_DIMENSION
 
         processed_emb_dir = self.config.BASE_OUTPUT_DIR / "pca_processed_embeddings"
         processed_emb_dir.mkdir(parents=True, exist_ok=True)
@@ -75,7 +69,7 @@ class PPIPipeline:
                 processed_configs.append(new_config)
                 continue
 
-            # This static method now lives in EmbeddingProcessor
+            print(f"  Processing '{config_item['name']}' for mandatory PCA...")
             new_path = EmbeddingProcessor.apply_pca_to_h5(
                 input_h5_path=original_path,
                 output_dir=processed_emb_dir,
@@ -252,8 +246,10 @@ class PPIPipeline:
         reporter = EvaluationReporter(base_output_dir=str(self.config.RESULTS_EVALUATION_DIR), k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE)
 
         DataUtils.print_header("Loading Interaction Pairs")
+        # Load positive pairs first to determine the number for balancing
         pos_pairs = GroundTruthLoader.load_interaction_pairs(pos_fp, 1, random_state=self.config.RANDOM_STATE)
-        neg_pairs = GroundTruthLoader.load_interaction_pairs(neg_fp, 0, sample_n=self.config.SAMPLE_NEGATIVE_PAIRS, random_state=self.config.RANDOM_STATE)
+        # Balance the dataset by sampling an equal number of negative pairs
+        num_pos
         all_pairs_initial_load = pos_pairs + neg_pairs
         if not all_pairs_initial_load:
             print("CRITICAL: No interaction pairs were loaded. Exiting evaluation.")

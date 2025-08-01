@@ -173,7 +173,7 @@ class Config:
         # Model Selection for ProtGram
         # Options: 'directgcn', 'rgcn', 'tongdigcn'
         # 'rgcn' treats in/out edges as 2 relations.
-        self.PROTGRAM_MODELS_TO_TRAIN = ['directgcn', 'rgcn', 'tongdigcn']
+        self.PROTGRAM_MODELS_TO_TRAIN = ['directgcn']
 
         # Model Architecture
         self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]
@@ -254,16 +254,14 @@ class Config:
         self.LSTM_TRAIN_STEP = 50
         self.LSTM_LEARNING_RATE = 0.001
         # ADD THIS LINE: A separate downsample for the LSTM pipeline
-        self.LSTM_DOWNSAMPLE_FRACTION: Optional[float] = 0.01 # Use only 1% of data for LSTM
+        self.LSTM_DOWNSAMPLE_FRACTION: Optional[float] = 0.2 # Use only 1% of data for LSTM
 
     def _setup_evaluation_params(self):
         """Sets parameters for the final PPI evaluation pipeline."""
         # General
         self.PLOT_TRAINING_HISTORY = True
-        self.EARLY_STOPPING_PATIENCE = 10
         self.PERFORM_H5_INTEGRITY_CHECK = True
-        self.SAMPLE_NEGATIVE_PAIRS: Optional[int] = 100000
-        self.TF_DATASET_STRATEGY = 'from_tensor_slices'
+        self.EARLY_STOPPING_PATIENCE = 10 # For the MLP classifier
 
         # List of pre-existing or external embedding files to include in evaluation.
         # Embeddings generated during the pipeline run will be added automatically.
