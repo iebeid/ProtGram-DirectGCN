@@ -636,9 +636,9 @@ def test_transformer_embedder_pipeline_run():
     try:
         embedder = TransformerEmbedder(config)
         generated_paths = embedder.run()
-        self.assertIsInstance(generated_paths, dict, "TransformerEmbedder.run() should return a dictionary.")
-        self.assertIn("ProtBERT", generated_paths, "Expected 'ProtBERT' key in the returned paths.")
-        self.assertTrue(generated_paths["ProtBERT"].exists(), "The embedding file for ProtBERT was not created.")
+        assert isinstance(generated_paths, dict), "TransformerEmbedder.run() should return a dictionary."
+        assert "ProtBERT" in generated_paths, "Expected 'ProtBERT' key in the returned paths."
+        assert generated_paths["ProtBERT"].exists(), "The embedding file for ProtBERT was not created."
         print("\n  TransformerEmbedder smoke test ran successfully.")
     except Exception as e:
         print(f"\n  TransformerEmbedder smoke test FAILED: {e}")
