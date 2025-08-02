@@ -67,8 +67,8 @@ class TransformerEmbedder:
         return concrete_function
 
     def _generate_embeddings_for_single_model(self, model_config_item: Dict, all_sequences: List[Tuple[str, str]],
-                                              id_map: Optional[Mapping]) -> Optional[str]:
-        """Handles the full embedding generation pipeline for one transformer model."""
+                                              id_map: Optional[Mapping]) -> Dict[str, np.ndarray]:
+        """Handles the embedding generation for a single chunk of sequences for one transformer model."""
         model_name = model_config_item["name"]
         hf_id = model_config_item["hf_id"]
         is_t5 = model_config_item["is_t5"]
@@ -143,15 +143,7 @@ class TransformerEmbedder:
                 print(f"    Original count: {len(all_protein_embeddings)}, Mapped count: {len(mapped_embeddings)}")
                 all_protein_embeddings = mapped_embeddings
 
-            output_filename = f"{model_name}_{self.config.TRANSFORMER_POOLING_STRATEGY}_dim{embedding_dim_from_model}.h5"
-            output_path = self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR / output_filename
-
-            print(f"  Saving final embeddings to: {output_path}")
-            if all_protein_embeddings:
-                DataUtils.write_h5(all_protein_embeddings, output_path, f"Writing H5 for {model_name}")
-                return str(output_path)
-            else:
-                print("  No final embeddings to save.")
+            return all_protein_embeddings
 
         except Exception as e:
             print(f"\nFATAL ERROR during processing for model {model_name}: {e}")
@@ -161,8 +153,8 @@ class TransformerEmbedder:
             del model, tokenizer, inference_func, all_protein_embeddings
             gc.collect()
             if tf.executing_eagerly(): tf.keras.backend.clear_session()
-            print(f"--- Finished Transformer: {model_name} ---")
-        return None
+            print(f"--- Finished processing chunk for Transformer: {model_name} ---")
+        return {}
 
     def run(self) -> Dict[str, Path]:
         """Main entry point for the Transformer embedding generation pipeline."""
