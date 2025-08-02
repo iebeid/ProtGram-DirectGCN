@@ -113,19 +113,22 @@ class LSTMBasedEmbedder:
         assert self.model is not None, "Model must be built before training."
 
         # More memory efficient: create a single text corpus and split it.
-        corpus_text = "".join([seq for _, seq in self.sequences])
-        train_text, val_text = train_test_split(
-            [corpus_text], test_size=0.1, random_state=self.config.RANDOM_STATE
+        # FIX: Split the list of sequences, not a list containing one giant string,
+        # to prevent a ValueError from train_test_split when n_samples=1.
+        train_sequences, val_sequences = train_test_split(
+            self.sequences, test_size=0.1, random_state=self.config.RANDOM_STATE
         )
+        train_text = "".join([seq for _, seq in train_sequences])
+        val_text = "".join([seq for _, seq in val_sequences])
 
         train_dataset = _LstmPytorchDataset(
-            text=train_text[0],
+            text=train_text,
             seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
             step=self.config.LSTM_TRAIN_STEP,
             char_to_int=self.char_to_int
         )
         val_dataset = _LstmPytorchDataset(
-            text=val_text[0],
+            text=val_text,
             seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
             step=self.config.LSTM_TRAIN_STEP,
             char_to_int=self.char_to_int
