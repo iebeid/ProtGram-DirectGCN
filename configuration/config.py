@@ -237,6 +237,8 @@ class Config:
         ]
         self.TRANSFORMER_MAX_LENGTH = 1024
         self.TRANSFORMER_BASE_BATCH_SIZE = 16
+        # Process the full FASTA file in chunks to avoid loading all sequences into memory at once.
+        self.TRANSFORMER_CHUNK_SIZE = 10000
         self.TRANSFORMER_POOLING_STRATEGY = 'mean'
         self.USE_XLA_COMPILATION = False  # Set to False by default for stability
 

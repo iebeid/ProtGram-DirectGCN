@@ -112,28 +112,20 @@ class LSTMBasedEmbedder:
         """
         assert self.model is not None, "Model must be built before training."
 
-        print(f"  Training LSTM model for up to {self.config.LSTM_EPOCHS} epochs...")
-        full_corpus_text = "".join([seq for _, seq in self.sequences])
-
-        # Create all possible (input, target) pairs first
-        all_inputs, all_targets = [], []
-        for i in range(0, len(full_corpus_text) - self.config.LSTM_TRAIN_SEQ_LEN - 1, self.config.LSTM_TRAIN_STEP):
-            all_inputs.append(full_corpus_text[i: i + self.config.LSTM_TRAIN_SEQ_LEN])
-            all_targets.append(full_corpus_text[i + self.config.LSTM_TRAIN_SEQ_LEN])
-
-        # Split the generated sequences into training and validation sets
-        train_inputs, val_inputs, train_targets, val_targets = train_test_split(
-            all_inputs, all_targets, test_size=0.1, random_state=self.config.RANDOM_STATE
+        # More memory efficient: create a single text corpus and split it.
+        corpus_text = "".join([seq for _, seq in self.sequences])
+        train_text, val_text = train_test_split(
+            [corpus_text], test_size=0.1, random_state=self.config.RANDOM_STATE
         )
 
         train_dataset = _LstmPytorchDataset(
-            text="".join(train_inputs),
+            text=train_text[0],
             seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
             step=self.config.LSTM_TRAIN_STEP,
             char_to_int=self.char_to_int
         )
         val_dataset = _LstmPytorchDataset(
-            text="".join(val_inputs),
+            text=val_text[0],
             seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
             step=self.config.LSTM_TRAIN_STEP,
             char_to_int=self.char_to_int
