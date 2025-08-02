@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from typing import List, Dict, Mapping, Optional, Tuple
 
+import numpy as np
 import tensorflow as tf
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
