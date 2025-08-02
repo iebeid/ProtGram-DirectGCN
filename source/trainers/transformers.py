@@ -76,8 +76,7 @@ class TransformerEmbedder:
         batch_size = max(1, int(self.config.TRANSFORMER_BASE_BATCH_SIZE * batch_size_multiplier))
 
         DataUtils.print_header(f"Starting Transformer Embedding Generation: {model_name} ({hf_id})")
-        print(
-            f"  Config: Batch Size={batch_size}, Max Length={self.config.TRANSFORMER_MAX_LENGTH}, Pooling='{self.config.TRANSFORMER_POOLING_STRATEGY}', PCA={self.config.APPLY_PCA_TO_TRANSFORMER}")
+        print(f"  Config: Batch Size={batch_size}, Max Length={self.config.TRANSFORMER_MAX_LENGTH}, Pooling='{self.config.TRANSFORMER_POOLING_STRATEGY}'")
 
         all_protein_embeddings = {}
         model, tokenizer, inference_func = None, None, None

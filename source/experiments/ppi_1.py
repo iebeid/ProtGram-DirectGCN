@@ -248,8 +248,9 @@ class PPIPipeline:
         DataUtils.print_header("Loading Interaction Pairs")
         # Load positive pairs first to determine the number for balancing
         pos_pairs = GroundTruthLoader.load_interaction_pairs(pos_fp, 1, random_state=self.config.RANDOM_STATE)
+        num_pos = len(pos_pairs)
         # Balance the dataset by sampling an equal number of negative pairs
-        num_pos
+        neg_pairs = GroundTruthLoader.load_interaction_pairs(neg_fp, 0, sample_n=num_pos, random_state=self.config.RANDOM_STATE)
         all_pairs_initial_load = pos_pairs + neg_pairs
         if not all_pairs_initial_load:
             print("CRITICAL: No interaction pairs were loaded. Exiting evaluation.")
