@@ -40,6 +40,9 @@ class Config:
         # --- 9. LSTM PIPELINE PARAMETERS ---
         self._setup_lstm_params()
 
+        # --- NEW: 9.5. SINGLETON EVALUATION PARAMETERS ---
+        self._setup_singleton_eval_params()
+
         # --- 10. PPI EVALUATION PARAMETERS ---
         self._setup_evaluation_params()
 
@@ -64,13 +67,13 @@ class Config:
         self.DATA_STANDARD_DATASETS_DIR = self.BASE_DATA_DIR / "benchmarks"
 
         # Results Subdirectories
-        self.RESULTS_GRAPH_OBJECTS_DIR = self.BASE_OUTPUT_DIR / "1_graph_objects"
-        self.RESULTS_GCN_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_gcn_embeddings"
-        self.RESULTS_W2V_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_word2vec_embeddings"
-        self.RESULTS_LSTM_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_lstm_embeddings"
-        self.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "2_transformer_embeddings"
-        self.RESULTS_EVALUATION_DIR = self.BASE_OUTPUT_DIR / "3_evaluation_results"
-        self.RESULTS_BENCHMARKING_DIR = self.BASE_OUTPUT_DIR / "4_benchmarking_results"
+        self.RESULTS_GRAPH_OBJECTS_DIR = self.BASE_OUTPUT_DIR / "graph_objects"
+        self.RESULTS_GCN_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "gcn_embeddings"
+        self.RESULTS_W2V_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "word2vec_embeddings"
+        self.RESULTS_LSTM_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "lstm_embeddings"
+        self.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "transformer_embeddings"
+        self.RESULTS_EVALUATION_DIR = self.BASE_OUTPUT_DIR / "evaluation_results"
+        self.RESULTS_BENCHMARKING_DIR = self.BASE_OUTPUT_DIR / "benchmarking_results"
         self.RESULTS_BENCHMARK_EMBEDDINGS_DIR = self.RESULTS_BENCHMARKING_DIR / "embeddings"
 
         # Key File Paths
@@ -95,6 +98,7 @@ class Config:
         self.RUN_NETWORK_EMBEDDING_BENCHMARKING = True
         self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers
+        self.RUN_SINGLETON_GCN_EVAL = True # Runs a fast evaluation on the n=1 graph for rapid prototyping
         self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data
         self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = None  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
         self.CLEANUP_DUMMY_DATA = True
@@ -254,6 +258,15 @@ class Config:
         self.LSTM_LEARNING_RATE = 0.001
         # ADD THIS LINE: A separate downsample for the LSTM pipeline
         self.LSTM_DOWNSAMPLE_FRACTION: Optional[float] = 0.9 # Use only 1% of data for LSTM
+
+    def _setup_singleton_eval_params(self):
+        """Sets parameters for the rapid, n=1 GCN evaluation."""
+        self.SINGLETON_EVAL_EPOCHS = 50
+        self.SINGLETON_EVAL_TEST_SPLIT = 0.2
+        self.SINGLETON_EVAL_LR = 0.01
+        # A list of models to test in the singleton evaluation.
+        # Options: "GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "TongDiGCN", "DirectGCN"
+        self.SINGLETON_EVAL_MODELS_TO_RUN: List[str] = ["DirectGCN", "GCN", "RGCN", "TongDiGCN"]
 
     def _setup_evaluation_params(self):
         """Sets parameters for the final PPI evaluation pipeline."""

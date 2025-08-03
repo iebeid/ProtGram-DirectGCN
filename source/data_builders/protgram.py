@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: data_builders/protgram.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 7.0 (Renamed class, improved memory management for Dask edge aggregation)
+# VERSION: 7.1 (Integrated generalized singleton evaluation)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -12,7 +12,7 @@ import sys
 import time
 from functools import partial
 from pathlib import Path
-from typing import Tuple, Iterator
+from typing import Tuple, Iterator, Dict, List, Any
 
 import dask.bag as db
 import dask.dataframe as dd
@@ -22,6 +22,7 @@ import pyarrow.parquet as pq
 
 from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
+from source.trainers.singleton_xgcn import SingletonXGCNTrainer
 from source.utils.data import DataUtils, FastaUtils, ProtgramDaskHelpers
 
 
@@ -323,6 +324,14 @@ class ProtGramBuilder:
             print(f"    --- End of Graph Statistics for n={n} ---\n")
 
             del graph_object, idx_to_node
+
+            # --- NEW: Singleton Evaluation Trigger ---
+            if n == 1 and self.config.RUN_SINGLETON_GCN_EVAL:
+                # Reload the object to ensure it's clean for the trainer
+                fresh_graph_obj = DataUtils.load_object(output_path)
+                singleton_trainer = SingletonXGCNTrainer(self.config, fresh_graph_obj)
+                results = singleton_trainer.run()
+                self._display_singleton_results_and_prompt(results)
             gc.collect()
 
         print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.")
@@ -335,3 +344,28 @@ class ProtGramBuilder:
         print(f"<<< Phase 3 finished in {time.monotonic() - phase3_start_time:.2f}s.")
 
         DataUtils.print_header(f"N-gram Graph Building FINISHED in {time.monotonic() - overall_start_time:.2f}s")
+
+    def _display_singleton_results_and_prompt(self, results: List[Dict[str, Any]]):
+        """Displays the results of the singleton evaluation and prompts the user."""
+        DataUtils.print_header("Singleton GCN (n=1) Rapid Evaluation Results")
+        if results and isinstance(results, list) and len(results) > 0:
+            print("This is a quick evaluation to check if the model architecture is learning.")
+            print("Results on the test split of the n=1 graph nodes:")
+
+            # Create a DataFrame for better formatting
+            df = pd.DataFrame(results)
+            # Format float columns
+            float_cols = df.select_dtypes(include=['float']).columns
+            for col in float_cols:
+                df[col] = df[col].map('{:.4f}'.format)
+
+            print(df.to_string(index=False))
+
+        else:
+            print("Singleton evaluation did not produce any metrics.")
+
+        response = input("\nDo you want to continue with the full pipeline? (y/n): ").lower().strip()
+        if response not in ['y', 'yes']:
+            print("Aborting pipeline as requested by user.")
+            sys.exit(0)
+        print("Continuing with the full pipeline...\n")
