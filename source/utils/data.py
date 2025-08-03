@@ -272,10 +272,10 @@ class GroundTruthLoader:
         """
         Reads interaction pairs from a CSV/TSV file line by line and yields them in batches.
         """
-        filepath = os.path.normpath(str(filepath))
+        filepath = Path(filepath)
         streaming_info = f" (sampling up to {sample_n} pairs)" if sample_n is not None else ""
-        print(f"Streaming pairs from: {os.path.basename(filepath)} (label: {label}, batch_size: {batch_size}){streaming_info}...")
-        if not os.path.exists(filepath):
+        print(f"Streaming pairs from: {filepath.name} (label: {label}, batch_size: {batch_size}){streaming_info}...")
+        if not filepath.exists():
             print(f"Warning: Interaction file not found: {filepath}")
             return
 

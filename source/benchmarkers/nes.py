@@ -107,7 +107,9 @@ class NetworkEmbeddingBenchmarker:
                            ['train_mask', 'val_mask', 'test_mask']):
                     print(f"  - No predefined splits found for {dataset_name}. Creating random splits.")
                     num_nodes = data.num_nodes
-                    indices = np.random.permutation(num_nodes)
+                    # FIX: Use a seeded random number generator for reproducible splits.
+                    rng = np.random.default_rng(self.config.RANDOM_STATE)
+                    indices = rng.permutation(num_nodes)
                     train_size = int(num_nodes * 0.1)
                     val_size = int(num_nodes * 0.1)
 

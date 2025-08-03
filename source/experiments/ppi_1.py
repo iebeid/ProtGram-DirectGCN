@@ -70,6 +70,8 @@ class PPIPipeline:
                 continue
 
             print(f"  Processing '{config_item['name']}' for mandatory PCA...")
+            # --- FIX: Check if PCA returned the original path, indicating a failure/skip ---
+            original_path_str = str(original_path)
             new_path = EmbeddingProcessor.apply_pca_to_h5(
                 input_h5_path=original_path,
                 output_dir=processed_emb_dir,
@@ -77,6 +79,8 @@ class PPIPipeline:
                 random_seed=self.config.RANDOM_STATE
             )
             new_config['path'] = str(new_path)
+            if str(new_path) == original_path_str:
+                print(f"    - Note: PCA was skipped or failed for {original_path.name}. The original file will be used in the evaluation.")
             processed_configs.append(new_config)
 
         return processed_configs
@@ -189,22 +193,31 @@ class PPIPipeline:
             fold_start_time = time.monotonic()
             print(f"\n  --- Fold {fold_num + 1}/{self.config.EVAL_N_FOLDS} for {embedding_name} ---")
 
-            train_pairs_fold = [all_pairs_for_cv[i] for i in train_idx]
-            val_pairs_fold = [all_pairs_for_cv[i] for i in val_idx]
+            # FIX: Add exception handling for individual folds to make the pipeline more robust.
+            try:
+                train_pairs_fold = [all_pairs_for_cv[i] for i in train_idx]
+                val_pairs_fold = [all_pairs_for_cv[i] for i in val_idx]
 
-            fold_metrics, history = self._train_and_evaluate_fold(
-                train_pairs=train_pairs_fold, val_pairs=val_pairs_fold,
-                protein_embeddings=protein_embeddings, edge_feature_dim=edge_feature_dim,
-                embedding_dim=embedding_dim
-            )
-            fold_metrics_list.append(fold_metrics)
-            if fold_num == 0:
-                aggregated_results['history_dict_fold1'] = history
-                if 'roc_data' in fold_metrics:
-                    aggregated_results['roc_data_representative'] = fold_metrics['roc_data']
+                fold_metrics, history = self._train_and_evaluate_fold(
+                    train_pairs=train_pairs_fold, val_pairs=val_pairs_fold,
+                    protein_embeddings=protein_embeddings, edge_feature_dim=edge_feature_dim,
+                    embedding_dim=embedding_dim
+                )
+                fold_metrics_list.append(fold_metrics)
+                if fold_num == 0:
+                    aggregated_results['history_dict_fold1'] = history
+                    if 'roc_data' in fold_metrics:
+                        aggregated_results['roc_data_representative'] = fold_metrics['roc_data']
 
-            print(f"    Fold {fold_num + 1} Metrics: {fold_metrics}")
-            print(f"    Fold {fold_num + 1} completed in {time.monotonic() - fold_start_time:.2f}s.")
+                print(f"    Fold {fold_num + 1} Metrics: {fold_metrics}")
+                print(f"    Fold {fold_num + 1} completed in {time.monotonic() - fold_start_time:.2f}s.")
+            except Exception as e:
+                print(f"    ❌ ERROR in Fold {fold_num + 1} for {embedding_name}: {e}")
+                # Log the failure for this fold if using MLflow
+                if self.config.USE_MLFLOW:
+                    with mlflow.start_run(run_name=f"Fold_{fold_num + 1}_FAILED", nested=True):
+                        mlflow.set_tag("status", "FAILED")
+                        mlflow.log_param("error", str(e))
 
         if fold_metrics_list:
             metrics_keys = fold_metrics_list[0].keys() - {'roc_data'}
