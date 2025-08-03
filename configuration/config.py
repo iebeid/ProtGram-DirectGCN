@@ -96,7 +96,7 @@ class Config:
         self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers
         self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data
-        self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = 0.1  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
+        self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = None  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
         self.CLEANUP_DUMMY_DATA = True
         self.ENABLE_FILE_LOGGING = True
 
@@ -199,7 +199,7 @@ class Config:
 
         # Self-Supervised Tasks
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
-            1: "community", 2: "next_node", 3: "next_node",
+            1: "next_node", 2: "next_node", 3: "next_node",
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3

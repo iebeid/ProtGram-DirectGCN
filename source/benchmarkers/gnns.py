@@ -8,6 +8,7 @@
 import os
 import traceback
 from typing import Dict, List, Any, Tuple
+import mlflow
 
 import numpy as np
 import pandas as pd
@@ -263,12 +264,24 @@ class GNNBenchmarker:
         for model_name in self.config.BENCHMARK_GNN_MODELS_TO_RUN:
             print(f"\n--- Benchmarking Model: {model_name} on Dataset: {variant_name} ---")
             try:
+                # --- MLFLOW INTEGRATION: Start a nested run for this specific experiment ---
+                with mlflow.start_run(run_name=f"{model_name}_on_{variant_name}", nested=True) as run:
+                    mlflow.set_tag("model_name", model_name)
+                    mlflow.set_tag("dataset_name", variant_name)
+                    mlflow.log_param("epochs", self.config.EVAL_EPOCHS)
+                    mlflow.log_param("learning_rate", 0.01) # As hardcoded in train_and_evaluate
+                    mlflow.log_param("is_undirected", "_Undirected" in variant_name)
+
                 model = self._get_model(model_name, data, num_classes)
                 print("  Model Architecture:")
                 print(model)
 
                 val_acc, test_acc, history_df = self.train_and_evaluate(model, data)
                 results.append({"dataset": variant_name, "model": model_name, "best_val_accuracy": val_acc, "test_accuracy": test_acc, "error": None})
+
+                # --- MLFLOW INTEGRATION: Log metrics ---
+                mlflow.log_metric("best_val_accuracy", val_acc)
+                mlflow.log_metric("test_accuracy", test_acc)
 
                 history_path = self.output_dir / variant_name
                 history_path.mkdir(parents=True, exist_ok=True)
@@ -278,6 +291,9 @@ class GNNBenchmarker:
             except Exception as e:
                 print(f"ERROR during training/evaluation of {model_name} on {variant_name}: {e}")
                 traceback.print_exc()
+                # --- MLFLOW INTEGRATION: Log failure ---
+                mlflow.set_tag("status", "FAILED")
+                mlflow.log_param("error", str(e))
                 results.append({"dataset": variant_name, "model": model_name, "best_val_accuracy": None, "test_accuracy": None, "error": str(e)})
         return results
 

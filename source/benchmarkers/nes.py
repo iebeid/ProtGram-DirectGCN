@@ -1,13 +1,14 @@
 # ==============================================================================
 # MODULE: benchmarkers/nes.py
 # PURPOSE: Handles benchmarking of traditional network embedding methods.
-# VERSION: 2.3 (Corrected mask generation for datasets without splits)
+# VERSION: 3.0 (Integrated MLflow logging and suppressed tokenizer warnings)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
 import traceback
 
+import mlflow
 import numpy as np
 import pandas as pd
 import torch
@@ -60,89 +61,105 @@ class NetworkEmbeddingBenchmarker:
         data = data.to(self.device)
 
         print(f"--- Benchmarking Model: {model_name} on Dataset: {dataset_name} ---")
-        try:
-            if model_name == 'Node2Vec':
-                model = Node2Vec(
-                    edge_index=data.edge_index,
-                    embedding_dim=self.config.BENCHMARK_NE_EMBEDDING_DIM,
-                    walk_length=self.config.BENCHMARK_NE_WALK_LENGTH,
-                    context_size=self.config.BENCHMARK_NE_CONTEXT_SIZE,
-                    walks_per_node=10,
-                    num_negative_samples=1,
-                    p=1,
-                    q=1,
-                    sparse=True,
-                ).to(self.device)
-            else:
-                raise ValueError(f"Unknown model: {model_name}")
+        # --- MLFLOW INTEGRATION: Start a nested run for this specific experiment ---
+        with mlflow.start_run(run_name=f"{model_name}_on_{dataset_name}", nested=True):
+            try:
+                mlflow.set_tag("model_name", model_name)
+                mlflow.set_tag("dataset_name", dataset_name)
+                mlflow.log_param("embedding_dim", self.config.BENCHMARK_NE_EMBEDDING_DIM)
+                mlflow.log_param("epochs", self.config.BENCHMARK_NE_EPOCHS)
+                mlflow.log_param("walk_length", self.config.BENCHMARK_NE_WALK_LENGTH)
+                mlflow.log_param("context_size", self.config.BENCHMARK_NE_CONTEXT_SIZE)
 
-            num_workers = getattr(self.config, 'GRAPH_BUILDER_WORKERS', 0)
-            loader = model.loader(batch_size=128, shuffle=True, num_workers=num_workers)
-            optimizer = torch.optim.SparseAdam(list(model.parameters()), lr=0.01)
+                if model_name == 'Node2Vec':
+                    model = Node2Vec(
+                        edge_index=data.edge_index,
+                        embedding_dim=self.config.BENCHMARK_NE_EMBEDDING_DIM,
+                        walk_length=self.config.BENCHMARK_NE_WALK_LENGTH,
+                        context_size=self.config.BENCHMARK_NE_CONTEXT_SIZE,
+                        walks_per_node=10,
+                        num_negative_samples=1,
+                        p=1,
+                        q=1,
+                        sparse=True,
+                    ).to(self.device)
+                else:
+                    raise ValueError(f"Unknown model: {model_name}")
 
-            for _ in range(1, self.config.BENCHMARK_NE_EPOCHS + 1):
-                model.train()
-                for pos_rw, neg_rw in loader:
-                    optimizer.zero_grad()
-                    loss = model.loss(pos_rw.to(self.device), neg_rw.to(self.device))
-                    loss.backward()
-                    optimizer.step()
+                num_workers = getattr(self.config, 'GRAPH_BUILDER_WORKERS', 0)
+                loader = model.loader(batch_size=128, shuffle=True, num_workers=num_workers)
+                optimizer = torch.optim.SparseAdam(list(model.parameters()), lr=0.01)
 
-            model.eval()
-            with torch.no_grad():
-                z = model().detach()
+                for _ in range(1, self.config.BENCHMARK_NE_EPOCHS + 1):
+                    model.train()
+                    for pos_rw, neg_rw in loader:
+                        optimizer.zero_grad()
+                        loss = model.loss(pos_rw.to(self.device), neg_rw.to(self.device))
+                        loss.backward()
+                        optimizer.step()
 
-            # --- FIX: Robustly check for all three masks before using them ---
-            if not all(hasattr(data, mask) and getattr(data, mask) is not None for mask in ['train_mask', 'val_mask', 'test_mask']):
-                print(f"  - No predefined splits found for {dataset_name}. Creating random splits.")
-                num_nodes = data.num_nodes
-                indices = np.random.permutation(num_nodes)
-                train_size = int(num_nodes * 0.1)
-                val_size = int(num_nodes * 0.1)
+                model.eval()
+                with torch.no_grad():
+                    z = model().detach()
 
-                data.train_mask = torch.zeros(num_nodes, dtype=torch.bool, device=self.device)
-                data.val_mask = torch.zeros(num_nodes, dtype=torch.bool, device=self.device)
-                data.test_mask = torch.zeros(num_nodes, dtype=torch.bool, device=self.device)
+                # --- FIX: Robustly check for all three masks before using them ---
+                if not all(hasattr(data, mask) and getattr(data, mask) is not None for mask in
+                           ['train_mask', 'val_mask', 'test_mask']):
+                    print(f"  - No predefined splits found for {dataset_name}. Creating random splits.")
+                    num_nodes = data.num_nodes
+                    indices = np.random.permutation(num_nodes)
+                    train_size = int(num_nodes * 0.1)
+                    val_size = int(num_nodes * 0.1)
 
-                data.train_mask[indices[:train_size]] = True
-                data.val_mask[indices[train_size:train_size + val_size]] = True
-                data.test_mask[indices[train_size + val_size:]] = True
-                print(
-                    f"  Generated custom seeded split for {dataset_name}. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
-            # --- END FIX ---
+                    data.train_mask = torch.zeros(num_nodes, dtype=torch.bool, device=self.device)
+                    data.val_mask = torch.zeros(num_nodes, dtype=torch.bool, device=self.device)
+                    data.test_mask = torch.zeros(num_nodes, dtype=torch.bool, device=self.device)
 
-            # Access the masks *after* they are guaranteed to exist.
-            if hasattr(data, 'train_mask') and data.train_mask.dim() > 1:
-                train_mask = data.train_mask[:, 0].bool()
-                test_mask = data.test_mask[:, 0].bool()
-            else:
-                train_mask = data.train_mask.bool()
-                test_mask = data.test_mask.bool()
+                    data.train_mask[indices[:train_size]] = True
+                    data.val_mask[indices[train_size:train_size + val_size]] = True
+                    data.test_mask[indices[train_size + val_size:]] = True
+                    print(
+                        f"  Generated custom seeded split for {dataset_name}. Train: {data.train_mask.sum()}, Val: {data.val_mask.sum()}, Test: {data.test_mask.sum()}")
+                # --- END FIX ---
 
-            clf = LogisticRegression(
-                solver='lbfgs', random_state=self.config.RANDOM_STATE
-            ).fit(z[train_mask].cpu().numpy(), data.y[train_mask].cpu().numpy())
+                # Access the masks *after* they are guaranteed to exist.
+                if hasattr(data, 'train_mask') and data.train_mask.dim() > 1:
+                    train_mask = data.train_mask[:, 0].bool()
+                    test_mask = data.test_mask[:, 0].bool()
+                else:
+                    train_mask = data.train_mask.bool()
+                    test_mask = data.test_mask.bool()
 
-            test_acc = accuracy_score(data.y[test_mask].cpu().numpy(), clf.predict(z[test_mask].cpu().numpy()))
+                clf = LogisticRegression(
+                    solver='lbfgs', random_state=self.config.RANDOM_STATE
+                ).fit(z[train_mask].cpu().numpy(), data.y[train_mask].cpu().numpy())
 
-            print(f"  ✅ Test Accuracy for {model_name} on {dataset_name}: {test_acc:.4f}")
-            return {
-                "dataset": dataset_name,
-                "model": model_name,
-                "test_accuracy": test_acc,
-                "error": None
-            }
-        except Exception as e:
-            print(f"  ❌ FAILED to benchmark on {dataset_name}: {e}")
-            traceback.print_exc()
-            return {
-                "dataset": dataset_name,
-                "model": model_name,
-                "test_accuracy": None,
-                "error": str(e)
-            }
+                test_acc = accuracy_score(data.y[test_mask].cpu().numpy(), clf.predict(z[test_mask].cpu().numpy()))
+
+                print(f"  ✅ Test Accuracy for {model_name} on {dataset_name}: {test_acc:.4f}")
+                mlflow.log_metric("test_accuracy", test_acc)
+                return {
+                    "dataset": dataset_name,
+                    "model": model_name,
+                    "test_accuracy": test_acc,
+                    "error": None
+                }
+            except Exception as e:
+                print(f"  ❌ FAILED to benchmark on {dataset_name}: {e}")
+                traceback.print_exc()
+                mlflow.set_tag("status", "FAILED")
+                mlflow.log_param("error", str(e))
+                return {
+                    "dataset": dataset_name,
+                    "model": model_name,
+                    "test_accuracy": None,
+                    "error": str(e)
+                }
 
     def run(self):
+        # FIX: Suppress the noisy but harmless warning from the tokenizers library when using a multi-process DataLoader.
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
         DataUtils.print_header("PIPELINE: Network Embedding BENCHMARKER")
         all_results = []
         for dataset_name in self.config.BENCHMARK_NODE_CLASSIFICATION_DATASETS:

@@ -116,8 +116,15 @@ class EmbeddingProcessor:
             print("PCA Error: No embeddings provided to transform.")
             return None
 
-        filtered_embeddings_list = [v.astype(np.float32) for v in embeddings_dict.values() if v is not None and v.size > 0]
-        filtered_ids = [k for k, v in embeddings_dict.items() if v is not None and v.size > 0]
+        # FIX: Explicitly filter out embeddings containing NaN values to prevent PCA from failing.
+        filtered_embeddings_list = []
+        filtered_ids = []
+        for k, v in embeddings_dict.items():
+            if v is not None and v.size > 0 and not np.isnan(v).any():
+                filtered_embeddings_list.append(v.astype(np.float32))
+                filtered_ids.append(k)
+            elif v is not None and np.isnan(v).any():
+                print(f"    PCA Warning: Skipping protein '{k}' because its embedding contains NaN values.")
 
         if not filtered_embeddings_list:
             print("PCA Error: All embedding vectors are None or empty. Skipping PCA.")

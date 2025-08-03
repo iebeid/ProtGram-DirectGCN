@@ -176,11 +176,16 @@ def _launch_mlflow_ui(config: Config):
         # Give the server a moment to start
         time.sleep(5)
         try:
-            webbrowser.open("http://127.0.0.1:5000")
-            print("\nMLflow UI has been launched in your web browser.")
-            print("The server is running in the background. It will terminate when you close this terminal.")
-        except webbrowser.Error:
-            print("\nCould not automatically open web browser.")
+            # webbrowser.open() returns True on success, False on failure.
+            was_opened = webbrowser.open("http://127.0.0.1:5000")
+            if not was_opened:
+                print("\nCould not automatically open web browser.")
+                print("Please open http://127.0.0.1:5000 manually to view results.")
+            else:
+                print("\nMLflow UI has been launched in your web browser.")
+                print("The server is running in the background. It will terminate when you close this terminal.")
+        except webbrowser.Error as e:
+            print(f"\nCould not automatically open web browser due to an error: {e}")
             print("Please open http://127.0.0.1:5000 manually to view results.")
     else:
         print("--- Headless/SSH environment detected. ---")
