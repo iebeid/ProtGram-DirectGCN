@@ -634,12 +634,15 @@ def test_transformer_embedder_pipeline_run():
     config.TRANSFORMER_BASE_BATCH_SIZE = 1
 
     try:
-        embedder = TransformerEmbedder(config)
-        generated_paths = embedder.run()
-        assert isinstance(generated_paths, dict), "TransformerEmbedder.run() should return a dictionary."
-        assert "ProtBERT" in generated_paths, "Expected 'ProtBERT' key in the returned paths."
-        assert generated_paths["ProtBERT"].exists(), "The embedding file for ProtBERT was not created."
-        print("\n  TransformerEmbedder smoke test ran successfully.")
+        # This test does not use MLflow internally, so no context is needed.
+        # It's kept separate for clarity.
+        with mlflow.start_run(run_name="Transformer_Embedder_SMOKE_TEST"):
+            embedder = TransformerEmbedder(config)
+            generated_paths = embedder.run()
+            assert isinstance(generated_paths, dict), "TransformerEmbedder.run() should return a dictionary."
+            assert "ProtBERT" in generated_paths, "Expected 'ProtBERT' key in the returned paths."
+            assert generated_paths["ProtBERT"].exists(), "The embedding file for ProtBERT was not created."
+            print("\n  TransformerEmbedder smoke test ran successfully.")
     except Exception as e:
         print(f"\n  TransformerEmbedder smoke test FAILED: {e}")
         import traceback
@@ -677,9 +680,11 @@ def test_gnn_benchmarker_run():
     karate_specific_path = pyg_dataset_root / "KarateClub"
 
     try:
-        benchmarker = GNNBenchmarker(config)
-        benchmarker.run()
-        print("\n  GNNBenchmarker smoke test ran successfully.")
+        # FIX: Wrap the test in its own MLflow run to manage context properly.
+        with mlflow.start_run(run_name="GNN_Benchmark_SMOKE_TEST"):
+            benchmarker = GNNBenchmarker(config)
+            benchmarker.run()
+            print("\n  GNNBenchmarker smoke test ran successfully.")
     except Exception as e:
         print(f"\n  GNNBenchmarker smoke test FAILED: {e}")
         raise
@@ -712,13 +717,17 @@ def test_ppi_pipeline_run():
     config.RESULTS_EVALUATION_DIR = test_ppi_output_dir
 
     try:
-        evaluator = PPIPipeline(config)
-        evaluator.run(use_dummy_data=True)
-        print("\n  PPIPipeline (dummy run) smoke test ran successfully.")
+        # FIX: Wrap the test in its own MLflow run and pass the parent_run_id
+        # to ensure the inner runs are correctly nested and closed.
+        with mlflow.start_run(run_name="PPI_Pipeline_SMOKE_TEST") as parent_run:
+            evaluator = PPIPipeline(config)
+            evaluator.run(use_dummy_data=True, parent_run_id=parent_run.info.run_id)
+            print("\n  PPIPipeline (dummy run) smoke test ran successfully.")
     except Exception as e:
         print(f"\n  PPIPipeline (dummy run) smoke test FAILED: {e}")
-        # Unlike a unittest, we don't `raise` here, just report the failure and continue
-        # This allows the rest of the test suite to run.
+        import traceback
+        traceback.print_exc()
+        raise
     finally:
         config.RUN_DUMMY_TEST = original_dummy_flag
         config.EVAL_EPOCHS = original_epochs

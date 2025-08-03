@@ -152,7 +152,7 @@ class Config:
         self.BENCHMARK_TEST_ON_UNDIRECTED = True
         self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8}
         self.BENCHMARK_PCA_TARGET_DIM = 64
-        self.BENCHMARK_NE_MODELS_TO_RUN = ["Node2Vec", "MetaPath2Vec"]
+        self.BENCHMARK_NE_MODELS_TO_RUN = ["Node2Vec"]
         # Number of epochs for the network embedding benchmark (Node2Vec, etc.)
         self.BENCHMARK_NE_EPOCHS = 5
         self.BENCHMARK_NE_EMBEDDING_DIM = 128
@@ -179,7 +179,7 @@ class Config:
         self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]
         self.GCN_1GRAM_INIT_DIM = 512
         self.GCN_MAX_PE_LEN = 512
-        self.GCN_USE_VECTOR_COEFFS = True
+        self.GCN_USE_VECTOR_COEFFS = False
 
         # Training Hyperparameters
         self.GCN_EPOCHS_PER_LEVEL = 300
@@ -199,7 +199,7 @@ class Config:
 
         # Self-Supervised Tasks
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
-            1: "next_node", 2: "next_node", 3: "next_node",
+            1: "community", 2: "next_node", 3: "next_node",
         }
         self.GCN_DEFAULT_TASK_TYPE: str = "community"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
@@ -253,7 +253,7 @@ class Config:
         self.LSTM_TRAIN_STEP = 50
         self.LSTM_LEARNING_RATE = 0.001
         # ADD THIS LINE: A separate downsample for the LSTM pipeline
-        self.LSTM_DOWNSAMPLE_FRACTION: Optional[float] = 0.2 # Use only 1% of data for LSTM
+        self.LSTM_DOWNSAMPLE_FRACTION: Optional[float] = 0.9 # Use only 1% of data for LSTM
 
     def _setup_evaluation_params(self):
         """Sets parameters for the final PPI evaluation pipeline."""
