@@ -17,6 +17,13 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from scipy.stats import wilcoxon, pearsonr
+
+# Conditionally import SHAP to avoid making it a hard dependency
+try:
+    import shap
+except ImportError:
+    shap = None
+
 from sklearn.manifold import TSNE
 
 # --- Configuration for t-SNE plotting ---
@@ -224,6 +231,44 @@ class EvaluationReporter:
             print(f"  Saved metrics comparison barchart to {plot_filename}")
         except Exception as e:
             print(f"  Error saving comparison chart {plot_filename}: {e}")
+        plt.close()
+        return plot_filename
+
+    def generate_shap_summary(self, model, background_data: np.ndarray, model_name: str, fold_num: int) -> Optional[Path]:
+        """
+        Generates and saves a SHAP summary plot to explain model predictions.
+
+        Note: This interprets the importance of the *input features to the MLP*,
+        which are the dimensions of the concatenated protein embeddings, not the
+        n-grams themselves.
+        """
+        if shap is None:
+            print("  SHAP library not installed. Skipping interpretability plot.")
+            return None
+
+        plot_filename = self.plots_output_dir / f"shap_summary_{model_name.replace(' ', '_')}_Fold{fold_num}.png"
+        print(f"  Generating SHAP summary plot for {model_name}...")
+
+        try:
+            # SHAP works best with a sample of the background data
+            background_sample = shap.sample(background_data, 100)
+            explainer = shap.KernelExplainer(model.predict, background_sample)
+            shap_values = explainer.shap_values(background_sample)
+
+            # For a single-output model, shap_values is a list with one array.
+            if isinstance(shap_values, list):
+                shap_values = shap_values[0]
+
+            plt.figure()
+            shap.summary_plot(shap_values, background_sample, show=False, plot_type="bar")
+            plt.title(f"SHAP Feature Importance\n({model_name} - Fold {fold_num})")
+            plt.tight_layout()
+            plt.savefig(plot_filename)
+            print(f"  Saved SHAP summary plot to {plot_filename}")
+        except Exception as e:
+            print(f"  Error generating SHAP plot for {model_name}: {e}")
+            import traceback
+            traceback.print_exc()
         plt.close()
         return plot_filename
 

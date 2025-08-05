@@ -114,6 +114,7 @@ class PPIPipeline:
         val_ds_for_fit = tf.data.Dataset.from_generator(val_gen_func, output_signature=output_signature).repeat().prefetch(tf.data.AUTOTUNE)
 
         # --- Build and Train Model ---
+        # FIX: Pass config object to MLP builder
         mlp_params = {'dense1_units': self.config.EVAL_MLP_DENSE1_UNITS, 'dropout1_rate': self.config.EVAL_MLP_DROPOUT1_RATE, 'dense2_units': self.config.EVAL_MLP_DENSE2_UNITS,
                       'dropout2_rate': self.config.EVAL_MLP_DROPOUT2_RATE, 'l2_reg': self.config.EVAL_MLP_L2_REG}
         model = MLP(edge_feature_dim, mlp_params, self.config.EVAL_LEARNING_RATE).build()
@@ -128,6 +129,14 @@ class PPIPipeline:
                             verbose=1 if self.config.DEBUG_VERBOSE else 0, class_weight=class_weight,
                             callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=self.config.EARLY_STOPPING_PATIENCE, restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else [])
         print("    Model training finished.")
+
+        # --- NEW: SHAP Interpretability ---
+        # Generate SHAP summary plot for the first fold of the main embedding
+        if self.config.EVAL_GENERATE_SHAP_SUMMARY:
+            train_features_for_shap = np.vstack([x for x, y in train_ds.take(10)]) # Sample background data
+            reporter = EvaluationReporter(self.config.RESULTS_EVALUATION_DIR, self.config.EVAL_K_VALUES_FOR_TABLE)
+            reporter.generate_shap_summary(model, train_features_for_shap, "MLP_Classifier", 1)
+        # --- END NEW ---
 
         # --- Evaluate Model ---
         print("    Evaluating model on validation set...")

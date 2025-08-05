@@ -239,6 +239,15 @@ class EmbeddingProcessor:
         if strategy == 'mean': return np.mean(residue_embeddings, axis=0)
         if strategy == 'sum': return np.sum(residue_embeddings, axis=0)
         if strategy == 'max': return np.max(residue_embeddings, axis=0)
+        if strategy == 'attention':
+            # A simple, non-parametric attention mechanism.
+            # The score for each residue is its dot product with the mean embedding.
+            if residue_embeddings.shape[0] > 1:
+                mean_vec = np.mean(residue_embeddings, axis=0, keepdims=True)
+                attention_scores = np.dot(residue_embeddings, mean_vec.T).flatten()
+                attention_weights = np.exp(attention_scores) / np.sum(np.exp(attention_scores))
+                return np.dot(attention_weights, residue_embeddings)
+            return np.mean(residue_embeddings, axis=0) # Fallback for single-residue sequences
         return np.mean(residue_embeddings, axis=0)
 
     @staticmethod
@@ -387,5 +396,7 @@ class EmbeddingProcessor:
                         yield np.array(batch_features, dtype=np.float16), np.array(batch_labels, dtype=np.int32)
                         batch_features, batch_labels = [], []
 
-        if batch_features:
-            yield np.array(batch_features, dtype=np.float16), np.array(batch_labels, dtype=np.int32)
+        # The final, smaller batch is intentionally not yielded.
+        # This is equivalent to `drop_remainder=True` and prevents TensorFlow
+        # from re-tracing the model.fit() function for a different batch size,
+        # which resolves the performance warning.

@@ -635,14 +635,24 @@ def test_transformer_embedder_pipeline_run():
     config.TRANSFORMER_BASE_BATCH_SIZE = 1
 
     try:
-        # This test does not use MLflow internally, so no context is needed.
-        # It's kept separate for clarity.
-        with mlflow.start_run(run_name="Transformer_Embedder_SMOKE_TEST"):
+        # FIX: Add meaningful logging to the MLflow run context.
+        with mlflow.start_run(run_name="Transformer_Embedder_SMOKE_TEST") as run:
+            mlflow.set_tag("test_type", "smoke_test")
+            # Log key parameters used in the test
+            model_config_to_test = config.TRANSFORMER_MODELS_TO_RUN[0]
+            mlflow.log_params({
+                "model_name": model_config_to_test['name'],
+                "hf_id": model_config_to_test['hf_id'],
+                "pooling_strategy": config.TRANSFORMER_POOLING_STRATEGY
+            })
+
             embedder = TransformerEmbedder(config)
             generated_paths = embedder.run()
             assert isinstance(generated_paths, dict), "TransformerEmbedder.run() should return a dictionary."
             assert "ProtBERT" in generated_paths, "Expected 'ProtBERT' key in the returned paths."
             assert generated_paths["ProtBERT"].exists(), "The embedding file for ProtBERT was not created."
+            # Log the output file as an artifact for inspection
+            mlflow.log_artifact(str(generated_paths["ProtBERT"]), "generated_embeddings")
             print("\n  TransformerEmbedder smoke test ran successfully.")
     except Exception as e:
         print(f"\n  TransformerEmbedder smoke test FAILED: {e}")

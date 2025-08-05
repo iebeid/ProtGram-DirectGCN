@@ -158,7 +158,11 @@ class TransformerEmbedder:
         return {}
 
     def run(self) -> Dict[str, Path]:
-        """Main entry point for the Transformer embedding generation pipeline."""
+        """
+        Main entry point for the Transformer embedding generation pipeline.
+        This method efficiently processes the sequence file in chunks, running all
+        configured models on each chunk before loading the next one to minimize disk I/O.
+        """
         DataUtils.print_header("PIPELINE STEP: Generating Embeddings from Transformers")
         self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
         generated_paths = {}
@@ -170,33 +174,44 @@ class TransformerEmbedder:
 
         id_map = DataUtils.get_id_mapping(self.config)
 
-        for model_config_item in self.config.TRANSFORMER_MODELS_TO_RUN:
-            model_name = model_config_item['name']
-            final_embeddings = {}
-            chunk_size = getattr(self.config, 'TRANSFORMER_CHUNK_SIZE', 10000)
+        # Initialize a dictionary to hold the aggregated embeddings for each model.
+        final_embeddings_per_model = {
+            model_config['name']: {} for model_config in self.config.TRANSFORMER_MODELS_TO_RUN
+        }
 
-            # Process sequences in chunks to manage memory
-            sequence_iterator = FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS)
-            chunk_num = 0
-            while True:
-                chunk_num += 1
-                chunk = [item for _, item in zip(range(chunk_size), sequence_iterator)]
-                if not chunk:
-                    break
+        # --- Main Efficient Loop ---
+        # This loop reads the FASTA file only ONCE.
+        chunk_size = getattr(self.config, 'TRANSFORMER_CHUNK_SIZE', 10000)
+        sequence_iterator = FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS)
+        chunk_num = 0
+        while True:
+            chunk_num += 1
+            # Read one chunk of sequences into memory
+            chunk = [item for _, item in zip(range(chunk_size), sequence_iterator)]
+            if not chunk:
+                break
 
-                DataUtils.print_header(f"Processing Chunk {chunk_num} for {model_name}")
+            DataUtils.print_header(f"Processing Sequence Chunk {chunk_num} ({len(chunk)} sequences)")
+
+            # Iterate through each configured model and process the SAME chunk
+            for model_config_item in self.config.TRANSFORMER_MODELS_TO_RUN:
+                model_name = model_config_item['name']
                 chunk_embeddings = self._generate_embeddings_for_single_model(model_config_item, chunk, id_map)
                 if chunk_embeddings:
-                    final_embeddings.update(chunk_embeddings)
+                    final_embeddings_per_model[model_name].update(chunk_embeddings)
 
-            # Save the aggregated embeddings after all chunks are processed
-            if final_embeddings:
-                embedding_dim = next(iter(final_embeddings.values())).shape[0]
+        # --- Save final results after all chunks have been processed ---
+        DataUtils.print_header("Saving All Transformer Embeddings")
+        for model_name, embeddings_dict in final_embeddings_per_model.items():
+            if embeddings_dict:
+                embedding_dim = next(iter(embeddings_dict.values())).shape[0]
                 output_filename = f"{model_name}_{self.config.TRANSFORMER_POOLING_STRATEGY}_dim{embedding_dim}.h5"
                 output_path = self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR / output_filename
-                print(f"  Saving final aggregated embeddings to: {output_path}")
-                DataUtils.write_h5(final_embeddings, output_path, f"Writing H5 for {model_name}")
+                print(f"  Saving final aggregated embeddings for {model_name}...")
+                DataUtils.write_h5(embeddings_dict, output_path, f"Writing H5 for {model_name}")
                 generated_paths[model_name] = output_path
+            else:
+                print(f"  No embeddings were generated for {model_name}. Skipping save.")
 
         DataUtils.print_header("Transformer Embedding PIPELINE STEP FINISHED")
         return generated_paths

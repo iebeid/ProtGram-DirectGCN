@@ -15,6 +15,7 @@ import tempfile
 import subprocess
 import webbrowser
 from pathlib import Path
+import os
 from typing import List, Dict
 
 import tensorflow as tf
@@ -28,6 +29,14 @@ if gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
     except RuntimeError as e:
         print(f"Warning: Could not set memory growth for GPUs: {e}")
+
+# --- NEW: Suppress noisy TensorFlow informational logs ---
+# Sets the log level to '2', which corresponds to WARNING.
+# This will hide the benign 'I' (INFO) messages like 'Filling up shuffle buffer'
+# and 'End of sequence', making the log easier to read.
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+tf.get_logger().setLevel('WARNING')
+# --- END NEW ---
 
 from configuration.config import Config
 from configuration.data import setup_data
@@ -79,6 +88,28 @@ def _get_fasta_files_to_process(config: Config, temp_dir: Path) -> List[Path]:
     Returns a list of paths to the files that should be processed in the main loop.
     """
     files_to_process = []
+
+    # --- NEW: Interactive FASTA file selection ---
+    if len(config.ORIGINAL_SEQUENCE_FILE_PATHS) > 1:
+        print("\n--- Multiple FASTA files found. Please choose one to process for this run: ---")
+        for i, path in enumerate(config.ORIGINAL_SEQUENCE_FILE_PATHS):
+            print(f"  [{i + 1}] {path.name}")
+
+        while True:
+            try:
+                choice = int(input(f"Enter number (1-{len(config.ORIGINAL_SEQUENCE_FILE_PATHS)}): "))
+                if 1 <= choice <= len(config.ORIGINAL_SEQUENCE_FILE_PATHS):
+                    chosen_path = config.ORIGINAL_SEQUENCE_FILE_PATHS[choice - 1]
+                    print(f"You selected: {chosen_path.name}")
+                    # The rest of the pipeline will now run on only this file.
+                    config.ORIGINAL_SEQUENCE_FILE_PATHS = [chosen_path]
+                    break
+                else:
+                    print("Invalid choice. Please try again.")
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+    # --- END NEW ---
+
     should_downsample = config.SEQUENCE_DOWNSAMPLE_FRACTION and 0 < config.SEQUENCE_DOWNSAMPLE_FRACTION < 1.0
 
     if should_downsample:
@@ -204,10 +235,12 @@ def main():
         try:
             DataUtils.print_header("Starting Protein-Protein Interaction Meta-Pipeline")
             if base_config.DEBUG_VERBOSE:
-                print("--- Base Configuration Loaded ---")
-                flags = {k: v for k, v in base_config.__dict__.items() if k.startswith("RUN_")}
-                for key, value in flags.items():
-                    print(f"  {key}: {value}")
+                # FIX: Print all public configuration values for complete transparency.
+                print("--- Full Configuration Values ---")
+                for key, value in sorted(vars(base_config).items()):
+                    # Exclude private/internal attributes for cleaner logs
+                    if not key.startswith('_'):
+                        print(f"  {key:<40} | {value}")
                 print("--------------------------")
 
             if base_config.USE_MLFLOW:

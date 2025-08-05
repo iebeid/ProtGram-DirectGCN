@@ -20,9 +20,12 @@ dist/
 *.blg
 *.out
 *.synctex.gz
+*.toc
 
 # Logs
 *.log
 
-# Example of a sensitive file (replace with your actual file names)
-#config/startup.sh
+# Ignore all data files, except for the ground truth data and custom models
+data/*
+!data/ground_truth/
+!data/models/

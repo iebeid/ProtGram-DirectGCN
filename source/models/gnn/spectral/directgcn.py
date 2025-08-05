@@ -22,12 +22,12 @@ class DirectGCNLayer(MessagePassing):
     directed and undirected paths, combined via a hierarchical gating mechanism.
     """
 
-    def __init__(self, in_channels: int, out_channels: int, num_nodes: int, use_vector_coeffs: bool = True):
+    def __init__(self, in_channels: int, out_channels: int, num_nodes: int, gating_mode: str = 'vector'):
         super().__init__(aggr='add')
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_nodes = num_nodes
-        self.use_vector_coeffs = use_vector_coeffs
+        self.gating_mode = gating_mode
 
         # --- Path-Specific Components ---
         self.lin_main_in = nn.Linear(in_channels, out_channels, bias=False)
@@ -51,19 +51,19 @@ class DirectGCNLayer(MessagePassing):
         self.bias_shared_undir = nn.Parameter(torch.Tensor(out_channels))
 
         # --- Hierarchical Learnable Coefficients ---
-        if self.use_vector_coeffs and self.num_nodes > 0:
+        if self.gating_mode == 'vector' and self.num_nodes > 0:
             self.C_in_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
             self.C_out_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
             self.C_directed_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
             self.C_undirected_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
             self.C_all_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
-        else:
-            self.use_vector_coeffs = False
+        elif self.gating_mode == 'scalar':
             self.C_in = nn.Parameter(torch.Tensor(1))
             self.C_out = nn.Parameter(torch.Tensor(1))
             self.C_directed = nn.Parameter(torch.Tensor(1))
             self.C_undirected = nn.Parameter(torch.Tensor(1))
             self.C_all = nn.Parameter(torch.Tensor(1))
+        # If gating_mode is 'none', no coefficient parameters are created.
 
         # --- Learnable Node-Specific Constant ---
         if self.num_nodes > 0:
@@ -86,14 +86,14 @@ class DirectGCNLayer(MessagePassing):
                      self.bias_shared_in, self.bias_shared_out, self.bias_shared_undir]:
             nn.init.zeros_(bias)
 
-        # Initialize all gating coefficients to 1
-        if self.use_vector_coeffs:
+        # Initialize gating coefficients if they exist
+        if self.gating_mode == 'vector' and hasattr(self, 'C_in_vec'):
             nn.init.ones_(self.C_in_vec)
             nn.init.ones_(self.C_out_vec)
             nn.init.ones_(self.C_directed_vec)
             nn.init.ones_(self.C_undirected_vec)
             nn.init.ones_(self.C_all_vec)
-        else:
+        elif self.gating_mode == 'scalar':
             nn.init.ones_(self.C_in)
             nn.init.ones_(self.C_out)
             nn.init.ones_(self.C_directed)
@@ -132,19 +132,22 @@ class DirectGCNLayer(MessagePassing):
         uc_combined = self.proj_undir(concatenated_undir)
 
         # --- 4. Get Coefficients and Constant ---
-        if self.use_vector_coeffs and original_indices is not None:
+        if self.gating_mode == 'vector' and original_indices is not None:
             # When using Cluster-GCN, we need to select the coefficients for the nodes in the current subgraph
             c_in, c_out = self.C_in_vec[original_indices], self.C_out_vec[original_indices]
             c_undirected = self.C_undirected_vec[original_indices]
             constant_term = self.constant[original_indices] if self.constant is not None else 0
-        elif self.use_vector_coeffs:
+        elif self.gating_mode == 'vector':
             # Full-batch training
             c_in, c_out = self.C_in_vec, self.C_out_vec
             c_undirected = self.C_undirected_vec
             constant_term = self.constant if self.constant is not None else 0
-        else:
+        elif self.gating_mode == 'scalar':
             # Using scalar coefficients
             c_in, c_out, c_undirected = self.C_in, self.C_out, self.C_undirected
+            constant_term = 0
+        else: # gating_mode == 'none'
+            c_in, c_out, c_undirected = 1.0, 1.0, 1.0
             constant_term = 0
 
         # --- 5. Final Hierarchical Combination ---
@@ -164,8 +167,8 @@ class DirectGCN(nn.Module):
 
     def __init__(self, layer_dims: List[int], num_graph_nodes: Optional[int],
                  task_num_output_classes: int, n_gram_len: int,
-                 one_gram_dim: int, max_pe_len: int, dropout: float,
-                 use_vector_coeffs: bool, l2_eps: float = 1e-12):
+                 one_gram_dim: int, max_pe_len: int, dropout: float, gating_mode: str,
+                 l2_eps: float = 1e-12):
         super().__init__()
         self.n_gram_len = n_gram_len
         self.one_gram_dim = one_gram_dim
@@ -185,8 +188,7 @@ class DirectGCN(nn.Module):
         for i in range(len(layer_dims) - 1):
             in_dim, out_dim = layer_dims[i], layer_dims[i + 1]
             current_num_nodes = num_graph_nodes if num_graph_nodes is not None else 0
-            effective_use_vector_coeffs = use_vector_coeffs and current_num_nodes > 0
-            self.convs.append(DirectGCNLayer(in_dim, out_dim, current_num_nodes, effective_use_vector_coeffs))
+            self.convs.append(DirectGCNLayer(in_dim, out_dim, current_num_nodes, gating_mode))
             # Add a projection layer for the residual connection if dimensions don't match
             self.res_projs.append(nn.Linear(in_dim, out_dim) if in_dim != out_dim else nn.Identity())
 

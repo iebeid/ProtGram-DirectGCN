@@ -38,7 +38,13 @@ class PostUtils:
 
     def pool_lower_level_embeddings(self, graph_obj: DirectedNgramGraph, prev_level_embeddings: np.ndarray,
                                     prev_level_map: Dict[str, int]) -> Optional[torch.Tensor]:
-        """Pools embeddings from level n-1 to initialize features for level n."""
+        """
+        Pools embeddings from level n-1 to initialize features for level n.
+
+        This is NOT the inverted index method. It's a direct feature engineering step where
+        the features for an n-gram (e.g., "ACD") are created by looking up and
+        concatenating the final embeddings of its constituent n-1 grams ("AC" and "CD").
+        """
         print(f"  Initializing features for n={graph_obj.n_value} by pooling (n-1)-gram constituent embeddings...")
         num_current_nodes = graph_obj.number_of_nodes
         prev_embedding_dim = prev_level_embeddings.shape[1]
@@ -58,7 +64,7 @@ class PostUtils:
 
     def pool_to_protein_level(self, ngram_embeddings: Dict[int, np.ndarray]) -> Optional[Dict[str, np.ndarray]]:
         """Pools the final n-gram embeddings to the protein level."""
-        DataUtils.print_header("Step 3: Pooling N-gram Embeddings to Protein Level")
+        DataUtils.print_header("Step 3: Pooling Final N-gram Embeddings to Protein Level")
         final_n = self.config.GCN_NGRAM_MAX_N
         final_ngram_embeddings = ngram_embeddings.get(final_n)
 

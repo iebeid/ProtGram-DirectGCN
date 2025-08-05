@@ -85,7 +85,7 @@ class Config:
         self.SEQUENCE_FILE_PATHS = self.ORIGINAL_SEQUENCE_FILE_PATHS.copy()
         self.POS_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "positive_interactions.csv"
         self.NEG_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "negative_interactions.csv"
-        self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "idmapping_selected.tab"
+        self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "idmapping.dat"
         self.PROTT5_MODEL_PATH = self.DATA_MODELS_DIR / "per-protein.h5"
 
     def _setup_pipeline_flags(self):
@@ -100,7 +100,7 @@ class Config:
         self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers
         self.RUN_SINGLETON_GCN_EVAL = True # Runs a fast evaluation on the n=1 graph for rapid prototyping
         self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data
-        self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = None  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
+        self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = 0.2  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
         self.CLEANUP_DUMMY_DATA = True
         self.ENABLE_FILE_LOGGING = True
 
@@ -135,7 +135,7 @@ class Config:
                 "checksum": None
             },
             "ID_MAPPING_TSV": {
-                "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping_selected.tab.gz",
+                "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping.dat.gz",
                 "path": self.ID_MAPPING_PATH,
                 "post_process": "ungzip",
                 "checksum": None
@@ -182,8 +182,9 @@ class Config:
         # Model Architecture
         self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]
         self.GCN_1GRAM_INIT_DIM = 512
-        self.GCN_MAX_PE_LEN = 512
-        self.GCN_USE_VECTOR_COEFFS = False
+        self.GCN_MAX_PE_LEN = 512 # Max length for positional embeddings
+        # Gating mode for DirectGCN. Options: 'vector', 'scalar', 'none'
+        self.GCN_GATING_COEFF_MODE = 'vector'
 
         # Training Hyperparameters
         self.GCN_EPOCHS_PER_LEVEL = 300
@@ -237,7 +238,8 @@ class Config:
     def _setup_transformer_params(self):
         """Sets parameters for the Transformer (e.g., ProtBERT) pipeline."""
         self.TRANSFORMER_MODELS_TO_RUN = [
-            {"name": "ProtBERT", "hf_id": "Rostlab/prot_bert", "is_t5": False, "batch_size_multiplier": 1}
+            {"name": "ProtBERT", "hf_id": "Rostlab/prot_bert", "is_t5": False, "batch_size_multiplier": 1.0},
+            {"name": "ESM2", "hf_id": "facebook/esm2_t6_8M_UR50D", "is_t5": False, "batch_size_multiplier": 1.0}
         ]
         self.TRANSFORMER_MAX_LENGTH = 1024
         self.TRANSFORMER_BASE_BATCH_SIZE = 16
@@ -257,7 +259,7 @@ class Config:
         self.LSTM_TRAIN_STEP = 50
         self.LSTM_LEARNING_RATE = 0.001
         # ADD THIS LINE: A separate downsample for the LSTM pipeline
-        self.LSTM_DOWNSAMPLE_FRACTION: Optional[float] = 0.9 # Use only 1% of data for LSTM
+        self.LSTM_DOWNSAMPLE_FRACTION: Optional[float] = 0.5 # Use only 1% of data for LSTM
 
     def _setup_singleton_eval_params(self):
         """Sets parameters for the rapid, n=1 GCN evaluation."""
