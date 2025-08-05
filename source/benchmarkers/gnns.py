@@ -9,7 +9,7 @@ import os
 import traceback
 from typing import Dict, List, Any, Tuple
 import mlflow
-
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
@@ -111,7 +111,7 @@ class GNNBenchmarker:
                 one_gram_dim=0,  # Not applicable for standard benchmarks
                 max_pe_len=0,  # Not applicable for standard benchmarks
                 dropout=0.5,
-                use_vector_coeffs=False  # Use scalar coeffs for general benchmarks
+                gating_mode='scalar'  # Use scalar coeffs for general benchmarks
             )
         else:
             raise ValueError(f"Model '{name}' not found in GNNBenchmarker.")
@@ -280,6 +280,14 @@ class GNNBenchmarker:
 
                     val_acc, test_acc, history_df = self.train_and_evaluate(model, data)
                     results.append({"dataset": variant_name, "model": model_name, "best_val_accuracy": val_acc, "test_accuracy": test_acc, "error": None})
+
+                    # --- MLFLOW INTEGRATION: Log
+                    mlflow.log_metrics({"best_val_accuracy": val_acc, "test_accuracy": test_acc})
+                    # Create a temporary file for the history and log it
+                    history_path = Path(self.output_dir) / f"history_{model_name}_{variant_name}.csv"
+                    history_df.to_csv(history_path, index=False)
+                    mlflow.log_artifact(str(history_path), "training_history")
+                    history_path.unlink()  # Clean up the temp f
 
                     # --- MLFLOW INTEGRATION: Log
             except Exception as e:

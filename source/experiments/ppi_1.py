@@ -91,7 +91,9 @@ class PPIPipeline:
             val_pairs: List[Tuple[str, str, int]],
             protein_embeddings: Dict[str, np.ndarray],
             edge_feature_dim: int,
-            embedding_dim: int
+            embedding_dim: int,
+            embedding_name: str,
+            fold_num: int
     ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
         """
         Handles the logic for a single fold of cross-validation: model building,
@@ -130,13 +132,21 @@ class PPIPipeline:
                             callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=self.config.EARLY_STOPPING_PATIENCE, restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else [])
         print("    Model training finished.")
 
-        # --- NEW: SHAP Interpretability ---
-        # Generate SHAP summary plot for the first fold of the main embedding
-        if self.config.EVAL_GENERATE_SHAP_SUMMARY:
-            train_features_for_shap = np.vstack([x for x, y in train_ds.take(10)]) # Sample background data
-            reporter = EvaluationReporter(self.config.RESULTS_EVALUATION_DIR, self.config.EVAL_K_VALUES_FOR_TABLE)
-            reporter.generate_shap_summary(model, train_features_for_shap, "MLP_Classifier", 1)
-        # --- END NEW ---
+        # --- NEW: Configurable SHAP Interpretability ---
+        # Generate SHAP summary plot for the first fold of the main embedding, if configured.
+        is_main_embedding = (embedding_name == self.config.EVAL_MAIN_EMBEDDING_FOR_STATS)
+        if self.config.EVAL_GENERATE_SHAP_SUMMARY and fold_num == 0 and is_main_embedding:
+            print(f"    Generating SHAP summary for main model '{embedding_name}' on fold {fold_num + 1}...")
+            # Sample background data from the training set for the explainer
+            # Taking 10 batches should be more than enough background data.
+            train_features_for_shap = np.vstack([x for x, y in train_ds.take(10)])
+            reporter = EvaluationReporter(str(self.config.RESULTS_EVALUATION_DIR), self.config.EVAL_K_VALUES_FOR_TABLE)
+            reporter.generate_shap_summary(
+                model=model,
+                background_data=train_features_for_shap,
+                model_name=embedding_name,  # Use the actual embedding name
+                fold_num=fold_num + 1  # Use the actual fold number (1-based for display)
+            )
 
         # --- Evaluate Model ---
         print("    Evaluating model on validation set...")
@@ -210,7 +220,8 @@ class PPIPipeline:
                 fold_metrics, history = self._train_and_evaluate_fold(
                     train_pairs=train_pairs_fold, val_pairs=val_pairs_fold,
                     protein_embeddings=protein_embeddings, edge_feature_dim=edge_feature_dim,
-                    embedding_dim=embedding_dim
+                    embedding_dim=embedding_dim,
+                    embedding_name=embedding_name, fold_num=fold_num
                 )
                 fold_metrics_list.append(fold_metrics)
                 if fold_num == 0:

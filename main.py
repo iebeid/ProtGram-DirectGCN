@@ -146,6 +146,22 @@ def run_pipeline_for_dataset(base_config: Config, fasta_path: Path):
     config = copy.deepcopy(base_config)
     dataset_name = fasta_path.stem
 
+    # --- DYNAMICALLY SET ID MAPPING SOURCE DATABASE ---
+    # This addresses the issue where the mapping source was hardcoded, leading
+    # to incorrect mappings if a FASTA file other than UniRef50 was used.
+    dataset_name_lower = dataset_name.lower()
+    if 'uniref100' in dataset_name_lower:
+        config.API_MAPPING_FROM_DB = "UniRef100"
+    elif 'uniref90' in dataset_name_lower:
+        config.API_MAPPING_FROM_DB = "UniRef90"
+    elif 'uniref50' in dataset_name_lower:
+        config.API_MAPPING_FROM_DB = "UniRef50"
+    else:  # Default for uniprot_sprot or other files
+        config.API_MAPPING_FROM_DB = "UniProtKB_AC-ID"
+
+    print(f"  - Dynamically set API mapping source DB to: '{config.API_MAPPING_FROM_DB}' for this dataset.")
+    # --- END DYNAMIC SETTING ---
+
     DataUtils.print_header(f"PROCESSING DATASET: {dataset_name.upper()}")
 
     config.SEQUENCE_FILE_PATHS = [fasta_path]

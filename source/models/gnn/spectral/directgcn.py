@@ -54,15 +54,11 @@ class DirectGCNLayer(MessagePassing):
         if self.gating_mode == 'vector' and self.num_nodes > 0:
             self.C_in_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
             self.C_out_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
-            self.C_directed_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
             self.C_undirected_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
-            self.C_all_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
         elif self.gating_mode == 'scalar':
             self.C_in = nn.Parameter(torch.Tensor(1))
             self.C_out = nn.Parameter(torch.Tensor(1))
-            self.C_directed = nn.Parameter(torch.Tensor(1))
             self.C_undirected = nn.Parameter(torch.Tensor(1))
-            self.C_all = nn.Parameter(torch.Tensor(1))
         # If gating_mode is 'none', no coefficient parameters are created.
 
         # --- Learnable Node-Specific Constant ---
@@ -90,15 +86,11 @@ class DirectGCNLayer(MessagePassing):
         if self.gating_mode == 'vector' and hasattr(self, 'C_in_vec'):
             nn.init.ones_(self.C_in_vec)
             nn.init.ones_(self.C_out_vec)
-            nn.init.ones_(self.C_directed_vec)
             nn.init.ones_(self.C_undirected_vec)
-            nn.init.ones_(self.C_all_vec)
         elif self.gating_mode == 'scalar':
             nn.init.ones_(self.C_in)
             nn.init.ones_(self.C_out)
-            nn.init.ones_(self.C_directed)
             nn.init.ones_(self.C_undirected)
-            nn.init.ones_(self.C_all)
 
         if self.constant is not None:
             nn.init.xavier_uniform_(self.constant)

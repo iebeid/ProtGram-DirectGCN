@@ -5,55 +5,46 @@
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
-from typing import List, Tuple
+import random
+from typing import List, Tuple, Dict, Optional
 
 import numpy as np
-from tensorflow.keras.utils import Sequence, to_categorical
+import torch
+import torch.nn as nn
+from sklearn.model_selection import train_test_split
+from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
+from tqdm.auto import tqdm
+
+from configuration.config import Config
+from source.utils.data import DataUtils, FastaUtils
+from source.models.rnn.lstm import LSTM
+from source.utils.models import EarlyStopper, EmbeddingProcessor
 
 
-# LstmCorpusGenerator class remains the same and is correct.
-class LstmCorpusGenerator(Sequence):
+class LstmPytorchDataset(Dataset):
     """
-    Generates batches of data for the LSTM model on-the-fly.
-    This version uses a step parameter to control the sliding window, allowing
-    for much faster, non-overlapping sequence generation.
+    A PyTorch Dataset to generate training samples for next-character prediction.
+    This replaces the Keras-based LstmCorpusGenerator.
     """
 
-    def __init__(self, sequences: List[Tuple[str, str]], batch_size: int, seq_len: int, step: int, vocab_size: int,
-                 char_to_int: dict):
-        self.batch_size = batch_size
+    def __init__(self, text: str, seq_len: int, step: int, char_to_int: Dict[str, int]):
+        self.text = text
         self.seq_len = seq_len
         self.step = step
-        self.vocab_size = vocab_size
         self.char_to_int = char_to_int
+        # Calculate the number of sequences that can be generated
+        self.num_sequences = (len(self.text) - self.seq_len - 1) // self.step
+        print(f"  [PyTorch Dataset] Corpus has {len(text):,} characters, creating {self.num_sequences:,} samples.")
 
-        print("  [Generator] Concatenating sequences for corpus...")
-        self.text = "".join([seq for _, seq in sequences])
-        self.text_len = len(self.text)
-        print(f"  [Generator] Corpus created with {self.text_len:,} characters.")
+    def __len__(self) -> int:
+        return self.num_sequences
 
-        self.num_sequences = (self.text_len - self.seq_len) // self.step
-        print(f"  [Generator] Created {self.num_sequences:,} training samples with a step of {self.step}.")
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        start_pos = idx * self.step
+        input_seq_text = self.text[start_pos: start_pos + self.seq_len]
+        target_char = self.text[start_pos + self.seq_len]
 
-    def __len__(self):
-        return self.num_sequences // self.batch_size
-
-    def __getitem__(self, index):
-        batch_x, batch_y = [], []
-        start_sequence_index = index * self.batch_size
-
-        for i in range(self.batch_size):
-            current_sequence_index = start_sequence_index + i
-            text_start_pos = current_sequence_index * self.step
-            text_end_pos = text_start_pos + self.seq_len
-
-            if text_end_pos >= self.text_len:
-                continue
-
-            input_seq = self.text[text_start_pos:text_end_pos]
-            output_char = self.text[text_end_pos]
-
-            batch_x.append([self.char_to_int[char] for char in input_seq])
-            batch_y.append(self.char_to_int[output_char])
-
-        return np.array(batch_x), to_categorical(batch_y, num_classes=self.vocab_size)
+        input_seq = torch.tensor([self.char_to_int[c] for c in input_seq_text], dtype=torch.long)
+        target = torch.tensor(self.char_to_int[target_char], dtype=torch.long)
+        return input_seq, target

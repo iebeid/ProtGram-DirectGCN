@@ -143,7 +143,7 @@ class SingletonXGCNTrainer:
                 num_graph_nodes=data.num_nodes,
                 task_num_output_classes=num_classes, n_gram_len=1,
                 one_gram_dim=self.config.GCN_1GRAM_INIT_DIM, max_pe_len=self.config.GCN_MAX_PE_LEN,
-                dropout=0.5, use_vector_coeffs=False
+                dropout=0.5, gating_mode='scalar'  # Use scalar for simpler singleton eval
             )
         raise ValueError(f"Unknown model name '{name}' for singleton evaluation.")
 

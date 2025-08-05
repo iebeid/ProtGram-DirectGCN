@@ -252,42 +252,112 @@ class EmbeddingProcessor:
 
     @staticmethod
     def pool_ngram_embeddings_for_protein_fast(protein_sequences: List[Tuple[str, str]], n_val: int,
-                                               ngram_map: Dict[str, int], ngram_embeddings: np.ndarray) -> Dict[str, np.ndarray]:
-        """A fast, array-based method for pooling n-gram embeddings to the protein level."""
-        print("  Starting fast protein-level pooling using inverted index method...")
+                                               ngram_map: Dict[str, int], ngram_embeddings: np.ndarray,
+                                               strategy: str = 'mean') -> Tuple[Dict[str, np.ndarray], Dict[str, Dict[int, float]]]:
+        """
+        A method for pooling n-gram embeddings to the protein level.
+        Supports 'mean', 'sum', and 'max' via an efficient inverted index.
+        Supports 'attention' via a protein-by-protein iteration.
+
+        Returns:
+            A tuple containing (pooled_embeddings, attention_weights).
+            The attention_weights dict is {protein_id: {ngram_idx: weight}} and is
+            only populated if strategy is 'attention'.
+        """
+        print(f"  Starting protein-level pooling (Strategy: {strategy})...")
         if not protein_sequences: return {}
 
-        num_proteins = len(protein_sequences)
-        embedding_dim = ngram_embeddings.shape[1]
-        protein_ids_ordered = [p_data[0] for p_data in protein_sequences]
+        # --- Strategy Dispatcher ---
+        if strategy in ['mean', 'sum', 'max']:
+            # --- Fast Inverted Index Method ---
+            print("    Using fast inverted index method.")
+            num_proteins = len(protein_sequences)
+            embedding_dim = ngram_embeddings.shape[1]
+            protein_ids_ordered = [p_data[0] for p_data in protein_sequences]
 
-        protein_embedding_sums = np.zeros((num_proteins, embedding_dim), dtype=np.float32)
-        protein_ngram_counts = np.zeros(num_proteins, dtype=np.int32)
+            if strategy == 'max':
+                protein_pooled_values = np.full((num_proteins, embedding_dim), -np.inf, dtype=np.float32)
+            else:  # for 'mean' and 'sum'
+                protein_pooled_values = np.zeros((num_proteins, embedding_dim), dtype=np.float32)
+            protein_ngram_counts = np.zeros(num_proteins, dtype=np.int32)
 
-        print("    Step 1/3: Building inverted index (n-gram -> proteins)...")
-        ngram_idx_to_protein_indices = [[] for _ in range(len(ngram_embeddings))]
-        for prot_idx, (_, seq) in enumerate(tqdm(protein_sequences, desc="    Building inverted index", leave=False)):
-            if len(seq) >= n_val:
-                for i in range(len(seq) - n_val + 1):
-                    ngram_idx = ngram_map.get("".join(seq[i:i + n_val]))
-                    if ngram_idx is not None:
-                        ngram_idx_to_protein_indices[ngram_idx].append(prot_idx)
+            ngram_idx_to_protein_indices = [[] for _ in range(len(ngram_embeddings))]
+            for prot_idx, (_, seq) in enumerate(tqdm(protein_sequences, desc="    Building inverted index", leave=False)):
+                if len(seq) >= n_val:
+                    for i in range(len(seq) - n_val + 1):
+                        ngram_idx = ngram_map.get("".join(seq[i:i + n_val]))
+                        if ngram_idx is not None:
+                            ngram_idx_to_protein_indices[ngram_idx].append(prot_idx)
 
-        print("    Step 2/3: Aggregating n-gram embeddings to proteins...")
-        for ngram_idx, prot_indices in enumerate(tqdm(ngram_idx_to_protein_indices, desc="    Aggregating embeddings", leave=False)):
-            if prot_indices:
-                ngram_emb = ngram_embeddings[ngram_idx].astype(np.float32)
-                protein_embedding_sums[prot_indices] += ngram_emb
-                protein_ngram_counts[prot_indices] += 1
+            for ngram_idx, prot_indices in enumerate(tqdm(ngram_idx_to_protein_indices, desc="    Aggregating embeddings", leave=False)):
+                if prot_indices:
+                    ngram_emb = ngram_embeddings[ngram_idx].astype(np.float32)
+                    if strategy == 'max':
+                        np.maximum(protein_pooled_values[prot_indices], ngram_emb, out=protein_pooled_values[prot_indices])
+                    else:  # 'mean' or 'sum'
+                        protein_pooled_values[prot_indices] += ngram_emb
+                    protein_ngram_counts[prot_indices] += 1
 
-        print("    Step 3/3: Finalizing mean-pooled embeddings...")
-        valid_counts_mask = protein_ngram_counts > 0
-        protein_embedding_sums[valid_counts_mask] /= protein_ngram_counts[valid_counts_mask, np.newaxis]
+            valid_counts_mask = protein_ngram_counts > 0
+            if strategy == 'mean':
+                protein_pooled_values[valid_counts_mask] /= protein_ngram_counts[valid_counts_mask, np.newaxis]
+            elif strategy == 'max':
+                protein_pooled_values[~valid_counts_mask] = 0
 
-        pooled_embeddings = {protein_ids_ordered[i]: protein_embedding_sums[i].astype(ngram_embeddings.dtype)
-                             for i in range(num_proteins) if valid_counts_mask[i]}
-        print(f"  Fast pooling complete. Generated {len(pooled_embeddings)} protein embeddings.")
-        return pooled_embeddings
+            pooled_embeddings = {protein_ids_ordered[i]: protein_pooled_values[i].astype(ngram_embeddings.dtype)
+                                 for i in range(num_proteins) if valid_counts_mask[i]}
+            return pooled_embeddings, {}
+
+        elif strategy == 'attention':
+            # --- HYBRID METHOD for Attention ---
+            # We use an index to speed up the process, separating the slow n-gram lookup
+            # from the actual attention calculation.
+            print("    Using hybrid method for attention pooling (pre-indexing n-grams).")
+
+            pooled_embeddings = {}
+            attention_weights_log = {}
+
+            # Step 1: Pre-build the protein -> [n-gram indices] mapping.
+            num_proteins = len(protein_sequences)
+            protein_ids_ordered = [p_data[0] for p_data in protein_sequences]
+            protein_to_ngram_indices = [[] for _ in range(num_proteins)]
+            for prot_idx, (_, seq) in enumerate(tqdm(protein_sequences, desc="    Building protein->n-gram index")):
+                if len(seq) >= n_val:
+                    for i in range(len(seq) - n_val + 1):
+                        ngram_idx = ngram_map.get("".join(seq[i:i + n_val]))
+                        if ngram_idx is not None:
+                            protein_to_ngram_indices[prot_idx].append(ngram_idx)
+
+            # Step 2: Iterate through the pre-built index to calculate attention.
+            for prot_idx, ngram_indices in enumerate(tqdm(protein_to_ngram_indices, desc="    Calculating Attention")):
+                if not ngram_indices: continue
+
+                prot_id = protein_ids_ordered[prot_idx]
+                protein_ngrams_arr = ngram_embeddings[ngram_indices].astype(np.float32)
+
+                if protein_ngrams_arr.shape[0] > 1:
+                    mean_vec = np.mean(protein_ngrams_arr, axis=0, keepdims=True)
+                    attention_scores = np.dot(protein_ngrams_arr, mean_vec.T).flatten()
+                    exp_scores = np.exp(attention_scores - np.max(attention_scores))
+                    attention_weights = exp_scores / np.sum(exp_scores)
+                    pooled_emb = np.dot(attention_weights, protein_ngrams_arr)
+                    # Log the weights by their n-gram index
+                    attention_weights_log[prot_id] = {
+                        idx: weight for idx, weight in zip(ngram_indices, attention_weights)
+                    }
+                elif protein_ngrams_arr.shape[0] == 1:
+                    pooled_emb = protein_ngrams_arr[0]
+                    # Attention for a single item is 1.0
+                    attention_weights_log[prot_id] = {ngram_indices[0]: 1.0}
+                else: continue
+
+                pooled_embeddings[prot_id] = pooled_emb.astype(ngram_embeddings.dtype)
+            return pooled_embeddings, attention_weights_log
+        else:
+            raise ValueError(f"Unknown pooling strategy: '{strategy}'")
+
+        print(f"  Pooling complete. Generated {len(pooled_embeddings)} protein embeddings.") # This line is now unreachable but kept for safety
+        return pooled_embeddings, {}
 
     @staticmethod
     def extract_gcn_node_embeddings(model: nn.Module,
@@ -396,7 +466,8 @@ class EmbeddingProcessor:
                         yield np.array(batch_features, dtype=np.float16), np.array(batch_labels, dtype=np.int32)
                         batch_features, batch_labels = [], []
 
-        # The final, smaller batch is intentionally not yielded.
-        # This is equivalent to `drop_remainder=True` and prevents TensorFlow
-        # from re-tracing the model.fit() function for a different batch size,
-        # which resolves the performance warning.
+        # --- FIX: Yield the final, smaller batch to ensure all data is processed. ---
+        # Modern TensorFlow handles variable batch sizes gracefully, so dropping the remainder
+        # is no longer necessary and leads to incomplete evaluation.
+        if batch_features:
+            yield np.array(batch_features, dtype=np.float16), np.array(batch_labels, dtype=np.int32)

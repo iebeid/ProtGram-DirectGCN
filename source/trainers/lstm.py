@@ -19,36 +19,8 @@ from tqdm.auto import tqdm
 from configuration.config import Config
 from source.utils.data import DataUtils, FastaUtils
 from source.models.rnn.lstm import LSTM
-from source.utils.models import EarlyStopper  # Corrected import path
-
-
-class _LstmPytorchDataset(Dataset):
-    """
-    A PyTorch Dataset to generate training samples for next-character prediction.
-    This replaces the Keras-based LstmCorpusGenerator.
-    """
-
-    def __init__(self, text: str, seq_len: int, step: int, char_to_int: Dict[str, int]):
-        self.text = text
-        self.seq_len = seq_len
-        self.step = step
-        self.char_to_int = char_to_int
-        # Calculate the number of sequences that can be generated
-        self.num_sequences = (len(self.text) - self.seq_len - 1) // self.step
-        print(f"  [PyTorch Dataset] Corpus has {len(text):,} characters, creating {self.num_sequences:,} samples.")
-
-    def __len__(self) -> int:
-        return self.num_sequences
-
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        start_pos = idx * self.step
-        input_seq_text = self.text[start_pos: start_pos + self.seq_len]
-        target_char = self.text[start_pos + self.seq_len]
-
-        input_seq = torch.tensor([self.char_to_int[c] for c in input_seq_text], dtype=torch.long)
-        target = torch.tensor(self.char_to_int[target_char], dtype=torch.long)
-        return input_seq, target
-
+from source.data_builders.lstm import LstmPytorchDataset
+from source.utils.models import EarlyStopper, EmbeddingProcessor
 
 class LSTMBasedEmbedder:
     """
@@ -69,23 +41,14 @@ class LSTMBasedEmbedder:
 
     def _prepare_corpus(self):
         """
-        Prepares the corpus by loading sequences and applying LSTM-specific downsampling.
-        This method is framework-agnostic and remains unchanged.
+        Prepares the corpus by loading sequences. Downsampling is now handled
+        globally by the main pipeline runner.
         """
         print("  Preparing LSTM corpus and character mappings...")
-        all_loaded_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
-
-        should_downsample = self.config.LSTM_DOWNSAMPLE_FRACTION and 0 < self.config.LSTM_DOWNSAMPLE_FRACTION < 1.0
-        if should_downsample:
-            sample_size = int(len(all_loaded_sequences) * self.config.LSTM_DOWNSAMPLE_FRACTION)
-            print(f"  Applying LSTM-specific downsampling: {self.config.LSTM_DOWNSAMPLE_FRACTION:.1%}")
-            print(f"    - Sampling {sample_size} of {len(all_loaded_sequences)} sequences.")
-            self.sequences = random.sample(all_loaded_sequences, sample_size)
-        else:
-            self.sequences = all_loaded_sequences
+        self.sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
 
         if not self.sequences:
-            print("  WARNING: No sequences available for LSTM training after downsampling. Skipping.")
+            print("  WARNING: No sequences available for LSTM training. Skipping.")
             self.vocab_size = 0
             return
 
@@ -121,13 +84,13 @@ class LSTMBasedEmbedder:
         train_text = "".join([seq for _, seq in train_sequences])
         val_text = "".join([seq for _, seq in val_sequences])
 
-        train_dataset = _LstmPytorchDataset(
+        train_dataset = LstmPytorchDataset(
             text=train_text,
             seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
             step=self.config.LSTM_TRAIN_STEP,
             char_to_int=self.char_to_int
         )
-        val_dataset = _LstmPytorchDataset(
+        val_dataset = LstmPytorchDataset(
             text=val_text,
             seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
             step=self.config.LSTM_TRAIN_STEP,
@@ -221,8 +184,13 @@ class LSTMBasedEmbedder:
                 for j in range(len(all_hidden_states_batch)):
                     original_len = original_lengths[j]
                     valid_hidden_states = all_hidden_states_batch[j, :original_len, :]
-                    pooled_embedding = np.mean(valid_hidden_states, axis=0)
-                    protein_embeddings[batch_ids[j]] = pooled_embedding
+                    # Use the centralized, configurable pooling function for consistency
+                    pooled_embedding = EmbeddingProcessor.pool_residue_embeddings(
+                        valid_hidden_states,
+                        strategy=self.config.LSTM_POOLING_STRATEGY,
+                        embedding_dim_if_empty=self.config.LSTM_HIDDEN_DIM
+                    )
+                    protein_embeddings[batch_ids[j]] = pooled_embedding.astype(np.float16)
 
         output_path = self.config.RESULTS_LSTM_EMBEDDINGS_DIR / "lstm_generated_embeddings.h5"
         DataUtils.write_h5(protein_embeddings, output_path, "Writing LSTM Embeddings")

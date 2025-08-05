@@ -19,12 +19,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch_geometric.data import Data
+from torch_geometric.data import Data
 from torch_geometric.utils import subgraph, to_networkx
 from tqdm.auto import tqdm
 
 from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
 from source.data_builders.xgcn import XGCNDataset
+from source.models.gnn.spectral.directgcn import DirectGCN, DirectGCNLayer
 from source.models.gnn.spectral.directgcn import DirectGCN
 from source.models.gnn.spectral.rgcn import RGCN
 from source.models.gnn.spectral.tongidigcn import TongDiGCN
@@ -54,6 +56,7 @@ class ProtGramXGCNTrainer:
         DataUtils.print_header("PIPELINE STEP: Training ProtGram Models & Generating Embeddings")
 
         final_protein_embeddings_per_model = {}
+        final_attention_weights_per_model = {}
         id_map = self._load_id_map()
 
         context = id_map if isinstance(id_map, IDMapGenerator) else nullcontext(id_map)
@@ -63,19 +66,33 @@ class ProtGramXGCNTrainer:
                 DataUtils.print_header(f"Processing Model Type: {model_type.upper()}")
                 ngram_embeddings_per_level = self._train_gnns_hierarchically(model_type)
 
-                final_protein_embeddings = self.helpers.pool_to_protein_level(ngram_embeddings_per_level)
+                final_protein_embeddings, pooling_attention_weights = self.helpers.pool_to_protein_level(ngram_embeddings_per_level)
 
                 if mapper and final_protein_embeddings:
                     print("  Applying ID mapping to final protein embeddings...")
                     final_protein_embeddings = {mapper.get(k, k): v for k, v in final_protein_embeddings.items()}
 
                 final_protein_embeddings_per_model[model_type] = final_protein_embeddings
+                final_attention_weights_per_model[model_type] = pooling_attention_weights
 
         output_paths = self.helpers.save_final_embeddings(final_protein_embeddings_per_model)
 
+        # --- NEW: Save and visualize attention weights ---
+        attention_paths = {}
+        for model_type, attn_data in final_attention_weights_per_model.items():
+            path = self.helpers.save_attention_weights(attn_data, model_type)
+            if path:
+                attention_paths[model_type] = path
+                # Automatically generate the plot after saving
+                from source.utils.results import EvaluationReporter
+                reporter = EvaluationReporter(str(self.config.RESULTS_EVALUATION_DIR), [])
+                reporter.generate_pooling_attention_plot(path, model_type)
+
         if self.config.GCN_RUN_SANITY_CHECK_PPI:
-            main_model_name = self.config.PROTGRAM_MODELS_TO_TRAIN[0]
-            embedding_path_for_check = output_paths.get(f"{main_model_name}_pca", output_paths.get(main_model_name))
+            # FIX: Construct the correct key to look up the embedding path.
+            main_model_name_raw = self.config.PROTGRAM_MODELS_TO_TRAIN[0]  # e.g., 'directgcn'
+            main_model_key = f"ProtGram{main_model_name_raw.capitalize()}"  # e.g., 'ProtGramDirectgcn'
+            embedding_path_for_check = output_paths.get(f"{main_model_key}_pca", output_paths.get(main_model_key))
             if embedding_path_for_check:
                 self.helpers.run_sanity_check_ppi(embedding_path_for_check)
 
@@ -170,7 +187,7 @@ class ProtGramXGCNTrainer:
                 layer_dims=layer_dims, num_graph_nodes=num_nodes,
                 task_num_output_classes=num_classes, n_gram_len=n_val,
                 one_gram_dim=self.config.GCN_1GRAM_INIT_DIM, max_pe_len=self.config.GCN_MAX_PE_LEN,
-                dropout=self.config.GCN_DROPOUT_RATE, use_vector_coeffs=self.config.GCN_USE_VECTOR_COEFFS
+                dropout=self.config.GCN_DROPOUT_RATE, gating_mode=self.config.GCN_GATING_COEFF_MODE
             )
         elif model_type == 'rgcn':
             return RGCN(in_channels, self.config.GCN_HIDDEN_LAYER_DIMS[-1], num_classes, num_relations=2)
@@ -292,44 +309,6 @@ class ProtGramXGCNTrainer:
         print(f"  Graph partitioned into {len(cluster_list)} clusters.")
         return cluster_list
 
-    def _create_subgraph_data_for_model(self, model_type: str, full_graph_obj: DirectedNgramGraph,
-                                        full_features: torch.Tensor, full_labels: torch.Tensor,
-                                        node_subset: torch.Tensor) -> Data:
-        """
-        Creates a valid, self-contained PyG Data object for a subgraph of nodes.
-        This is the critical fix for clustered training. It re-indexes edges.
-        """
-        sub_x = full_features[node_subset]
-        sub_y = full_labels[node_subset]
-
-        data_dict = {'x': sub_x, 'y': sub_y, 'original_indices': node_subset}
-
-        # Use torch_geometric.utils.subgraph to get re-indexed edges for the subset of nodes
-        if model_type == 'directgcn':
-            for name, matrix in [('in', full_graph_obj.mathcal_A_in), ('out', full_graph_obj.mathcal_A_out),
-                                 ('undirected_norm', full_graph_obj.A_undirected_norm_sparse)]:
-                sub_edge_index, sub_edge_weight = subgraph(
-                    subset=node_subset, edge_index=matrix.indices(), edge_attr=matrix.values(),
-                    relabel_nodes=True, num_nodes=full_graph_obj.number_of_nodes
-                )
-                data_dict[f'edge_index_{name}'] = sub_edge_index
-                data_dict[f'edge_weight_{name}'] = sub_edge_weight
-        elif model_type == 'rgcn':
-            sub_edge_index_out, _ = subgraph(node_subset, full_graph_obj.A_out_w.indices(), relabel_nodes=True, num_nodes=full_graph_obj.number_of_nodes)
-            sub_edge_index_in, _ = subgraph(node_subset, full_graph_obj.A_in_w.indices(), relabel_nodes=True, num_nodes=full_graph_obj.number_of_nodes)
-            data_dict['edge_index'] = torch.cat([sub_edge_index_out, sub_edge_index_in], dim=1)
-            data_dict['edge_type'] = torch.cat([
-                torch.zeros(sub_edge_index_out.size(1), dtype=torch.long),
-                torch.ones(sub_edge_index_in.size(1), dtype=torch.long)
-            ])
-        elif model_type == 'tongdigcn':
-            data_dict['edge_index'], _ = subgraph(node_subset, full_graph_obj.A_out_w.indices(), relabel_nodes=True, num_nodes=full_graph_obj.number_of_nodes)
-            data_dict['edge_index_backward'], _ = subgraph(node_subset, full_graph_obj.A_in_w.indices(), relabel_nodes=True, num_nodes=full_graph_obj.number_of_nodes)
-        else:
-            raise ValueError(f"Cannot create subgraph data for unknown model type: {model_type}")
-
-        return Data.from_dict(data_dict)
-
     def _prepare_data_for_model(self, model_type: str, graph: DirectedNgramGraph, features: torch.Tensor, labels: torch.Tensor) -> Data:
         """Prepares a PyG Data object tailored to the specific model's needs for full-batch training."""
         data_dict = {'x': features, 'y': labels}
@@ -351,8 +330,11 @@ class ProtGramXGCNTrainer:
         elif model_type == 'tongdigcn':
             data_dict['edge_index'] = graph.A_out_w.indices()
             data_dict['edge_index_backward'] = graph.A_in_w.indices()
-        else:
-            raise ValueError(f"Cannot prepare data for unknown model type: {model_type}")
+        else:  # Default case for standard GNNs (GCN, GAT, GraphSAGE, etc.)
+            # These models typically operate on a single, undirected, normalized adjacency matrix.
+            print(f"  Note: Using standard undirected graph representation for model type '{model_type}'.")
+            data_dict['edge_index'] = graph.A_undirected_norm_sparse.indices()
+            data_dict['edge_attr'] = graph.A_undirected_norm_sparse.values()
         return Data.from_dict(data_dict)
 
     def _load_id_map(self) -> Optional[Mapping]:

@@ -4,9 +4,11 @@
 # VERSION: 1.0 (Created by Gemini Code Assist)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
-
+import json
+from typing import Tuple
 import random
 from functools import partial
+import h5py
 from typing import Dict, Optional
 from pathlib import Path
 import numpy as np
@@ -62,7 +64,7 @@ class PostUtils:
             new_features[i] = torch.cat([prefix_emb, suffix_emb])
         return new_features
 
-    def pool_to_protein_level(self, ngram_embeddings: Dict[int, np.ndarray]) -> Optional[Dict[str, np.ndarray]]:
+    def pool_to_protein_level(self, ngram_embeddings: Dict[int, np.ndarray]) -> Tuple[Optional[Dict[str, np.ndarray]], Optional[Dict[str, Dict[str, float]]]]:
         """Pools the final n-gram embeddings to the protein level."""
         DataUtils.print_header("Step 3: Pooling Final N-gram Embeddings to Protein Level")
         final_n = self.config.GCN_NGRAM_MAX_N
@@ -70,22 +72,36 @@ class PostUtils:
 
         if final_ngram_embeddings is None or final_ngram_embeddings.size == 0:
             print(f"  ERROR: No n-gram embeddings found for n={final_n}. Cannot generate protein embeddings.")
-            return {}
+            return {}, None
 
         graph_obj_path = self.config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{final_n}.pkl"
         graph_obj: DirectedNgramGraph = DataUtils.load_object(str(graph_obj_path))
         if graph_obj is None:
             print(f"  ERROR: Failed to load graph object for n={final_n} for pooling.")
-            return {}
+            return {}, None
         ngram_map = graph_obj.node_to_idx
         del graph_obj
 
         protein_sequences = list(FastaUtils.parse_sequences([str(p) for p in self.config.SEQUENCE_FILE_PATHS]))
-        pooled_embeddings = EmbeddingProcessor.pool_ngram_embeddings_for_protein_fast(
+        pooled_embeddings, attention_weights_by_idx = EmbeddingProcessor.pool_ngram_embeddings_for_protein_fast(
             protein_sequences=protein_sequences, n_val=final_n,
-            ngram_map=ngram_map, ngram_embeddings=final_ngram_embeddings
+            ngram_map=ngram_map, ngram_embeddings=final_ngram_embeddings,
+            strategy=self.config.GCN_PROTEIN_POOLING_STRATEGY
         )
-        return pooled_embeddings
+
+        # Convert attention weight indices to n-gram strings if attention was used
+        if attention_weights_by_idx:
+            print("  Converting attention weight indices to n-gram strings...")
+            idx_to_ngram = {v: k for k, v in ngram_map.items()}
+            attention_weights_by_str = {}
+            for prot_id, weights_dict in attention_weights_by_idx.items():
+                attention_weights_by_str[prot_id] = {
+                    idx_to_ngram.get(idx, f"UNKNOWN_IDX_{idx}"): float(weight)
+                    for idx, weight in weights_dict.items()
+                }
+            return pooled_embeddings, attention_weights_by_str
+
+        return pooled_embeddings, None
 
     def save_final_embeddings(self, final_embeddings_per_model: Dict[str, Dict[str, np.ndarray]]) -> Dict[str, str]:
         """Saves the final generated protein embeddings to H5 files."""
@@ -102,6 +118,27 @@ class PostUtils:
             else:
                 print(f"  No embeddings to save for model type '{model_type}'.")
         return output_paths
+
+    def save_attention_weights(self, attention_weights: Dict[str, Dict[str, float]], model_type: str) -> Optional[Path]:
+        """
+        Saves the protein pooling attention weights to a JSON file.
+        """
+        if not attention_weights:
+            print(f"  No attention weights to save for model type '{model_type}'.")
+            return None
+
+        output_dir = self.config.RESULTS_GCN_EMBEDDINGS_DIR
+        output_path = output_dir / f"ProtGram{model_type.capitalize()}_n{self.config.GCN_NGRAM_MAX_N}_pooling_attention.json"
+
+        try:
+            with open(output_path, 'w') as f:
+                json.dump(attention_weights, f, indent=2)
+            print(f"SUCCESS: Pooling attention weights for '{model_type}' saved to: {output_path}")
+        except Exception as e:
+            print(f"ERROR: Could not save attention weights to {output_path}: {e}")
+            return None
+        return output_path
+
 
     def run_sanity_check_ppi(self, embedding_path: str):
         """Performs a quick PPI link prediction task to validate the generated embeddings."""
@@ -135,7 +172,15 @@ class PostUtils:
                 return
 
             labels = [p[2] for p in pairs_for_eval]
-            train_pairs, test_pairs = train_test_split(pairs_for_eval, test_size=self.config.GCN_SANITY_CHECK_TEST_SPLIT, random_state=self.config.RANDOM_STATE, stratify=labels)
+            try:
+                train_pairs, test_pairs = train_test_split(
+                    pairs_for_eval, test_size=self.config.GCN_SANITY_CHECK_TEST_SPLIT,
+                    random_state=self.config.RANDOM_STATE, stratify=labels
+                )
+            except ValueError:
+                print("  Warning: Stratified split failed for sanity check (likely too few samples in a class). Falling back to a non-stratified split.")
+                train_pairs, test_pairs = train_test_split(
+                    pairs_for_eval, test_size=self.config.GCN_SANITY_CHECK_TEST_SPLIT, random_state=self.config.RANDOM_STATE)
 
             first_emb_key = next(iter(protein_embeddings.get_keys()))
             embedding_dim = protein_embeddings[first_emb_key].shape[0]

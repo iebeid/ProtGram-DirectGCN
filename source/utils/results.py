@@ -13,6 +13,7 @@ from typing import List, Dict, Any, Optional
 import math
 import h5py
 import matplotlib.pyplot as plt
+import json
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -271,6 +272,54 @@ class EvaluationReporter:
             traceback.print_exc()
         plt.close()
         return plot_filename
+
+    def generate_pooling_attention_plot(self, attention_json_path: Path, model_name: str, num_top_ngrams: int = 20) -> Optional[Path]:
+        """
+        Generates a bar chart showing the n-grams with the highest attention
+        weights for a sample protein from the pooling strategy.
+        """
+        if not attention_json_path.exists():
+            print(f"  Pooling attention file not found: {attention_json_path}. Skipping plot.")
+            return None
+
+        print(f"  Generating pooling attention plot for {model_name} from {attention_json_path.name}...")
+
+        try:
+            with open(attention_json_path, 'r') as f:
+                attention_data = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"  Error reading attention JSON file: {e}")
+            return None
+
+        if not attention_data:
+            print("  No attention data found in file.")
+            return None
+
+        # Select a sample protein to visualize (e.g., the first one)
+        sample_protein_id = next(iter(attention_data))
+        protein_attention = attention_data[sample_protein_id]
+
+        # Sort by weight and take the top N
+        sorted_ngrams = sorted(protein_attention.items(), key=lambda item: item[1], reverse=True)
+        top_ngrams = dict(sorted_ngrams[:num_top_ngrams])
+
+        plt.figure(figsize=(12, 8))
+        plt.bar(top_ngrams.keys(), top_ngrams.values(), color='skyblue')
+        plt.xlabel("N-Grams")
+        plt.ylabel("Attention Weight")
+        plt.title(f"Top {num_top_ngrams} N-Gram Attention Weights for Protein '{sample_protein_id}'\n(Model: {model_name})")
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
+
+        plot_filename = self.plots_output_dir / f"pooling_attention_{model_name.replace(' ', '_')}.png"
+        try:
+            plt.savefig(plot_filename)
+            print(f"  Saved attention summary plot to {plot_filename}")
+        except Exception as e:
+            print(f"  Error saving attention plot {plot_filename}: {e}")
+        plt.close()
+        return plot_filename
+
 
     def write_summary_file(self, results_list: List[Dict[str, Any]], main_emb_name: str, test_metric: str, alpha: float) -> Optional[Path]:
         """

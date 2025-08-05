@@ -100,7 +100,7 @@ class Config:
         self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers
         self.RUN_SINGLETON_GCN_EVAL = True # Runs a fast evaluation on the n=1 graph for rapid prototyping
         self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data
-        self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = 0.2  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
+        self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = 0.05  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
         self.CLEANUP_DUMMY_DATA = True
         self.ENABLE_FILE_LOGGING = True
 
@@ -116,14 +116,26 @@ class Config:
                 "post_process": "ungzip",
                 "checksum": None
             },
+            "UNIREF_50_FASTA": {
+                "url": "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz",
+                "path": self.DATA_SEQUENCES_DIR / "uniref50.fasta",
+                "post_process": "ungzip",
+                "checksum": None
+            },
+            "UNIREF_100_FASTA": {
+                "url": "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref100/uniref100.fasta.gz",
+                "path": self.DATA_SEQUENCES_DIR / "uniref100.fasta",
+                "post_process": "ungzip",
+                "checksum": None
+            },
             "POS_INTERACTIONS": {
-                "url": "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID_FOR_positive_interactions.csv",
+                "url": "https://drive.google.com/file/d/1vDDdeOVdyu00y5Qux6HRdWtzywj9w7z4/view?usp=sharing",
                 "path": self.POS_INTERACTIONS_PATH,
                 "post_process": None,
                 "checksum": None
             },
             "NEG_INTERACTIONS": {
-                "url": "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID_FOR_negative_interactions.csv",
+                "url": "https://drive.google.com/file/d/1AZJS5_1XLM-GWWDjLWRTQU_5WQRROyrg/view?usp=sharing",
                 "path": self.NEG_INTERACTIONS_PATH,
                 "post_process": None,
                 "checksum": None
@@ -170,8 +182,14 @@ class Config:
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
 
         # ID Mapping
-        self.ID_MAPPING_MODE = 'regex'
-        self.API_MAPPING_FROM_DB = "UniRef50"
+        # Options: 'file' (recommended), 'regex', 'api', 'none'.
+        # 'file': Uses the large idmapping.dat to create a robust local SQLite DB. Best for production.
+        # 'regex': Fast, but relies on standard UniProt headers (e.g., >sp|P12345|...).
+        # 'api': Uses the live UniProt API. Slow, for small-scale use only.
+        self.ID_MAPPING_MODE = 'file'
+        # This value is now set dynamically in main.py based on the input FASTA file
+        # to correctly handle different UniRef versions (e.g., UniRef50, UniRef100).
+        self.API_MAPPING_FROM_DB: Optional[str] = None
         self.API_MAPPING_TO_DB = "UniProtKB"
 
         # Model Selection for ProtGram
@@ -184,7 +202,7 @@ class Config:
         self.GCN_1GRAM_INIT_DIM = 512
         self.GCN_MAX_PE_LEN = 512 # Max length for positional embeddings
         # Gating mode for DirectGCN. Options: 'vector', 'scalar', 'none'
-        self.GCN_GATING_COEFF_MODE = 'vector'
+        self.GCN_GATING_COEFF_MODE = "none"
 
         # Training Hyperparameters
         self.GCN_EPOCHS_PER_LEVEL = 300
@@ -219,6 +237,10 @@ class Config:
         # Post-Processing
         self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
         self.PCA_TARGET_DIMENSION = 64
+        # NEW: Protein-level pooling strategy
+        # Strategy for pooling final n-gram embeddings to create a single protein embedding.
+        # Options: 'mean', 'sum', 'max', 'attention'
+        self.GCN_PROTEIN_POOLING_STRATEGY = 'attention'
 
         # Sanity Check
         self.GCN_RUN_SANITY_CHECK_PPI = True
@@ -258,8 +280,7 @@ class Config:
         self.LSTM_TRAIN_SEQ_LEN = 50
         self.LSTM_TRAIN_STEP = 50
         self.LSTM_LEARNING_RATE = 0.001
-        # ADD THIS LINE: A separate downsample for the LSTM pipeline
-        self.LSTM_DOWNSAMPLE_FRACTION: Optional[float] = 0.5 # Use only 1% of data for LSTM
+        self.LSTM_POOLING_STRATEGY = 'mean'
 
     def _setup_singleton_eval_params(self):
         """Sets parameters for the rapid, n=1 GCN evaluation."""
@@ -275,6 +296,7 @@ class Config:
         # General
         self.PLOT_TRAINING_HISTORY = True
         self.PERFORM_H5_INTEGRITY_CHECK = True
+        self.EVAL_GENERATE_SHAP_SUMMARY = True
         self.EARLY_STOPPING_PATIENCE = 10 # For the MLP classifier
 
         # List of pre-existing or external embedding files to include in evaluation.
@@ -297,7 +319,7 @@ class Config:
 
         # Reporting
         self.EVAL_K_VALUES_FOR_TABLE = [50, 100]
-        self.EVAL_MAIN_EMBEDDING_FOR_STATS = "ProtGramDirectGCN"
+        self.EVAL_MAIN_EMBEDDING_FOR_STATS = "ProtGramDirectgcn"
         self.EVAL_STATISTICAL_TEST_ALPHA = 0.05
 
     def _setup_mlflow_params(self):
