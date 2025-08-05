@@ -106,7 +106,12 @@ if [ -d "$PROJECT_DIR_NAME" ]; then
     echo "INFO: Existing project directory found. It will be completely removed for a clean reset."
     # --- FIX: Interactively ask the user whether to keep or discard the existing data directory ---
     if [ "$LFS_ISSUE" = true ] && [ -d "$PROJECT_DIR_NAME/data" ]; then
-        read -r -p "An existing 'data' directory was found. Do you want to (k)eep it or (d)iscard it? [k/d]: " keep_data_response
+        echo -e "\nAn existing 'data' directory was found."
+        echo "This reset script will DELETE the entire project folder ('$PROJECT_DIR_NAME') and re-clone it."
+        echo -e "\nWhat should be done with your current 'data' directory?"
+        echo "  (k) Keep    - Back up the current 'data' directory and restore it in the new clone."
+        echo "  (d) Discard - Delete the current 'data' directory. You will be prompted to provide a new one later."
+        read -r -p "Choose an option [k/d]: " keep_data_response
         if [[ "$keep_data_response" == "k" || "$keep_data_response" == "K" ]]; then
             echo "INFO: Backing up existing 'data' directory to a safe location..."
             # Back up directly to the user's home directory for maximum safety.
@@ -114,7 +119,7 @@ if [ -d "$PROJECT_DIR_NAME" ]; then
             echo "INFO: 'data' directory temporarily backed up to '$HOME/data_temp_backup'."
             RESTORE_DATA=true
         else
-            echo "INFO: The existing 'data' directory will be discarded."
+            echo "INFO: The existing 'data' directory will be discarded along with the project."
         fi
     fi
     # --- END FIX ---
@@ -139,8 +144,11 @@ if [ "$LFS_ISSUE" = true ]; then
     # --- FIX: Restore the backed-up data directory if the user chose to keep it ---
     if [ "$RESTORE_DATA" = true ] && [ -d "$HOME/data_temp_backup" ]; then
         echo "INFO: Restoring backed-up 'data' directory..."
+        echo "INFO: Current directory for restore is: $(pwd)"
+        # This command moves the backup into the current directory and renames it to 'data'.
+        # The 'mv' command automatically removes the source directory ('$HOME/data_temp_backup').
         mv "$HOME/data_temp_backup" "./data"
-        echo "SUCCESS: 'data' directory restored."
+        echo "SUCCESS: 'data' directory restored and backup automatically removed from home directory."
     fi
     # --- END FIX ---
 else
