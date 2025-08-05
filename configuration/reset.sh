@@ -98,15 +98,24 @@ if [[ "$lfs_response" == "y" || "$lfs_response" == "Y" ]]; then
     LFS_ISSUE=true
 fi
 
+# --- NEW: Add a flag to track if we should restore data ---
+RESTORE_DATA=false
+
 # This is a reset script. If the directory exists, it will be destroyed to ensure a clean slate.
 if [ -d "$PROJECT_DIR_NAME" ]; then
     echo "INFO: Existing project directory found. It will be completely removed for a clean reset."
-    # --- FIX: Preserve the data directory if the user has LFS issues ---
+    # --- FIX: Interactively ask the user whether to keep or discard the existing data directory ---
     if [ "$LFS_ISSUE" = true ] && [ -d "$PROJECT_DIR_NAME/data" ]; then
-        echo "INFO: LFS issue detected. Backing up existing 'data' directory to a safe location..."
-        # Back up directly to the user's home directory for maximum safety.
-        mv "$PROJECT_DIR_NAME/data" "$HOME/data_temp_backup"
-        echo "INFO: 'data' directory temporarily backed up to '$HOME/data_temp_backup'."
+        read -r -p "An existing 'data' directory was found. Do you want to (k)eep it or (d)iscard it? [k/d]: " keep_data_response
+        if [[ "$keep_data_response" == "k" || "$keep_data_response" == "K" ]]; then
+            echo "INFO: Backing up existing 'data' directory to a safe location..."
+            # Back up directly to the user's home directory for maximum safety.
+            mv "$PROJECT_DIR_NAME/data" "$HOME/data_temp_backup"
+            echo "INFO: 'data' directory temporarily backed up to '$HOME/data_temp_backup'."
+            RESTORE_DATA=true
+        else
+            echo "INFO: The existing 'data' directory will be discarded."
+        fi
     fi
     # --- END FIX ---
     rm -rf "$PROJECT_DIR_NAME" # Now it's safe to remove the old project
@@ -127,8 +136,8 @@ if [ "$LFS_ISSUE" = true ]; then
     echo "!data" >> .git/info/sparse-checkout
     echo "INFO: Checking out branch '$GIT_BRANCH'..."
     git checkout "$GIT_BRANCH"
-    # --- FIX: Restore the backed-up data directory ---
-    if [ -d "$HOME/data_temp_backup" ]; then
+    # --- FIX: Restore the backed-up data directory if the user chose to keep it ---
+    if [ "$RESTORE_DATA" = true ] && [ -d "$HOME/data_temp_backup" ]; then
         echo "INFO: Restoring backed-up 'data' directory..."
         mv "$HOME/data_temp_backup" "./data"
         echo "SUCCESS: 'data' directory restored."
