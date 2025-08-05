@@ -73,24 +73,25 @@ def setup_data(config: Config):
         if _is_file_valid(final_path):
             print(f"☑ Found and verified: {final_path.relative_to(config.PROJECT_ROOT)}")
             continue
+        # If the file is not valid, we proceed. The logic below will handle
+        # overwriting it via decompression or re-downloading.
 
-        # --- FIX: Replaced destructive deletion with a non-destructive warning ---
-        # If a file exists but is invalid, we now warn the user instead of deleting it.
-        elif final_path.exists():
-            print(f"⚠ WARNING: File '{final_path.name}' exists but failed validation (e.g., it might be empty or corrupt).")
-            print(f"  The pipeline will attempt to use it, but may fail later if it's unreadable.")
-            print(f"  Please check the file at: {final_path}")
-            continue
-        # --- END FIX ---
-
-        # 2. Check if the compressed file exists but the final one doesn't.
         if not final_path.exists() and download_path.exists() and source_info.get('post_process') == 'ungzip':
-            print(f"Decompressing {download_path.name} to {final_path.name}...")
-            with gzip.open(download_path, 'rb') as f_in:
-                with open(final_path, 'wb') as f_out:
+            print(f"Found compressed file '{download_path.name}'. Attempting to decompress...")
+            try:
+                with gzip.open(download_path, 'rb') as f_in, open(final_path, 'wb') as f_out:
                     shutil.copyfileobj(f_in, f_out)
-            print(f"✔ Successfully acquired: {final_path.relative_to(config.PROJECT_ROOT)}")
-            continue
+
+                # Re-validate after decompression to ensure integrity
+                if _is_file_valid(final_path):
+                    print(f"✔ Successfully acquired: {final_path.relative_to(config.PROJECT_ROOT)}")
+                    continue  # Success, move to the next file in the loop
+                else:
+                    print(f"  Warning: Decompressed file '{final_path.name}' failed validation. Attempting re-download.")
+
+            except (gzip.BadGzipFile, EOFError) as e:
+                print(f"  Warning: Decompression failed for '{download_path.name}' (likely corrupt). Error: {e}. Attempting re-download.")
+            # If we reach here, it means decompression failed or the result was invalid, so we fall through to the download logic.
 
         # 3. If neither exists, attempt to download.
         url = source_info.get('url')
