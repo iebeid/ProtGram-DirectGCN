@@ -2,7 +2,7 @@
 # MODULE: benchmarkers/nes.py
 # PURPOSE: Handles benchmarking of Network Embedding models like Node2Vec.
 # VERSION: 2.0 (Major Refactor: Uses a dedicated MLP for node classification)
-# AUTHOR: Islam Ebeid
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import os
@@ -118,13 +118,13 @@ class NetworkEmbeddingBenchmarker:
 
         return best_val_acc, test_acc_at_best_val
 
-    def _run_on_dataset(self, dataset: Any, model_name: str) -> Dict:
+    def _run_on_dataset(self, dataset: Any, dataset_name: str, model_name: str) -> Dict:
         """Runs a single NE model on a single dataset."""
         data = dataset[0].to(self.device)
-        print(f"--- Benchmarking Model: {model_name} on Dataset: {dataset.name} ---")
+        print(f"--- Benchmarking Model: {model_name} on Dataset: {dataset_name} ---")
 
         if not all(hasattr(data, mask) and getattr(data, mask) is not None and getattr(data, mask).any() for mask in ['train_mask', 'val_mask', 'test_mask']):
-            print(f"  - No predefined splits found for {dataset.name}. Creating random splits.")
+            print(f"  - No predefined splits found for {dataset_name}. Creating random splits.")
             num_nodes = data.num_nodes
             rng = np.random.default_rng(self.config.RANDOM_STATE)
             indices = rng.permutation(num_nodes)
@@ -136,7 +136,7 @@ class NetworkEmbeddingBenchmarker:
             data.train_mask[indices[:train_size]] = True
             data.val_mask[indices[train_size:train_size + val_size]] = True
             data.test_mask[indices[train_size + val_size:]] = True
-            print(f"  Generated custom seeded split for {dataset.name}. Train: {train_size}, Val: {val_size}, Test: {int(data.test_mask.sum())}")
+            print(f"  Generated custom seeded split for {dataset_name}. Train: {train_size}, Val: {val_size}, Test: {int(data.test_mask.sum())}")
 
         # 1. Train Node2Vec to get embeddings
         node2vec_model = Node2Vec(
@@ -168,9 +168,9 @@ class NetworkEmbeddingBenchmarker:
 
         # 3. Train and evaluate an MLP on the embeddings
         val_acc, test_acc = self._train_and_evaluate_mlp(embeddings, data)
-        print(f"  ✅ Best Val Acc: {val_acc:.4f}, Test Accuracy for {model_name} on {dataset.name}: {test_acc:.4f}")
+        print(f"  ✅ Best Val Acc: {val_acc:.4f}, Test Accuracy for {model_name} on {dataset_name}: {test_acc:.4f}")
 
-        return {"dataset": dataset.name, "model": model_name, "best_val_accuracy": val_acc, "test_accuracy": test_acc, "error": None}
+        return {"dataset": dataset_name, "model": model_name, "best_val_accuracy": val_acc, "test_accuracy": test_acc, "error": None}
 
     def run(self) -> pd.DataFrame:
         """Main execution function for the benchmarker."""
@@ -180,29 +180,27 @@ class NetworkEmbeddingBenchmarker:
         for dataset_name in self.config.BENCHMARK_NODE_CLASSIFICATION_DATASETS:
             dataset = self._get_dataset(dataset_name)
             if dataset is None: continue
+            print(f"\nLoaded dataset: {dataset_name}. Nodes: {dataset[0].num_nodes}, Edges: {dataset[0].num_edges}")
 
             for model_name in self.config.BENCHMARK_NE_MODELS_TO_RUN:
                 try:
-                    with mlflow.start_run(run_name=f"{model_name}_on_{dataset.name}", nested=True) as run:
+                    with mlflow.start_run(run_name=f"{model_name}_on_{dataset_name}", nested=True) as run:
                         mlflow.set_tag("model_name", model_name)
-                        mlflow.set_tag("dataset_name", dataset.name)
-                        result = self._run_on_dataset(dataset, model_name)
+                        mlflow.set_tag("dataset_name", dataset_name)
+                        result = self._run_on_dataset(dataset, dataset_name, model_name)
                         all_results.append(result)
                         mlflow.log_metrics({
                             "best_val_accuracy": result['best_val_accuracy'],
                             "test_accuracy": result['test_accuracy']
                         })
                 except Exception as e:
-                    print(f"ERROR during benchmarking of {model_name} on {dataset.name}: {e}")
+                    print(f"ERROR during benchmarking of {model_name} on {dataset_name}: {e}")
                     traceback.print_exc()
-                    all_results.append({"dataset": dataset.name, "model": model_name, "best_val_accuracy": None, "test_accuracy": None, "error": str(e)})
+                    all_results.append({"dataset": dataset_name, "model": model_name, "best_val_accuracy": None, "test_accuracy": None, "error": str(e)})
 
         summary_df = pd.DataFrame(all_results)
         summary_path = self.output_dir / "ne_benchmark_summary.csv"
         DataUtils.save_dataframe_to_csv(summary_df, str(summary_path))
-        print("\n" + "=" * 50)
-        print(f"Network Embedding Benchmark Summary saved to: {summary_path}")
-        print(summary_df.to_string())
-        print("=" * 50)
+        # The summary is now printed in main.py as part of the aggregated table
         DataUtils.print_header("Network Embedding BENCHMARKER FINISHED")
         return summary_df
