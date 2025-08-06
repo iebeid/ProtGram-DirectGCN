@@ -1,19 +1,20 @@
 # ==============================================================================
 # MODULE: benchmarkers/nes.py
 # PURPOSE: Handles benchmarking of Network Embedding models like Node2Vec.
-# VERSION: 2.0 (Major Refactor: Uses a dedicated MLP for node classification)
-# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
+# VERSION: 3.0 (Fixed WebKB mask handling and updated metrics reporting)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
 import traceback
-from typing import Dict, List, Any, Tuple
+from typing import Dict, Any, Tuple
 
 import mlflow
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+from sklearn.metrics import f1_score, precision_score, recall_score
 from torch_geometric.data import Data
 from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 from torch_geometric.nn import Node2Vec
@@ -78,7 +79,14 @@ class NetworkEmbeddingBenchmarker:
             print(f"  Error loading dataset '{name}': {e}")
             return None
 
-    def _train_and_evaluate_mlp(self, embeddings: torch.Tensor, data: Data) -> Tuple[float, float]:
+    def _get_1d_mask(self, mask_tensor: torch.Tensor) -> torch.Tensor:
+        """Helper to handle masks from datasets that may have multiple splits (e.g., WebKB)."""
+        if mask_tensor.dim() > 1:
+            # WebKB datasets have a [num_nodes, 10] mask for 10 splits. We use the first one.
+            return mask_tensor[:, 0].bool()
+        return mask_tensor.bool()
+
+    def _train_and_evaluate_mlp(self, embeddings: torch.Tensor, data: Data) -> Dict[str, float]:
         """Trains and evaluates a simple MLP on the generated embeddings."""
         num_classes = int(data.y.max().item()) + 1
         mlp = SimpleMLP(
@@ -89,12 +97,16 @@ class NetworkEmbeddingBenchmarker:
         ).to(self.device)
         optimizer = torch.optim.Adam(mlp.parameters(), lr=0.01, weight_decay=5e-4)
 
-        train_mask = data.train_mask
-        val_mask = data.val_mask
-        test_mask = data.test_mask
+        # FIX: Use the helper to handle masks that might have multiple splits (e.g., WebKB)
+        train_mask = self._get_1d_mask(data.train_mask)
+        val_mask = self._get_1d_mask(data.val_mask)
+        test_mask = self._get_1d_mask(data.test_mask)
 
         best_val_acc = -1
         test_acc_at_best_val = -1
+        f1_at_best_val = -1
+        precision_at_best_val = -1
+        recall_at_best_val = -1
 
         for epoch in range(1, 201):  # A fixed number of epochs for the MLP classifier
             mlp.train()
@@ -115,8 +127,21 @@ class NetworkEmbeddingBenchmarker:
             if val_acc > best_val_acc:
                 best_val_acc = val_acc
                 test_acc_at_best_val = test_acc
+                # --- NEW: Capture all test metrics at the best validation epoch ---
+                y_true_test = data.y[test_mask].cpu().numpy()
+                y_pred_test = pred[test_mask].cpu().numpy()
+                f1_at_best_val = f1_score(y_true_test, y_pred_test, average='macro', zero_division=0)
+                precision_at_best_val = precision_score(y_true_test, y_pred_test, average='macro', zero_division=0)
+                recall_at_best_val = recall_score(y_true_test, y_pred_test, average='macro', zero_division=0)
 
-        return best_val_acc, test_acc_at_best_val
+        metrics = {
+            'Accuracy': test_acc_at_best_val,
+            'F1-Score (Macro)': f1_at_best_val,
+            'Precision (Macro)': precision_at_best_val,
+            'Recall (Macro)': recall_at_best_val,
+            'best_val_accuracy': best_val_acc
+        }
+        return metrics
 
     def _run_on_dataset(self, dataset: Any, dataset_name: str, model_name: str) -> Dict:
         """Runs a single NE model on a single dataset."""
@@ -126,7 +151,7 @@ class NetworkEmbeddingBenchmarker:
         if not all(hasattr(data, mask) and getattr(data, mask) is not None and getattr(data, mask).any() for mask in ['train_mask', 'val_mask', 'test_mask']):
             print(f"  - No predefined splits found for {dataset_name}. Creating random splits.")
             num_nodes = data.num_nodes
-            rng = np.random.default_rng(self.config.RANDOM_STATE)
+            rng = np.random.default_rng(self.config.RANDOM_STATE) # Use a seeded generator
             indices = rng.permutation(num_nodes)
             train_size = int(num_nodes * 0.1)
             val_size = int(num_nodes * 0.1)
@@ -167,10 +192,12 @@ class NetworkEmbeddingBenchmarker:
             embeddings = node2vec_model()
 
         # 3. Train and evaluate an MLP on the embeddings
-        val_acc, test_acc = self._train_and_evaluate_mlp(embeddings, data)
-        print(f"  ✅ Best Val Acc: {val_acc:.4f}, Test Accuracy for {model_name} on {dataset_name}: {test_acc:.4f}")
+        metrics = self._train_and_evaluate_mlp(embeddings, data)
+        print(f"  ✅ Best Val Acc: {metrics.get('best_val_accuracy', -1):.4f}, Test Accuracy for {model_name} on {dataset_name}: {metrics.get('Accuracy', -1):.4f}")
 
-        return {"dataset": dataset_name, "model": model_name, "best_val_accuracy": val_acc, "test_accuracy": test_acc, "error": None}
+        result_row = {"dataset": dataset_name, "model": model_name, "error": None}
+        result_row.update(metrics)
+        return result_row
 
     def run(self) -> pd.DataFrame:
         """Main execution function for the benchmarker."""
@@ -190,17 +217,15 @@ class NetworkEmbeddingBenchmarker:
                         result = self._run_on_dataset(dataset, dataset_name, model_name)
                         all_results.append(result)
                         mlflow.log_metrics({
-                            "best_val_accuracy": result['best_val_accuracy'],
-                            "test_accuracy": result['test_accuracy']
+                            "best_val_accuracy": result.get('best_val_accuracy', 0.0),
+                            "test_accuracy": result.get('Accuracy', 0.0)
                         })
                 except Exception as e:
                     print(f"ERROR during benchmarking of {model_name} on {dataset_name}: {e}")
                     traceback.print_exc()
-                    all_results.append({"dataset": dataset_name, "model": model_name, "best_val_accuracy": None, "test_accuracy": None, "error": str(e)})
+                    all_results.append({"dataset": dataset_name, "model": model_name, "error": str(e)})
 
         summary_df = pd.DataFrame(all_results)
-        summary_path = self.output_dir / "ne_benchmark_summary.csv"
-        DataUtils.save_dataframe_to_csv(summary_df, str(summary_path))
-        # The summary is now printed in main.py as part of the aggregated table
+        # The full summary is now handled by main.py
         DataUtils.print_header("Network Embedding BENCHMARKER FINISHED")
-        return summary_df
+        return summary_df if all_results else pd.DataFrame()

@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: main.py
 # PURPOSE: Pipeline entry point
-# VERSION: 6.0 (Corrected pre-analysis and prompting workflow)
+# VERSION: 8.0 (Updated summary table format and non-interactive prompt handling)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -166,7 +166,7 @@ def _launch_mlflow_ui(config: Config):
                 print("The server is running in the background. It will terminate when you close this terminal.")
         except webbrowser.Error as e:
             print(f"\nCould not automatically open web browser due to an error: {e}")
-            print("Please open http://127.0.0.1:5000 manually to view results.")
+            print("Please open http://12.0.0.1:5000 manually to view results.")
     else:
         print("--- Headless/SSH environment detected. ---")
         print("To view the MLflow UI, run the following command on your local machine:")
@@ -187,29 +187,35 @@ def _display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
         # Concatenate all collected DataFrames
         final_summary_df = pd.concat(all_results, ignore_index=True)
 
-        # Define the desired final column order
-        final_columns = ['dataset', 'model', 'test_accuracy', 'best_val_accuracy', 'error']
+        # Define the desired final column order based on user request
+        final_columns = [
+            'dataset', 'model',
+            'Accuracy', 'F1-Score (Macro)', 'Precision (Macro)', 'Recall (Macro)',
+            'error'
+        ]
         # Reorder and fill missing columns with NaN
         final_summary_df = final_summary_df.reindex(columns=final_columns)
 
-        # --- NEW: Grouping logic for clearer presentation ---
-        # Create a clean group name. Handles "Cora_Original" -> "Cora", but keeps special names.
+        # --- Grouping logic for clearer presentation ---
         def get_group_name(dataset_name):
+            if not isinstance(dataset_name, str): return "Unknown"
             if 'ProtGram_n1_Singleton' in dataset_name:
-                return dataset_name  # Keep the full name for this special case
+                return dataset_name
             return dataset_name.replace('_Original', '')
 
         final_summary_df['dataset_group'] = final_summary_df['dataset'].apply(get_group_name)
-
-        # Sort for presentation
         final_summary_df = final_summary_df.sort_values(by=['dataset_group', 'model'])
 
         DataUtils.print_header("Aggregated Benchmark Summary")
-        # Use groupby to print in distinct blocks for readability
         for group_name, group_df in final_summary_df.groupby('dataset_group', sort=False):
             print(f"\n--- Results for Dataset: {group_name} ---")
-            # Drop the temporary grouping column for cleaner output
-            print(group_df[final_columns].to_string(index=False))
+            # Format float columns for better readability
+            formatted_group_df = group_df.copy()
+            float_cols = formatted_group_df.select_dtypes(include=['float']).columns
+            for col in float_cols:
+                formatted_group_df[col] = formatted_group_df[col].map('{:.4f}'.format)
+
+            print(formatted_group_df[final_columns].to_string(index=False, na_rep='NaN'))
     except Exception as e:
         print(f"Could not generate aggregated benchmark summary due to an error: {e}")
 
@@ -244,12 +250,12 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
         singleton_results_df = ProtGramBuilder(singleton_config).run(run_singleton_eval=True)
 
         if singleton_results_df is not None and not singleton_results_df.empty:
-            singleton_results_df = singleton_results_df.rename(columns={'Model': 'model', 'Accuracy': 'test_accuracy'})
+            # Standardize singleton results to fit the benchmark table
+            singleton_results_df = singleton_results_df.rename(columns={'Model': 'model'})
             singleton_results_df['dataset'] = f"ProtGram_n1_Singleton_{fasta_file_path.stem}"
-            singleton_results_df['best_val_accuracy'] = np.nan
             singleton_results_df['error'] = None
-            # Ensure the column order matches for concatenation
-            all_benchmark_results.append(singleton_results_df[['dataset', 'model', 'test_accuracy', 'best_val_accuracy', 'error']])
+            # The columns should already match the new format.
+            all_benchmark_results.append(singleton_results_df)
 
     # --- Step 3: Display the aggregated summary ---
     _display_aggregated_benchmark_summary(all_benchmark_results)

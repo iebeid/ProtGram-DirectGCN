@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+from sklearn.metrics import f1_score, precision_score, recall_score
 from torch_geometric.data import Data
 from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 from torch_geometric.transforms import ToUndirected
@@ -147,7 +148,7 @@ class GNNBenchmarker:
             return mask_tensor[:, 0].bool()
         return mask_tensor.bool()
 
-    def train_and_evaluate(self, model: torch.nn.Module, data: Data) -> Tuple[float, float, pd.DataFrame]:
+    def train_and_evaluate(self, model: torch.nn.Module, data: Data) -> Tuple[Dict[str, float], pd.DataFrame]:
         """Handles the training and evaluation loop for a given model and data."""
         model.to(self.device)
         data = data.to(self.device)
@@ -186,16 +187,29 @@ class GNNBenchmarker:
             if val_acc > best_val_acc:
                 best_val_acc = val_acc
                 test_acc_at_best_val = test_acc
+                # --- NEW: Capture all test metrics at the best validation epoch ---
+                y_true_test = data.y[test_mask].cpu().numpy()
+                y_pred_test = pred[test_mask].cpu().numpy()
+                f1_at_best_val = f1_score(y_true_test, y_pred_test, average='macro', zero_division=0)
+                precision_at_best_val = precision_score(y_true_test, y_pred_test, average='macro', zero_division=0)
+                recall_at_best_val = recall_score(y_true_test, y_pred_test, average='macro', zero_division=0)
 
             if self.config.DEBUG_VERBOSE and (epoch == 1 or epoch % 10 == 0 or epoch == self.config.EVAL_EPOCHS):
                 print(f"    Epoch {epoch:03d}, Loss: {loss:.4f}, Val Acc: {val_acc:.4f}, Test Acc: {test_acc:.4f}")
+
+        metrics = {
+            'Accuracy': test_acc_at_best_val,
+            'F1-Score (Macro)': f1_at_best_val,
+            'Precision (Macro)': precision_at_best_val,
+            'Recall (Macro)': recall_at_best_val
+        }
 
         print(f"  Finished training. Best Val Acc: {best_val_acc:.4f}, Corresponding Test Acc: {test_acc_at_best_val:.4f}")
 
         if self.config.BENCHMARK_SAVE_EMBEDDINGS:
             self._save_embeddings(model, data)
 
-        return best_val_acc, test_acc_at_best_val, pd.DataFrame(history)
+        return metrics, pd.DataFrame(history)
 
     def _save_embeddings(self, model: torch.nn.Module, data: Data):
         """Extracts, processes (with PCA), and saves embeddings."""
@@ -279,14 +293,18 @@ class GNNBenchmarker:
                     mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
                     model = self._get_model(model_name, data, num_classes)
-                    print("  Model Architecture:")
-                    print(model)
+                    if self.config.DEBUG_VERBOSE:
+                        print("  Model Architecture:")
+                        print(model)
 
-                    val_acc, test_acc, history_df = self.train_and_evaluate(model, data)
-                    results.append({"dataset": variant_name, "model": model_name, "best_val_accuracy": val_acc, "test_accuracy": test_acc, "error": None})
+                    metrics, history_df = self.train_and_evaluate(model, data)
+                    result_row = {"dataset": variant_name, "model": model_name, "error": None}
+                    result_row.update(metrics)
+                    results.append(result_row)
 
                     # --- MLFLOW INTEGRATION: Log
-                    mlflow.log_metrics({"best_val_accuracy": val_acc, "test_accuracy": test_acc})
+                    mlflow.log_metrics({"test_accuracy": metrics.get('Accuracy', 0.0),
+                                        "f1_macro": metrics.get('F1-Score (Macro)', 0.0)})
                     # Create a temporary file for the history and log it
                     history_path = Path(self.output_dir) / f"history_{model_name}_{variant_name}.csv"
                     history_df.to_csv(history_path, index=False)
@@ -300,7 +318,7 @@ class GNNBenchmarker:
                 # --- MLFLOW INTEGRATION: Log failure ---
                 mlflow.set_tag("status", "FAILED")
                 mlflow.log_param("error", str(e))
-                results.append({"dataset": variant_name, "model": model_name, "best_val_accuracy": None, "test_accuracy": None, "error": str(e)})
+                results.append({"dataset": variant_name, "model": model_name, "error": str(e)})
         return results
 
     def run(self):
@@ -321,21 +339,13 @@ class GNNBenchmarker:
             if dataset_results:
                 summary_df = pd.DataFrame(dataset_results)
                 summary_path = self.output_dir / f"benchmark_summary_{dataset_name}.csv"
-                DataUtils.save_dataframe_to_csv(summary_df, str(summary_path))
-                print(f"\nSummary for {dataset_name} saved to {summary_path}")
-                print(summary_df.to_string())
+                # DataUtils.save_dataframe_to_csv(summary_df, str(summary_path)) # No longer needed, main.py handles summary
                 all_results.extend(dataset_results)
 
         # --- Save a final, grand summary of all results ---
         if all_results:
             full_summary_df = pd.DataFrame(all_results)
-            full_summary_path = self.output_dir / "gnn_benchmark_FULL_SUMMARY.csv"
-            DataUtils.save_dataframe_to_csv(full_summary_df, str(full_summary_path))
-            print(f"\nFull GNN benchmarking summary saved to {full_summary_path}")
-            print("\nFull Summary Table:")
-            print(full_summary_df.to_string())
-
-        DataUtils.print_header("GNN Benchmarking PIPELINE FINISHED")
-        return full_summary_df if all_results else pd.DataFrame()
-
-        DataUtils.print_header("GNN Benchmarking PIPELINE FINISHED")
+            # The full summary is now handled by main.py
+            DataUtils.print_header("GNN Benchmarking PIPELINE FINISHED")
+            return full_summary_df
+        return pd.DataFrame()
