@@ -27,9 +27,11 @@ class TransformerEmbedder:
         DataUtils.print_header("TransformerEmbedder Initialized")
 
     @staticmethod
-    def _get_model_inference_function(model: tf.keras.Model, is_t5: bool, use_xla: bool) -> tf.types.experimental.GenericFunction:
+    def _get_model_inference_function(model: tf.keras.Model, hf_id: str, is_t5: bool, use_xla: bool) -> tf.types.experimental.GenericFunction:
         """Creates a compiled TensorFlow function for faster inference."""
-        print(f"  Creating inference function (is_t5={is_t5}, use_xla={use_xla})...")
+        # Determine model type for signature generation
+        is_esm_model = 'esm' in hf_id.lower()
+        print(f"  Creating inference function (is_t5={is_t5}, is_esm={is_esm_model}, use_xla={use_xla})...")
 
         @tf.function
         def model_call(inputs_dict_tf):
@@ -40,25 +42,31 @@ class TransformerEmbedder:
                 # For T5, we explicitly do not pass token_type_ids
                 return model(input_ids=inputs_dict_tf['input_ids'], attention_mask=inputs_dict_tf['attention_mask'],
                              decoder_input_ids=decoder_input_ids)
+            elif is_esm_model:
+                # ESM models do not accept token_type_ids
+                return model(input_ids=inputs_dict_tf['input_ids'], attention_mask=inputs_dict_tf['attention_mask'])
             else:
-                # BERT-like models accept token_type_ids
+                # Standard BERT-like models accept the full dictionary
                 return model(inputs_dict_tf)
 
-        # --- MINIMAL & FINAL FIX: Correct the input_signature to match the tokenizer's output ---
-        # The tokenizer for BERT produces 'token_type_ids', which was missing from our signature.
-        # This flexible signature handles variable batch and sequence lengths.
         if is_t5:
             input_signature = {
                 'input_ids': tf.TensorSpec(shape=[None, None], dtype=tf.int32),
                 'attention_mask': tf.TensorSpec(shape=[None, None], dtype=tf.int32)
             }
+        elif is_esm_model:
+            # ESM models do not use token_type_ids
+            input_signature = {
+                'input_ids': tf.TensorSpec(shape=[None, None], dtype=tf.int32),
+                'attention_mask': tf.TensorSpec(shape=[None, None], dtype=tf.int32)
+            }
         else:
+            # BERT-like models use all three
             input_signature = {
                 'input_ids': tf.TensorSpec(shape=[None, None], dtype=tf.int32),
                 'attention_mask': tf.TensorSpec(shape=[None, None], dtype=tf.int32),
                 'token_type_ids': tf.TensorSpec(shape=[None, None], dtype=tf.int32)  # This was the missing key
             }
-        # --- END FIX ---
 
         concrete_function = model_call.get_concrete_function(input_signature)
         if use_xla:
@@ -90,8 +98,8 @@ class TransformerEmbedder:
             tokenizer = tokenizer_class.from_pretrained(hf_id)
             model = TFAutoModel.from_pretrained(hf_id, from_pt=True)
 
-            inference_func = TransformerEmbedder._get_model_inference_function(model, is_t5,
-                                                                               self.config.USE_XLA_COMPILATION)
+            inference_func = TransformerEmbedder._get_model_inference_function(
+                model, hf_id, is_t5, self.config.USE_XLA_COMPILATION)
 
             if hasattr(model.config, 'hidden_size'):
                 embedding_dim_from_model = model.config.hidden_size

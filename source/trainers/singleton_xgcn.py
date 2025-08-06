@@ -97,6 +97,7 @@ class SingletonXGCNTrainer:
             if model is None:
                 continue
 
+            model.to(self.device)
             optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
             data_for_model = self._prepare_data_for_model(model_name, base_data).to(self.device)
 
