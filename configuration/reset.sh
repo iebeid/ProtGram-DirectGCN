@@ -189,6 +189,11 @@ echo -e "\n--- STEP 4: Executing the main application via run.py ---"
 # that were installed by Conda. This resolves the "Cannot dlopen" errors at runtime.
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 
+# --- CRITICAL FIX for XLA/JIT: Point TensorFlow's XLA compiler to the Conda CUDA toolkit. ---
+# This resolves the "libdevice not found" and "JIT compilation failed" errors when
+# running Transformer models on the GPU.
+export XLA_FLAGS="--xla_gpu_cuda_data_dir=$CONDA_PREFIX"
+
 # The run.py script will handle the rest of the setup and execution.
 python run.py
 
