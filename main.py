@@ -187,14 +187,19 @@ def _display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
         # Concatenate all collected DataFrames
         final_summary_df = pd.concat(all_results, ignore_index=True)
 
-        # Define the desired final column order based on user request
-        final_columns = [
+        # Define the full set of columns for data processing
+        all_columns = [
             'dataset', 'model',
             'Accuracy', 'F1-Score (Macro)', 'Precision (Macro)', 'Recall (Macro)',
             'error'
         ]
-        # Reorder and fill missing columns with NaN
-        final_summary_df = final_summary_df.reindex(columns=final_columns)
+        # Define the columns to actually display in the final table
+        columns_to_print = [
+            'model', 'Accuracy', 'F1-Score (Macro)', 'Precision (Macro)', 'Recall (Macro)', 'error'
+        ]
+
+        # Reorder and fill missing columns with NaN to ensure consistency
+        final_summary_df = final_summary_df.reindex(columns=all_columns)
 
         # --- Grouping logic for clearer presentation ---
         def get_group_name(dataset_name):
@@ -215,7 +220,7 @@ def _display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
             for col in float_cols:
                 formatted_group_df[col] = formatted_group_df[col].map('{:.4f}'.format)
 
-            print(formatted_group_df[final_columns].to_string(index=False, na_rep='NaN'))
+            print(formatted_group_df[columns_to_print].to_string(index=False, na_rep='NaN'))
     except Exception as e:
         print(f"Could not generate aggregated benchmark summary due to an error: {e}")
 
@@ -266,7 +271,11 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
         print("--- To run the full pipeline, execute the script in an interactive terminal. ---")
         return False
 
-    response = input("\nDo you want to continue with the full, long-running pipelines for this dataset? (y/n): ").lower().strip()
+    # --- FIX: Separate the print from the input and explicitly flush the stream. ---
+    # This prevents a buffering issue where the prompt doesn't appear before the script waits for input.
+    print("\nDo you want to continue with the full, long-running pipelines for this dataset? (y/n): ", end='', flush=True)
+    response = input().lower().strip()
+
     if response not in ['y', 'yes']:
         print("Skipping main pipeline as requested by user.")
         return False

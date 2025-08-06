@@ -10,6 +10,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+# --- FIX: Suppress the Hugging Face Tokenizers parallelism warning ---
+# This is a common warning in multiprocessing environments. Setting this environment
+# variable to 'false' silences the warning and is the recommended practice.
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Local imports must come after the environment is validated and potentially set up.
 # We make an exception for Config and FileLogger which are needed for the bootstrapper itself.
 from configuration.config import Config
