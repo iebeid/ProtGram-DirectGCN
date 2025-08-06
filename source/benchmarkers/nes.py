@@ -203,6 +203,11 @@ class NetworkEmbeddingBenchmarker:
 
         result_row = {"dataset": dataset_name, "model": model_name, "error": None}
         result_row.update(metrics)
+
+        # --- FIX: Explicitly delete large torch objects to release memory and resources ---
+        # This helps prevent the loader from hanging in the background before the main script prompts for user input.
+        del node2vec_model, loader, optimizer, embeddings
+
         return result_row
 
     def run(self) -> pd.DataFrame:
@@ -230,6 +235,11 @@ class NetworkEmbeddingBenchmarker:
                     print(f"ERROR during benchmarking of {model_name} on {dataset_name}: {e}")
                     traceback.print_exc()
                     all_results.append({"dataset": dataset_name, "model": model_name, "error": str(e)})
+
+        # --- FIX: Force garbage collection after the benchmark loop ---
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
 
         summary_df = pd.DataFrame(all_results)
         # The full summary is now handled by main.py
