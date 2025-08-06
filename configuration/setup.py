@@ -138,7 +138,7 @@ if __name__ == "__main__":
         (f"conda install -y "
          f"-c nvidia -c conda-forge "
          f"python={PYTHON_VERSION} "
-         f"'cuda-toolkit={CUDA_VERSION}' 'cuda-compiler={CUDA_VERSION}' 'cudnn' "
+         f"'cuda-toolkit={CUDA_VERSION}' 'cuda-compiler={CUDA_VERSION}' 'cudnn=8.9' "
          f"dask tqdm biopython matplotlib scipy scikit-learn gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"),
 
         # STAGE 2: PIP INSTALLATIONS FOR ML FRAMEWORKS
