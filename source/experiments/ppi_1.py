@@ -239,6 +239,11 @@ class PPIPipeline:
                     with mlflow.start_run(run_name=f"Fold_{fold_num + 1}_FAILED", nested=True):
                         mlflow.set_tag("status", "FAILED")
                         mlflow.log_param("error", str(e))
+                # --- FIX: Append NaN metrics to ensure failed folds are counted and do not skew the average ---
+                # This prevents silent failures from skewing the final average metrics.
+                keys_to_nan = fold_metrics_list[0].keys() if fold_metrics_list else ['precision_sklearn', 'recall_sklearn', 'f1_sklearn', 'auc_sklearn']
+                nan_metrics = {key: np.nan for key in keys_to_nan}
+                fold_metrics_list.append(nan_metrics)
 
         if fold_metrics_list:
             metrics_keys = fold_metrics_list[0].keys() - {'roc_data'}

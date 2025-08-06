@@ -216,6 +216,10 @@ class ProtGramBuilder:
             if os.path.exists(temp_edge_output_dir):
                 shutil.rmtree(temp_edge_output_dir)
 
+            # --- FIX: Prevent Dask race condition by pre-creating the directory ---
+            # This ensures the directory exists before any worker tries to write to it.
+            os.makedirs(temp_edge_output_dir, exist_ok=True)
+
             scheduler_for_to_textfiles = 'sync'
             print(
                 f"    Writing edge strings to directory: {temp_edge_output_dir} using Dask scheduler: '{scheduler_for_to_textfiles}'...")

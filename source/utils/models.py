@@ -317,6 +317,8 @@ class EmbeddingProcessor:
             pooled_embeddings = {}
             attention_weights_log = {}
 
+            # Create a reverse map from index to n-gram string for logging
+            idx_to_ngram_map = {v: k for k, v in ngram_map.items()}
             # Step 1: Pre-build the protein -> [n-gram indices] mapping.
             num_proteins = len(protein_sequences)
             protein_ids_ordered = [p_data[0] for p_data in protein_sequences]
@@ -335,20 +337,25 @@ class EmbeddingProcessor:
                 prot_id = protein_ids_ordered[prot_idx]
                 protein_ngrams_arr = ngram_embeddings[ngram_indices].astype(np.float32)
 
+                # --- FIX: Handle cases where no valid n-grams were found for a protein ---
+                if protein_ngrams_arr.shape[0] == 0:
+                    # This protein had no n-grams with embeddings, so we skip it.
+                    continue
+
                 if protein_ngrams_arr.shape[0] > 1:
                     mean_vec = np.mean(protein_ngrams_arr, axis=0, keepdims=True)
                     attention_scores = np.dot(protein_ngrams_arr, mean_vec.T).flatten()
                     exp_scores = np.exp(attention_scores - np.max(attention_scores))
                     attention_weights = exp_scores / np.sum(exp_scores)
-                    pooled_emb = np.dot(attention_weights, protein_ngrams_arr)
-                    # Log the weights by their n-gram index
+                    pooled_emb = np.dot(attention_weights, protein_ngrams_arr) # Log the weights by their n-gram STRING
                     attention_weights_log[prot_id] = {
-                        idx: weight for idx, weight in zip(ngram_indices, attention_weights)
+                        idx_to_ngram_map.get(idx, str(idx)): float(weight)
+                        for idx, weight in zip(ngram_indices, attention_weights)
                     }
                 elif protein_ngrams_arr.shape[0] == 1:
                     pooled_emb = protein_ngrams_arr[0]
-                    # Attention for a single item is 1.0
-                    attention_weights_log[prot_id] = {ngram_indices[0]: 1.0}
+                    # Attention for a single item is 1.0, log with its string representation
+                    attention_weights_log[prot_id] = {idx_to_ngram_map.get(ngram_indices[0], str(ngram_indices[0])): 1.0}
                 else: continue
 
                 pooled_embeddings[prot_id] = pooled_emb.astype(ngram_embeddings.dtype)
@@ -440,11 +447,13 @@ class EmbeddingProcessor:
             prev_level_embeddings: np.ndarray,
             prev_level_map: Dict[str, int],
             strategy: str = 'mean'
-    ) -> Optional[torch.Tensor]:
+    ) -> Optional[Tuple[torch.Tensor, Dict[str, Dict[str, float]]]]:
         """
         Generates initial features for an n-gram graph by pooling the embeddings
         of its constituent (n-1)-grams from the previous level. Supports 'mean'
         and 'attention' pooling strategies.
+
+        Returns: A tuple of (features_tensor, attention_weights_dict).
         """
         n_val = graph_obj.n_value
         if n_val <= 1:
@@ -454,6 +463,7 @@ class EmbeddingProcessor:
         num_nodes = graph_obj.number_of_nodes
         embedding_dim = prev_level_embeddings.shape[1]
         # Initialize with zeros; n-grams with no valid parents will have a zero-vector feature
+        hierarchical_attention_log: Dict[str, Dict[str, float]] = {}
         initial_features = np.zeros((num_nodes, embedding_dim), dtype=np.float32)
 
         for node_idx, ngram_str in tqdm(graph_obj.nodes.items(), desc=f"  Initializing n={n_val} features", leave=False):
@@ -477,11 +487,16 @@ class EmbeddingProcessor:
                     scores = np.array([score1, score2])
                     exp_scores = np.exp(scores - np.max(scores))  # Stabilized softmax
                     weights = exp_scores / np.sum(exp_scores)
-                    initial_features[node_idx] = weights[0] * p1 + weights[1] * p2
+                    initial_features[node_idx] = (weights[0] * p1) + (weights[1] * p2)
+                    # Log the attention weights
+                    hierarchical_attention_log[ngram_str] = {
+                        parent1_str: float(weights[0]),
+                        parent2_str: float(weights[1])
+                    }
                 else:  # Default to mean pooling
                     initial_features[node_idx] = (p1 + p2) / 2.0
 
-        return torch.from_numpy(initial_features)
+        return torch.from_numpy(initial_features), hierarchical_attention_log
 
     @staticmethod
     def generate_edge_features_batched(interaction_pairs: List[Tuple[str, str, int]],

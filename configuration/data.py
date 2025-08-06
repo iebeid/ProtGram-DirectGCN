@@ -30,20 +30,22 @@ def _is_file_valid(file_path: Path) -> bool:
     if not file_path.exists() or file_path.stat().st_size < 10:
         return False
 
-    file_type = file_path.suffix.lower()
-
-    # Check for HTML content, a common issue with bad downloads
+    # --- FIX: Check for HTML content, a common issue with bad downloads, but handle binary files gracefully ---
     try:
         with open(file_path, 'r', encoding='utf-8-sig') as f:  # Use utf-8-sig to handle potential BOM
             first_chunk = f.read(1024)
             if first_chunk.strip().lower().startswith(('<!doctype html', '<html')):
                 print(f"  - Validation failed for {file_path.name}: File appears to be an HTML document.")
                 return False
-    except Exception:
+    except UnicodeDecodeError:
         # This is likely a binary file (like .h5 or .gz), which is fine.
         # The read will fail, so we can proceed with the assumption it's not a text-based error page.
         pass
+    except Exception as e:
+        print(f"  - Validation warning for {file_path.name}: Could not read start of file. Error: {e}")
+        # We can proceed, but this is worth noting.
 
+    file_type = file_path.suffix.lower()
     # FASTA-specific check
     if file_type == '.fasta':
         try:

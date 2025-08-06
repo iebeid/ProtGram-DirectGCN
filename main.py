@@ -283,10 +283,10 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
     # --- FIX: Separate the print from the input and explicitly flush the stream. ---
     # This prevents a buffering issue where the prompt doesn't appear before the script waits for input.
     print("\nDo you want to continue with the full, long-running pipelines for this dataset? (y/n): ", end='', flush=True)
-    response = input().lower().strip()
+    response = input()
 
-    if response not in ['y', 'yes']:
-        print("Skipping main pipeline as requested by user.")
+    if response.lower().strip() not in ['y', 'yes']:
+        print("\nSkipping main pipeline as requested by user.")
         return False
 
     print("Continuing with the full pipeline...\n")
@@ -319,66 +319,69 @@ def main():
                 DataUtils.print_header("Running Integrated Test Suite (Once at Startup)")
                 gpu_is_ok = run_all_tests()
                 DataUtils.print_header("Integrated Test Suite Finished. Continuing main pipeline...")
+                # --- FIX: Make the consequence of a failed GPU test explicit to the user ---
                 if not gpu_is_ok:
                     print("\n" + "!" * 80)
                     print("!!! WARNING: GPU verification failed for PyTorch or TensorFlow. !!!")
                     print("!!! The pipeline can continue, but it will run on the CPU, which may be very slow. !!!")
                     print("!" * 80)
-                    response = input("Do you want to continue with CPU-only execution? (y/n): ").lower().strip()
-                    if response not in ['y', 'yes']:
-                        print("Aborting as requested by user.")
-                        sys.exit(1)
+                    if sys.stdin.isatty(): # Only prompt in interactive sessions
+                        response = input("Do you want to continue with CPU-only execution? (y/n): ").lower().strip()
+                        if response not in ['y', 'yes']:
+                            print("Aborting as requested by user.")
+                            sys.exit(1)
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 files_to_process = _get_fasta_files_to_process(base_config, Path(temp_dir))
                 if not files_to_process:
                     print("\nERROR: No sequence files defined in config.SEQUENCE_FILE_PATHS. Cannot run experiments.")
-                else:
-                    print(f"\nFound {len(files_to_process)} dataset(s) to process for the main pipeline.")
-                    for fasta_file_path in files_to_process:
-                        # --- FIX: Create a dataset-specific config to prevent overwriting results ---
-                        config = copy.deepcopy(base_config)
-                        dataset_name = fasta_file_path.stem
-                        DataUtils.print_header(f"PROCESSING DATASET: {dataset_name.upper()}")
-                        config.SEQUENCE_FILE_PATHS = [fasta_file_path]
-                        print(f"  - This run will process sequences from: {fasta_file_path}")
+                    return
 
-                        # Programmatically update all relevant output paths
-                        paths_to_specialize = [
-                            'RESULTS_GRAPH_OBJECTS_DIR', 'RESULTS_GCN_EMBEDDINGS_DIR',
-                            'RESULTS_W2V_EMBEDDINGS_DIR', 'RESULTS_LSTM_EMBEDDINGS_DIR',
-                            'RESULTS_TRANSFORMER_EMBEDDINGS_DIR', 'RESULTS_EVALUATION_DIR'
-                        ]
-                        for path_attr in paths_to_specialize:
-                            if hasattr(config, path_attr):
-                                # The base path is from the original config object
-                                original_path = getattr(base_config, path_attr)
-                                setattr(config, path_attr, original_path / dataset_name)
-                        # --- END FIX ---
+                print(f"\nFound {len(files_to_process)} dataset(s) to process for the main pipeline.")
+                for fasta_file_path in files_to_process:
+                    # --- FIX: Create a dataset-specific config to prevent overwriting results ---
+                    config = copy.deepcopy(base_config)
+                    dataset_name = fasta_file_path.stem
+                    DataUtils.print_header(f"PROCESSING DATASET: {dataset_name.upper()}")
+                    config.SEQUENCE_FILE_PATHS = [fasta_file_path]
+                    print(f"  - This run will process sequences from: {fasta_file_path}")
 
-                        # Run pre-analysis and prompt the user. If they agree, run the main pipelines.
-                        if _run_pre_analysis_and_prompt(config, fasta_file_path):
-                            # If the user proceeds, we must now build the FULL set of graphs (n=1 to 3)
-                            # before running the main embedding pipelines.
-                            DataUtils.print_header("Building all n-gram graphs for the main pipeline")
-                            ProtGramBuilder(config).run(run_singleton_eval=False)  # Re-run, but skip the now-redundant eval
+                    # Programmatically update all relevant output paths
+                    paths_to_specialize = [
+                        'RESULTS_GRAPH_OBJECTS_DIR', 'RESULTS_GCN_EMBEDDINGS_DIR',
+                        'RESULTS_W2V_EMBEDDINGS_DIR', 'RESULTS_LSTM_EMBEDDINGS_DIR',
+                        'RESULTS_TRANSFORMER_EMBEDDINGS_DIR', 'RESULTS_EVALUATION_DIR'
+                    ]
+                    for path_attr in paths_to_specialize:
+                        if hasattr(config, path_attr):
+                            # The base path is from the original config object
+                            original_path = getattr(base_config, path_attr)
+                            setattr(config, path_attr, original_path / dataset_name)
+                    # --- END FIX ---
 
-                            generated_embedding_files = _run_main_embedding_pipelines(config)
-                            final_evaluation_list = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_embedding_files
-                            config.LP_EMBEDDING_FILES_TO_EVALUATE = final_evaluation_list
+                    # Run pre-analysis and prompt the user. If they agree, run the main pipelines.
+                    if _run_pre_analysis_and_prompt(config, fasta_file_path):
+                        # If the user proceeds, we must now build the FULL set of graphs (n=1 to 3)
+                        # before running the main embedding pipelines.
+                        DataUtils.print_header("Building all n-gram graphs for the main pipeline")
+                        ProtGramBuilder(config).run(run_singleton_eval=False)  # Re-run, but skip the now-redundant eval
 
-                            if config.RUN_MAIN_PPI_EVALUATION:
-                                if config.LP_EMBEDDING_FILES_TO_EVALUATE:
-                                    DataUtils.print_header(f"Running Main Evaluation for Dataset: {dataset_name}")
-                                    ppi_evaluator = PPIPipeline(config)
-                                    if config.USE_MLFLOW:
-                                        mlflow.set_experiment(f"{config.MLFLOW_EXPERIMENT_NAME}-{dataset_name}")
-                                        with mlflow.start_run(run_name=f"PPI_Evaluation_Full_Run") as parent_run:
-                                            mlflow.set_tag("dataset_name", dataset_name)
-                                            ppi_evaluator.run(use_dummy_data=False, parent_run_id=parent_run.info.run_id)
-                                    else:
-                                        ppi_evaluator.run(use_dummy_data=False)
-                        DataUtils.print_header(f"COMPLETED FULL PIPELINE FOR DATASET: {dataset_name.upper()}")
+                        generated_embedding_files = _run_main_embedding_pipelines(config)
+                        final_evaluation_list = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_embedding_files
+                        config.LP_EMBEDDING_FILES_TO_EVALUATE = final_evaluation_list
+
+                        if config.RUN_MAIN_PPI_EVALUATION:
+                            if config.LP_EMBEDDING_FILES_TO_EVALUATE:
+                                DataUtils.print_header(f"Running Main Evaluation for Dataset: {dataset_name}")
+                                ppi_evaluator = PPIPipeline(config)
+                                if config.USE_MLFLOW:
+                                    mlflow.set_experiment(f"{config.MLFLOW_EXPERIMENT_NAME}-{dataset_name}")
+                                    with mlflow.start_run(run_name=f"PPI_Evaluation_Full_Run") as parent_run:
+                                        mlflow.set_tag("dataset_name", dataset_name)
+                                        ppi_evaluator.run(use_dummy_data=False, parent_run_id=parent_run.info.run_id)
+                                else:
+                                    ppi_evaluator.run(use_dummy_data=False)
+                    DataUtils.print_header(f"COMPLETED FULL PIPELINE FOR DATASET: {dataset_name.upper()}")
 
             DataUtils.print_header(f"Full Orchestration Finished in {time.monotonic() - script_start_time:.2f} seconds.")
 

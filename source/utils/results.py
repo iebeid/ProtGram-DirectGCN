@@ -6,6 +6,7 @@
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
+import random
 import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -320,6 +321,79 @@ class EvaluationReporter:
         plt.close()
         return plot_filename
 
+    def generate_hierarchical_attention_plot(self, attention_json_path: Path, model_name: str, num_samples_per_level: int = 5) -> Optional[Path]:
+        """
+        Generates a set of bar charts showing the attention weights for a sample
+        of n-grams from each level of the hierarchy.
+        """
+        if not attention_json_path.exists():
+            print(f"  Hierarchical attention file not found: {attention_json_path}. Skipping plot.")
+            return None
+
+        print(f"  Generating hierarchical attention plot for {model_name} from {attention_json_path.name}...")
+
+        try:
+            with open(attention_json_path, 'r') as f:
+                # Load keys as strings, then convert numeric keys to int for sorting
+                attention_data_str_keys = json.load(f)
+                attention_data = {int(k): v for k, v in attention_data_str_keys.items()}
+        except (json.JSONDecodeError, IOError, ValueError) as e:
+            print(f"  Error reading or parsing attention JSON file: {e}")
+            return None
+
+        if not attention_data:
+            print("  No hierarchical attention data found in file.")
+            return None
+
+        # The keys are n-gram levels (e.g., 2, 3). Sort them numerically.
+        levels = sorted(attention_data.keys())
+        num_levels = len(levels)
+        if num_levels == 0:
+            print("  Attention data is empty, no levels to plot.")
+            return None
+
+        fig, axes = plt.subplots(num_levels, 1, figsize=(12, 6 * num_levels), squeeze=False)
+        fig.suptitle(f'Hierarchical Attention Weights\n(Model: {model_name})', fontsize=16)
+
+        for i, level in enumerate(levels):
+            ax = axes[i, 0]
+            level_data = attention_data[level]
+
+            if not level_data:
+                ax.text(0.5, 0.5, f'No attention data for n={level}', ha='center', va='center')
+                ax.set_title(f'N-Gram Level: {level}')
+                continue
+
+            # Take a random sample of n-grams to visualize
+            sample_keys = random.sample(list(level_data.keys()), min(len(level_data), num_samples_per_level))
+            sample_data = {k: level_data[k] for k in sample_keys}
+
+            bar_labels, parent1_weights, parent2_weights = [], [], []
+            for ngram, parents in sample_data.items():
+                bar_labels.append(ngram)
+                parent1_weights.append(parents.get(ngram[:-1], 0))
+                parent2_weights.append(parents.get(ngram[1:], 0))
+
+            x = np.arange(len(bar_labels))
+            width = 0.35
+            ax.bar(x - width / 2, parent1_weights, width, label=f'Parent 1 ({bar_labels[0][:-1][:4]}...)')
+            ax.bar(x + width / 2, parent2_weights, width, label=f'Parent 2 (...{bar_labels[0][1:][-4:]})')
+            ax.set_ylabel('Attention Weight')
+            ax.set_title(f'N-Gram Level: {level} (Sample of {len(bar_labels)} n-grams)')
+            ax.set_xticks(x)
+            ax.set_xticklabels(bar_labels, rotation=45, ha="right")
+            ax.legend()
+            ax.grid(axis='y', linestyle='--', alpha=0.7)
+
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        plot_filename = self.plots_output_dir / f"hierarchical_attention_{model_name.replace(' ', '_')}.png"
+        try:
+            plt.savefig(plot_filename)
+            print(f"  Saved hierarchical attention summary plot to {plot_filename}")
+        except Exception as e:
+            print(f"  Error saving hierarchical attention plot {plot_filename}: {e}")
+        plt.close()
+        return plot_filename
 
     def write_summary_file(self, results_list: List[Dict[str, Any]], main_emb_name: str, test_metric: str, alpha: float) -> Optional[Path]:
         """

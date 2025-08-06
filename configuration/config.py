@@ -218,7 +218,7 @@ class Config:
         self.GCN_1GRAM_INIT_DIM = 512
         self.GCN_MAX_PE_LEN = 512 # Max length for positional embeddings
         # Gating mode for DirectGCN. Options: 'vector', 'scalar', 'none'
-        self.GCN_GATING_COEFF_MODE = "vector"
+        self.GCN_GATING_COEFF_MODE = "none"
 
         # Training Hyperparameters
         self.GCN_EPOCHS_PER_LEVEL = 300

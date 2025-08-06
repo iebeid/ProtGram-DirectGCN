@@ -175,11 +175,12 @@ class NetworkEmbeddingBenchmarker:
             sparse=True,
         ).to(self.device)
 
-        # --- FIX: Set num_workers=0 to prevent multiprocessing deadlocks/hangs ---
-        # Using num_workers > 0 can cause the main script to hang indefinitely
-        # or exhibit strange I/O buffering issues (like a hidden input prompt)
-        # while waiting for worker processes to terminate. Setting to 0 forces
-        # data loading to happen in the main thread, which is safer and more stable.
+        # --- DEFINITIVE FIX for hidden prompt: Set num_workers=0 ---
+        # Using multiple worker processes (num_workers > 0) in the DataLoader
+        # causes a well-known issue where the main script hangs before an
+        # input() prompt, waiting for background processes to terminate.
+        # Setting this to 0 forces data loading to happen in the main thread,
+        # resolving the hang and ensuring the prompt appears immediately.
         loader = node2vec_model.loader(batch_size=128, shuffle=True, num_workers=0)
         optimizer = torch.optim.SparseAdam(list(node2vec_model.parameters()), lr=0.01)
 
