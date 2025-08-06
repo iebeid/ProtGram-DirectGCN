@@ -144,7 +144,7 @@ if __name__ == "__main__":
         # STAGE 2: PIP INSTALLATIONS FOR ML FRAMEWORKS
         "echo '--- Stage 2: Installing ML Frameworks (PyTorch, TensorFlow) via pip ---'",
         (f"pip install --no-cache-dir "
-         f"\"tensorflow<2.16\" "
+         f"\"tensorflow<2.16\" tf-keras "
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} --extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"
          ),
         # Forcefully remove the pip-installed cuDNN from the torch wheel to ensure consistency.
@@ -158,7 +158,7 @@ if __name__ == "__main__":
 
         # STAGE 4: Install remaining pip packages
         "echo '--- Stage 4: Installing remaining pip packages (MLflow, Transformers, PyG) ---'",
-        "pip install --no-cache-dir tf-keras mlflow gdown transformers==4.41.2",
+        "pip install --no-cache-dir mlflow gdown transformers==4.41.2",
         (f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
          f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION.replace('.', '')}.html"),
 
