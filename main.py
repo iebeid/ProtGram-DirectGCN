@@ -192,8 +192,24 @@ def _display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
         # Reorder and fill missing columns with NaN
         final_summary_df = final_summary_df.reindex(columns=final_columns)
 
+        # --- NEW: Grouping logic for clearer presentation ---
+        # Create a clean group name. Handles "Cora_Original" -> "Cora", but keeps special names.
+        def get_group_name(dataset_name):
+            if 'ProtGram_n1_Singleton' in dataset_name:
+                return dataset_name  # Keep the full name for this special case
+            return dataset_name.replace('_Original', '')
+
+        final_summary_df['dataset_group'] = final_summary_df['dataset'].apply(get_group_name)
+
+        # Sort for presentation
+        final_summary_df = final_summary_df.sort_values(by=['dataset_group', 'model'])
+
         DataUtils.print_header("Aggregated Benchmark Summary")
-        print(final_summary_df.to_string())
+        # Use groupby to print in distinct blocks for readability
+        for group_name, group_df in final_summary_df.groupby('dataset_group', sort=False):
+            print(f"\n--- Results for Dataset: {group_name} ---")
+            # Drop the temporary grouping column for cleaner output
+            print(group_df[final_columns].to_string(index=False))
     except Exception as e:
         print(f"Could not generate aggregated benchmark summary due to an error: {e}")
 
@@ -205,7 +221,7 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
     """
     all_benchmark_results = []
 
-    # --- Step 1: Run standard GNN and Network Embedding benchmarks. ---
+    # --- Step 1: Run standard GNN and Network Embedding benchmarks ---
     if config.RUN_BENCHMARKING_PIPELINE:
         mlflow.set_experiment(config.MLFLOW_BENCHMARK_EXPERIMENT_NAME)
         with mlflow.start_run(run_name="GNN_Benchmark_Suite"):
@@ -218,22 +234,16 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
         with mlflow.start_run(run_name="NE_Benchmark_Suite"):
             ne_results_df = NetworkEmbeddingBenchmarker(config).run()
             if ne_results_df is not None and not ne_results_df.empty:
-                # Standardize columns to match GNN benchmark format
-                ne_results_df['best_val_accuracy'] = np.nan
                 all_benchmark_results.append(ne_results_df)
 
-    # --- Step 2: Run the n=1 ProtGramBuilder step and Singleton GCN Evaluation. ---
+    # --- Step 2: Run the n=1 ProtGramBuilder and Singleton GCN Evaluation ---
     if config.RUN_SINGLETON_GCN_EVAL:
         DataUtils.print_header("Running Singleton (n=1) Graph Evaluation")
-        # Create a temporary config to only build the n=1 graph for this step
         singleton_config = copy.deepcopy(config)
         singleton_config.GCN_NGRAM_MAX_N = 1
-
-        # The run method of ProtGramBuilder will build the n=1 graph and run the eval
         singleton_results_df = ProtGramBuilder(singleton_config).run(run_singleton_eval=True)
 
         if singleton_results_df is not None and not singleton_results_df.empty:
-            # Standardize singleton results to fit the benchmark table
             singleton_results_df = singleton_results_df.rename(columns={'Model': 'model', 'Accuracy': 'test_accuracy'})
             singleton_results_df['dataset'] = f"ProtGram_n1_Singleton_{fasta_file_path.stem}"
             singleton_results_df['best_val_accuracy'] = np.nan
@@ -241,11 +251,15 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
             # Ensure the column order matches for concatenation
             all_benchmark_results.append(singleton_results_df[['dataset', 'model', 'test_accuracy', 'best_val_accuracy', 'error']])
 
-    # --- Step 3: Display the aggregated summary. ---
+    # --- Step 3: Display the aggregated summary ---
     _display_aggregated_benchmark_summary(all_benchmark_results)
 
-    # --- Step 4: Prompt the user to continue. ---
-    # This prompt now appears after all preliminary results have been shown.
+    # --- Step 4: Prompt the user to continue, with a check for non-interactive sessions ---
+    if not sys.stdin.isatty():
+        print("\n--- Non-interactive session detected. Skipping user prompt and main pipelines. ---")
+        print("--- To run the full pipeline, execute the script in an interactive terminal. ---")
+        return False
+
     response = input("\nDo you want to continue with the full, long-running pipelines for this dataset? (y/n): ").lower().strip()
     if response not in ['y', 'yes']:
         print("Skipping main pipeline as requested by user.")
