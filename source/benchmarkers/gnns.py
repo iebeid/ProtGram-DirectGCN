@@ -356,8 +356,14 @@ class GNNBenchmarker:
 
         # --- Save a final, grand summary of all results ---
         if all_results:
-            full_summary_df = pd.DataFrame(all_results)
-            # The full summary is now handled by main.py
+            summary_df = pd.DataFrame(all_results)
             DataUtils.print_header("GNN Benchmarking PIPELINE FINISHED")
-            return full_summary_df
+            # --- FIX: Explicitly clean up resources to prevent hangs before user prompts ---
+            del all_results
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            # --- END FIX ---
+            return summary_df
         return pd.DataFrame()

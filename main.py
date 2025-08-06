@@ -280,12 +280,14 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
         print("--- To run the full pipeline, execute the script in an interactive terminal. ---")
         return False
 
-    # --- FIX: Separate the print from the input and explicitly flush the stream. ---
-    # This prevents a buffering issue where the prompt doesn't appear before the script waits for input.
-    print("\nDo you want to continue with the full, long-running pipelines for this dataset? (y/n): ", end='', flush=True)
-    response = input()
+    # --- FIX: Make the prompt more robust to I/O buffering issues from background processes. ---
+    # By explicitly flushing stdout and reading directly from stdin, we can sometimes bypass
+    # hangs caused by lingering resources from previous computational steps.
+    print("\nDo you want to continue with the full, long-running pipelines for this dataset? (y/n): ")
+    sys.stdout.flush()
+    response = sys.stdin.readline().strip().lower()
 
-    if response.lower().strip() not in ['y', 'yes']:
+    if response not in ['y', 'yes']:
         print("\nSkipping main pipeline as requested by user.")
         return False
 

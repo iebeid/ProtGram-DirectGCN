@@ -126,7 +126,7 @@ class EvaluationReporter:
         plt.subplot(1, 2, 2)
         # FIX: Robustly find the primary metric (e.g., 'accuracy', 'auc')
         metric_key = next((k for k in ['accuracy', 'auc'] if k in history_dict), None)
-        val_metric_key = next((k for k in [f'val_{metric_key}'] if k in history_dict), None)
+        val_metric_key = f'val_{metric_key}' if metric_key else None
 
         if metric_key and metric_key in history_dict and history_dict[metric_key]:
             plt.plot(history_dict[metric_key], label=f'Training {metric_key.capitalize()}')

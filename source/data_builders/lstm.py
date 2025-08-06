@@ -33,8 +33,9 @@ class LstmPytorchDataset(Dataset):
         self.seq_len = seq_len
         self.step = step
         self.char_to_int = char_to_int
-        # Calculate the number of sequences that can be generated
-        self.num_sequences = (len(self.text) - self.seq_len - 1) // self.step
+        # --- FIX: Ensure the number of sequences cannot be negative ---
+        # This prevents a crash if the text is shorter than the sequence length.
+        self.num_sequences = max(0, (len(self.text) - self.seq_len - 1) // self.step)
         print(f"  [PyTorch Dataset] Corpus has {len(text):,} characters, creating {self.num_sequences:,} samples.")
 
     def __len__(self) -> int:

@@ -217,18 +217,19 @@ class Config:
         self.GCN_HIDDEN_LAYER_DIMS = [256, 128, 64]
         self.GCN_1GRAM_INIT_DIM = 512
         self.GCN_MAX_PE_LEN = 512 # Max length for positional embeddings
-        # Gating mode for DirectGCN. Options: 'vector', 'scalar', 'none'
-        self.GCN_GATING_COEFF_MODE = "scalar"
+        # Gating mode for DirectGCN.
+        # 'scalar': One learnable scalar per path, per layer (shared by all nodes).
+        # 'vector': One learnable scalar per path, per node, per layer (more expressive).
+        # 'node_scalar': One learnable scalar per node, per layer (shared across all paths for that node).
+        # 'node_gate_vector': A learnable *vector* per path, per node, per layer for element-wise gating. Most expressive.
+        # 'none': No gating, paths are simply added.
+        self.GCN_GATING_COEFF_MODE = "node_gate_vector"
 
         # Training Hyperparameters
         self.GCN_EPOCHS_PER_LEVEL = 300
         self.GCN_LR = 0.001
         self.GCN_DROPOUT_RATE = 0.5
-        self.GCN_WEIGHT_DECAY = 1e-4
-        self.GCN_L2_REG_LAMBDA = 1e-7
-        self.GCN_PROPAGATION_EPSILON = 1e-9
-
-        # LR Scheduler & Early Stopping
+        self.GCN_WEIGHT_DECAY = 1e-4 # Standard L2 regularization
         self.GCN_USE_LR_SCHEDULER = True
         self.GCN_LR_SCHEDULER_PATIENCE = 10
         self.GCN_LR_SCHEDULER_FACTOR = 0.5

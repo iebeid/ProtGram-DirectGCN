@@ -1,8 +1,8 @@
 # ==============================================================================
-# MODULE: models/gnn/directgcn.py
+# MODULE: models/gnn/spectral/directgcn.py
 # PURPOSE: Contains the PyTorch class definitions for the custom GCN model.
-# VERSION: 8.3 (Stable & Corrected - Cleaned up hierarchical gating and dual-path logic)
-# AUTHOR: Islam Ebeid
+# VERSION: 9.1 (Finalized - Removed node_scalar mode for clarity)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 from typing import Optional, List, Tuple
@@ -37,24 +37,24 @@ class DirectGCNLayer(MessagePassing):
         self.bias_main_out = nn.Parameter(torch.Tensor(out_channels))
         self.bias_undirected = nn.Parameter(torch.Tensor(out_channels))
 
-        # --- NEW: Projection layers for concatenated path features ---
+        # --- Projection layers for concatenated path features ---
         self.proj_in = nn.Linear(out_channels * 2, out_channels)
         self.proj_out = nn.Linear(out_channels * 2, out_channels)
         self.proj_undir = nn.Linear(out_channels * 2, out_channels)
 
         # --- Shared Components (used by all paths) ---
-        # A single shared linear layer for all paths to learn a general transformation
         self.lin_shared = nn.Linear(in_channels, out_channels, bias=False)
-        # Separate biases for the shared transformation on each path
         self.bias_shared_in = nn.Parameter(torch.Tensor(out_channels))
         self.bias_shared_out = nn.Parameter(torch.Tensor(out_channels))
         self.bias_shared_undir = nn.Parameter(torch.Tensor(out_channels))
 
-        # --- Hierarchical Learnable Coefficients ---
-        if self.gating_mode == 'vector' and self.num_nodes > 0:
-            self.C_in_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
-            self.C_out_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
-            self.C_undirected_vec = nn.Parameter(torch.Tensor(num_nodes, 1))
+        # --- Hierarchical Learnable Gating Coefficients ---
+        if self.gating_mode in ['vector', 'node_gate_vector'] and self.num_nodes > 0:
+            # For 'vector', this is (N, 1). For 'node_gate_vector', this is (N, out_channels).
+            gate_dim = out_channels if self.gating_mode == 'node_gate_vector' else 1
+            self.C_in_vec = nn.Parameter(torch.Tensor(num_nodes, gate_dim))
+            self.C_out_vec = nn.Parameter(torch.Tensor(num_nodes, gate_dim))
+            self.C_undirected_vec = nn.Parameter(torch.Tensor(num_nodes, gate_dim))
         elif self.gating_mode == 'scalar':
             self.C_in = nn.Parameter(torch.Tensor(1))
             self.C_out = nn.Parameter(torch.Tensor(1))
@@ -70,20 +70,18 @@ class DirectGCNLayer(MessagePassing):
         self.reset_parameters()
 
     def reset_parameters(self):
-        # Initialize all linear layers
+        """Initializes all learnable parameters of the layer."""
         for lin in [self.lin_main_in, self.lin_main_out, self.lin_undirected, self.lin_shared,
                     self.proj_in, self.proj_out, self.proj_undir]:
             nn.init.xavier_uniform_(lin.weight)
             if hasattr(lin, 'bias') and lin.bias is not None:
                 nn.init.zeros_(lin.bias)
 
-        # Initialize all bias terms
         for bias in [self.bias_main_in, self.bias_main_out, self.bias_undirected,
                      self.bias_shared_in, self.bias_shared_out, self.bias_shared_undir]:
             nn.init.zeros_(bias)
 
-        # Initialize gating coefficients if they exist
-        if self.gating_mode == 'vector' and hasattr(self, 'C_in_vec'):
+        if self.gating_mode in ['vector', 'node_gate_vector'] and hasattr(self, 'C_in_vec'):
             nn.init.ones_(self.C_in_vec)
             nn.init.ones_(self.C_out_vec)
             nn.init.ones_(self.C_undirected_vec)
@@ -102,50 +100,41 @@ class DirectGCNLayer(MessagePassing):
                 original_indices: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Forward pass implementing the hierarchical, dual-path logic."""
 
-        # --- 1. Directed Incoming Path ---
+        # --- 1. Path-specific transformations ---
         h_main_in = self.propagate(edge_index_in, x=self.lin_main_in(x), edge_weight=edge_weight_in)
-        path_specific_in = h_main_in + self.bias_main_in
-        shared_in = self.lin_shared(x) + self.bias_shared_in
-        concatenated_in = torch.cat([path_specific_in, shared_in], dim=-1)
-        ic_combined = self.proj_in(concatenated_in)
-
-        # --- 2. Directed Outgoing Path ---
         h_main_out = self.propagate(edge_index_out, x=self.lin_main_out(x), edge_weight=edge_weight_out)
-        path_specific_out = h_main_out + self.bias_main_out
-        shared_out = self.lin_shared(x) + self.bias_shared_out
-        concatenated_out = torch.cat([path_specific_out, shared_out], dim=-1)
-        oc_combined = self.proj_out(concatenated_out)
-
-        # --- 3. Undirected Structural Path ---
         h_main_undir = self.propagate(edge_index_undirected, x=self.lin_undirected(x), edge_weight=edge_weight_undirected)
-        path_specific_undir = h_main_undir + self.bias_undirected
-        shared_undir = self.lin_shared(x) + self.bias_shared_undir
-        concatenated_undir = torch.cat([path_specific_undir, shared_undir], dim=-1)
-        uc_combined = self.proj_undir(concatenated_undir)
 
-        # --- 4. Get Coefficients and Constant ---
-        if self.gating_mode == 'vector' and original_indices is not None:
-            # When using Cluster-GCN, we need to select the coefficients for the nodes in the current subgraph
-            c_in, c_out = self.C_in_vec[original_indices], self.C_out_vec[original_indices]
-            c_undirected = self.C_undirected_vec[original_indices]
-            constant_term = self.constant[original_indices] if self.constant is not None else 0
-        elif self.gating_mode == 'vector':
-            # Full-batch training
-            c_in, c_out = self.C_in_vec, self.C_out_vec
-            c_undirected = self.C_undirected_vec
-            constant_term = self.constant if self.constant is not None else 0
+        # --- 2. Shared transformation ---
+        h_shared = self.lin_shared(x)
+
+        # --- 3. Combine path-specific and shared features ---
+        ic_combined = self.proj_in(torch.cat([h_main_in + self.bias_main_in, h_shared + self.bias_shared_in], dim=-1))
+        oc_combined = self.proj_out(torch.cat([h_main_out + self.bias_main_out, h_shared + self.bias_shared_out], dim=-1))
+        uc_combined = self.proj_undir(torch.cat([h_main_undir + self.bias_undirected, h_shared + self.bias_shared_undir], dim=-1))
+
+        # --- 4. Get Gating Coefficients and Constant based on the configured mode ---
+        if self.gating_mode in ['vector', 'node_gate_vector']:
+            if original_indices is not None:
+                # Clustered training: select coefficients for the current subgraph
+                c_in, c_out = self.C_in_vec[original_indices], self.C_out_vec[original_indices]
+                c_undirected = self.C_undirected_vec[original_indices]
+                constant_term = self.constant[original_indices] if self.constant is not None else 0
+            else:
+                # Full-batch training
+                c_in, c_out = self.C_in_vec, self.C_out_vec
+                c_undirected = self.C_undirected_vec
+                constant_term = self.constant if self.constant is not None else 0
         elif self.gating_mode == 'scalar':
-            # Using scalar coefficients
             c_in, c_out, c_undirected = self.C_in, self.C_out, self.C_undirected
-            constant_term = 0
-        else: # gating_mode == 'none'
-            c_in, c_out, c_undirected = 1.0, 1.0, 1.0
-            constant_term = 0
+            constant_term = 0  # Constant is not used in scalar mode for simplicity
+        elif self.gating_mode == 'none':
+            c_in, c_out, c_undirected, constant_term = 1.0, 1.0, 1.0, 0.0
+        else:
+            raise ValueError(f"Unknown gating mode: '{self.gating_mode}'")
 
         # --- 5. Final Hierarchical Combination ---
-        # Combine the three paths using the learned coefficients
         final_combination = (c_undirected * uc_combined) + (c_in * ic_combined) + (c_out * oc_combined) + constant_term
-
         return final_combination
 
     def message(self, x_j: torch.Tensor, edge_weight: Optional[torch.Tensor]) -> torch.Tensor:
@@ -159,17 +148,11 @@ class DirectGCN(nn.Module):
 
     def __init__(self, layer_dims: List[int], num_graph_nodes: Optional[int],
                  task_num_output_classes: int, n_gram_len: int,
-                 one_gram_dim: int, max_pe_len: int, dropout: float, gating_mode: str,
-                 l2_eps: float = 1e-12):
+                 one_gram_dim: int, max_pe_len: int, dropout: float, gating_mode: str):
         super().__init__()
         self.n_gram_len = n_gram_len
         self.one_gram_dim = one_gram_dim
         self.dropout = dropout
-        self.l2_eps = l2_eps
-
-        self.pe_layer = None
-        if one_gram_dim > 0 and max_pe_len > 0:
-            self.pe_layer = nn.Embedding(max_pe_len, one_gram_dim)
 
         self.convs = nn.ModuleList()
         self.res_projs = nn.ModuleList()
@@ -223,18 +206,21 @@ class DirectGCN(nn.Module):
 
         h = self._apply_pe(x)
 
-        for i in range(len(self.convs)):
-            h_res = h
-            gcn_layer, res_layer = self.convs[i], self.res_projs[i]
-            gcn_output = gcn_layer(h_res, ei_in, ew_in, ei_out, ew_out, ei_undir, ew_undir, original_indices)
-            residual_output = res_layer(h_res)
-            h = F.leaky_relu(gcn_output + residual_output)
+        for i, conv in enumerate(self.convs):
+            h_res = h  # Store for residual connection
+
+            h = conv(
+                x=h,
+                edge_index_in=ei_in, edge_weight_in=ew_in,
+                edge_index_out=ei_out, edge_weight_out=ew_out,
+                edge_index_undirected=ei_undir, edge_weight_undirected=ew_undir,
+                original_indices=original_indices
+            )
+            h = F.relu(h)
             h = F.dropout(h, p=self.dropout, training=self.training)
+            h = h + self.res_projs[i](h_res)  # Apply residual connection
 
-        final_embed_for_task = h
-        task_logits = self.decoder_fc(final_embed_for_task)
-        # The final embeddings for downstream tasks are L2 normalized
-        final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
+        final_embeddings = h
+        logits = self.decoder_fc(final_embeddings)
 
-        # Return raw logits for compatibility with F.cross_entropy loss
-        return task_logits, final_normalized_embeddings
+        return logits, final_embeddings
