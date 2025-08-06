@@ -32,7 +32,6 @@ from source.models.gnn.spectral.rgcn import RGCN
 from source.models.gnn.spectral.tongidigcn import TongDiGCN
 from source.utils.data import DataUtils, IDMapGenerator
 from source.utils.models import EmbeddingProcessor, EarlyStopper
-from source.utils.post import PostUtils
 
 
 class ProtGramXGCNTrainer:
@@ -45,7 +44,6 @@ class ProtGramXGCNTrainer:
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.label_generator = XGCNDataset(config)
-        self.helpers = PostUtils(config)
         print(f"Using device: {self.device}")
 
     def run(self) -> Dict[str, str]:
@@ -66,7 +64,11 @@ class ProtGramXGCNTrainer:
                 DataUtils.print_header(f"Processing Model Type: {model_type.upper()}")
                 ngram_embeddings_per_level = self._train_gnns_hierarchically(model_type)
 
-                final_protein_embeddings, pooling_attention_weights = self.helpers.pool_to_protein_level(ngram_embeddings_per_level)
+                # --- FIX: Use the centralized EmbeddingProcessor for all pooling ---
+                final_protein_embeddings, pooling_attention_weights = self._pool_to_protein_level(
+                    ngram_embeddings_per_level,
+                    level_ngram_to_idx=self._get_level_ngram_maps() # Helper to get the maps
+                )
 
                 if mapper and final_protein_embeddings:
                     print("  Applying ID mapping to final protein embeddings...")
@@ -75,12 +77,12 @@ class ProtGramXGCNTrainer:
                 final_protein_embeddings_per_model[model_type] = final_protein_embeddings
                 final_attention_weights_per_model[model_type] = pooling_attention_weights
 
-        output_paths = self.helpers.save_final_embeddings(final_protein_embeddings_per_model)
+        output_paths = self._save_final_embeddings(final_protein_embeddings_per_model)
 
         # --- NEW: Save and visualize attention weights ---
         attention_paths = {}
         for model_type, attn_data in final_attention_weights_per_model.items():
-            path = self.helpers.save_attention_weights(attn_data, model_type)
+            path = self._save_attention_weights(attn_data, model_type)
             if path:
                 attention_paths[model_type] = path
                 # Automatically generate the plot after saving
@@ -94,7 +96,7 @@ class ProtGramXGCNTrainer:
             main_model_key = f"ProtGram{main_model_name_raw.capitalize()}"  # e.g., 'ProtGramDirectgcn'
             embedding_path_for_check = output_paths.get(f"{main_model_key}_pca", output_paths.get(main_model_key))
             if embedding_path_for_check:
-                self.helpers.run_sanity_check_ppi(embedding_path_for_check)
+                self._run_sanity_check_ppi(embedding_path_for_check)
 
         DataUtils.print_header("ProtGram Embedding PIPELINE STEP FINISHED")
         return output_paths
@@ -130,7 +132,10 @@ class ProtGramXGCNTrainer:
             if prev_level_embeddings is None or prev_level_embeddings.size == 0 or prev_level_map is None:
                 print(f"  Cannot proceed for n={n}, previous level embeddings not found or empty.")
                 return None
-            initial_features = self.helpers.pool_lower_level_embeddings(graph_obj, prev_level_embeddings, prev_level_map)
+            # --- FIX: Call the new centralized method in EmbeddingProcessor ---
+            initial_features = EmbeddingProcessor.pool_lower_level_embeddings_for_init(
+                graph_obj, prev_level_embeddings, prev_level_map,
+                strategy=self.config.GCN_HIERARCHICAL_POOLING_STRATEGY)
             return initial_features if initial_features is not None else None
 
     def _train_gnns_hierarchically(self, model_type: str) -> Dict[int, np.ndarray]:

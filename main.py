@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import List, Dict
 
 import mlflow
-import numpy as np
 import pandas as pd
 import tensorflow as tf
 
@@ -208,7 +207,17 @@ def _display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
                 return dataset_name
             return dataset_name.replace('_Original', '')
 
+        # --- FIX: Enforce a specific model order for consistency ---
+        # This order reflects a logical grouping (e.g., standard GNNs, custom GNNs, NE models)
+        model_order = [
+            "GAT", "GraphSAGE", "GIN", "ChebNet", "Node2Vec", "GCN",
+            "RGCN", "TongDiGCN", "DirectGCN"
+        ]
+
         final_summary_df['dataset_group'] = final_summary_df['dataset'].apply(get_group_name)
+        # Convert the 'model' column to a categorical type with the specified order.
+        final_summary_df['model'] = pd.Categorical(final_summary_df['model'], categories=model_order, ordered=True)
+        # Now sort by the dataset group and the new categorical model order
         final_summary_df = final_summary_df.sort_values(by=['dataset_group', 'model'])
 
         DataUtils.print_header("Aggregated Benchmark Summary")

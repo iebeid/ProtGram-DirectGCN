@@ -218,7 +218,7 @@ class Config:
         self.GCN_1GRAM_INIT_DIM = 512
         self.GCN_MAX_PE_LEN = 512 # Max length for positional embeddings
         # Gating mode for DirectGCN. Options: 'vector', 'scalar', 'none'
-        self.GCN_GATING_COEFF_MODE = "scalar"
+        self.GCN_GATING_COEFF_MODE = "vector"
 
         # Training Hyperparameters
         self.GCN_EPOCHS_PER_LEVEL = 300
@@ -257,6 +257,10 @@ class Config:
         # Strategy for pooling final n-gram embeddings to create a single protein embedding.
         # Options: 'mean', 'sum', 'max', 'attention'
         self.GCN_PROTEIN_POOLING_STRATEGY = 'attention'
+        # NEW: Hierarchical pooling strategy
+        # Strategy for pooling (n-1)-gram embeddings to initialize n-gram features.
+        # Options: 'mean', 'attention'
+        self.GCN_HIERARCHICAL_POOLING_STRATEGY = 'attention'
 
         # Sanity Check
         self.GCN_RUN_SANITY_CHECK_PPI = True

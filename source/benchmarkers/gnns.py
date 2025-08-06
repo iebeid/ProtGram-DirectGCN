@@ -106,11 +106,13 @@ class GNNBenchmarker:
         elif name == "DirectGCN":
             # The DirectGCN model has a complex signature that must be
             # adapted for standard benchmark datasets.
-            # Use the first hidden dimension and dropout from the main GCN config for consistency.
-            layer_dims = [data.num_features, self.config.GCN_HIDDEN_LAYER_DIMS[0], num_classes]
+            # --- MODIFICATION: Define DirectGCN with the same deep, hierarchical
+            # architecture used in the main ProtGram pipeline. ---
+            layer_dims = [data.num_features] + self.config.GCN_HIDDEN_LAYER_DIMS
             return DirectGCN(
                 layer_dims=layer_dims,
                 num_graph_nodes=data.num_nodes,
+                # The internal decoder will map the final GNN embedding to the number of classes
                 task_num_output_classes=num_classes,
                 n_gram_len=1,  # Mimics n=1 level; PE is skipped if feature dim doesn't match
                 one_gram_dim=self.config.GCN_1GRAM_INIT_DIM,
@@ -276,6 +278,16 @@ class GNNBenchmarker:
             print(f"  Using existing standard masks for {variant_name}.")
 
         print(f"  {variant_name.split('_')[0]} loaded: Nodes={data.num_nodes}, Edges={data.num_edges}, Features={data.num_features}, Classes={num_classes}")
+
+        # --- NEW: Ignore existing features and initialize random features ---
+        # This aligns the benchmark with the ProtGram n=1 setup, testing the
+        # models' ability to learn from structure alone without relying on
+        # pre-existing node attributes.
+        new_feature_dim = self.config.GCN_1GRAM_INIT_DIM
+        print(f"  Ignoring original features. Initializing new random features with dimension: {new_feature_dim}")
+        # Create the random features on the CPU; they will be moved to the GPU later.
+        data.x = torch.randn((data.num_nodes, new_feature_dim))
+        # The data.num_features property will now automatically reflect the new dimension.
 
         # Preprocess data once for all custom models
         data = self._preprocess_for_custom_models(data)

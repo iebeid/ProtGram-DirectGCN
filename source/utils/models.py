@@ -435,6 +435,55 @@ class EmbeddingProcessor:
             return embeddings.cpu().numpy()
 
     @staticmethod
+    def pool_lower_level_embeddings_for_init(
+            graph_obj: 'DirectedNgramGraph',
+            prev_level_embeddings: np.ndarray,
+            prev_level_map: Dict[str, int],
+            strategy: str = 'mean'
+    ) -> Optional[torch.Tensor]:
+        """
+        Generates initial features for an n-gram graph by pooling the embeddings
+        of its constituent (n-1)-grams from the previous level. Supports 'mean'
+        and 'attention' pooling strategies.
+        """
+        n_val = graph_obj.n_value
+        if n_val <= 1:
+            return None  # This function is only for n > 1
+
+        print(f"  Pooling (n-1)-gram embeddings to initialize features for n={n_val} graph (Strategy: {strategy})...")
+        num_nodes = graph_obj.number_of_nodes
+        embedding_dim = prev_level_embeddings.shape[1]
+        # Initialize with zeros; n-grams with no valid parents will have a zero-vector feature
+        initial_features = np.zeros((num_nodes, embedding_dim), dtype=np.float32)
+
+        for node_idx, ngram_str in tqdm(graph_obj.nodes.items(), desc=f"  Initializing n={n_val} features", leave=False):
+            # An n-gram has two (n-1)-gram parents
+            parent1_str = ngram_str[:-1]
+            parent2_str = ngram_str[1:]
+
+            parent1_idx = prev_level_map.get(parent1_str)
+            parent2_idx = prev_level_map.get(parent2_str)
+
+            if parent1_idx is not None and parent2_idx is not None:
+                p1 = prev_level_embeddings[parent1_idx].astype(np.float32)
+                p2 = prev_level_embeddings[parent2_idx].astype(np.float32)
+
+                if strategy == 'attention':
+                    # Use a simple attention mechanism based on the dot product with the mean
+                    context_vec = (p1 + p2) / 2.0
+                    score1 = np.dot(p1, context_vec)
+                    score2 = np.dot(p2, context_vec)
+                    # Softmax for weights
+                    scores = np.array([score1, score2])
+                    exp_scores = np.exp(scores - np.max(scores))  # Stabilized softmax
+                    weights = exp_scores / np.sum(exp_scores)
+                    initial_features[node_idx] = weights[0] * p1 + weights[1] * p2
+                else:  # Default to mean pooling
+                    initial_features[node_idx] = (p1 + p2) / 2.0
+
+        return torch.from_numpy(initial_features)
+
+    @staticmethod
     def generate_edge_features_batched(interaction_pairs: List[Tuple[str, str, int]],
                                        protein_embeddings: 'EmbeddingLoader', method: str,
                                        batch_size: int, embedding_dim: int) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
