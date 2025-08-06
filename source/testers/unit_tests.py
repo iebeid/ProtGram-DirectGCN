@@ -40,7 +40,7 @@ from source.utils.results import EvaluationReporter
 # --- NEW SECTION: Comprehensive GPU Environment Verification ---
 # ==============================================================================
 
-def verify_full_gpu_environment():
+def verify_full_gpu_environment() -> bool:
     """
     A comprehensive test to verify that CUDA, cuDNN, PyTorch, and TensorFlow
     are all correctly configured and can access the GPU within the same script execution.
@@ -123,6 +123,7 @@ def verify_full_gpu_environment():
     else:
         print("❌ GPU Environment Verification FAILED. Please check the errors above.")
     print("-" * 40)
+    return all_ok
 
 
 # ==============================================================================
@@ -756,16 +757,17 @@ def test_ppi_pipeline_run():
 # --- SECTION 8: Main Execution Block ---
 # ==============================================================================
 
-def run_all_tests():
+def run_all_tests() -> bool:
     """
     Runs the full suite of verification, unit, and smoke testers.
+    Returns True if the GPU environment is OK, False otherwise.
     """
     print("\n" + "#" * 100)
     print("### Starting All Integrated Tests... ###")
     print("#" * 100)
 
     # Phase 1: Comprehensive GPU Environment Verification
-    verify_full_gpu_environment()
+    gpu_ok = verify_full_gpu_environment()
     verify_cuda_with_pycuda()
 
     # Phase 2: Utility and Model Build Tests
@@ -798,3 +800,4 @@ def run_all_tests():
     print("\n" + "#" * 100)
     print("### All Integrated Tests Finished. ###")
     print("#" * 100)
+    return gpu_ok

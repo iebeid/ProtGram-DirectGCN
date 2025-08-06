@@ -269,8 +269,17 @@ def main():
 
             if base_config.RUN_INTEGRATED_TESTS:
                 DataUtils.print_header("Running Integrated Test Suite (Once at Startup)")
-                run_all_tests()
+                gpu_is_ok = run_all_tests()
                 DataUtils.print_header("Integrated Test Suite Finished. Continuing main pipeline...")
+                if not gpu_is_ok:
+                    print("\n" + "!" * 80)
+                    print("!!! WARNING: GPU verification failed for PyTorch or TensorFlow. !!!")
+                    print("!!! The pipeline can continue, but it will run on the CPU, which may be very slow. !!!")
+                    print("!" * 80)
+                    response = input("Do you want to continue with CPU-only execution? (y/n): ").lower().strip()
+                    if response not in ['y', 'yes']:
+                        print("Aborting as requested by user.")
+                        sys.exit(1)
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 files_to_process = _get_fasta_files_to_process(base_config, Path(temp_dir))

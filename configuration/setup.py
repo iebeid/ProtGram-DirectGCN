@@ -147,11 +147,12 @@ if __name__ == "__main__":
          f"\"tensorflow<2.16\" tf-keras "
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} --extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"
          ),
-        # --- RE-ENABLED: This is now necessary. We want PyTorch to use the Conda-installed cuDNN 8.9,
-        # not a newer version that might be bundled with its wheel. This ensures a single,
-        # consistent cuDNN version across the entire environment.
-        "echo '--- Stage 2.5: Forcing library consistency by removing pip-installed cuDNN ---'",
-        "pip uninstall -y nvidia-cudnn-cu12",
+        # --- DEFINITIVE FIX: This is the key to a stable environment. ---
+        # We must remove ALL CUDA-related libraries installed by pip. This forces
+        # both PyTorch and TensorFlow to use the single, consistent set of libraries
+        # installed by Conda in Stage 1. This resolves all conflicts.
+        "echo '--- Stage 2.5: Forcing library consistency by removing ALL pip-installed CUDA libs ---'",
+        "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 nvidia-nccl-cu12 nvidia-nvtx-cu12 nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-cupti-cu12 nvidia-nvjitlink-cu12",
 
         # STAGE 3: PYCUDA INSTALL
         "echo '--- Stage 3: Building PyCUDA from source ---'",
@@ -160,7 +161,7 @@ if __name__ == "__main__":
 
         # STAGE 4: Install remaining pip packages
         "echo '--- Stage 4: Installing remaining pip packages (MLflow, Transformers, PyG) ---'",
-        "pip install --no-cache-dir mlflow gdown transformers==4.41.2",
+        "pip install --no-cache-dir mlflow gdown 'transformers==4.41.2' 'safetensors==0.4.3'",
         (f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
          f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION.replace('.', '')}.html"),
 
