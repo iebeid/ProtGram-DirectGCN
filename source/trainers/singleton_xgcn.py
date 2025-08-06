@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: trainers/singleton_xgcn.py
 # PURPOSE: A lightweight trainer for rapid evaluation of various GNNs on the n=1 graph.
-# VERSION: 2.0
+# VERSION: 2.1 (Corrected return type to DataFrame)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -9,6 +9,7 @@ from typing import Dict, List, Any
 
 import numpy as np
 import torch
+import pandas as pd
 import torch.nn.functional as F
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
@@ -40,22 +41,22 @@ class SingletonXGCNTrainer:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.label_generator = XGCNDataset(config)
 
-    def run(self) -> List[Dict[str, Any]]:
+    def run(self) -> pd.DataFrame:
         """
         Executes the entire training and evaluation workflow for the n=1 graph.
 
         Returns:
-            A dictionary of performance metrics, or None if the process fails.
+            A pandas DataFrame of performance metrics.
         """
         if not self.graph or self.graph.number_of_nodes == 0:
             print("  Singleton Trainer: Graph is empty or invalid. Cannot proceed.")
-            return []
+            return pd.DataFrame()
 
         # 1. Generate self-supervised labels (community detection for n=1)
         labels, num_classes = self.label_generator.generate_task_labels(self.graph, 'community')
         if num_classes <= 1:
             print("  Singleton Trainer: Only one community found. Cannot perform meaningful classification.")
-            return []
+            return pd.DataFrame()
 
         # 2. Create initial random features
         initial_features = torch.randn((self.graph.number_of_nodes, self.config.GCN_1GRAM_INIT_DIM))
@@ -126,7 +127,7 @@ class SingletonXGCNTrainer:
                     "Recall (Macro)": recall_score(y_true, y_pred, average='macro', zero_division=0)
                 }
             all_results.append(metrics)
-        return all_results
+        return pd.DataFrame(all_results)
 
     def _get_model(self, name: str, data: Data, num_classes: int) -> torch.nn.Module:
         """Model factory for instantiating GNNs."""

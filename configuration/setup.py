@@ -144,7 +144,7 @@ if __name__ == "__main__":
         # STAGE 2: PIP INSTALLATIONS FOR ML FRAMEWORKS
         "echo '--- Stage 2: Installing ML Frameworks (PyTorch, TensorFlow) via pip ---'",
         (f"pip install --no-cache-dir "
-         f"tensorflow "
+         f"\"tensorflow<2.16\" "
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} --extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"
          ),
         # Forcefully remove the pip-installed cuDNN from the torch wheel to ensure consistency.
