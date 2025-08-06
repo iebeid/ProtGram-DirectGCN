@@ -188,4 +188,6 @@ class NetworkEmbeddingBenchmarker:
         print(f"Network Embedding Benchmark Summary saved to: {summary_path}")
         print(summary_df.to_string())
         print(f"==============================================")
+        os.environ["TOKENIZERS_PARALLELISM"] = "true"  # Restore default
         DataUtils.print_header("Network Embedding BENCHMARKER FINISHED")
+        return summary_df

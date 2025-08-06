@@ -74,44 +74,48 @@ class GNNBenchmarker:
     def _get_model(self, name: str, data: Any, num_classes: int) -> torch.nn.Module:
         """Model factory that correctly handles parameters for all models."""
         # Standardized parameters for most models
+        # --- FIX: All parameters are now sourced from the config object ---
         model_params = {
             'in_channels': data.num_features,
-            'hidden_channels': 256,
+            'hidden_channels': self.config.BENCHMARK_GNN_HIDDEN_CHANNELS,
             'out_channels': num_classes,
-            'num_layers': 2,
-            'dropout_rate': 0.5
+            'num_layers': self.config.BENCHMARK_GNN_NUM_LAYERS,
+            'dropout_rate': self.config.BENCHMARK_GNN_DROPOUT_RATE
         }
 
         if name == "GCN":
             return GCN(**model_params)
         elif name == "GAT":
             gat_params = model_params.copy()
-            gat_params.update({'heads': 8, 'dropout_rate': 0.6})
+            gat_params.update({
+                'heads': self.config.BENCHMARK_GAT_HEADS,
+                'dropout_rate': self.config.BENCHMARK_GAT_DROPOUT_RATE
+            })
             return GAT(**gat_params)
         elif name == "GraphSAGE":
             return GraphSAGE(**model_params)
         elif name == "GIN":
             return GIN(**model_params)
         elif name == "ChebNet":
-            return ChebNet(**model_params, K=3)
+            return ChebNet(**model_params, K=self.config.BENCHMARK_CHEBNET_K)
         elif name == "RGCN":
-            # For benchmarks, we assume 2 relations: forward and backward (implicit)
-            return RGCN(**model_params, num_relations=2)
+            return RGCN(**model_params, num_relations=self.config.BENCHMARK_RGCN_NUM_RELATIONS)
         elif name == "TongDiGCN":
             return TongDiGCN(**model_params)
         elif name == "DirectGCN":
             # The DirectGCN model has a complex signature that must be
             # adapted for standard benchmark datasets.
-            layer_dims = [data.num_features, 128, num_classes]
+            # Use the first hidden dimension and dropout from the main GCN config for consistency.
+            layer_dims = [data.num_features, self.config.GCN_HIDDEN_LAYER_DIMS[0], num_classes]
             return DirectGCN(
                 layer_dims=layer_dims,
                 num_graph_nodes=data.num_nodes,
                 task_num_output_classes=num_classes,
-                n_gram_len=0,  # Not applicable for standard benchmarks
-                one_gram_dim=0,  # Not applicable for standard benchmarks
-                max_pe_len=0,  # Not applicable for standard benchmarks
-                dropout=0.5,
-                gating_mode='scalar'  # Use scalar coeffs for general benchmarks
+                n_gram_len=1,  # Mimics n=1 level; PE is skipped if feature dim doesn't match
+                one_gram_dim=self.config.GCN_1GRAM_INIT_DIM,
+                max_pe_len=self.config.GCN_MAX_PE_LEN,
+                dropout=self.config.GCN_DROPOUT_RATE,
+                gating_mode=self.config.GCN_GATING_COEFF_MODE
             )
         else:
             raise ValueError(f"Model '{name}' not found in GNNBenchmarker.")
@@ -336,5 +340,8 @@ class GNNBenchmarker:
             print(f"\nFull GNN benchmarking summary saved to {full_summary_path}")
             print("\nFull Summary Table:")
             print(full_summary_df.to_string())
+
+        DataUtils.print_header("GNN Benchmarking PIPELINE FINISHED")
+        return full_summary_df if all_results else pd.DataFrame()
 
         DataUtils.print_header("GNN Benchmarking PIPELINE FINISHED")

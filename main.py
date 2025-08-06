@@ -15,7 +15,8 @@ import tempfile
 import subprocess
 import webbrowser
 from pathlib import Path
-import os
+import numpy as np
+import pandas as pd
 from typing import List, Dict
 
 import tensorflow as tf
@@ -53,13 +54,11 @@ from source.testers.unit_tests import run_all_tests
 from source.utils.logging import FileLogger
 
 
-def _run_embedding_generation_pipelines(config: Config) -> List[Dict[str, str]]:
-    """Runs all configured embedding generation pipelines using a data-driven approach."""
+def _run_main_embedding_pipelines(config: Config) -> List[Dict[str, str]]:
+    """Runs the main, potentially long-running, embedding generation pipelines."""
 
-    # Define all pipelines in a list of dictionaries for easy extension
     pipelines = [
-        {"flag": "RUN_GCN_PIPELINE", "pre_runner": lambda: ProtGramBuilder(config).run(),
-         "runner": lambda: ProtGramXGCNTrainer(config).run(),
+        {"flag": "RUN_GCN_PIPELINE", "runner": lambda: ProtGramXGCNTrainer(config).run(),
          "formatter": lambda paths: [{"name": name, "path": path} for name, path in paths.items()]},
         {"flag": "RUN_WORD2VEC_PIPELINE", "runner": lambda: Word2VecEmbedder(config).run(),
          "formatter": lambda path: [{"name": "Word2Vec-Generated", "path": path}]},
@@ -72,9 +71,6 @@ def _run_embedding_generation_pipelines(config: Config) -> List[Dict[str, str]]:
     generated_files = []
     for p_config in pipelines:
         if getattr(config, p_config["flag"], False):
-            if "pre_runner" in p_config:
-                p_config["pre_runner"]()
-
             result = p_config["runner"]()
             if result:
                 generated_files.extend(p_config["formatter"](result))
@@ -139,70 +135,6 @@ def _get_fasta_files_to_process(config: Config, temp_dir: Path) -> List[Path]:
     return files_to_process
 
 
-def run_pipeline_for_dataset(base_config: Config, fasta_path: Path):
-    """
-    Runs the entire end-to-end pipeline for a single FASTA file dataset.
-    """
-    config = copy.deepcopy(base_config)
-    dataset_name = fasta_path.stem
-
-    # --- DYNAMICALLY SET ID MAPPING SOURCE DATABASE ---
-    # This addresses the issue where the mapping source was hardcoded, leading
-    # to incorrect mappings if a FASTA file other than UniRef50 was used.
-    dataset_name_lower = dataset_name.lower()
-    if 'uniref100' in dataset_name_lower:
-        config.API_MAPPING_FROM_DB = "UniRef100"
-    elif 'uniref90' in dataset_name_lower:
-        config.API_MAPPING_FROM_DB = "UniRef90"
-    elif 'uniref50' in dataset_name_lower:
-        config.API_MAPPING_FROM_DB = "UniRef50"
-    else:  # Default for uniprot_sprot or other files
-        config.API_MAPPING_FROM_DB = "UniProtKB_AC-ID"
-
-    print(f"  - Dynamically set API mapping source DB to: '{config.API_MAPPING_FROM_DB}' for this dataset.")
-    # --- END DYNAMIC SETTING ---
-
-    DataUtils.print_header(f"PROCESSING DATASET: {dataset_name.upper()}")
-
-    config.SEQUENCE_FILE_PATHS = [fasta_path]
-    print(f"  - This run will process sequences from: {fasta_path}")
-
-    # Programmatically update all relevant output paths
-    paths_to_specialize = [
-        'RESULTS_GRAPH_OBJECTS_DIR', 'RESULTS_GCN_EMBEDDINGS_DIR',
-        'RESULTS_W2V_EMBEDDINGS_DIR', 'RESULTS_LSTM_EMBEDDINGS_DIR',
-        'RESULTS_TRANSFORMER_EMBEDDINGS_DIR', 'RESULTS_EVALUATION_DIR'
-    ]
-    for path_attr in paths_to_specialize:
-        if hasattr(config, path_attr):
-            original_path = getattr(config, path_attr)
-            setattr(config, path_attr, original_path / dataset_name)
-
-
-    generated_embedding_files = _run_embedding_generation_pipelines(config)
-
-    final_evaluation_list = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_embedding_files
-    config.LP_EMBEDDING_FILES_TO_EVALUATE = final_evaluation_list
-
-    if config.RUN_MAIN_PPI_EVALUATION:
-        if config.LP_EMBEDDING_FILES_TO_EVALUATE:
-            DataUtils.print_header(f"Running Main Evaluation for Dataset: {dataset_name}")
-            ppi_evaluator = PPIPipeline(config)
-            if config.USE_MLFLOW:
-                mlflow.set_experiment(f"{config.MLFLOW_EXPERIMENT_NAME}-{dataset_name}")
-                with mlflow.start_run(run_name=f"PPI_Evaluation_Full_Run") as parent_run:
-                    mlflow.set_tag("dataset_name", dataset_name)
-                    ppi_evaluator.run(use_dummy_data=False, parent_run_id=parent_run.info.run_id)
-            else:
-                ppi_evaluator.run(use_dummy_data=False)
-        else:
-            print(f"Skipping Main PPI Evaluation for {dataset_name}: No embeddings were generated or specified.")
-    else:
-        print(f"Skipping Main PPI Evaluation for {dataset_name} as per configuration.")
-
-    DataUtils.print_header(f"COMPLETED FULL PIPELINE FOR DATASET: {dataset_name.upper()}")
-
-
 def _launch_mlflow_ui(config: Config):
     """Starts the MLflow UI and opens a browser if in a desktop environment."""
     if not config.USE_MLFLOW:
@@ -242,6 +174,77 @@ def _launch_mlflow_ui(config: Config):
         print("  ssh -L 5000:localhost:5000 your_user@your_server")
 
 
+def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
+    """
+    Runs all preliminary benchmarks and the singleton GCN evaluation,
+    displays a summary, and prompts the user to continue.
+    """
+    all_benchmark_results = []
+
+    # 1. Run ProtGramBuilder to get singleton results
+    DataUtils.print_header("Running ProtGram Builder for n-gram graph construction and Singleton Evaluation")
+    singleton_results_df = ProtGramBuilder(config).run()
+    if singleton_results_df is not None and not singleton_results_df.empty:
+        # Standardize singleton results to fit the benchmark table
+        singleton_results_df = singleton_results_df.rename(columns={'Model': 'model', 'Accuracy': 'test_accuracy'})
+        singleton_results_df['dataset'] = f"ProtGram_n1_Singleton_{fasta_file_path.stem}"
+        singleton_results_df['best_val_accuracy'] = np.nan
+        singleton_results_df['error'] = None
+        all_benchmark_results.append(singleton_results_df[['dataset', 'model', 'test_accuracy', 'best_val_accuracy', 'error']])
+
+    # 2. Run GNN Benchmarker
+    if config.RUN_BENCHMARKING_PIPELINE:
+        mlflow.set_experiment(config.MLFLOW_BENCHMARK_EXPERIMENT_NAME)
+        with mlflow.start_run(run_name="GNN_Benchmark_Suite"):
+            gnn_results_df = GNNBenchmarker(config).run()
+            if gnn_results_df is not None and not gnn_results_df.empty:
+                all_benchmark_results.append(gnn_results_df)
+
+    # 3. Run Network Embedding Benchmarker
+    if config.RUN_NETWORK_EMBEDDING_BENCHMARKING:
+        mlflow.set_experiment(config.MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME)
+        with mlflow.start_run(run_name="NE_Benchmark_Suite"):
+            ne_results_df = NetworkEmbeddingBenchmarker(config).run()
+            if ne_results_df is not None and not ne_results_df.empty:
+                # Standardize columns to match GNN benchmark format
+                ne_results_df['best_val_accuracy'] = np.nan
+                all_benchmark_results.append(ne_results_df)
+
+    # 4. Display the aggregated summary
+    _display_aggregated_benchmark_summary(all_benchmark_results)
+
+    # 5. Prompt the user to continue
+    response = input("\nDo you want to continue with the full, long-running pipelines for this dataset? (y/n): ").lower().strip()
+    if response not in ['y', 'yes']:
+        print("Skipping main pipeline as requested by user.")
+        return False
+
+    print("Continuing with the full pipeline...\n")
+    return True
+
+def _display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
+    """
+    Standardizes, concatenates, and displays a final summary of all benchmark results.
+    """
+    if not all_results:
+        print("No benchmark results were generated to aggregate.")
+        return
+
+    try:
+        # Concatenate all collected DataFrames
+        final_summary_df = pd.concat(all_results, ignore_index=True)
+
+        # Define the desired final column order
+        final_columns = ['dataset', 'model', 'test_accuracy', 'best_val_accuracy', 'error']
+        # Reorder and fill missing columns with NaN
+        final_summary_df = final_summary_df.reindex(columns=final_columns)
+
+        DataUtils.print_header("Aggregated Benchmark Summary")
+        print(final_summary_df.to_string())
+    except Exception as e:
+        print(f"Could not generate aggregated benchmark summary due to an error: {e}")
+
+
 def main():
     script_start_time = time.monotonic()
     base_config = Config()
@@ -269,24 +272,50 @@ def main():
                 run_all_tests()
                 DataUtils.print_header("Integrated Test Suite Finished. Continuing main pipeline...")
 
-            if base_config.RUN_BENCHMARKING_PIPELINE:
-                mlflow.set_experiment(base_config.MLFLOW_BENCHMARK_EXPERIMENT_NAME)
-                with mlflow.start_run(run_name="GNN_Benchmark_Suite"):
-                    GNNBenchmarker(base_config).run()
-
-            if base_config.RUN_NETWORK_EMBEDDING_BENCHMARKING:
-                mlflow.set_experiment(base_config.MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME)
-                with mlflow.start_run(run_name="NE_Benchmark_Suite"):
-                    NetworkEmbeddingBenchmarker(base_config).run()
-
             with tempfile.TemporaryDirectory() as temp_dir:
                 files_to_process = _get_fasta_files_to_process(base_config, Path(temp_dir))
                 if not files_to_process:
                     print("\nERROR: No sequence files defined in config.SEQUENCE_FILE_PATHS. Cannot run experiments.")
                 else:
-                    print(f"\nFound {len(files_to_process)} dataset(s) to process.")
+                    print(f"\nFound {len(files_to_process)} dataset(s) to process for the main pipeline.")
                     for fasta_file_path in files_to_process:
-                        run_pipeline_for_dataset(base_config, fasta_file_path)
+                        # --- FIX: Create a dataset-specific config to prevent overwriting results ---
+                        config = copy.deepcopy(base_config)
+                        dataset_name = fasta_file_path.stem
+                        DataUtils.print_header(f"PROCESSING DATASET: {dataset_name.upper()}")
+                        config.SEQUENCE_FILE_PATHS = [fasta_file_path]
+                        print(f"  - This run will process sequences from: {fasta_file_path}")
+
+                        # Programmatically update all relevant output paths
+                        paths_to_specialize = [
+                            'RESULTS_GRAPH_OBJECTS_DIR', 'RESULTS_GCN_EMBEDDINGS_DIR',
+                            'RESULTS_W2V_EMBEDDINGS_DIR', 'RESULTS_LSTM_EMBEDDINGS_DIR',
+                            'RESULTS_TRANSFORMER_EMBEDDINGS_DIR', 'RESULTS_EVALUATION_DIR'
+                        ]
+                        for path_attr in paths_to_specialize:
+                            if hasattr(config, path_attr):
+                                original_path = getattr(config, path_attr)
+                                setattr(config, path_attr, original_path / dataset_name)
+                        # --- END FIX ---
+
+                        # Run pre-analysis and prompt the user. If they agree, run the main pipelines.
+                        if _run_pre_analysis_and_prompt(config, fasta_file_path):
+                            generated_embedding_files = _run_main_embedding_pipelines(config)
+                            final_evaluation_list = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_embedding_files
+                            config.LP_EMBEDDING_FILES_TO_EVALUATE = final_evaluation_list
+
+                            if config.RUN_MAIN_PPI_EVALUATION:
+                                if config.LP_EMBEDDING_FILES_TO_EVALUATE:
+                                    DataUtils.print_header(f"Running Main Evaluation for Dataset: {dataset_name}")
+                                    ppi_evaluator = PPIPipeline(config)
+                                    if config.USE_MLFLOW:
+                                        mlflow.set_experiment(f"{config.MLFLOW_EXPERIMENT_NAME}-{dataset_name}")
+                                        with mlflow.start_run(run_name=f"PPI_Evaluation_Full_Run") as parent_run:
+                                            mlflow.set_tag("dataset_name", dataset_name)
+                                            ppi_evaluator.run(use_dummy_data=False, parent_run_id=parent_run.info.run_id)
+                                    else:
+                                        ppi_evaluator.run(use_dummy_data=False)
+                        DataUtils.print_header(f"COMPLETED FULL PIPELINE FOR DATASET: {dataset_name.upper()}")
 
             DataUtils.print_header(f"Full Orchestration Finished in {time.monotonic() - script_start_time:.2f} seconds.")
 

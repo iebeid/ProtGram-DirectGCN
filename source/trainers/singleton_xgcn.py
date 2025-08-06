@@ -130,21 +130,43 @@ class SingletonXGCNTrainer:
 
     def _get_model(self, name: str, data: Data, num_classes: int) -> torch.nn.Module:
         """Model factory for instantiating GNNs."""
-        model_params = {'in_channels': data.num_features, 'hidden_channels': 256, 'out_channels': num_classes}
-        if name == "GCN": return GCN(**model_params)
-        if name == "GAT": return GAT(**model_params, heads=8)
-        if name == "GraphSAGE": return GraphSAGE(**model_params)
-        if name == "GIN": return GIN(**model_params)
-        if name == "ChebNet": return ChebNet(**model_params, K=3)
-        if name == "RGCN": return RGCN(**model_params, num_relations=2)
+        # --- FIX: Use benchmark parameters from config for consistency ---
+        model_params = {
+            'in_channels': data.num_features,
+            'hidden_channels': self.config.BENCHMARK_GNN_HIDDEN_CHANNELS,
+            'out_channels': num_classes,
+            'num_layers': self.config.BENCHMARK_GNN_NUM_LAYERS,
+            'dropout_rate': self.config.BENCHMARK_GNN_DROPOUT_RATE
+        }
+        if name == "GCN":
+            return GCN(**model_params)
+        if name == "GAT":
+            gat_params = model_params.copy()
+            gat_params.update({
+                'heads': self.config.BENCHMARK_GAT_HEADS,
+                'dropout_rate': self.config.BENCHMARK_GAT_DROPOUT_RATE
+            })
+            return GAT(**gat_params)
+        if name == "GraphSAGE":
+            return GraphSAGE(**model_params)
+        if name == "GIN":
+            return GIN(**model_params)
+        if name == "ChebNet":
+            return ChebNet(**model_params, K=self.config.BENCHMARK_CHEBNET_K)
+        if name == "RGCN":
+            return RGCN(**model_params, num_relations=self.config.BENCHMARK_RGCN_NUM_RELATIONS)
         if name == "TongDiGCN": return TongDiGCN(**model_params)
         if name == "DirectGCN":
+            # Add a fallback in case the hidden layer list is empty in the config
+            hidden_dim = self.config.GCN_HIDDEN_LAYER_DIMS[0] if self.config.GCN_HIDDEN_LAYER_DIMS else 256
+            layer_dims = [data.num_features, hidden_dim, num_classes]
             return DirectGCN(
-                layer_dims=[data.num_features, 128, num_classes],
+                layer_dims=layer_dims,
                 num_graph_nodes=data.num_nodes,
                 task_num_output_classes=num_classes, n_gram_len=1,
                 one_gram_dim=self.config.GCN_1GRAM_INIT_DIM, max_pe_len=self.config.GCN_MAX_PE_LEN,
-                dropout=0.5, gating_mode='scalar'  # Use scalar for simpler singleton eval
+                dropout=self.config.GCN_DROPOUT_RATE,
+                gating_mode=self.config.GCN_GATING_COEFF_MODE
             )
         raise ValueError(f"Unknown model name '{name}' for singleton evaluation.")
 

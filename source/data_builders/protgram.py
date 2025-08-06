@@ -17,6 +17,7 @@ from typing import Tuple, Iterator, Dict, List, Any
 import dask.bag as db
 import dask.dataframe as dd
 import pandas as pd
+import pandas as pd
 import pyarrow
 import pyarrow.parquet as pq
 
@@ -24,7 +25,7 @@ from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
 from source.trainers.singleton_xgcn import SingletonXGCNTrainer
 from source.utils.data import DataUtils, FastaUtils, ProtgramDaskHelpers
-
+from typing import Optional
 
 class ProtGramBuilder:
     def __init__(self, config: Config):
@@ -40,7 +41,7 @@ class ProtGramBuilder:
             f"GraphBuilder initialized: n_max={self.n_max}, configured_workers={self.num_workers_config}, output_dir='{self.output_dir}'")
         DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
 
-    def run(self):
+    def run(self) -> Optional[pd.DataFrame]:
         overall_start_time = time.monotonic()
         DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs")
 
@@ -56,7 +57,7 @@ class ProtGramBuilder:
         if all_graphs_exist:
             print("\nAll required n-gram graph objects already exist in the output directory.")
             DataUtils.print_header(f"N-gram Graph Building SKIPPED (Files exist)")
-            return
+            return None
         # --- END Check ---
 
         if os.path.exists(self.temp_dir):
@@ -94,7 +95,7 @@ class ProtGramBuilder:
             sequence_stream_list = list(get_preprocessed_sequence_stream())
             if not sequence_stream_list:
                 print("ERROR: No sequences found in the FASTA file. Cannot proceed.")
-                return
+                return None
             print(f"  Loaded {len(sequence_stream_list)} sequences from FASTA.")
         except FileNotFoundError:
             print(f"ERROR: One or more FASTA files not found in {self.protein_sequence_files}")
@@ -233,6 +234,7 @@ class ProtGramBuilder:
         phase2_start_time = time.monotonic()
         for n in n_values:
             print(f"\n--- Processing n = {n} for final graph object ---")
+            singleton_results_df = None
             ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
             edge_parts_dir = os.path.join(self.temp_dir, f'edge_list_n{n}_parts')
 
@@ -330,8 +332,8 @@ class ProtGramBuilder:
                 # Reload the object to ensure it's clean for the trainer
                 fresh_graph_obj = DataUtils.load_object(output_path)
                 singleton_trainer = SingletonXGCNTrainer(self.config, fresh_graph_obj)
-                results = singleton_trainer.run()
-                self._display_singleton_results_and_prompt(results)
+                singleton_results_df = singleton_trainer.run()
+                self._display_singleton_results_and_prompt(singleton_results_df)
             gc.collect()
 
         print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.")
@@ -344,16 +346,17 @@ class ProtGramBuilder:
         print(f"<<< Phase 3 finished in {time.monotonic() - phase3_start_time:.2f}s.")
 
         DataUtils.print_header(f"N-gram Graph Building FINISHED in {time.monotonic() - overall_start_time:.2f}s")
+        return singleton_results_df
 
-    def _display_singleton_results_and_prompt(self, results: List[Dict[str, Any]]):
+    def _display_singleton_results_and_prompt(self, results_df: Optional[pd.DataFrame]):
         """Displays the results of the singleton evaluation and prompts the user."""
         DataUtils.print_header("Singleton GCN (n=1) Rapid Evaluation Results")
-        if results and isinstance(results, list) and len(results) > 0:
+        if results_df is not None and not results_df.empty:
             print("This is a quick evaluation to check if the model architecture is learning.")
             print("Results on the test split of the n=1 graph nodes:")
 
             # Create a DataFrame for better formatting
-            df = pd.DataFrame(results)
+            df = results_df.copy()
             # Format float columns
             float_cols = df.select_dtypes(include=['float']).columns
             for col in float_cols:
@@ -363,9 +366,3 @@ class ProtGramBuilder:
 
         else:
             print("Singleton evaluation did not produce any metrics.")
-
-        response = input("\nDo you want to continue with the full pipeline? (y/n): ").lower().strip()
-        if response not in ['y', 'yes']:
-            print("Aborting pipeline as requested by user.")
-            sys.exit(0)
-        print("Continuing with the full pipeline...\n")

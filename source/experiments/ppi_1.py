@@ -54,7 +54,8 @@ class PPIPipeline:
         DataUtils.print_header("Pre-processing: Applying Mandatory PCA to All Embeddings")
         target_dim = self.config.PCA_TARGET_DIMENSION
 
-        processed_emb_dir = self.config.BASE_OUTPUT_DIR / "pca_processed_embeddings"
+        # FIX: Place processed embeddings inside the dataset-specific evaluation directory to prevent overwriting.
+        processed_emb_dir = self.config.RESULTS_EVALUATION_DIR / "pca_processed_embeddings"
         processed_emb_dir.mkdir(parents=True, exist_ok=True)
         print(f"  Target dimension set to: {target_dim}")
         print(f"  Processed files will be stored in: {processed_emb_dir}")

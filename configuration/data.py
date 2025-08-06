@@ -1,11 +1,17 @@
 # ==============================================================================
 # MODULE: configuration/data.py
 # PURPOSE: Handles the verification and acquisition of all external data files.
-# VERSION: 1.2 (Corrected validation logic to be non-destructive)
+# VERSION: 2.0 (Added gdown support for Google Drive URLs)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import gzip
+try:
+    import gdown
+    GDOWN_AVAILABLE = True
+except ImportError:
+    GDOWN_AVAILABLE = False
+
 import shutil
 from pathlib import Path
 
@@ -99,27 +105,36 @@ def setup_data(config: Config):
             print(f"❓ Skipped '{key}': URL is a placeholder or not provided.")
             continue
 
-        print(f"Downloading from {url} to {download_path}...")
         try:
-            response = requests.get(url, stream=True)
-            response.raise_for_status()
-            total_size = int(response.headers.get('content-length', 0))
-            with open(download_path, 'wb') as f, tqdm(total=total_size, unit='iB', unit_scale=True,
-                                                      desc=download_path.name) as pbar:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-                    pbar.update(len(chunk))
+            # --- FIX: Use gdown for Google Drive URLs, requests for others ---
+            if 'drive.google.com' in url:
+                if not GDOWN_AVAILABLE:
+                    print(f"  ERROR: URL for '{key}' is a Google Drive link, but 'gdown' is not installed. Please install it (`pip install gdown`). Skipping.")
+                    continue
+                print(f"Downloading '{download_path.name}' from Google Drive...")
+                gdown.download(url, str(download_path), quiet=False)
+            else:
+                print(f"Downloading from {url} to {download_path}...")
+                response = requests.get(url, stream=True)
+                response.raise_for_status()
+                total_size = int(response.headers.get('content-length', 0))
+                with open(download_path, 'wb') as f, tqdm(total=total_size, unit='iB', unit_scale=True,
+                                                          desc=download_path.name) as pbar:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                        pbar.update(len(chunk))
 
             # After a successful download, handle any post-processing
             if source_info.get('post_process') == 'ungzip':
                 print(f"Decompressing {download_path.name} to {final_path.name}...")
                 with gzip.open(download_path, 'rb') as f_in, open(final_path, 'wb') as f_out:
                     shutil.copyfileobj(f_in, f_out)
-                # Explicitly remove the archive after successful decompression
                 if download_path.exists():
                     download_path.unlink()
-                print(f"✔ Successfully acquired: {final_path.relative_to(config.PROJECT_ROOT)}")
 
+            # Final validation check
+            if _is_file_valid(final_path):
+                print(f"✔ Successfully acquired and verified: {final_path.relative_to(config.PROJECT_ROOT)}")
         except requests.exceptions.RequestException as e:
             print(f"Error downloading {url}: {e}")
             print(f"Failed to acquire file for '{key}'. Error: {e}")

@@ -180,6 +180,17 @@ class Config:
         self.BENCHMARK_NE_WALK_LENGTH = 20
         self.BENCHMARK_NE_CONTEXT_SIZE = 10
 
+        # --- GNN Architecture for Benchmarking ---
+        # These parameters control the architecture of GNNs used in the standard
+        # node classification benchmarks (Cora, PubMed, etc.).
+        self.BENCHMARK_GNN_HIDDEN_CHANNELS = 256
+        self.BENCHMARK_GNN_NUM_LAYERS = 2
+        self.BENCHMARK_GNN_DROPOUT_RATE = 0.5
+        self.BENCHMARK_GAT_HEADS = 8
+        self.BENCHMARK_GAT_DROPOUT_RATE = 0.6  # GAT often benefits from higher dropout
+        self.BENCHMARK_CHEBNET_K = 3
+        self.BENCHMARK_RGCN_NUM_RELATIONS = 2
+
     def _setup_gcn_params(self):
         """Sets parameters for the main ProtGram-DirectGCN pipeline."""
         # Graph Building
@@ -207,7 +218,7 @@ class Config:
         self.GCN_1GRAM_INIT_DIM = 512
         self.GCN_MAX_PE_LEN = 512 # Max length for positional embeddings
         # Gating mode for DirectGCN. Options: 'vector', 'scalar', 'none'
-        self.GCN_GATING_COEFF_MODE = "scalar"
+        self.GCN_GATING_COEFF_MODE = "none"
 
         # Training Hyperparameters
         self.GCN_EPOCHS_PER_LEVEL = 300
