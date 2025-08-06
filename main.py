@@ -1,24 +1,25 @@
 # ==============================================================================
 # MODULE: main.py
 # PURPOSE: Pipeline entry point
-# VERSION: 5.0 (Refactored pipeline execution to be data-driven)
-# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
+# VERSION: 6.0 (Corrected pre-analysis and prompting workflow)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
-import time
-import mlflow
-import random
 import copy
-import platform
 import os
-import tempfile
+import platform
+import random
 import subprocess
+import sys
+import tempfile
+import time
 import webbrowser
 from pathlib import Path
-import numpy as np
-import pandas as pd
 from typing import List, Dict
 
+import mlflow
+import numpy as np
+import pandas as pd
 import tensorflow as tf
 
 # --- Robustness Improvement: Configure GPU Memory Growth for TensorFlow ---
@@ -174,54 +175,6 @@ def _launch_mlflow_ui(config: Config):
         print("  ssh -L 5000:localhost:5000 your_user@your_server")
 
 
-def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
-    """
-    Runs all preliminary benchmarks and the singleton GCN evaluation,
-    displays a summary, and prompts the user to continue.
-    """
-    all_benchmark_results = []
-
-    # 1. Run ProtGramBuilder to get singleton results
-    DataUtils.print_header("Running ProtGram Builder for n-gram graph construction and Singleton Evaluation")
-    singleton_results_df = ProtGramBuilder(config).run()
-    if singleton_results_df is not None and not singleton_results_df.empty:
-        # Standardize singleton results to fit the benchmark table
-        singleton_results_df = singleton_results_df.rename(columns={'Model': 'model', 'Accuracy': 'test_accuracy'})
-        singleton_results_df['dataset'] = f"ProtGram_n1_Singleton_{fasta_file_path.stem}"
-        singleton_results_df['best_val_accuracy'] = np.nan
-        singleton_results_df['error'] = None
-        all_benchmark_results.append(singleton_results_df[['dataset', 'model', 'test_accuracy', 'best_val_accuracy', 'error']])
-
-    # 2. Run GNN Benchmarker
-    if config.RUN_BENCHMARKING_PIPELINE:
-        mlflow.set_experiment(config.MLFLOW_BENCHMARK_EXPERIMENT_NAME)
-        with mlflow.start_run(run_name="GNN_Benchmark_Suite"):
-            gnn_results_df = GNNBenchmarker(config).run()
-            if gnn_results_df is not None and not gnn_results_df.empty:
-                all_benchmark_results.append(gnn_results_df)
-
-    # 3. Run Network Embedding Benchmarker
-    if config.RUN_NETWORK_EMBEDDING_BENCHMARKING:
-        mlflow.set_experiment(config.MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME)
-        with mlflow.start_run(run_name="NE_Benchmark_Suite"):
-            ne_results_df = NetworkEmbeddingBenchmarker(config).run()
-            if ne_results_df is not None and not ne_results_df.empty:
-                # Standardize columns to match GNN benchmark format
-                ne_results_df['best_val_accuracy'] = np.nan
-                all_benchmark_results.append(ne_results_df)
-
-    # 4. Display the aggregated summary
-    _display_aggregated_benchmark_summary(all_benchmark_results)
-
-    # 5. Prompt the user to continue
-    response = input("\nDo you want to continue with the full, long-running pipelines for this dataset? (y/n): ").lower().strip()
-    if response not in ['y', 'yes']:
-        print("Skipping main pipeline as requested by user.")
-        return False
-
-    print("Continuing with the full pipeline...\n")
-    return True
-
 def _display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
     """
     Standardizes, concatenates, and displays a final summary of all benchmark results.
@@ -243,6 +196,63 @@ def _display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
         print(final_summary_df.to_string())
     except Exception as e:
         print(f"Could not generate aggregated benchmark summary due to an error: {e}")
+
+
+def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
+    """
+    Runs all preliminary benchmarks and the singleton GCN evaluation,
+    displays a summary, and prompts the user to continue.
+    """
+    all_benchmark_results = []
+
+    # --- Step 1: Run standard GNN and Network Embedding benchmarks. ---
+    if config.RUN_BENCHMARKING_PIPELINE:
+        mlflow.set_experiment(config.MLFLOW_BENCHMARK_EXPERIMENT_NAME)
+        with mlflow.start_run(run_name="GNN_Benchmark_Suite"):
+            gnn_results_df = GNNBenchmarker(config).run()
+            if gnn_results_df is not None and not gnn_results_df.empty:
+                all_benchmark_results.append(gnn_results_df)
+
+    if config.RUN_NETWORK_EMBEDDING_BENCHMARKING:
+        mlflow.set_experiment(config.MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME)
+        with mlflow.start_run(run_name="NE_Benchmark_Suite"):
+            ne_results_df = NetworkEmbeddingBenchmarker(config).run()
+            if ne_results_df is not None and not ne_results_df.empty:
+                # Standardize columns to match GNN benchmark format
+                ne_results_df['best_val_accuracy'] = np.nan
+                all_benchmark_results.append(ne_results_df)
+
+    # --- Step 2: Run the n=1 ProtGramBuilder step and Singleton GCN Evaluation. ---
+    if config.RUN_SINGLETON_GCN_EVAL:
+        DataUtils.print_header("Running Singleton (n=1) Graph Evaluation")
+        # Create a temporary config to only build the n=1 graph for this step
+        singleton_config = copy.deepcopy(config)
+        singleton_config.GCN_NGRAM_MAX_N = 1
+
+        # The run method of ProtGramBuilder will build the n=1 graph and run the eval
+        singleton_results_df = ProtGramBuilder(singleton_config).run(run_singleton_eval=True)
+
+        if singleton_results_df is not None and not singleton_results_df.empty:
+            # Standardize singleton results to fit the benchmark table
+            singleton_results_df = singleton_results_df.rename(columns={'Model': 'model', 'Accuracy': 'test_accuracy'})
+            singleton_results_df['dataset'] = f"ProtGram_n1_Singleton_{fasta_file_path.stem}"
+            singleton_results_df['best_val_accuracy'] = np.nan
+            singleton_results_df['error'] = None
+            # Ensure the column order matches for concatenation
+            all_benchmark_results.append(singleton_results_df[['dataset', 'model', 'test_accuracy', 'best_val_accuracy', 'error']])
+
+    # --- Step 3: Display the aggregated summary. ---
+    _display_aggregated_benchmark_summary(all_benchmark_results)
+
+    # --- Step 4: Prompt the user to continue. ---
+    # This prompt now appears after all preliminary results have been shown.
+    response = input("\nDo you want to continue with the full, long-running pipelines for this dataset? (y/n): ").lower().strip()
+    if response not in ['y', 'yes']:
+        print("Skipping main pipeline as requested by user.")
+        return False
+
+    print("Continuing with the full pipeline...\n")
+    return True
 
 
 def main():
@@ -303,12 +313,18 @@ def main():
                         ]
                         for path_attr in paths_to_specialize:
                             if hasattr(config, path_attr):
-                                original_path = getattr(config, path_attr)
+                                # The base path is from the original config object
+                                original_path = getattr(base_config, path_attr)
                                 setattr(config, path_attr, original_path / dataset_name)
                         # --- END FIX ---
 
                         # Run pre-analysis and prompt the user. If they agree, run the main pipelines.
                         if _run_pre_analysis_and_prompt(config, fasta_file_path):
+                            # If the user proceeds, we must now build the FULL set of graphs (n=1 to 3)
+                            # before running the main embedding pipelines.
+                            DataUtils.print_header("Building all n-gram graphs for the main pipeline")
+                            ProtGramBuilder(config).run(run_singleton_eval=False)  # Re-run, but skip the now-redundant eval
+
                             generated_embedding_files = _run_main_embedding_pipelines(config)
                             final_evaluation_list = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_embedding_files
                             config.LP_EMBEDDING_FILES_TO_EVALUATE = final_evaluation_list
@@ -337,6 +353,7 @@ def main():
             import traceback
             traceback.print_exc()
             raise
+
 
 if __name__ == '__main__':
     main()

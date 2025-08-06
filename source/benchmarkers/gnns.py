@@ -317,12 +317,6 @@ class GNNBenchmarker:
             if dataset_original:
                 dataset_results.extend(self._run_on_dataset_variant(dataset_original, f"{dataset_name}_Original"))
 
-            # --- Run on Undirected Graph (if configured) ---
-            if self.config.BENCHMARK_TEST_ON_UNDIRECTED:
-                dataset_undirected = self._get_dataset(dataset_name, undirected=True)
-                if dataset_undirected:
-                    dataset_results.extend(self._run_on_dataset_variant(dataset_undirected, f"{dataset_name}_Undirected"))
-
             # --- Save summary for the current dataset ---
             if dataset_results:
                 summary_df = pd.DataFrame(dataset_results)

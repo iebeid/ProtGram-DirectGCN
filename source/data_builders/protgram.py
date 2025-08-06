@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: data_builders/protgram.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 7.1 (Integrated generalized singleton evaluation)
+# VERSION: 8.0 (Corrected conditional singleton evaluation logic for new workflow)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -12,11 +12,11 @@ import sys
 import time
 from functools import partial
 from pathlib import Path
-from typing import Tuple, Iterator, Dict, List, Any
+from typing import Optional
+from typing import Tuple, Iterator
 
 import dask.bag as db
 import dask.dataframe as dd
-import pandas as pd
 import pandas as pd
 import pyarrow
 import pyarrow.parquet as pq
@@ -25,7 +25,7 @@ from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
 from source.trainers.singleton_xgcn import SingletonXGCNTrainer
 from source.utils.data import DataUtils, FastaUtils, ProtgramDaskHelpers
-from typing import Optional
+
 
 class ProtGramBuilder:
     def __init__(self, config: Config):
@@ -41,7 +41,20 @@ class ProtGramBuilder:
             f"GraphBuilder initialized: n_max={self.n_max}, configured_workers={self.num_workers_config}, output_dir='{self.output_dir}'")
         DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
 
-    def run(self) -> Optional[pd.DataFrame]:
+    def run(self, run_singleton_eval: bool = True) -> Optional[pd.DataFrame]:
+        """
+        Main execution function for the graph builder.
+
+        This method orchestrates the entire graph construction process, from
+        reading sequences to building and saving the final graph objects for
+        each n-gram level. It also triggers the singleton evaluation if configured.
+
+        Args:
+            run_singleton_eval (bool): If True, runs the rapid evaluation on the n=1 graph.
+
+        Returns:
+            Optional[pd.DataFrame]: A DataFrame with the singleton evaluation results, or None.
+        """
         overall_start_time = time.monotonic()
         DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs")
 
@@ -232,9 +245,9 @@ class ProtGramBuilder:
 
         DataUtils.print_header("Phase 2: Building and saving final graph objects")
         phase2_start_time = time.monotonic()
+        singleton_results_df = None
         for n in n_values:
             print(f"\n--- Processing n = {n} for final graph object ---")
-            singleton_results_df = None
             ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
             edge_parts_dir = os.path.join(self.temp_dir, f'edge_list_n{n}_parts')
 
@@ -328,12 +341,13 @@ class ProtGramBuilder:
             del graph_object, idx_to_node
 
             # --- NEW: Singleton Evaluation Trigger ---
-            if n == 1 and self.config.RUN_SINGLETON_GCN_EVAL:
+            if n == 1 and self.config.RUN_SINGLETON_GCN_EVAL and run_singleton_eval:
                 # Reload the object to ensure it's clean for the trainer
                 fresh_graph_obj = DataUtils.load_object(output_path)
                 singleton_trainer = SingletonXGCNTrainer(self.config, fresh_graph_obj)
                 singleton_results_df = singleton_trainer.run()
-                self._display_singleton_results_and_prompt(singleton_results_df)
+                # The prompt is now handled in main.py after all benchmarks are done.
+                self._display_singleton_results(singleton_results_df)
             gc.collect()
 
         print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.")
@@ -348,8 +362,8 @@ class ProtGramBuilder:
         DataUtils.print_header(f"N-gram Graph Building FINISHED in {time.monotonic() - overall_start_time:.2f}s")
         return singleton_results_df
 
-    def _display_singleton_results_and_prompt(self, results_df: Optional[pd.DataFrame]):
-        """Displays the results of the singleton evaluation and prompts the user."""
+    def _display_singleton_results(self, results_df: Optional[pd.DataFrame]):
+        """Displays the results of the singleton evaluation."""
         DataUtils.print_header("Singleton GCN (n=1) Rapid Evaluation Results")
         if results_df is not None and not results_df.empty:
             print("This is a quick evaluation to check if the model architecture is learning.")
