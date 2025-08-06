@@ -147,9 +147,11 @@ if __name__ == "__main__":
          f"\"tensorflow<2.16\" tf-keras "
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} --extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"
          ),
-        # Forcefully remove the pip-installed cuDNN from the torch wheel to ensure consistency.
-        "echo '--- Stage 2.5: Forcing library consistency by removing pip-installed cuDNN ---'",
-        "pip uninstall -y nvidia-cudnn-cu12",
+        # --- DEPRECATED: Do not remove pip's cuDNN. Allow PyTorch to use its own bundled version. ---
+        # The LD_LIBRARY_PATH ensures TensorFlow finds the Conda-installed cuDNN first,
+        # while PyTorch is smart enough to find its own version in site-packages.
+        # "echo '--- Stage 2.5: Forcing library consistency by removing pip-installed cuDNN ---'",
+        # "pip uninstall -y nvidia-cudnn-cu12",
 
         # STAGE 3: PYCUDA INSTALL
         "echo '--- Stage 3: Building PyCUDA from source ---'",
