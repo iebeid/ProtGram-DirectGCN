@@ -170,7 +170,7 @@ class ProtGramXGCNTrainer:
             if model is None: continue
 
             data = Data(x=initial_features, y=labels, graph_obj=graph_obj)
-            optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=self.config.GCN_WEIGHT_DECAY if self.config.GCN_L2_REG_LAMBDA <= 0 else 0.0)
+            optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=self.config.GCN_WEIGHT_DECAY)
 
             self._train_single_level(model, graph_obj, data, optimizer)
 
@@ -209,17 +209,16 @@ class ProtGramXGCNTrainer:
 
     def _train_single_level(self, model: nn.Module, graph_obj: DirectedNgramGraph, data: Data, optimizer: torch.optim.Optimizer):
         """Orchestrates the training for a single level, choosing between full-batch and clustered training."""
-        l2_lambda_val = getattr(self.config, 'GCN_L2_REG_LAMBDA', 0.0)
         task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(graph_obj.n_value, self.config.GCN_DEFAULT_TASK_TYPE)
 
         if self.config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
             node_partitions = self._partition_graph(graph_obj)
-            self._train_single_level_clustered(model, data, node_partitions, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, l2_lambda_val)
+            self._train_single_level_clustered(model, data, node_partitions, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type)
         else:
-            self._train_single_level_full_batch(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, l2_lambda_val)
+            self._train_single_level_full_batch(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type)
 
     def _train_single_level_full_batch(self, model: nn.Module, data: Data, optimizer: torch.optim.Optimizer, epochs: int,
-                                       task_type: str, l2_lambda: float = 0.0):
+                                       task_type: str):
         """Full-batch training logic for a single GNN level."""
         model.train()
         model.to(self.device)
@@ -230,26 +229,24 @@ class ProtGramXGCNTrainer:
         scaler = torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
 
         criterion = F.cross_entropy
-        print(f"  Starting full-batch training for up to {epochs} epochs (Task: {task_type}, L2 lambda: {l2_lambda})...")
+        print(f"  Starting full-batch training for up to {epochs} epochs (Task: {task_type}, Weight Decay: {optimizer.param_groups[0]['weight_decay']})...")
         for epoch in range(1, epochs + 1):
             optimizer.zero_grad()
             with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
                 output, _ = model(data=full_data_gpu)
-                primary_loss = criterion(output, full_data_gpu.y)
-                l2_reg = sum(p.norm(2).pow(2) for p in model.parameters() if p.requires_grad)
-                loss = primary_loss + l2_lambda * l2_reg
+                loss = criterion(output, full_data_gpu.y)
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
             if scheduler: scheduler.step(loss)
             if self.config.DEBUG_VERBOSE and (epoch == 1 or epoch % 10 == 0 or epoch == epochs):
-                print(f"    Epoch: {epoch:03d}, Total Loss: {loss.item():.4f}, Primary Loss: {primary_loss.item():.4f}, L2: {(l2_lambda * l2_reg).item():.4f}")
+                print(f"    Epoch: {epoch:03d}, Loss: {loss.item():.4f}")
             if early_stopper and early_stopper.early_stop(loss.item()):
                 print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
                 break
 
     def _train_single_level_clustered(self, model: nn.Module, full_data: Data, node_partitions: List[List[int]],
-                                      optimizer: torch.optim.Optimizer, epochs: int, task_type: str, l2_lambda: float = 0.0):
+                                      optimizer: torch.optim.Optimizer, epochs: int, task_type: str):
         """Clustered training logic for a single GNN level."""
         model.train()
         model.to(self.device)
@@ -273,9 +270,7 @@ class ProtGramXGCNTrainer:
                 optimizer.zero_grad()
                 with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
                     output, _ = model(data=subgraph_data)
-                    primary_loss = criterion(output, subgraph_data.y)
-                    l2_reg = sum(p.norm(2).pow(2) for p in model.parameters() if p.requires_grad)
-                    loss = primary_loss + l2_lambda * l2_reg
+                    loss = criterion(output, subgraph_data.y)
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()

@@ -148,11 +148,18 @@ class DirectGCN(nn.Module):
 
     def __init__(self, layer_dims: List[int], num_graph_nodes: Optional[int],
                  task_num_output_classes: int, n_gram_len: int,
-                 one_gram_dim: int, max_pe_len: int, dropout: float, gating_mode: str):
+                 one_gram_dim: int, max_pe_len: int, dropout: float, gating_mode: str,
+                 l2_eps: float = 1e-12):
         super().__init__()
         self.n_gram_len = n_gram_len
         self.one_gram_dim = one_gram_dim
         self.dropout = dropout
+        self.l2_eps = l2_eps
+
+        # This layer is necessary for the _apply_pe method and was missing.
+        self.pe_layer = None
+        if one_gram_dim > 0 and max_pe_len > 0:
+            self.pe_layer = nn.Embedding(max_pe_len, one_gram_dim)
 
         self.convs = nn.ModuleList()
         self.res_projs = nn.ModuleList()
@@ -206,21 +213,24 @@ class DirectGCN(nn.Module):
 
         h = self._apply_pe(x)
 
-        for i, conv in enumerate(self.convs):
-            h_res = h  # Store for residual connection
-
-            h = conv(
-                x=h,
+        for i in range(len(self.convs)):
+            h_res = h
+            gcn_layer, res_layer = self.convs[i], self.res_projs[i]
+            gcn_output = gcn_layer(
+                h_res,
                 edge_index_in=ei_in, edge_weight_in=ew_in,
                 edge_index_out=ei_out, edge_weight_out=ew_out,
                 edge_index_undirected=ei_undir, edge_weight_undirected=ew_undir,
                 original_indices=original_indices
             )
-            h = F.relu(h)
+            residual_output = res_layer(h_res)
+            h = F.leaky_relu(gcn_output + residual_output)
             h = F.dropout(h, p=self.dropout, training=self.training)
-            h = h + self.res_projs[i](h_res)  # Apply residual connection
 
-        final_embeddings = h
-        logits = self.decoder_fc(final_embeddings)
+        final_embed_for_task = h
+        logits = self.decoder_fc(final_embed_for_task)
+        # The final embeddings for downstream tasks are L2 normalized
+        final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
 
-        return logits, final_embeddings
+        # Return raw logits for compatibility with F.cross_entropy loss
+        return logits, final_normalized_embeddings
