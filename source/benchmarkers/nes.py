@@ -240,6 +240,7 @@ class NetworkEmbeddingBenchmarker:
         import gc
         gc.collect()
         if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         summary_df = pd.DataFrame(all_results)
         # The full summary is now handled by main.py
