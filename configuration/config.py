@@ -113,12 +113,6 @@ class Config:
                 "post_process": "ungzip",
                 "checksum": None
             },
-            "UNIREF_100_FASTA": {
-                "url": "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref100/uniref100.fasta.gz",
-                "path": self.DATA_SEQUENCES_DIR / "uniref100.fasta",
-                "post_process": "ungzip",
-                "checksum": None
-            },
             "POS_INTERACTIONS": {
                 "url": "https://drive.google.com/file/d/1vDDdeOVdyu00y5Qux6HRdWtzywj9w7z4/view?usp=sharing",
                 "path": self.DATA_GROUND_TRUTH_DIR / "positive_interactions.csv",
