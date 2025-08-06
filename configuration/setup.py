@@ -15,10 +15,10 @@ from pathlib import Path
 # --- Configuration ---
 ENV_NAME = "ppi-env"
 PYTHON_VERSION = "3.11"
-CUDA_VERSION = "12.1"
-PYTORCH_VERSION = "2.4.0"
-TORCHVISION_VERSION = "0.19.0"
-TORCHAUDIO_VERSION = "2.4.0"
+CUDA_VERSION = "12.1"  # Stable version for both TF 2.15 and PyTorch 2.1
+PYTORCH_VERSION = "2.1.2"  # Downgraded to match cuDNN 8.9 requirement
+TORCHVISION_VERSION = "0.16.2" # Corresponding torchvision for PyTorch 2.1.2
+TORCHAUDIO_VERSION = "2.1.2"  # Corresponding torchaudio for PyTorch 2.1.2
 ENVIRONMENT_YML_FILE = "environment.yml"
 
 
@@ -147,11 +147,11 @@ if __name__ == "__main__":
          f"\"tensorflow<2.16\" tf-keras "
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} --extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"
          ),
-        # --- DEPRECATED: Do not remove pip's cuDNN. Allow PyTorch to use its own bundled version. ---
-        # The LD_LIBRARY_PATH ensures TensorFlow finds the Conda-installed cuDNN first,
-        # while PyTorch is smart enough to find its own version in site-packages.
-        # "echo '--- Stage 2.5: Forcing library consistency by removing pip-installed cuDNN ---'",
-        # "pip uninstall -y nvidia-cudnn-cu12",
+        # --- RE-ENABLED: This is now necessary. We want PyTorch to use the Conda-installed cuDNN 8.9,
+        # not a newer version that might be bundled with its wheel. This ensures a single,
+        # consistent cuDNN version across the entire environment.
+        "echo '--- Stage 2.5: Forcing library consistency by removing pip-installed cuDNN ---'",
+        "pip uninstall -y nvidia-cudnn-cu12",
 
         # STAGE 3: PYCUDA INSTALL
         "echo '--- Stage 3: Building PyCUDA from source ---'",
