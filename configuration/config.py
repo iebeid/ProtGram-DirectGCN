@@ -25,6 +25,9 @@ class Config:
         # --- 4. DATA SOURCES FOR AUTOMATIC DOWNLOAD ---
         self._setup_data_sources()
 
+        # --- NEW: 4.5. DYNAMICALLY LINK DATA SOURCES TO ATTRIBUTES ---
+        self._link_data_sources_to_attributes()
+
         # --- 5. GNN BENCHMARKING PARAMETERS ---
         self._setup_benchmarking_params()
 
@@ -76,18 +79,6 @@ class Config:
         self.RESULTS_BENCHMARKING_DIR = self.BASE_OUTPUT_DIR / "benchmarking_results"
         self.RESULTS_BENCHMARK_EMBEDDINGS_DIR = self.RESULTS_BENCHMARKING_DIR / "embeddings"
 
-        # Key File Paths
-        # This is the master list of original, unmodified sequence files.
-        self.ORIGINAL_SEQUENCE_FILE_PATHS = [
-            self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta"
-        ]
-        # This is the "working" list of paths, which can be modified for downsampling during a run.
-        self.SEQUENCE_FILE_PATHS = self.ORIGINAL_SEQUENCE_FILE_PATHS.copy()
-        self.POS_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "positive_interactions.csv"
-        self.NEG_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "negative_interactions.csv"
-        self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "idmapping.dat"
-        self.PROTT5_MODEL_PATH = self.DATA_MODELS_DIR / "per-protein.h5"
-
     def _setup_pipeline_flags(self):
         """Sets flags to control which parts of the main pipeline are executed."""
         self.RUN_GCN_PIPELINE = True
@@ -130,29 +121,49 @@ class Config:
             },
             "POS_INTERACTIONS": {
                 "url": "https://drive.google.com/file/d/1vDDdeOVdyu00y5Qux6HRdWtzywj9w7z4/view?usp=sharing",
-                "path": self.POS_INTERACTIONS_PATH,
+                "path": self.DATA_GROUND_TRUTH_DIR / "positive_interactions.csv",
                 "post_process": None,
                 "checksum": None
             },
             "NEG_INTERACTIONS": {
                 "url": "https://drive.google.com/file/d/1AZJS5_1XLM-GWWDjLWRTQU_5WQRROyrg/view?usp=sharing",
-                "path": self.NEG_INTERACTIONS_PATH,
+                "path": self.DATA_GROUND_TRUTH_DIR / "negative_interactions.csv",
                 "post_process": None,
                 "checksum": None
             },
             "PROTT5_MODEL": {
                 "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5",
-                "path": self.PROTT5_MODEL_PATH,
+                "path": self.DATA_MODELS_DIR / "per-protein.h5",
                 "post_process": None,
                 "checksum": None
             },
             "ID_MAPPING_TSV": {
                 "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping.dat.gz",
-                "path": self.ID_MAPPING_PATH,
+                "path": self.DATA_MAPPINGS_DIR / "idmapping.dat",
                 "post_process": "ungzip",
                 "checksum": None
             }
         }
+
+    def _link_data_sources_to_attributes(self):
+        """
+        Dynamically creates key file path attributes from DATA_SOURCES.
+        This ensures a single source of truth for all data paths, removing redundancy.
+        """
+        # Link specific, named file paths for easy access elsewhere in the code.
+        self.POS_INTERACTIONS_PATH = self.DATA_SOURCES['POS_INTERACTIONS']['path']
+        self.NEG_INTERACTIONS_PATH = self.DATA_SOURCES['NEG_INTERACTIONS']['path']
+        self.ID_MAPPING_PATH = self.DATA_SOURCES['ID_MAPPING_TSV']['path']
+        self.PROTT5_MODEL_PATH = self.DATA_SOURCES['PROTT5_MODEL']['path']
+
+        # Dynamically build the list of all available FASTA files.
+        self.ORIGINAL_SEQUENCE_FILE_PATHS = [
+            Path(source_info['path'])
+            for key, source_info in self.DATA_SOURCES.items()
+            if 'path' in source_info and str(source_info['path']).endswith(('.fasta', '.fa'))
+        ]
+        # This is the "working" list of paths, which can be modified for downsampling during a run.
+        self.SEQUENCE_FILE_PATHS = self.ORIGINAL_SEQUENCE_FILE_PATHS.copy()
 
     def _setup_benchmarking_params(self):
         """Sets parameters for the GNN benchmarking suite."""
