@@ -50,35 +50,32 @@ def is_environment_valid(project_root: Path) -> bool:
         in_dependencies_section = False
         for line in lines:
             line = line.strip()
-
             if line.startswith("dependencies:"):
                 in_dependencies_section = True
                 continue
-
             if not in_dependencies_section:
                 continue
-
-            if not line or line.startswith(('#', 'name:', 'channels:', 'prefix:')):
+            # Correctly handle comments and metadata lines
+            if not line or line.startswith(('#', 'name:', 'channels:', 'prefix:')) or 'pip:' in line:
                 continue
 
-            # --- MINIMAL FIX: Remove the YAML list marker '- ' before parsing ---
-            # This was the source of the validation error.
+            # The actual package spec starts after the YAML list marker '- '
+            package_spec = line
             if line.startswith('- '):
-                line = line[2:]
-            # --- END FIX ---
+                package_spec = line[2:].strip()
 
             # Handle package strings like 'numpy=1.26.4=pypi_0' or 'numpy==1.26.4'
             # We only care about the package name for this validation.
-            if '==' in line:  # pip format
-                package_name = line.split('==')[0].strip()
-            elif '=' in line:  # conda format
-                package_name = line.split('=')[0].strip()
+            if '==' in package_spec:  # pip format
+                package_name = package_spec.split('==')[0].strip()
+            elif '=' in package_spec:  # conda format
+                package_name = package_spec.split('=')[0].strip()
             else:  # package name only
-                package_name = line.strip()
+                package_name = package_spec.strip()
 
             # The package name in yml (e.g., scikit-learn) should match conda list output.
-            if package_name and 'pip:' not in package_name:
-                required_packages.add(package_name)
+            if package_name:
+                required_packages.add(package_name.lower())
 
         # 3. Check if all required packages are installed
         missing_packages = required_packages - installed_packages
