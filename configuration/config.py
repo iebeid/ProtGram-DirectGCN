@@ -191,7 +191,7 @@ class Config:
         # 'file': Uses the large idmapping.dat to create a robust local SQLite DB. Best for production.
         # 'regex': Fast, but relies on standard UniProt headers (e.g., >sp|P12345|...).
         # 'api': Uses the live UniProt API. Slow, for small-scale use only.
-        self.ID_MAPPING_MODE = 'file'
+        self.ID_MAPPING_MODE = 'regex'
         # This value is now set dynamically in main.py based on the input FASTA file
         # to correctly handle different UniRef versions (e.g., UniRef50, UniRef100).
         self.API_MAPPING_FROM_DB: Optional[str] = None
