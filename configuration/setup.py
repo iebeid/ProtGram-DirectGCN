@@ -135,11 +135,22 @@ if __name__ == "__main__":
 
         # STAGE 1: CONDA FOR THE CUDA FOUNDATION
         "echo '--- Stage 1: Installing CUDA Toolkit and core data science libraries from Conda ---'",
-        (f"conda install -y "
+        "MAX_RETRIES=3",
+        "COUNT=0",
+        "until " + (f"conda install -y "
          f"-c nvidia -c conda-forge "
          f"python={PYTHON_VERSION} "
          f"'cuda-toolkit={CUDA_VERSION}' 'cuda-compiler={CUDA_VERSION}' 'cudnn=8.9' "
-         f"dask tqdm biopython matplotlib scipy scikit-learn gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"),
+         f"dask tqdm biopython matplotlib scipy scikit-learn gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"
+         ) + "; do",
+        "    COUNT=$((COUNT+1))",
+        "    if [ \"$COUNT\" -ge \"$MAX_RETRIES\" ]; then",
+        "        echo \"Conda install failed after $MAX_RETRIES attempts. Aborting.\"",
+        "        exit 1",
+        "    fi",
+        "    echo \"Conda install failed due to a likely network issue. Retrying in 5 seconds... (Attempt $((COUNT+1))/$MAX_RETRIES)\"",
+        "    sleep 5",
+        "done",
 
         # STAGE 2: PIP INSTALLATIONS FOR ML FRAMEWORKS
         "echo '--- Stage 2: Installing ML Frameworks (PyTorch, TensorFlow) via pip ---'",
