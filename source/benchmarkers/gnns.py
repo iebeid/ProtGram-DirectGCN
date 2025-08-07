@@ -118,7 +118,6 @@ class GNNBenchmarker:
                 one_gram_dim=self.config.GCN_1GRAM_INIT_DIM,
                 max_pe_len=self.config.GCN_MAX_PE_LEN,
                 dropout=self.config.GCN_DROPOUT_RATE, use_homo_hetero_paths=self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS,
-                # ^ Explicitly disable for benchmarks
                 gating_mode=self.config.GCN_GATING_COEFF_MODE
             )
         else:
@@ -126,6 +125,25 @@ class GNNBenchmarker:
 
     def _preprocess_for_custom_models(self, data: Data) -> Data:
         """Prepares a data object with all necessary edge indices for custom models."""
+        # --- NEW: Split edges by homophily using node labels for benchmarks ---
+        # This allows testing the homophily-aware architecture on standard datasets.
+        if self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS:
+            edge_index = data.edge_index
+            y = data.y
+            source_nodes, target_nodes = edge_index[0], edge_index[1]
+            source_labels = y[source_nodes]
+            target_labels = y[target_nodes]
+            homo_mask = (source_labels == target_labels)
+            hetero_mask = ~homo_mask
+            data.edge_index_out_homo = edge_index[:, homo_mask]
+            data.edge_index_out_hetero = edge_index[:, hetero_mask]
+            data.edge_weight_out_homo = torch.ones(data.edge_index_out_homo.shape[1], device=edge_index.device)
+            data.edge_weight_out_hetero = torch.ones(data.edge_index_out_hetero.shape[1], device=edge_index.device)
+            data.edge_index_in_homo = data.edge_index_out_homo.flip(0)
+            data.edge_index_in_hetero = data.edge_index_out_hetero.flip(0)
+            data.edge_weight_in_homo = data.edge_weight_out_homo
+            data.edge_weight_in_hetero = data.edge_weight_out_hetero
+
         # For TongDiGCN, which needs a backward edge index
         data.edge_index_backward = data.edge_index.flip(0)
 

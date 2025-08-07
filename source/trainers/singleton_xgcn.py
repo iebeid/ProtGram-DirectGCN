@@ -58,6 +58,10 @@ class SingletonXGCNTrainer:
             print("  Singleton Trainer: Only one community found. Cannot perform meaningful classification.")
             return pd.DataFrame()
 
+        # --- FIX: Split edges by homophily if the feature is enabled ---
+        if self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS:
+            self.graph.split_edges_by_homophily(labels)
+
         # 2. Create initial random features
         initial_features = torch.randn((self.graph.number_of_nodes, self.config.GCN_1GRAM_INIT_DIM))
 
@@ -81,26 +85,16 @@ class SingletonXGCNTrainer:
         train_mask = torch.zeros(self.graph.number_of_nodes, dtype=torch.bool).scatter_(0, torch.from_numpy(train_idx), 1)
         test_mask = torch.zeros(self.graph.number_of_nodes, dtype=torch.bool).scatter_(0, torch.from_numpy(test_idx), 1)
 
-        # 4. Prepare a base data object
-        base_data = Data(
-            x=initial_features, y=labels,
-            edge_index_in=self.graph.mathcal_A_in.indices(), edge_weight_in=self.graph.mathcal_A_in.values(),
-            edge_index_out=self.graph.mathcal_A_out.indices(), edge_weight_out=self.graph.mathcal_A_out.values(),
-            edge_index_undirected_norm=self.graph.A_undirected_norm_sparse.indices(),
-            edge_weight_undirected_norm=self.graph.A_undirected_norm_sparse.values(),
-            train_mask=train_mask, test_mask=test_mask
-        )
-
         all_results = []
         for model_name in self.config.SINGLETON_EVAL_MODELS_TO_RUN:
             print(f"\n--- Evaluating Singleton Model: {model_name} ---")
-            model = self._get_model(model_name, base_data, num_classes)
+            model = self._get_model(model_name, initial_features.shape[1], num_classes)
             if model is None:
                 continue
 
             model.to(self.device)
             optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
-            data_for_model = self._prepare_data_for_model(model_name, base_data).to(self.device)
+            data_for_model = self._prepare_data_for_model(model_name, initial_features, labels, train_mask, test_mask).to(self.device)
 
             # Training Loop
             for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
@@ -129,11 +123,11 @@ class SingletonXGCNTrainer:
             all_results.append(metrics)
         return pd.DataFrame(all_results)
 
-    def _get_model(self, name: str, data: Data, num_classes: int) -> torch.nn.Module:
+    def _get_model(self, name: str, in_channels: int, num_classes: int) -> torch.nn.Module:
         """Model factory for instantiating GNNs."""
         # --- FIX: Use benchmark parameters from config for consistency ---
         model_params = {
-            'in_channels': data.num_features,
+            'in_channels': in_channels,
             'hidden_channels': self.config.BENCHMARK_GNN_HIDDEN_CHANNELS,
             'out_channels': num_classes,
             'num_layers': self.config.BENCHMARK_GNN_NUM_LAYERS,
@@ -158,11 +152,9 @@ class SingletonXGCNTrainer:
             return RGCN(**model_params, num_relations=self.config.BENCHMARK_RGCN_NUM_RELATIONS)
         if name == "TongDiGCN": return TongDiGCN(**model_params)
         if name == "DirectGCN":
-            # Add a fallback in case the hidden layer list is empty in the config
-            hidden_dim = self.config.GCN_HIDDEN_LAYER_DIMS[0] if self.config.GCN_HIDDEN_LAYER_DIMS else 256
-            layer_dims = [data.num_features, hidden_dim, num_classes]
+            layer_dims = [in_channels] + self.config.GCN_HIDDEN_LAYER_DIMS
             return DirectGCN(
-                layer_dims=layer_dims, num_graph_nodes=data.num_nodes,
+                layer_dims=layer_dims, num_graph_nodes=self.graph.number_of_nodes,
                 task_num_output_classes=num_classes,
                 n_gram_len=1,
                 use_homo_hetero_paths=self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS,
@@ -171,30 +163,41 @@ class SingletonXGCNTrainer:
             )
         raise ValueError(f"Unknown model name '{name}' for singleton evaluation.")
 
-    def _prepare_data_for_model(self, model_name: str, data: Data) -> Data:
-        """Prepares the Data object with the correct edge indices for the specified model."""
-        # The base data object already contains everything DirectGCN needs.
-        if model_name == 'DirectGCN':
-            return data
+    def _prepare_data_for_model(self, model_name: str, features: torch.Tensor, labels: torch.Tensor, train_mask: torch.Tensor, test_mask: torch.Tensor) -> Data:
+        """Prepares a PyG Data object tailored to the specific model's needs."""
+        data_dict = {'x': features, 'y': labels, 'train_mask': train_mask, 'test_mask': test_mask}
+        model_name_lower = model_name.lower()
 
-        # For other models, we need to select the appropriate edge index.
-        # Most standard GNNs work best with the undirected, normalized adjacency matrix.
-        data_clone = data.clone()
-        data_clone.edge_index = data.edge_index_undirected_norm
-        data_clone.edge_attr = data.edge_weight_undirected_norm
+        if model_name_lower == 'directgcn':
+            if self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS and self.graph.A_out_w_homo is not None:
+                data_dict.update({
+                    'edge_index_in_homo': self.graph.A_in_w_homo.indices(), 'edge_weight_in_homo': self.graph.A_in_w_homo.values(),
+                    'edge_index_in_hetero': self.graph.A_in_w_hetero.indices(), 'edge_weight_in_hetero': self.graph.A_in_w_hetero.values(),
+                    'edge_index_out_homo': self.graph.A_out_w_homo.indices(), 'edge_weight_out_homo': self.graph.A_out_w_homo.values(),
+                    'edge_index_out_hetero': self.graph.A_out_w_hetero.indices(), 'edge_weight_out_hetero': self.graph.A_out_w_hetero.values(),
+                    'edge_index_undirected_norm': self.graph.A_undirected_norm_sparse.indices(),
+                    'edge_weight_undirected_norm': self.graph.A_undirected_norm_sparse.values()
+                })
+            else:
+                data_dict.update({
+                    'edge_index_in': self.graph.A_in_w.indices(), 'edge_weight_in': self.graph.A_in_w.values(),
+                    'edge_index_out': self.graph.A_out_w.indices(), 'edge_weight_out': self.graph.A_out_w.values(),
+                    'edge_index_undirected_norm': self.graph.A_undirected_norm_sparse.indices(),
+                    'edge_weight_undirected_norm': self.graph.A_undirected_norm_sparse.values()
+                })
+        elif model_name_lower == 'rgcn':
+            edge_index_out = self.graph.A_out_w.indices()
+            edge_index_in = self.graph.A_in_w.indices()
+            data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
+            data_dict['edge_type'] = torch.cat([torch.zeros(edge_index_out.size(1)), torch.ones(edge_index_in.size(1))]).long()
+        elif model_name_lower == 'tongdigcn':
+            data_dict['edge_index'] = self.graph.A_out_w.indices()
+            data_dict['edge_index_backward'] = self.graph.A_in_w.indices()
+        else:  # GCN, GAT, etc.
+            # Most standard GNNs work best with the undirected, normalized adjacency matrix.
+            # Here we use mathcal_A for consistency with older GCN versions, though A_undirected_norm_sparse is often better.
+            # This could be a point of experimentation.
+            data_dict['edge_index'] = self.graph.mathcal_A_out.indices()
+            data_dict['edge_attr'] = self.graph.mathcal_A_out.values()
 
-        if model_name == 'RGCN':
-            # RGCN needs a combined edge_index and an edge_type tensor
-            edge_index_out = data.edge_index_out
-            edge_index_in = data.edge_index_in
-            data_clone.edge_index = torch.cat([edge_index_out, edge_index_in], dim=1)
-            data_clone.edge_type = torch.cat([
-                torch.zeros(edge_index_out.size(1), dtype=torch.long),
-                torch.ones(edge_index_in.size(1), dtype=torch.long)
-            ])
-        elif model_name == 'TongDiGCN':
-            # TongDiGCN needs separate forward and backward edge indices
-            data_clone.edge_index = data.edge_index_out
-            data_clone.edge_index_backward = data.edge_index_in
-
-        return data_clone
+        return Data.from_dict(data_dict)
