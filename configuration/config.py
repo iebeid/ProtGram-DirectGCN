@@ -60,6 +60,7 @@ class Config:
         self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
         self.BASE_SOURCE_DIR = self.PROJECT_ROOT / "source"
         self.BASE_OUTPUT_DIR = self.PROJECT_ROOT / "results"
+        self.PERSISTENT_DATA_CACHE = Path.home() / ".cache" / "protgram_directgcn"
         self.LOG_DIR = self.BASE_OUTPUT_DIR / "logs"
 
         # Data Subdirectories
@@ -128,14 +129,15 @@ class Config:
             "PROTT5_MODEL": {
                 "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5",
                 "path": self.DATA_MODELS_DIR / "per-protein.h5",
-                "post_process": None,
-                "checksum": None
+                "post_process": None, "checksum": None,
+                "cacheable": True  # This large file will be cached persistently
             },
             "ID_MAPPING_TSV": {
                 "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping.dat.gz",
                 "path": self.DATA_MAPPINGS_DIR / "idmapping.dat",
                 "post_process": "ungzip",
-                "checksum": None
+                "checksum": None,
+                "cacheable": True  # This large file will be cached persistently
             }
         }
 

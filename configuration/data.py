@@ -5,9 +5,14 @@
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
+import os
 import gzip
+import h5py
+import platform
+
 try:
     import gdown
+
     GDOWN_AVAILABLE = True
 except ImportError:
     GDOWN_AVAILABLE = False
@@ -19,6 +24,15 @@ import requests
 from tqdm.auto import tqdm
 
 from configuration.config import Config
+
+
+def _create_link_or_copy(source: Path, dest: Path):
+    """Creates a symlink from source to dest, falling back to a copy if needed."""
+    try:
+        os.symlink(source, dest)
+    except (OSError, AttributeError, NotImplementedError):
+        print(f"    Symlink failed. Falling back to copying file (this may take a moment)...")
+        shutil.copy(source, dest)
 
 
 def _is_file_valid(file_path: Path) -> bool:
@@ -46,6 +60,19 @@ def _is_file_valid(file_path: Path) -> bool:
         # We can proceed, but this is worth noting.
 
     file_type = file_path.suffix.lower()
+
+    # --- FIX: Add specific integrity check for HDF5 files ---
+    # This prevents the pipeline from using partially downloaded or corrupt .h5 files.
+    if file_type == '.h5':
+        try:
+            with h5py.File(file_path, 'r') as hf:
+                # A simple check is to see if we can access the keys.
+                # A corrupt file will often fail here.
+                _ = list(hf.keys())
+        except Exception as e:
+            print(f"  - Validation failed for {file_path.name}: HDF5 file appears to be corrupt or unreadable. Error: {e}")
+            return False
+
     # FASTA-specific check
     if file_type == '.fasta':
         try:
@@ -71,10 +98,17 @@ def setup_data(config: Config):
     Checks for the existence of required data files, downloading them if necessary.
     Handles decompression and other post-processing steps.
     """
+    # --- NEW: Use a persistent cache for large, reusable files ---
     print("\n--- Running Data Verification and Download ---")
+    if hasattr(config, 'PERSISTENT_DATA_CACHE'):
+        config.PERSISTENT_DATA_CACHE.mkdir(parents=True, exist_ok=True)
 
     for key, source_info in config.DATA_SOURCES.items():
         final_path = Path(source_info['path'])
+        is_cacheable = source_info.get('cacheable', False)
+        cache_path = None
+        if is_cacheable and hasattr(config, 'PERSISTENT_DATA_CACHE'):
+            cache_path = config.PERSISTENT_DATA_CACHE / final_path.name
 
         # Determine the potential path of the downloaded (possibly compressed) file
         download_path = Path(str(final_path) + ".gz") if source_info.get('post_process') == 'ungzip' else final_path
@@ -82,9 +116,43 @@ def setup_data(config: Config):
         # 1. Check if the final, processed file already exists and is valid.
         if _is_file_valid(final_path):
             print(f"☑ Found and verified: {final_path.relative_to(config.PROJECT_ROOT)}")
+            # If it's cacheable and not in cache (e.g., from a previous run before this logic), copy it to the cache.
+            if cache_path and not cache_path.exists():
+                print(f"  Caching file '{final_path.name}' for future use...")
+                shutil.copy(final_path, cache_path)
+            continue
+
+        # 2. NEW: Check the persistent cache for the file.
+        if cache_path and _is_file_valid(cache_path):
+            print(f"☑ Found cached file: {cache_path}. Linking to project directory...")
+            # Ensure target directory exists
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+            # Remove existing broken symlink or file if it exists
+            if final_path.exists() or final_path.is_symlink():
+                final_path.unlink()
+            _create_link_or_copy(cache_path, final_path)
+            print(f"✔ Successfully linked/copied cached file to: {final_path.relative_to(config.PROJECT_ROOT)}")
             continue
         # If the file is not valid, we proceed. The logic below will handle
         # overwriting it via decompression or re-downloading.
+
+        # --- FIX: Check for existing compressed file before downloading ---
+        # If the final file is invalid/missing, but the compressed source exists,
+        # try decompressing it first. This avoids re-downloading.
+        if not _is_file_valid(final_path) and download_path.exists() and source_info.get('post_process') == 'ungzip':
+            print(f"Found compressed file '{download_path.name}'. Attempting to decompress...")
+            try:
+                with gzip.open(download_path, 'rb') as f_in, open(final_path, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+
+                # Re-validate after decompression to ensure integrity
+                if _is_file_valid(final_path):
+                    print(f"✔ Successfully acquired from local compressed file: {final_path.relative_to(config.PROJECT_ROOT)}")
+                    continue  # Success, move to the next file in the loop
+                else:
+                    print(f"  Warning: Decompressed file '{final_path.name}' failed validation. Attempting re-download.")
+            except (gzip.BadGzipFile, EOFError) as e:
+                print(f"  Warning: Decompression failed for '{download_path.name}' (likely corrupt). Error: {e}. Attempting re-download.")
 
         if not final_path.exists() and download_path.exists() and source_info.get('post_process') == 'ungzip':
             print(f"Found compressed file '{download_path.name}'. Attempting to decompress...")
@@ -139,6 +207,15 @@ def setup_data(config: Config):
             # Final validation check
             if _is_file_valid(final_path):
                 print(f"✔ Successfully acquired and verified: {final_path.relative_to(config.PROJECT_ROOT)}")
+                # NEW: If cacheable, move the final file to the cache and symlink back
+                if cache_path:
+                    print(f"  Moving '{final_path.name}' to persistent cache and creating link/copy...")
+                    try:
+                        shutil.move(final_path, cache_path)
+                    except OSError: # Handles cross-device move error
+                        shutil.copy(final_path, cache_path)
+                        final_path.unlink()
+                    _create_link_or_copy(cache_path, final_path)
         except requests.exceptions.RequestException as e:
             print(f"Error downloading {url}: {e}")
             print(f"Failed to acquire file for '{key}'. Error: {e}")

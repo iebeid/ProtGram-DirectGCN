@@ -44,23 +44,36 @@ python --version
 
 # --- Step 2: Update the Repository ---
 echo -e "\n--- STEP 2: Updating the project with the latest changes from Git ---"
+# --- DEFINITIVE FIX: Temporarily move the 'data' directory to protect it from all git operations ---
+DATA_DIR_EXISTS=false
+TEMP_BACKUP_PATH="../$(basename "$PWD")_data_backup"
+if [ -d "data" ]; then
+    # Clean up any old backup directory first to be safe
+    if [ -d "$TEMP_BACKUP_PATH" ]; then
+        echo "WARN: Found an old temporary backup directory. Removing it."
+        rm -rf "$TEMP_BACKUP_PATH"
+    fi
+    echo "INFO: Temporarily moving existing 'data' directory to a safe location..."
+    mv data "$TEMP_BACKUP_PATH"
+    DATA_DIR_EXISTS=true
+    echo "INFO: 'data' directory backed up to '$TEMP_BACKUP_PATH'."
+fi
 
-# --- FIX: Use a safer pull method to prevent accidental deletion of local files ---
-# Stashing any local changes, pulling, and then popping the stash is more robust.
+# --- Stash local changes, pull, and restore stash ---
 echo "INFO: Stashing any local changes to prevent conflicts..."
-git stash push -m "start.sh-autostash-$(date +%s)"
+git stash push -m "start.sh-autostash-$(date +%s)" > /dev/null 2>&1 || true
 echo "INFO: Pulling latest changes from the remote repository..."
 git pull --rebase
 echo "INFO: Restoring any stashed local changes..."
-# Pop the stash. If it fails (e.g., nothing to pop), it won't stop the script.
-git stash pop || echo "INFO: No local changes to restore."
+git stash pop > /dev/null 2>&1 || echo "INFO: No local changes to restore."
 
-# --- NEW: Interactively handle git lfs pull ---
+# --- Interactively handle git lfs pull ---
 SKIP_LFS=false
-if [ -d "data" ]; then
+if [ "$DATA_DIR_EXISTS" = true ]; then
     echo -e "\n--------------------------------------------------"
-    echo "The 'data' directory already exists. Current contents:"
-    ls -lh data
+    echo "A local 'data' directory was found and has been protected."
+    echo "Current contents of your protected 'data' directory:"
+    ls -lh "$TEMP_BACKUP_PATH"
     echo "--------------------------------------------------"
     read -r -p "Do you want to skip 'git lfs pull' to save time? (y/n): " response
     if [[ "$response" == "y" || "$response" == "Y" ]]; then
@@ -73,6 +86,20 @@ if [ "$SKIP_LFS" = false ]; then
     echo "INFO: Running 'git lfs pull' to update large files..."
     git lfs pull
 fi
+
+# --- Restore the 'data' directory ---
+if [ "$DATA_DIR_EXISTS" = true ]; then
+    # If git lfs pull created a new data directory with pointers, remove it first.
+    if [ -d "data" ]; then
+        echo "INFO: A new 'data' directory with LFS pointers was created by the pull."
+        echo "      This will be safely removed before restoring your local data."
+        rm -rf data
+    fi
+    echo "INFO: Restoring local 'data' directory..."
+    mv "$TEMP_BACKUP_PATH" data
+    echo "INFO: Local 'data' directory restored."
+fi
+
 echo "SUCCESS: Project repository is up to date."
 
 # --- Step 3: Run the Main Application ---

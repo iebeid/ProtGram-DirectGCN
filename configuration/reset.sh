@@ -104,35 +104,34 @@ if [[ "$lfs_response" == "y" || "$lfs_response" == "Y" ]]; then
     LFS_ISSUE=true
 fi
 
-# --- NEW: Add a flag to track if we should restore data ---
-RESTORE_DATA=false
-
 # This is a reset script. If the directory exists, it will be destroyed to ensure a clean slate.
 if [ -d "$PROJECT_DIR_NAME" ]; then
     echo "INFO: Existing project directory found. It will be completely removed for a clean reset."
-    # --- FIX: Interactively ask the user whether to keep or discard the existing data directory ---
-    if [ "$LFS_ISSUE" = true ] && [ -d "$PROJECT_DIR_NAME/data" ]; then
+
+    # --- NEW PHILOSOPHY: The 'data' directory is ALWAYS preserved. ---
+    DATA_BACKUP_PATH="$HOME/data_temp_backup_$(date +%s)"
+    RESTORE_DATA=false
+    if [ -d "$PROJECT_DIR_NAME/data" ]; then
         echo -e "\nAn existing 'data' directory was found."
         echo -e "--------------------------------------------------"
         echo "Current contents of the 'data' directory:"
         ls -lh "$PROJECT_DIR_NAME/data"
         echo -e "--------------------------------------------------"
-        echo "This reset script will DELETE the entire project folder ('$PROJECT_DIR_NAME') and re-clone it."
-        echo -e "\nWhat should be done with your current 'data' directory?"
-        echo "  (k) Keep    - Back up the current 'data' directory and restore it in the new clone."
-        echo "  (d) Discard - Delete the current 'data' directory. You will be prompted to provide a new one later."
-        read -r -p "Choose an option [k/d]: " keep_data_response
-        if [[ "$keep_data_response" == "k" || "$keep_data_response" == "K" ]]; then
-            echo "INFO: Backing up existing 'data' directory to a safe location..."
-            # Back up directly to the user's home directory for maximum safety.
-            mv "$PROJECT_DIR_NAME/data" "$HOME/data_temp_backup"
-            echo "INFO: 'data' directory temporarily backed up to '$HOME/data_temp_backup'."
+
+        # Move the data directory to a safe, timestamped backup location
+        mv "$PROJECT_DIR_NAME/data" "$DATA_BACKUP_PATH"
+        echo "INFO: 'data' directory safely moved to '$DATA_BACKUP_PATH'."
+
+        # Ask the user if they want to restore it into the new clone
+        echo -e "\nDo you want to restore this data into the newly cloned repository?"
+        read -r -p "Choose an option [y/n]: " restore_response
+        if [[ "$restore_response" == "y" || "$restore_response" == "Y" ]]; then
             RESTORE_DATA=true
+            echo "INFO: The data will be restored after the clone."
         else
-            echo "INFO: The existing 'data' directory will be discarded along with the project."
+            echo "INFO: The data will NOT be restored. It will remain in '$DATA_BACKUP_PATH' for you to manage manually."
         fi
     fi
-    # --- END FIX ---
     rm -rf "$PROJECT_DIR_NAME" # Now it's safe to remove the old project
     echo "SUCCESS: Old project directory removed."
 fi
@@ -151,16 +150,11 @@ if [ "$LFS_ISSUE" = true ]; then
     echo "!data" >> .git/info/sparse-checkout
     echo "INFO: Checking out branch '$GIT_BRANCH'..."
     git checkout "$GIT_BRANCH"
-    # --- FIX: Restore the backed-up data directory if the user chose to keep it ---
-    if [ "$RESTORE_DATA" = true ] && [ -d "$HOME/data_temp_backup" ]; then
+    if [ "$RESTORE_DATA" = true ] && [ -d "$DATA_BACKUP_PATH" ]; then
         echo "INFO: Restoring backed-up 'data' directory..."
-        echo "INFO: Current directory for restore is: $(pwd)"
-        # This command moves the backup into the current directory and renames it to 'data'.
-        # The 'mv' command automatically removes the source directory ('$HOME/data_temp_backup').
-        mv "$HOME/data_temp_backup" "./data"
-        echo "SUCCESS: 'data' directory restored and backup automatically removed from home directory."
+        mv "$DATA_BACKUP_PATH" "./data"
+        echo "SUCCESS: 'data' directory restored."
     fi
-    # --- END FIX ---
 else
     # --- CASE 1: NO LFS PROBLEM (FULL CLONE) ---
     echo "INFO: No LFS issues. Performing a standard, full clone..."
@@ -206,6 +200,13 @@ export XLA_FLAGS="--xla_gpu_cuda_data_dir=$CONDA_PREFIX"
 
 # The run.py script will handle the rest of the setup and execution.
 python run.py
+
+# --- NEW: Final reminder for orphaned data backups ---
+if [ "$RESTORE_DATA" = false ] && [ -d "$DATA_BACKUP_PATH" ]; then
+    echo -e "\n--- REMINDER ---"
+    echo "Your original 'data' directory was not restored and remains in the following location:"
+    echo "  -> $DATA_BACKUP_PATH"
+fi
 
 echo -e "\n--- SCRIPT FINISHED ---"
 exit 0

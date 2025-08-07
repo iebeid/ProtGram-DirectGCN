@@ -65,6 +65,10 @@ class Graph:
         if self.idx_to_node_map_from_constructor:
             valid_node_indices = {idx for idx in self.idx_to_node_map_from_constructor.keys() if
                                   isinstance(idx, (int, np.integer)) and idx >= 0}
+            # --- FIX: Add a warning for potential data inconsistency ---
+            if all_integer_indices and valid_node_indices and max(all_integer_indices) > max(valid_node_indices):
+                print(f"  - WARNING: Edge data contains node indices greater than the maximum index in the provided node map.")
+                print(f"    (Max edge index: {max(all_integer_indices)}, Max map index: {max(valid_node_indices)}). This may indicate a data mismatch.")
             if valid_node_indices:
                 max_node_map_idx = max(valid_node_indices)
 

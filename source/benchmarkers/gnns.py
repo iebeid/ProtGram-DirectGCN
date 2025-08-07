@@ -39,10 +39,35 @@ class GNNBenchmarker:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.output_dir = config.RESULTS_BENCHMARKING_DIR
         self.embedding_dir = config.RESULTS_BENCHMARK_EMBEDDINGS_DIR
-        self.dataset_root = str(config.DATA_STANDARD_DATASETS_DIR)
 
-        os.makedirs(self.output_dir, exist_ok=True)
-        os.makedirs(self.embedding_dir, exist_ok=True)
+        # --- NEW: Persistent Caching for Benchmark Datasets ---
+        project_benchmark_dir = config.DATA_STANDARD_DATASETS_DIR
+        cache_benchmark_dir = config.PERSISTENT_DATA_CACHE / "benchmarks"
+        cache_benchmark_dir.mkdir(parents=True, exist_ok=True)
+
+        # If the project directory exists but isn't a link, migrate its contents to the cache.
+        if project_benchmark_dir.exists() and not project_benchmark_dir.is_symlink():
+            print(f"  Migrating existing benchmark data from '{project_benchmark_dir.relative_to(config.PROJECT_ROOT)}' to persistent cache...")
+            # This loop is safer for moving contents across different filesystems
+            for item_name in os.listdir(project_benchmark_dir):
+                source_item = project_benchmark_dir / item_name
+                dest_item = cache_benchmark_dir / item_name
+                # Move the item, overwriting if it exists in the cache (to ensure latest version)
+                if dest_item.exists():
+                    if source_item.is_dir():
+                        shutil.rmtree(dest_item)
+                    else:
+                        dest_item.unlink()
+                shutil.move(str(source_item), str(dest_item))
+            project_benchmark_dir.rmdir()  # Remove the now-empty directory
+            os.symlink(cache_benchmark_dir, project_benchmark_dir, target_is_directory=True)
+            print("  Migration complete.")
+        elif not project_benchmark_dir.exists():
+            os.symlink(cache_benchmark_dir, project_benchmark_dir, target_is_directory=True)
+            print(f"  Symlinked project benchmark directory to persistent cache.")
+
+        self.dataset_root = str(project_benchmark_dir)
+        # --- END NEW ---
 
         print("GNNBenchmarker initialized. Using device: {}".format(self.device))
         print(f"Benchmark embeddings will be saved to: {self.embedding_dir}")
@@ -155,12 +180,16 @@ class GNNBenchmarker:
         deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
         edge_weight_undir = deg_inv_sqrt[row] * deg_inv_sqrt[col]
 
+        # --- FIX: Use existing edge attributes if they exist, otherwise default to 1.0 ---
+        # This makes the benchmarker more general for weighted datasets.
+        base_edge_weight = data.edge_attr if hasattr(data, 'edge_attr') and data.edge_attr is not None else torch.ones(data.edge_index.shape[1], device=data.edge_index.device)
+
         data.edge_index_undirected_norm = edge_index_undir
         data.edge_weight_undirected_norm = edge_weight_undir
         data.edge_index_out = data.edge_index
-        data.edge_weight_out = torch.ones(data.edge_index.shape[1], device=data.edge_index.device)
+        data.edge_weight_out = base_edge_weight
         data.edge_index_in = data.edge_index.flip(0)
-        data.edge_weight_in = torch.ones(data.edge_index.shape[1], device=data.edge_index.device)
+        data.edge_weight_in = base_edge_weight
         return data
 
     def _get_1d_mask(self, mask_tensor: torch.Tensor) -> torch.Tensor:

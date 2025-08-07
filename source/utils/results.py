@@ -487,6 +487,8 @@ class EvaluationReporter:
 
                 if embeddings_array.shape[0] > SAMPLE_N_FOR_COMBINED_TSNE:
                     print(f"  Sampling {SAMPLE_N_FOR_COMBINED_TSNE} points from {embeddings_array.shape[0]} for performance.")
+                    # --- FIX: Seed the random choice for reproducible plots ---
+                    np.random.seed(TSNE_RANDOM_STATE)
                     indices = np.random.choice(embeddings_array.shape[0], SAMPLE_N_FOR_COMBINED_TSNE, replace=False)
                     embeddings_array = embeddings_array[indices]
 
