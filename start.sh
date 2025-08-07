@@ -88,7 +88,21 @@ fi
 
 if [ "$SKIP_LFS" = false ]; then
     echo "INFO: Running 'git lfs pull' to update large files..."
-    git lfs pull
+    # --- FIX: Add robust error handling for git lfs pull ---
+    # 'git lfs pull' can exit with code 0 even if errors occur (like 'Scanner error').
+    # We capture the output to check for errors manually and attempt an automatic fix.
+    if ! LFS_OUTPUT=$(git lfs pull 2>&1); then
+        # This block catches non-zero exit codes, which are less common for this specific error.
+        echo "$LFS_OUTPUT"
+        echo "ERROR: 'git lfs pull' failed with a non-zero exit code. Aborting."
+        exit 1
+    fi
+    echo "$LFS_OUTPUT" # Print the original output for the user
+    if echo "$LFS_OUTPUT" | grep -q -i "error"; then
+        echo "WARN: 'git lfs pull' reported errors. This can happen if the LFS cache is inconsistent."
+        echo "INFO: Attempting a more forceful fetch with 'git lfs fetch --all' to try and fix this..."
+        git lfs fetch --all && git lfs checkout
+    fi
 fi
 
 # --- Restore the 'data' directory ---
