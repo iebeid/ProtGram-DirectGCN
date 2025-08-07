@@ -228,7 +228,7 @@ class Config:
         self.GCN_GATING_COEFF_MODE = "scalar"
         # NEW: Use separate message passing paths for homophilous vs. heterophilous edges.
         # This can increase model expressiveness at the cost of more parameters.
-        self.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS = True
+        self.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS = False
 
 
         # Training Hyperparameters

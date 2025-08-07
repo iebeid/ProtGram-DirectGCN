@@ -49,6 +49,8 @@ git pull # Always pull the latest code
 # --- NEW: Interactively handle git lfs pull ---
 SKIP_LFS=false
 if [ -d "data" ]; then
+    echo "Current contents of the 'data' directory:"
+    ls -lh data
     read -r -p "The 'data' directory already exists. Do you want to skip 'git lfs pull'? (y/n): " response
     if [[ "$response" == "y" || "$response" == "Y" ]]; then
         echo "INFO: Skipping 'git lfs pull' as requested."

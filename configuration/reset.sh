@@ -113,6 +113,8 @@ if [ -d "$PROJECT_DIR_NAME" ]; then
     # --- FIX: Interactively ask the user whether to keep or discard the existing data directory ---
     if [ "$LFS_ISSUE" = true ] && [ -d "$PROJECT_DIR_NAME/data" ]; then
         echo -e "\nAn existing 'data' directory was found."
+        echo "Current contents of the 'data' directory:"
+        ls -lh "$PROJECT_DIR_NAME/data"
         echo "This reset script will DELETE the entire project folder ('$PROJECT_DIR_NAME') and re-clone it."
         echo -e "\nWhat should be done with your current 'data' directory?"
         echo "  (k) Keep    - Back up the current 'data' directory and restore it in the new clone."
