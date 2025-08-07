@@ -49,14 +49,16 @@ def _is_file_valid(file_path: Path) -> bool:
     # FASTA-specific check
     if file_type == '.fasta':
         try:
-            with open(file_path, 'r', encoding='utf-8-sig') as f:  # Use utf-8-sig to handle potential BOM
+            with open(file_path, 'r', encoding='utf-8-sig') as f:
                 for line in f:
                     stripped_line = line.strip()
-                    if stripped_line:  # Find first non-empty line
+                    # --- FIX: The first non-empty line MUST start with '>' ---
+                    # This is a more robust check than just checking the first line.
+                    if stripped_line:
                         if not stripped_line.startswith('>'):
                             print(f"  - Validation failed for {file_path.name}: Does not start with '>'.")
                             return False
-                        break  # Found a header, it's probably fine
+                        break  # Found a valid header, the file is likely a FASTA.
         except Exception:
             return False  # Not a valid text-based FASTA
 

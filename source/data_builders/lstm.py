@@ -33,8 +33,10 @@ class LstmPytorchDataset(Dataset):
         self.seq_len = seq_len
         self.step = step
         self.char_to_int = char_to_int
-        # --- FIX: Ensure the number of sequences cannot be negative ---
-        # This prevents a crash if the text is shorter than the sequence length.
+        # The number of sequences is derived from the total text length.
+        # We subtract `seq_len` for the input sequence itself, and an additional `1`
+        # for the target character that must follow the input sequence.
+        # The `max(0, ...)` ensures this doesn't crash if the text is too short.
         self.num_sequences = max(0, (len(self.text) - self.seq_len - 1) // self.step)
         print(f"  [PyTorch Dataset] Corpus has {len(text):,} characters, creating {self.num_sequences:,} samples.")
 

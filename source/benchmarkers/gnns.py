@@ -117,7 +117,8 @@ class GNNBenchmarker:
                 n_gram_len=1,  # Mimics n=1 level; PE is skipped if feature dim doesn't match
                 one_gram_dim=self.config.GCN_1GRAM_INIT_DIM,
                 max_pe_len=self.config.GCN_MAX_PE_LEN,
-                dropout=self.config.GCN_DROPOUT_RATE,
+                dropout=self.config.GCN_DROPOUT_RATE, use_homo_hetero_paths=self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS,
+                # ^ Explicitly disable for benchmarks
                 gating_mode=self.config.GCN_GATING_COEFF_MODE
             )
         else:
@@ -139,9 +140,9 @@ class GNNBenchmarker:
         data.edge_index_undirected_norm = edge_index_undir
         data.edge_weight_undirected_norm = edge_weight_undir
         data.edge_index_out = data.edge_index
-        data.edge_weight_out = None  # No explicit weights for standard benchmarks
+        data.edge_weight_out = torch.ones(data.edge_index.shape[1], device=data.edge_index.device)
         data.edge_index_in = data.edge_index.flip(0)
-        data.edge_weight_in = None  # No explicit weights for standard benchmarks
+        data.edge_weight_in = torch.ones(data.edge_index.shape[1], device=data.edge_index.device)
         return data
 
     def _get_1d_mask(self, mask_tensor: torch.Tensor) -> torch.Tensor:

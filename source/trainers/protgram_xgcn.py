@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: trainers/protgram_xgcn.py
 # PURPOSE: Unified trainer for GNNs on ProtGram n-gram graphs.
-# VERSION: 6.2 (Self-contained, corrected, and with full attention capture)
+# VERSION: 7.1 (Corrected data flow for DirectGCN and integrated homophily paths)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -11,6 +11,7 @@ import gc
 import json
 import math
 import random
+import traceback
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Dict, Optional, List, Mapping, Tuple, Any
@@ -115,9 +116,11 @@ class ProtGramXGCNTrainer:
 
         self._loaded_graphs[n] = graph_obj
         print(f"  Graph for n={n} loaded. Nodes: {graph_obj.number_of_nodes}")
+        # Ensure matrices are on CPU for potential multiprocessing in label generation
         graph_obj.A_out_w = graph_obj.A_out_w.cpu()
         graph_obj.A_in_w = graph_obj.A_in_w.cpu()
         graph_obj.A_undirected_norm_sparse = graph_obj.A_undirected_norm_sparse.cpu()
+        # This is for other models, DirectGCN does not use it.
         graph_obj._create_propagation_matrices_for_gcn()
         return graph_obj
 
@@ -166,6 +169,10 @@ class ProtGramXGCNTrainer:
             task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(n, self.config.GCN_DEFAULT_TASK_TYPE)
             labels, num_classes_for_task = self.label_generator.generate_task_labels(graph_obj, task_type)
 
+            # --- NEW: Split edges by homophily if the feature is enabled ---
+            if self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS:
+                graph_obj.split_edges_by_homophily(labels)
+
             model = self._build_model(model_type, n, initial_features.shape[1], num_classes_for_task, graph_obj.number_of_nodes)
             if model is None: continue
 
@@ -195,7 +202,9 @@ class ProtGramXGCNTrainer:
         if model_type == 'directgcn':
             return DirectGCN(
                 layer_dims=layer_dims, num_graph_nodes=num_nodes,
-                task_num_output_classes=num_classes, n_gram_len=n_val,
+                task_num_output_classes=num_classes,
+                n_gram_len=n_val,
+                use_homo_hetero_paths=self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS,
                 one_gram_dim=self.config.GCN_1GRAM_INIT_DIM, max_pe_len=self.config.GCN_MAX_PE_LEN,
                 dropout=self.config.GCN_DROPOUT_RATE, gating_mode=self.config.GCN_GATING_COEFF_MODE
             )
@@ -318,12 +327,36 @@ class ProtGramXGCNTrainer:
         data_dict = {'x': features, 'y': labels}
 
         if model_type == 'directgcn':
-            data_dict.update({
-                'edge_index_in': graph.mathcal_A_in.indices(), 'edge_weight_in': graph.mathcal_A_in.values(),
-                'edge_index_out': graph.mathcal_A_out.indices(), 'edge_weight_out': graph.mathcal_A_out.values(),
-                'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
-                'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values()
-            })
+            # --- DESIGN NOTE on DirectGCN Data ---
+            # The DirectGCN model is designed to work with the raw, weighted adjacency
+            # matrices (A_in_w, A_out_w). Its internal architecture, with separate
+            # linear layers for each path (e.g., lin_main_in, lin_main_out), performs
+            # the transformation and "normalization" as part of the message passing.
+            #
+            # We do NOT pass the pre-computed mathcal_A matrices to DirectGCN, as that
+            # would apply a different, simpler normalization scheme and bypass the model's
+            # intended expressive power. The mathcal_A matrices are computed for use
+            # by other, more standard GNN models if they were to be used in this pipeline.
+
+            if self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS and graph.A_out_w_homo is not None:
+                print("  Preparing data with separate homophily/heterophily paths.")
+                data_dict.update({
+                    'edge_index_in_homo': graph.A_in_w_homo.indices(), 'edge_weight_in_homo': graph.A_in_w_homo.values(),
+                    'edge_index_in_hetero': graph.A_in_w_hetero.indices(), 'edge_weight_in_hetero': graph.A_in_w_hetero.values(),
+                    'edge_index_out_homo': graph.A_out_w_homo.indices(), 'edge_weight_out_homo': graph.A_out_w_homo.values(),
+                    'edge_index_out_hetero': graph.A_out_w_hetero.indices(), 'edge_weight_out_hetero': graph.A_out_w_hetero.values(),
+                    'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
+                    'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values()
+                })
+            else:
+                # Fallback to standard raw weighted matrices
+                print("  Preparing data with standard raw weighted paths.")
+                data_dict.update({
+                    'edge_index_in': graph.A_in_w.indices(), 'edge_weight_in': graph.A_in_w.values(),
+                    'edge_index_out': graph.A_out_w.indices(), 'edge_weight_out': graph.A_out_w.values(),
+                    'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
+                    'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values()
+                })
         elif model_type == 'rgcn':
             edge_index_out = graph.A_out_w.indices()
             edge_index_in = graph.A_in_w.indices()
@@ -391,7 +424,7 @@ class ProtGramXGCNTrainer:
             DataUtils.write_h5(embeddings, str(output_path), f"Writing H5 for {model_name}")
             output_paths[model_name] = str(output_path)
 
-            # Apply PCA
+            # Apply PCA and save
             pca_path = EmbeddingProcessor.apply_pca_to_h5(
                 input_h5_path=output_path,
                 output_dir=output_dir,
@@ -403,61 +436,49 @@ class ProtGramXGCNTrainer:
 
         return output_paths
 
-    def _save_and_visualize_attention(self, all_attention_data: Dict[str, Dict[str, Any]]):
-        """Saves all attention data to JSON and generates plots."""
+    def _save_and_visualize_attention(self, attention_data: Dict[str, Dict[str, Any]]):
+        """Saves attention weights to JSON and generates plots."""
         DataUtils.print_header("Saving and Visualizing Attention Weights")
-        reporter = EvaluationReporter(str(self.config.RESULTS_EVALUATION_DIR), [])
-        attention_dir = self.config.RESULTS_EVALUATION_DIR / "attention_weights"
-        attention_dir.mkdir(parents=True, exist_ok=True)
+        reporter = EvaluationReporter(str(self.config.RESULTS_EVALUATION_DIR), self.config.EVAL_K_VALUES_FOR_TABLE)
 
-        for model_type, attn_data in all_attention_data.items():
+        for model_type, data in attention_data.items():
             model_name = f"ProtGram{model_type.capitalize()}"
+            print(f"  Processing attention for {model_name}...")
 
-            # Save and plot hierarchical attention
-            hierarchical_attn = attn_data.get("hierarchical", {})
-            if hierarchical_attn:
-                file_path = attention_dir / f"attention_hierarchical_{model_name}.json"
-                try:
-                    with open(file_path, 'w') as f:
-                        json.dump(hierarchical_attn, f, indent=4)
-                    print(f"  Saved hierarchical attention to {file_path}")
-                    reporter.generate_hierarchical_attention_plot(file_path, model_name)
-                except Exception as e:
-                    print(f"  Could not save or plot hierarchical attention for {model_name}: {e}")
+            if data.get("hierarchical"):
+                hier_path = self.config.RESULTS_EVALUATION_DIR / f"attention_hierarchical_{model_name}.json"
+                DataUtils.save_json(data["hierarchical"], str(hier_path))
+                reporter.generate_hierarchical_attention_plot(hier_path, model_name)
 
-            # Save and plot protein pooling attention
-            protein_pooling_attn = attn_data.get("protein_pooling", {})
-            if protein_pooling_attn:
-                file_path = attention_dir / f"attention_protein_pooling_{model_name}.json"
-                try:
-                    with open(file_path, 'w') as f:
-                        json.dump(protein_pooling_attn, f, indent=4)
-                    print(f"  Saved protein pooling attention to {file_path}")
-                    reporter.generate_pooling_attention_plot(file_path, model_name)
-                except Exception as e:
-                    print(f"  Could not save or plot protein pooling attention for {model_name}: {e}")
+            if data.get("protein_pooling"):
+                pool_path = self.config.RESULTS_EVALUATION_DIR / f"attention_pooling_{model_name}.json"
+                DataUtils.save_json(data["protein_pooling"], str(pool_path))
+                reporter.generate_pooling_attention_plot(pool_path, model_name)
 
     def _run_sanity_check_ppi(self, embedding_path: str):
         """Runs a quick, small-scale PPI evaluation as a sanity check."""
         DataUtils.print_header("Running Sanity Check PPI Evaluation")
+        print(f"  Using embeddings from: {Path(embedding_path).name}")
         sanity_config = copy.deepcopy(self.config)
+
+        # Override config for a quick run
         sanity_config.EVAL_EPOCHS = self.config.GCN_SANITY_CHECK_EPOCHS
-        sanity_config.EVAL_N_FOLDS = 2  # Just 2 folds for a quick check
-        sanity_config.LP_EMBEDDING_FILES_TO_EVALUATE = [{"name": "SanityCheck", "path": embedding_path}]
-        sanity_config.EVAL_GENERATE_SHAP_SUMMARY = False  # Turn off for sanity check
-        sanity_config.PLOT_TRAINING_HISTORY = False  # Turn off for sanity check
+        sanity_config.EVAL_N_FOLDS = 2  # A minimal number of folds for a quick check
+        sanity_config.EVAL_GENERATE_SHAP_SUMMARY = False  # Disable for speed
+        sanity_config.PLOT_TRAINING_HISTORY = False  # Disable for speed
 
-        # Isolate the output directory for the sanity check to prevent overwriting main results
-        original_eval_dir = sanity_config.RESULTS_EVALUATION_DIR
-        sanity_config.RESULTS_EVALUATION_DIR = original_eval_dir / "sanity_check"
-
-        print(f"  - Sanity check will run for {sanity_config.EVAL_EPOCHS} epochs.")
-        print(f"  - Results will be in a subdirectory: {sanity_config.RESULTS_EVALUATION_DIR.name}")
+        # Set the specific embedding file to evaluate
+        model_name_for_eval = Path(embedding_path).stem.replace('_pca', '').replace(str(self.config.PCA_TARGET_DIMENSION), '')
+        sanity_config.LP_EMBEDDING_FILES_TO_EVALUATE = [
+            {"name": model_name_for_eval, "path": embedding_path}
+        ]
 
         try:
+            # Instantiate and run the pipeline with the modified config
             ppi_evaluator = PPIPipeline(sanity_config)
             ppi_evaluator.run(use_dummy_data=False)
         except Exception as e:
-            print(f"  ERROR during sanity check PPI evaluation: {e}")
-            import traceback
+            print(f"  ❌ Sanity check PPI evaluation failed with an error: {e}")
             traceback.print_exc()
+
+        print("--- Sanity Check PPI Evaluation Finished ---")

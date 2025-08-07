@@ -214,7 +214,10 @@ class Config:
         self.PROTGRAM_MODELS_TO_TRAIN = ['directgcn']
 
         # Model Architecture
-        self.GCN_HIDDEN_LAYER_DIMS = [512, 256, 256, 128, 64]
+        # Defines the architecture of the DirectGCN model. The length of the list determines
+        # the model's depth, and each value specifies the output dimension of a GCN layer.
+        # The final value is the dimension of the output node embeddings.
+        self.GCN_HIDDEN_LAYER_DIMS = [512, 256, 128, 64]
         self.GCN_1GRAM_INIT_DIM = 512
         self.GCN_MAX_PE_LEN = 512 # Max length for positional embeddings
         # Gating mode for DirectGCN.
@@ -222,7 +225,11 @@ class Config:
         # 'vector': One learnable scalar per path, per node, per layer (more expressive).
         # 'node_gate_vector': A learnable *vector* per path, per node, per layer for element-wise gating. Most expressive.
         # 'none': No gating, paths are simply added.
-        self.GCN_GATING_COEFF_MODE = "node_gate_vector"
+        self.GCN_GATING_COEFF_MODE = "scalar"
+        # NEW: Use separate message passing paths for homophilous vs. heterophilous edges.
+        # This can increase model expressiveness at the cost of more parameters.
+        self.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS = True
+
 
         # Training Hyperparameters
         self.GCN_EPOCHS_PER_LEVEL = 300

@@ -162,12 +162,12 @@ class SingletonXGCNTrainer:
             hidden_dim = self.config.GCN_HIDDEN_LAYER_DIMS[0] if self.config.GCN_HIDDEN_LAYER_DIMS else 256
             layer_dims = [data.num_features, hidden_dim, num_classes]
             return DirectGCN(
-                layer_dims=layer_dims,
-                num_graph_nodes=data.num_nodes,
-                task_num_output_classes=num_classes, n_gram_len=1,
+                layer_dims=layer_dims, num_graph_nodes=data.num_nodes,
+                task_num_output_classes=num_classes,
+                n_gram_len=1,
+                use_homo_hetero_paths=self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS,
                 one_gram_dim=self.config.GCN_1GRAM_INIT_DIM, max_pe_len=self.config.GCN_MAX_PE_LEN,
-                dropout=self.config.GCN_DROPOUT_RATE,
-                gating_mode=self.config.GCN_GATING_COEFF_MODE
+                dropout=self.config.GCN_DROPOUT_RATE, gating_mode=self.config.GCN_GATING_COEFF_MODE
             )
         raise ValueError(f"Unknown model name '{name}' for singleton evaluation.")
 

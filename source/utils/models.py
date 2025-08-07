@@ -304,8 +304,10 @@ class EmbeddingProcessor:
             elif strategy == 'max':
                 protein_pooled_values[~valid_counts_mask] = 0
 
+            # --- FIX: Ensure every protein has an entry, even if it's a zero-vector. ---
+            # This makes the output predictable and prevents KeyErrors downstream.
             pooled_embeddings = {protein_ids_ordered[i]: protein_pooled_values[i].astype(ngram_embeddings.dtype)
-                                 for i in range(num_proteins) if valid_counts_mask[i]}
+                                 for i in range(num_proteins)}
             return pooled_embeddings, {}
 
         elif strategy == 'attention':
@@ -404,18 +406,29 @@ class EmbeddingProcessor:
             return all_node_embeddings.numpy()
         else:
             print(f"  Extracting embeddings for {graph_obj.number_of_nodes} nodes using full-batch inference...")
-            # --- FINAL FIX: This block was incomplete and only handled 'directgcn'. ---
-            # It now correctly prepares the Data object for all supported model types.
+            # --- CRITICAL FIX: This block must prepare data consistently with the trainer. ---
+            # It must use the raw weighted matrices for DirectGCN and handle the homophily flag.
             model_type = model.__class__.__name__.lower()
             data_dict = {'x': full_data.x}
 
             if model_type == 'directgcn':
-                data_dict.update({
-                    'edge_index_in': graph_obj.mathcal_A_in.indices(), 'edge_weight_in': graph_obj.mathcal_A_in.values(),
-                    'edge_index_out': graph_obj.mathcal_A_out.indices(), 'edge_weight_out': graph_obj.mathcal_A_out.values(),
-                    'edge_index_undirected_norm': graph_obj.A_undirected_norm_sparse.indices(),
-                    'edge_weight_undirected_norm': graph_obj.A_undirected_norm_sparse.values()
-                })
+                if config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS and graph_obj.A_out_w_homo is not None:
+                    data_dict.update({
+                        'edge_index_in_homo': graph_obj.A_in_w_homo.indices(), 'edge_weight_in_homo': graph_obj.A_in_w_homo.values(),
+                        'edge_index_in_hetero': graph_obj.A_in_w_hetero.indices(), 'edge_weight_in_hetero': graph_obj.A_in_w_hetero.values(),
+                        'edge_index_out_homo': graph_obj.A_out_w_homo.indices(), 'edge_weight_out_homo': graph_obj.A_out_w_homo.values(),
+                        'edge_index_out_hetero': graph_obj.A_out_w_hetero.indices(), 'edge_weight_out_hetero': graph_obj.A_out_w_hetero.values(),
+                        'edge_index_undirected_norm': graph_obj.A_undirected_norm_sparse.indices(),
+                        'edge_weight_undirected_norm': graph_obj.A_undirected_norm_sparse.values()
+                    })
+                else:
+                    # Use standard raw weighted matrices
+                    data_dict.update({
+                        'edge_index_in': graph_obj.A_in_w.indices(), 'edge_weight_in': graph_obj.A_in_w.values(),
+                        'edge_index_out': graph_obj.A_out_w.indices(), 'edge_weight_out': graph_obj.A_out_w.values(),
+                        'edge_index_undirected_norm': graph_obj.A_undirected_norm_sparse.indices(),
+                        'edge_weight_undirected_norm': graph_obj.A_undirected_norm_sparse.values()
+                    })
             elif model_type == 'rgcn':
                 # RGCN needs a combined edge_index and an edge_type tensor
                 edge_index_out = graph_obj.A_out_w.indices()
@@ -433,7 +446,6 @@ class EmbeddingProcessor:
                 # Default for standard GNNs (GCN, GAT, etc.) is the undirected normalized matrix
                 data_dict['edge_index'] = graph_obj.A_undirected_norm_sparse.indices()
                 data_dict['edge_attr'] = graph_obj.A_undirected_norm_sparse.values()
-            # --- END FIX ---
 
             prepared_data = Data.from_dict(data_dict).to(device)
 

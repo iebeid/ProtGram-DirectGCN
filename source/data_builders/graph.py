@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: data_builders/graph.py
 # PURPOSE: Contains robust classes for n-gram graph representation.
-# VERSION: 8.0 (Renamed node_sequences to node_names for clarity)
+# VERSION: 8.3 (Corrected subgraph creation and added homophily splitting)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -12,6 +12,7 @@ from typing import List, Dict, Tuple, Any, Optional
 import numpy as np
 import pandas as pd
 import torch
+from torch_geometric.data import Data
 from torch_geometric.utils import add_self_loops, degree
 from torch_geometric.utils import subgraph
 
@@ -87,6 +88,10 @@ class Graph:
         self.edges = self.original_edges
         self.number_of_edges = len(self.edges)
 
+    def get_node_to_idx_map(self) -> Dict[str, int]:
+        """Returns a copy of the node name to index mapping."""
+        return self.node_to_idx.copy()
+
 
 class DirectedNgramGraph(Graph):
     def __init__(self, nodes: Dict[int, Any],
@@ -103,6 +108,12 @@ class DirectedNgramGraph(Graph):
         self.A_undirected_norm_sparse: torch.Tensor
         self.mathcal_A_out: torch.Tensor
         self.mathcal_A_in: torch.Tensor
+        # --- NEW: Attributes for homophily/heterophily paths ---
+        self.A_out_w_homo: Optional[torch.Tensor] = None
+        self.A_out_w_hetero: Optional[torch.Tensor] = None
+        self.A_in_w_homo: Optional[torch.Tensor] = None
+        self.A_in_w_hetero: Optional[torch.Tensor] = None
+        # --- END NEW ---
 
         if self.number_of_nodes > 0 and edge_file_path and os.path.exists(edge_file_path):
             print(f"    Loading edges from {os.path.basename(edge_file_path)}...")
@@ -137,6 +148,12 @@ class DirectedNgramGraph(Graph):
         self.A_undirected_norm_sparse = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
         self.mathcal_A_out = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
         self.mathcal_A_in = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
+        # --- NEW: Initialize homophily paths as well ---
+        self.A_out_w_homo = None
+        self.A_out_w_hetero = None
+        self.A_in_w_homo = None
+        self.A_in_w_hetero = None
+        # --- END NEW ---
 
     @staticmethod
     def _sparse_identity(size: int, device: torch.device) -> torch.Tensor:
@@ -287,38 +304,6 @@ class DirectedNgramGraph(Graph):
 
         return mathcal_A_with_self_loops_sparse
 
-    def create_subgraph_data_for_model(self, model_type: str,
-                                       full_features: torch.Tensor, full_labels: torch.Tensor,
-                                       node_subset: torch.Tensor) -> 'Data':
-        """
-        Creates a valid, self-contained PyG Data object for a subgraph of nodes.
-        This is the critical fix for clustered training. It re-indexes edges.
-        """
-        from torch_geometric.data import Data
-        sub_x = full_features[node_subset]
-        sub_y = full_labels[node_subset]
-
-        data_dict = {'x': sub_x, 'y': sub_y, 'original_indices': node_subset}
-
-        # Use torch_geometric.utils.subgraph to get re-indexed edges for the subset of nodes
-        if model_type == 'directgcn':
-            for name, matrix in [('in', self.mathcal_A_in), ('out', self.mathcal_A_out),
-                                 ('undirected_norm', self.A_undirected_norm_sparse)]:
-                sub_edge_index, sub_edge_weight = subgraph(
-                    subset=node_subset, edge_index=matrix.indices(), edge_attr=matrix.values(),
-                    relabel_nodes=True, num_nodes=self.number_of_nodes
-                )
-                data_dict[f'edge_index_{name}'] = sub_edge_index
-                data_dict[f'edge_weight_{name}'] = sub_edge_weight
-        elif model_type == 'rgcn' or model_type == 'tongdigcn':
-            # This logic covers both RGCN and TongDiGCN which need standard edge indices
-            data_dict['edge_index'], _ = subgraph(node_subset, self.A_out_w.indices(), relabel_nodes=True, num_nodes=self.number_of_nodes)
-            data_dict['edge_index_backward'], _ = subgraph(node_subset, self.A_in_w.indices(), relabel_nodes=True, num_nodes=self.number_of_nodes)
-        else:
-            raise ValueError(f"Cannot create subgraph data for unknown model type: {model_type}")
-
-        return Data.from_dict(data_dict)
-
     def _create_propagation_matrices_for_gcn(self):
         """Computes the mathcal_A_out and mathcal_A_in propagation matrices sparsely."""
         if self.number_of_nodes == 0:
@@ -332,3 +317,86 @@ class DirectedNgramGraph(Graph):
         print(f"  Creating mathcal_A_in for n={self.n_value}...")
         self.mathcal_A_in = self._calculate_single_propagation_matrix_for_gcn(self.A_in_w)
         gc.collect()
+
+    def split_edges_by_homophily(self, labels: torch.Tensor):
+        """
+        Splits the raw weighted directed edge matrices (A_out_w, A_in_w) into
+        homophilous and heterophilous components based on the provided node labels.
+        This method should be called after the graph is initialized and labels are available.
+        """
+        if self.number_of_nodes == 0 or self.A_out_w._nnz() == 0:
+            print("  Graph has no nodes or edges, skipping homophily split.")
+            return
+
+        print(f"  Splitting {self.A_out_w._nnz()} directed edges by homophily...")
+
+        # --- Split Outgoing Edges ---
+        out_indices = self.A_out_w.indices()
+        out_weights = self.A_out_w.values()
+        source_nodes, target_nodes = out_indices[0], out_indices[1]
+
+        source_labels = labels[source_nodes]
+        target_labels = labels[target_nodes]
+
+        homo_mask = (source_labels == target_labels)
+        hetero_mask = ~homo_mask
+
+        self.A_out_w_homo = torch.sparse_coo_tensor(
+            out_indices[:, homo_mask], out_weights[homo_mask], self.A_out_w.shape
+        ).coalesce()
+        self.A_out_w_hetero = torch.sparse_coo_tensor(
+            out_indices[:, hetero_mask], out_weights[hetero_mask], self.A_out_w.shape
+        ).coalesce()
+
+        # --- Split Incoming Edges (by transposing the outgoing splits) ---
+        self.A_in_w_homo = self.A_out_w_homo.t().coalesce()
+        self.A_in_w_hetero = self.A_out_w_hetero.t().coalesce()
+
+        print(f"    - Outgoing Homophilous Edges: {self.A_out_w_homo._nnz()}")
+        print(f"    - Outgoing Heterophilous Edges: {self.A_out_w_hetero._nnz()}")
+
+    def create_subgraph_data_for_model(self, model_type: str,
+                                       full_features: torch.Tensor, full_labels: torch.Tensor,
+                                       node_subset: torch.Tensor) -> 'Data':
+        """
+        Creates a valid, self-contained PyG Data object for a subgraph of nodes.
+        This is the critical fix for clustered training. It re-indexes edges.
+        """
+        sub_x = full_features[node_subset]
+        sub_y = full_labels[node_subset]
+
+        data_dict = {'x': sub_x, 'y': sub_y, 'original_indices': node_subset}
+
+        # Use torch_geometric.utils.subgraph to get re-indexed edges for the subset of nodes
+        if model_type == 'directgcn':
+            # --- FIX: Create subgraphs from the correct raw weighted matrices, not the pre-computed ones ---
+            if self.A_out_w_homo is not None and self.A_out_w_hetero is not None:
+                # Homophily/Heterophily paths are enabled
+                path_matrices = {
+                    'in_homo': self.A_in_w_homo, 'in_hetero': self.A_in_w_hetero,
+                    'out_homo': self.A_out_w_homo, 'out_hetero': self.A_out_w_hetero,
+                    'undirected_norm': self.A_undirected_norm_sparse
+                }
+            else:
+                # Standard paths using raw weighted matrices
+                path_matrices = {
+                    'in': self.A_in_w, 'out': self.A_out_w,
+                    'undirected_norm': self.A_undirected_norm_sparse
+                }
+
+            for name, matrix in path_matrices.items():
+                if matrix is not None:
+                    sub_edge_index, sub_edge_weight = subgraph(
+                        subset=node_subset, edge_index=matrix.indices(), edge_attr=matrix.values(),
+                        relabel_nodes=True, num_nodes=self.number_of_nodes
+                    )
+                    data_dict[f'edge_index_{name}'] = sub_edge_index
+                    data_dict[f'edge_weight_{name}'] = sub_edge_weight
+        elif model_type == 'rgcn' or model_type == 'tongdigcn':
+            # This logic covers both RGCN and TongDiGCN which need standard edge indices
+            data_dict['edge_index'], _ = subgraph(node_subset, self.A_out_w.indices(), relabel_nodes=True, num_nodes=self.number_of_nodes)
+            data_dict['edge_index_backward'], _ = subgraph(node_subset, self.A_in_w.indices(), relabel_nodes=True, num_nodes=self.number_of_nodes)
+        else:
+            raise ValueError(f"Cannot create subgraph data for unknown model type: {model_type}")
+
+        return Data.from_dict(data_dict)

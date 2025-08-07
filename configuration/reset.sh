@@ -20,20 +20,26 @@ echo "INFO: This script uses 'sudo' to manage system services and mounts."
 echo "You may be prompted for your password once at the beginning."
 sudo -v
 echo "SUCCESS: Sudo credentials refreshed."
-
-# --- NEW STRATEGY: Install a comprehensive system-level build toolchain ---
-# This is more robust than relying on conda's compilers or letting pip build them.
-# It provides gcc, g++, make, cmake, and the full GNU Autotools suite.
-echo "INFO: Installing comprehensive system-level build tools..."
-sudo apt-get update && sudo apt-get install -y \
-    build-essential \
-    cmake \
-    libssl-dev \
-    autoconf \
-    automake \
-    libtool \
-    pkg-config
-echo "SUCCESS: System-level build tools are installed."
+read -r -p "This script needs to install system-level build tools (like build-essential, cmake). Is it OK to proceed? (y/n): " install_confirm
+if [[ "$install_confirm" == "y" || "$install_confirm" == "Y" ]]; then
+    echo "INFO: Installing comprehensive system-level build tools..."
+    if command -v apt-get &> /dev/null; then
+        echo "  - Debian/Ubuntu based system detected. Using apt-get."
+        sudo apt-get update && sudo apt-get install -y build-essential cmake libssl-dev autoconf automake libtool pkg-config
+    elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
+        echo "  - RedHat/CentOS/Fedora based system detected. Using dnf/yum."
+        sudo yum install -y gcc-c++ make cmake openssl-devel autoconf automake libtool pkgconfig
+    elif command -v brew &> /dev/null; then
+        echo "  - macOS detected. Using Homebrew."
+        brew install cmake openssl pkg-config autoconf automake libtool
+    else
+        echo "  - WARNING: Could not detect package manager. Skipping system dependency installation."
+        echo "  - Please ensure 'build-essential' (or equivalent), 'cmake', and 'libssl-dev' are installed."
+    fi
+    echo "SUCCESS: System-level build tools check complete."
+else
+    echo "Skipping system dependency installation as requested. The build may fail if dependencies are missing."
+fi
 
 # --- Configuration ---
 ENV_NAME="ppi-env"

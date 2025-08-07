@@ -326,10 +326,14 @@ def main():
                     print("\n" + "!" * 80)
                     print("!!! WARNING: GPU verification failed for PyTorch or TensorFlow. !!!")
                     print("!!! The pipeline can continue, but it will run on the CPU, which may be very slow. !!!")
-                    print("!" * 80)
+                    print("!" * 80 + "\n")
                     if sys.stdin.isatty(): # Only prompt in interactive sessions
-                        response = input("Do you want to continue with CPU-only execution? (y/n): ").lower().strip()
-                        if response not in ['y', 'yes']:
+                        try:
+                            response = input("Do you want to continue with CPU-only execution? (y/n): ").lower().strip()
+                            if response not in ['y', 'yes']:
+                                print("Aborting as requested by user.")
+                                sys.exit(1)
+                        except (KeyboardInterrupt, EOFError):
                             print("Aborting as requested by user.")
                             sys.exit(1)
 
