@@ -66,7 +66,21 @@ git stash push -m "start.sh-autostash-$(date +%s)" > /dev/null 2>&1 || true
 echo "INFO: Pulling latest changes from the remote repository..."
 git pull --rebase
 echo "INFO: Restoring any stashed local changes..."
-git stash pop > /dev/null 2>&1 || echo "INFO: No local changes to restore."
+git stash pop > /dev/null 2>&1 || true # Ignore error if stash is empty
+
+# --- NEW: Handle self-update ---
+# Check if the start.sh script itself was updated by the pull.
+# If so, re-execute it to ensure the latest logic is used.
+# This will cause the script to restart from the top, which is safe.
+if (git diff --name-only HEAD@{1} HEAD | grep -q "start.sh"); then
+    echo "INFO: The start.sh script has been updated. Re-executing with the new version..."
+    # Restore data before re-executing to avoid issues on the next run's backup step.
+    if [ "$DATA_DIR_EXISTS" = true ]; then
+        if [ -d "data" ]; then rm -rf data; fi
+        mv "$TEMP_BACKUP_PATH" data
+    fi
+    exec bash "$0" "$@"
+fi
 
 # --- Interactively handle git lfs pull ---
 SKIP_LFS=false
