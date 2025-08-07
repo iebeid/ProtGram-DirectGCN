@@ -116,7 +116,7 @@ class DirectedNgramGraph(Graph):
 
                 self.number_of_edges = len(source_indices)
                 self._create_raw_weighted_adj_matrices_torch(source_indices, target_indices, weights)
-                self._create_undirected_normalized_adj_matrix(source_indices, target_indices)
+                self._create_undirected_normalized_adj_matrix()
                 self._create_propagation_matrices_for_gcn()
 
             except Exception as e:
@@ -172,33 +172,31 @@ class DirectedNgramGraph(Graph):
 
         self.A_in_w = self.A_out_w.t().coalesce()
 
-    def _create_undirected_normalized_adj_matrix(self, source_indices: np.ndarray, target_indices: np.ndarray):
+    def _create_undirected_normalized_adj_matrix(self):
         """
-        Creates a symmetric, degree-normalized adjacency matrix from raw unique edges.
+        Creates a symmetric, degree-normalized adjacency matrix from the raw
+        weighted adjacency matrix. This ensures the undirected path also
+        benefits from the original transition weights.
         """
         print(f"  Creating undirected normalized adjacency matrix for n={self.n_value}...")
         if self.number_of_nodes == 0:
             return
 
-        # 1. Create undirected edge index from unique source-target pairs
-        edge_pairs = np.stack([source_indices, target_indices], axis=1)
-        unique_edge_pairs = np.unique(edge_pairs, axis=0)
+        # 1. Create a symmetric weighted matrix by adding A_out and its transpose (A_in)
+        # This correctly sums weights for reciprocal edges.
+        A_undir_w = (self.A_out_w + self.A_in_w).coalesce()
 
-        # Create symmetric edges
-        symmetric_edges = np.concatenate([unique_edge_pairs, unique_edge_pairs[:, [1, 0]]], axis=0)
-        # Get unique symmetric edges
-        unique_symmetric_edges = np.unique(symmetric_edges, axis=0)
+        # 2. Add self-loops to the weighted undirected graph.
+        # This is crucial for stability and to ensure nodes are not isolated.
+        edge_index, edge_weight = add_self_loops(
+            A_undir_w.indices(), A_undir_w.values(),
+            fill_value=1.0,  # Self-loops have a weight of 1
+            num_nodes=self.number_of_nodes
+        )
 
-        edge_index = torch.from_numpy(unique_symmetric_edges.T).long()
-
-        # 2. Add self-loops to prevent nodes from disappearing during propagation
-        edge_index, _ = add_self_loops(edge_index, num_nodes=self.number_of_nodes)
-
-        # 3. Create edge weights of 1 for all edges
-        edge_weight = torch.ones(edge_index.size(1), dtype=torch.float32)
-
-        # 4. Calculate symmetric normalization: D^(-0.5) * A * D^(-0.5)
+        # 3. Calculate symmetric normalization for the weighted graph: D^(-0.5) * A * D^(-0.5)
         row, col = edge_index
+        # The degree is the sum of weights of incident edges.
         deg = degree(col, self.number_of_nodes, dtype=edge_weight.dtype)
         deg_inv_sqrt = deg.pow(-0.5)
         deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0  # Handle nodes with degree 0
