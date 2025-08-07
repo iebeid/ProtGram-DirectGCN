@@ -48,10 +48,11 @@ echo -e "\n--- STEP 2: Updating the project with the latest changes from Git ---
 DATA_DIR_EXISTS=false
 TEMP_BACKUP_PATH="../$(basename "$PWD")_data_backup"
 if [ -d "data" ]; then
-    # Clean up any old backup directory first to be safe
+    # --- FIX: Make backup non-destructive. Rename old backup instead of deleting. ---
     if [ -d "$TEMP_BACKUP_PATH" ]; then
-        echo "WARN: Found an old temporary backup directory. Removing it."
-        rm -rf "$TEMP_BACKUP_PATH"
+        TIMESTAMP=$(date +%s)
+        echo "WARN: Found an old temporary backup directory. Renaming it to '$TEMP_BACKUP_PATH-$TIMESTAMP' to prevent data loss."
+        mv "$TEMP_BACKUP_PATH" "$TEMP_BACKUP_PATH-$TIMESTAMP"
     fi
     echo "INFO: Temporarily moving existing 'data' directory to a safe location..."
     mv data "$TEMP_BACKUP_PATH"
@@ -75,7 +76,10 @@ if [ "$DATA_DIR_EXISTS" = true ]; then
     echo "Current contents of your protected 'data' directory:"
     ls -lh "$TEMP_BACKUP_PATH"
     echo "--------------------------------------------------"
-    read -r -p "Do you want to skip 'git lfs pull' to save time? (y/n): " response
+    # --- FIX: Clarify the purpose of the git lfs pull prompt ---
+    echo "'git lfs pull' downloads large data files (e.g., ground truth interactions)."
+    echo "If you are sure your local data files are up-to-date, you can skip this to save time."
+    read -r -p "Skip 'git lfs pull'? (y/n): " response
     if [[ "$response" == "y" || "$response" == "Y" ]]; then
         echo "INFO: Skipping 'git lfs pull' as requested."
         SKIP_LFS=true
@@ -99,8 +103,22 @@ if [ "$DATA_DIR_EXISTS" = true ]; then
     mv "$TEMP_BACKUP_PATH" data
     echo "INFO: Local 'data' directory restored."
 fi
-
 echo "SUCCESS: Project repository is up to date."
+
+# --- NEW: Prompt for manual data upload ---
+# This allows the user to add large files (e.g., from FTP) that shouldn't be in git.
+# These files will be used by the current run and backed up by subsequent runs of this script.
+echo -e "\n--------------------------------------------------"
+echo "Your local 'data' directory is in place and the repository is updated."
+echo "Do you need to pause to manually upload additional data files now?"
+read -r -p "Pause for manual data upload? (y/n): " upload_response
+if [[ "$upload_response" == "y" || "$upload_response" == "Y" ]]; then
+    echo -e "\n--- USER ACTION REQUIRED ---"
+    echo "The script is paused. Please upload your files to the following directory:"
+    echo "  -> $(pwd)/data"
+    read -p "Once you are finished, press [Enter] to continue..."
+    echo "INFO: Resuming script."
+fi
 
 # --- Step 3: Run the Main Application ---
 echo -e "\n--- STEP 3: Executing the main application via run.py ---"

@@ -65,6 +65,12 @@ class PPIPipeline:
             original_path = Path(config_item['path'])
             new_config = config_item.copy()
 
+            # --- FIX: Avoid re-running PCA on an already processed file ---
+            if f"_pca{target_dim}" in original_path.stem:
+                print(f"  Skipping PCA for '{original_path.name}' as it appears to be already processed.")
+                processed_configs.append(new_config)
+                continue
+
             if not original_path.exists():
                 print(f"  Skipping non-existent file: {original_path}")
                 processed_configs.append(new_config)

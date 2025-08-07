@@ -316,7 +316,10 @@ class EmbeddingProcessor:
             # from the actual attention calculation.
             print("    Using hybrid method for attention pooling (pre-indexing n-grams).")
 
-            pooled_embeddings = {}
+            # --- FIX: Initialize with zero-vectors to prevent KeyErrors for proteins with no n-grams ---
+            embedding_dim = ngram_embeddings.shape[1]
+            pooled_embeddings = {p_data[0]: np.zeros(embedding_dim, dtype=ngram_embeddings.dtype)
+                                 for p_data in protein_sequences}
             attention_weights_log = {}
 
             # Create a reverse map from index to n-gram string for logging

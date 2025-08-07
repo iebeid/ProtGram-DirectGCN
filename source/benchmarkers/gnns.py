@@ -155,6 +155,10 @@ class GNNBenchmarker:
         if self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS:
             edge_index = data.edge_index
             y = data.y
+            # --- FIX: Propagate original edge weights to homophily/heterophily paths ---
+            # First, get the base edge weights (either from data.edge_attr or ones)
+            base_edge_weight = data.edge_attr if hasattr(data, 'edge_attr') and data.edge_attr is not None else torch.ones(edge_index.shape[1], device=edge_index.device)
+
             source_nodes, target_nodes = edge_index[0], edge_index[1]
             source_labels = y[source_nodes]
             target_labels = y[target_nodes]
@@ -162,8 +166,9 @@ class GNNBenchmarker:
             hetero_mask = ~homo_mask
             data.edge_index_out_homo = edge_index[:, homo_mask]
             data.edge_index_out_hetero = edge_index[:, hetero_mask]
-            data.edge_weight_out_homo = torch.ones(data.edge_index_out_homo.shape[1], device=edge_index.device)
-            data.edge_weight_out_hetero = torch.ones(data.edge_index_out_hetero.shape[1], device=edge_index.device)
+            # Now, use the masks to select the correct weights
+            data.edge_weight_out_homo = base_edge_weight[homo_mask]
+            data.edge_weight_out_hetero = base_edge_weight[hetero_mask]
             data.edge_index_in_homo = data.edge_index_out_homo.flip(0)
             data.edge_index_in_hetero = data.edge_index_out_hetero.flip(0)
             data.edge_weight_in_homo = data.edge_weight_out_homo

@@ -92,7 +92,9 @@ class ProtGramXGCNTrainer:
         if self.config.GCN_RUN_SANITY_CHECK_PPI:
             main_model_name_raw = self.config.PROTGRAM_MODELS_TO_TRAIN[0]
             main_model_key = f"ProtGram{main_model_name_raw.capitalize()}"
-            embedding_path_for_check = output_paths.get(f"{main_model_key}_pca", output_paths.get(main_model_key))
+            # --- FIX: Prioritize the original, non-PCA'd file for the sanity check ---
+            # The evaluation pipeline will handle its own PCA, so we avoid double-processing.
+            embedding_path_for_check = output_paths.get(main_model_key, output_paths.get(f"{main_model_key}_pca"))
             if embedding_path_for_check:
                 self._run_sanity_check_ppi(embedding_path_for_check)
 
