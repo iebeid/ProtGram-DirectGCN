@@ -177,6 +177,9 @@ def setup_data(config: Config):
             print(f"❓ Skipped '{key}': URL is a placeholder or not provided.")
             continue
 
+        # --- FIX: Ensure the target directory exists before attempting to download ---
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+
         try:
             # --- FIX: Use gdown for Google Drive URLs, requests for others ---
             if 'drive.google.com' in url:
