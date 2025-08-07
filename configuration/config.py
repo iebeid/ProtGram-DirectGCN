@@ -106,25 +106,31 @@ class Config:
                 "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz",
                 "path": self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta",
                 "post_process": "ungzip",
-                "checksum": None
+                "checksum": None,
+                "cacheable": True
             },
             "UNIREF_50_FASTA": {
                 "url": "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz",
                 "path": self.DATA_SEQUENCES_DIR / "uniref50.fasta",
                 "post_process": "ungzip",
-                "checksum": None
+                "checksum": None,
+                "cacheable": True
             },
             "POS_INTERACTIONS": {
-                "url": "https://drive.google.com/file/d/1vDDdeOVdyu00y5Qux6HRdWtzywj9w7z4/view?usp=sharing",
+                # --- FIX: Use direct download link for Google Drive to avoid downloading HTML page ---
+                "url": "https://drive.google.com/uc?id=1vDDdeOVdyu00y5Qux6HRdWtzywj9w7z4",
                 "path": self.DATA_GROUND_TRUTH_DIR / "positive_interactions.csv",
                 "post_process": None,
-                "checksum": None
+                "checksum": None,
+                "cacheable": True
             },
             "NEG_INTERACTIONS": {
-                "url": "https://drive.google.com/file/d/1AZJS5_1XLM-GWWDjLWRTQU_5WQRROyrg/view?usp=sharing",
+                # --- FIX: Use direct download link for Google Drive to avoid downloading HTML page ---
+                "url": "https://drive.google.com/uc?id=1AZJS5_1XLM-GWWDjLWRTQU_5WQRROyrg",
                 "path": self.DATA_GROUND_TRUTH_DIR / "negative_interactions.csv",
                 "post_process": None,
-                "checksum": None
+                "checksum": None,
+                "cacheable": True
             },
             "PROTT5_MODEL": {
                 "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5",

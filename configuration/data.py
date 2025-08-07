@@ -61,6 +61,21 @@ def _is_file_valid(file_path: Path) -> bool:
 
     file_type = file_path.suffix.lower()
 
+    # --- NEW: Add specific integrity check for Gzip files ---
+    # This prevents using a partially downloaded or corrupt .gz file.
+    if file_type == '.gz':
+        try:
+            with gzip.open(file_path, 'rb') as f:
+                # Reading a small chunk is enough to validate the header and integrity.
+                # A corrupt or incomplete file will likely raise an error here.
+                f.read(1024)
+        except (gzip.BadGzipFile, EOFError) as e:
+            print(f"  - Validation failed for {file_path.name}: Gzip file appears to be corrupt or incomplete. Error: {e}")
+            return False
+        except Exception as e:
+            print(f"  - Validation warning for {file_path.name}: Could not read as gzip file. Error: {e}")
+            return False # Treat as invalid to be safe
+
     # --- FIX: Add specific integrity check for HDF5 files ---
     # This prevents the pipeline from using partially downloaded or corrupt .h5 files.
     if file_type == '.h5':
@@ -138,38 +153,15 @@ def setup_data(config: Config):
 
         # --- FIX: Check for existing compressed file before downloading ---
         # If the final file is invalid/missing, but the compressed source exists,
-        # try decompressing it first. This avoids re-downloading.
-        if not _is_file_valid(final_path) and download_path.exists() and source_info.get('post_process') == 'ungzip':
-            print(f"Found compressed file '{download_path.name}'. Attempting to decompress...")
+        # validate it and try decompressing it first. This avoids re-downloading.
+        if not _is_file_valid(final_path) and _is_file_valid(download_path) and source_info.get('post_process') == 'ungzip':
+            print(f"Found VALID compressed file '{download_path.name}'. Attempting to decompress...")
             try:
                 with gzip.open(download_path, 'rb') as f_in, open(final_path, 'wb') as f_out:
                     shutil.copyfileobj(f_in, f_out)
-
-                # Re-validate after decompression to ensure integrity
-                if _is_file_valid(final_path):
-                    print(f"✔ Successfully acquired from local compressed file: {final_path.relative_to(config.PROJECT_ROOT)}")
-                    continue  # Success, move to the next file in the loop
-                else:
-                    print(f"  Warning: Decompressed file '{final_path.name}' failed validation. Attempting re-download.")
             except (gzip.BadGzipFile, EOFError) as e:
                 print(f"  Warning: Decompression failed for '{download_path.name}' (likely corrupt). Error: {e}. Attempting re-download.")
-
-        if not final_path.exists() and download_path.exists() and source_info.get('post_process') == 'ungzip':
-            print(f"Found compressed file '{download_path.name}'. Attempting to decompress...")
-            try:
-                with gzip.open(download_path, 'rb') as f_in, open(final_path, 'wb') as f_out:
-                    shutil.copyfileobj(f_in, f_out)
-
-                # Re-validate after decompression to ensure integrity
-                if _is_file_valid(final_path):
-                    print(f"✔ Successfully acquired: {final_path.relative_to(config.PROJECT_ROOT)}")
-                    continue  # Success, move to the next file in the loop
-                else:
-                    print(f"  Warning: Decompressed file '{final_path.name}' failed validation. Attempting re-download.")
-
-            except (gzip.BadGzipFile, EOFError) as e:
-                print(f"  Warning: Decompression failed for '{download_path.name}' (likely corrupt). Error: {e}. Attempting re-download.")
-            # If we reach here, it means decompression failed or the result was invalid, so we fall through to the download logic.
+            # If decompression fails or the result is invalid, we fall through to the download logic.
 
         # 3. If neither exists, attempt to download.
         url = source_info.get('url')
@@ -187,7 +179,8 @@ def setup_data(config: Config):
                     print(f"  ERROR: URL for '{key}' is a Google Drive link, but 'gdown' is not installed. Please install it (`pip install gdown`). Skipping.")
                     continue
                 print(f"Downloading '{download_path.name}' from Google Drive...")
-                gdown.download(url, str(download_path), quiet=False)
+                # --- FIX: Use fuzzy=True to better handle various Google Drive URL formats ---
+                gdown.download(url, str(download_path), quiet=False, fuzzy=True)
             else:
                 print(f"Downloading from {url} to {download_path}...")
                 response = requests.get(url, stream=True)
