@@ -44,14 +44,25 @@ python --version
 
 # --- Step 2: Update the Repository ---
 echo -e "\n--- STEP 2: Updating the project with the latest changes from Git ---"
-git pull # Always pull the latest code
+
+# --- FIX: Use a safer pull method to prevent accidental deletion of local files ---
+# Stashing any local changes, pulling, and then popping the stash is more robust.
+echo "INFO: Stashing any local changes to prevent conflicts..."
+git stash push -m "start.sh-autostash-$(date +%s)"
+echo "INFO: Pulling latest changes from the remote repository..."
+git pull --rebase
+echo "INFO: Restoring any stashed local changes..."
+# Pop the stash. If it fails (e.g., nothing to pop), it won't stop the script.
+git stash pop || echo "INFO: No local changes to restore."
 
 # --- NEW: Interactively handle git lfs pull ---
 SKIP_LFS=false
 if [ -d "data" ]; then
-    echo "Current contents of the 'data' directory:"
+    echo -e "\n--------------------------------------------------"
+    echo "The 'data' directory already exists. Current contents:"
     ls -lh data
-    read -r -p "The 'data' directory already exists. Do you want to skip 'git lfs pull'? (y/n): " response
+    echo "--------------------------------------------------"
+    read -r -p "Do you want to skip 'git lfs pull' to save time? (y/n): " response
     if [[ "$response" == "y" || "$response" == "Y" ]]; then
         echo "INFO: Skipping 'git lfs pull' as requested."
         SKIP_LFS=true
