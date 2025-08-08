@@ -682,6 +682,8 @@ def test_gnn_benchmarker_run():
 
     test_benchmark_output_dir = Path(config.BASE_OUTPUT_DIR) / "test_gnn_benchmark_results"
     if os.path.exists(test_benchmark_output_dir): shutil.rmtree(test_benchmark_output_dir)
+    # --- FIX: The directory must be created before it can be used ---
+    test_benchmark_output_dir.mkdir(parents=True, exist_ok=True)
     # FIX: Use and restore the correct config variable name
     original_benchmark_output_dir = config.RESULTS_BENCHMARKING_DIR
     config.RESULTS_BENCHMARKING_DIR = test_benchmark_output_dir

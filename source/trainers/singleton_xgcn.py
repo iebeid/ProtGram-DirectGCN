@@ -113,8 +113,8 @@ class SingletonXGCNTrainer:
                 logits, _ = model(data_for_model)
                 if data_for_model.train_mask.sum() > 0:
                     loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask])
-                loss.backward()
-                optimizer.step()
+                    loss.backward()
+                    optimizer.step()
 
             # Evaluation
             model.eval()
