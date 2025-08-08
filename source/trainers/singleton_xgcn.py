@@ -1,11 +1,11 @@
 # ==============================================================================
 # MODULE: trainers/singleton_xgcn.py
 # PURPOSE: A lightweight trainer for rapid evaluation of various GNNs on the n=1 graph.
-# VERSION: 2.1 (Corrected return type to DataFrame)
+# VERSION: 3.0 (Integrated dynamic homophily-based architecture selection)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 import numpy as np
 import torch
@@ -13,6 +13,7 @@ import pandas as pd
 import torch.nn.functional as F
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
+from torch_geometric.utils import homophily
 from torch_geometric.data import Data
 from tqdm.auto import tqdm
 
@@ -58,9 +59,11 @@ class SingletonXGCNTrainer:
             print("  Singleton Trainer: Only one community found. Cannot perform meaningful classification.")
             return pd.DataFrame()
 
-        # --- FIX: Split edges by homophily if the feature is enabled ---
-        if self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS:
-            self.graph.split_edges_by_homophily(labels)
+        # --- NEW: Dynamic Architecture Selection for DirectGCN ---
+        # Calculate homophily to decide if specialized paths should be used.
+        homophily_ratio = homophily(self.graph.A_undirected_norm_sparse.indices(), labels, method='edge')
+        is_heterophilic = homophily_ratio < 0.6  # Standard threshold
+        print(f"  Singleton Graph (n=1) Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
 
         # 2. Create initial random features
         initial_features = torch.randn((self.graph.number_of_nodes, self.config.GCN_1GRAM_INIT_DIM))
@@ -88,20 +91,28 @@ class SingletonXGCNTrainer:
         all_results = []
         for model_name in self.config.SINGLETON_EVAL_MODELS_TO_RUN:
             print(f"\n--- Evaluating Singleton Model: {model_name} ---")
-            model = self._get_model(model_name, initial_features.shape[1], num_classes)
+
+            # Determine if this model run should use the specialized paths
+            use_homo_hetero_for_this_model = is_heterophilic if model_name.lower() == 'directgcn' else False
+            if use_homo_hetero_for_this_model:
+                print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.")
+                self.graph.split_edges_by_homophily(labels)
+
+            model = self._get_model(model_name, initial_features.shape[1], num_classes, use_homo_hetero_for_this_model)
             if model is None:
                 continue
 
             model.to(self.device)
             optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
-            data_for_model = self._prepare_data_for_model(model_name, initial_features, labels, train_mask, test_mask).to(self.device)
+            data_for_model = self._prepare_data_for_model(model_name, initial_features, labels, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
 
             # Training Loop
             for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
                 model.train()
                 optimizer.zero_grad()
                 logits, _ = model(data_for_model)
-                loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask])
+                if data_for_model.train_mask.sum() > 0:
+                    loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask])
                 loss.backward()
                 optimizer.step()
 
@@ -123,7 +134,7 @@ class SingletonXGCNTrainer:
             all_results.append(metrics)
         return pd.DataFrame(all_results)
 
-    def _get_model(self, name: str, in_channels: int, num_classes: int) -> torch.nn.Module:
+    def _get_model(self, name: str, in_channels: int, num_classes: int, use_homo_hetero_paths: bool) -> torch.nn.Module:
         """Model factory for instantiating GNNs."""
         # --- FIX: Use benchmark parameters from config for consistency ---
         model_params = {
@@ -156,20 +167,20 @@ class SingletonXGCNTrainer:
             return DirectGCN(
                 layer_dims=layer_dims, num_graph_nodes=self.graph.number_of_nodes,
                 task_num_output_classes=num_classes,
-                n_gram_len=1,
-                use_homo_hetero_paths=self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS,
+                n_gram_len=1, # This is the singleton trainer, so n is always 1
+                use_homo_hetero_paths=use_homo_hetero_paths,
                 one_gram_dim=self.config.GCN_1GRAM_INIT_DIM, max_pe_len=self.config.GCN_MAX_PE_LEN,
                 dropout=self.config.GCN_DROPOUT_RATE, gating_mode=self.config.GCN_GATING_COEFF_MODE
             )
         raise ValueError(f"Unknown model name '{name}' for singleton evaluation.")
 
-    def _prepare_data_for_model(self, model_name: str, features: torch.Tensor, labels: torch.Tensor, train_mask: torch.Tensor, test_mask: torch.Tensor) -> Data:
+    def _prepare_data_for_model(self, model_name: str, features: torch.Tensor, labels: torch.Tensor, train_mask: torch.Tensor, test_mask: torch.Tensor, use_homo_hetero_paths: bool) -> Data:
         """Prepares a PyG Data object tailored to the specific model's needs."""
         data_dict = {'x': features, 'y': labels, 'train_mask': train_mask, 'test_mask': test_mask}
         model_name_lower = model_name.lower()
 
         if model_name_lower == 'directgcn':
-            if self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS and self.graph.A_out_w_homo is not None:
+            if use_homo_hetero_paths and self.graph.A_out_w_homo is not None:
                 data_dict.update({
                     'edge_index_in_homo': self.graph.A_in_w_homo.indices(), 'edge_weight_in_homo': self.graph.A_in_w_homo.values(),
                     'edge_index_in_hetero': self.graph.A_in_w_hetero.indices(), 'edge_weight_in_hetero': self.graph.A_in_w_hetero.values(),

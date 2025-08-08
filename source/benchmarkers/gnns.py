@@ -8,7 +8,7 @@
 import os
 import traceback
 import shutil
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 import mlflow
 from pathlib import Path
 import numpy as np
