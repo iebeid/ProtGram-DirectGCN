@@ -233,7 +233,7 @@ class Config:
         # 'vector': One learnable scalar per path, per node, per layer (more expressive).
         # 'node_gate_vector': A learnable *vector* per path, per node, per layer for element-wise gating. Most expressive.
         # 'none': No gating, paths are simply added.
-        self.GCN_GATING_COEFF_MODE = "scalar"
+        self.GCN_GATING_COEFF_MODE = "node_gate_vector"
 
         # Training Hyperparameters
         self.GCN_EPOCHS_PER_LEVEL = 300
