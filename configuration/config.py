@@ -234,10 +234,6 @@ class Config:
         # 'node_gate_vector': A learnable *vector* per path, per node, per layer for element-wise gating. Most expressive.
         # 'none': No gating, paths are simply added.
         self.GCN_GATING_COEFF_MODE = "scalar"
-        # NEW: Use separate message passing paths for homophilous vs. heterophilous edges.
-        # This can increase model expressiveness at the cost of more parameters.
-        self.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS = False
-
 
         # Training Hyperparameters
         self.GCN_EPOCHS_PER_LEVEL = 300
