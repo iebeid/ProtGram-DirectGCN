@@ -375,7 +375,7 @@ class DirectedNgramGraph(Graph):
         if model_type == 'directgcn':
             # --- FIX: Create subgraphs from the correct raw weighted matrices, not the pre-computed ones ---
             if self.A_out_w_homo is not None and self.A_out_w_hetero is not None:
-                # Homophily/Heterophily paths are enabled
+                # Homophily/Heterophily paths are enabled on the graph object
                 path_matrices = {
                     'in_homo': self.A_in_w_homo, 'in_hetero': self.A_in_w_hetero,
                     'out_homo': self.A_out_w_homo, 'out_hetero': self.A_out_w_hetero,
@@ -397,9 +397,18 @@ class DirectedNgramGraph(Graph):
                     data_dict[f'edge_index_{name}'] = sub_edge_index
                     data_dict[f'edge_weight_{name}'] = sub_edge_weight
         elif model_type == 'rgcn' or model_type == 'tongdigcn':
-            # This logic covers both RGCN and TongDiGCN which need standard edge indices
-            data_dict['edge_index'], _ = subgraph(node_subset, self.A_out_w.indices(), relabel_nodes=True, num_nodes=self.number_of_nodes)
-            data_dict['edge_index_backward'], _ = subgraph(node_subset, self.A_in_w.indices(), relabel_nodes=True, num_nodes=self.number_of_nodes)
+            # This logic covers both RGCN and TongDiGCN which need standard edge indices and weights
+            sub_edge_index_out, sub_edge_weight_out = subgraph(node_subset, self.A_out_w.indices(), self.A_out_w.values(), relabel_nodes=True, num_nodes=self.number_of_nodes)
+            sub_edge_index_in, sub_edge_weight_in = subgraph(node_subset, self.A_in_w.indices(), self.A_in_w.values(), relabel_nodes=True, num_nodes=self.number_of_nodes)
+            if model_type == 'rgcn':
+                data_dict['edge_index'] = torch.cat([sub_edge_index_out, sub_edge_index_in], dim=1)
+                data_dict['edge_type'] = torch.cat([
+                    torch.zeros(sub_edge_index_out.size(1), dtype=torch.long),
+                    torch.ones(sub_edge_index_in.size(1), dtype=torch.long)
+                ])
+            else: # tongdigcn
+                data_dict['edge_index'] = sub_edge_index_out
+                data_dict['edge_index_backward'] = sub_edge_index_in
         else:
             raise ValueError(f"Cannot create subgraph data for unknown model type: {model_type}")
 

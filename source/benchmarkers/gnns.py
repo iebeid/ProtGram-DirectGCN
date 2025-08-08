@@ -98,16 +98,16 @@ class GNNBenchmarker:
             print(f"  Error loading dataset '{name}': {e}")
             return None
 
-    def _get_model(self, name: str, data: Any, num_classes: int) -> torch.nn.Module:
+    def _get_model(self, name: str, data: Any, num_classes: int, config: Config, use_homo_hetero_override: Optional[bool] = None) -> torch.nn.Module:
         """Model factory that correctly handles parameters for all models."""
         # Standardized parameters for most models
         # --- FIX: All parameters are now sourced from the config object ---
         model_params = {
             'in_channels': data.num_features,
-            'hidden_channels': self.config.BENCHMARK_GNN_HIDDEN_CHANNELS,
+            'hidden_channels': config.BENCHMARK_GNN_HIDDEN_CHANNELS,
             'out_channels': num_classes,
-            'num_layers': self.config.BENCHMARK_GNN_NUM_LAYERS,
-            'dropout_rate': self.config.BENCHMARK_GNN_DROPOUT_RATE
+            'num_layers': config.BENCHMARK_GNN_NUM_LAYERS,
+            'dropout_rate': config.BENCHMARK_GNN_DROPOUT_RATE
         }
 
         if name == "GCN":
@@ -115,8 +115,8 @@ class GNNBenchmarker:
         elif name == "GAT":
             gat_params = model_params.copy()
             gat_params.update({
-                'heads': self.config.BENCHMARK_GAT_HEADS,
-                'dropout_rate': self.config.BENCHMARK_GAT_DROPOUT_RATE
+                'heads': config.BENCHMARK_GAT_HEADS,
+                'dropout_rate': config.BENCHMARK_GAT_DROPOUT_RATE
             })
             return GAT(**gat_params)
         elif name == "GraphSAGE":
@@ -124,9 +124,9 @@ class GNNBenchmarker:
         elif name == "GIN":
             return GIN(**model_params)
         elif name == "ChebNet":
-            return ChebNet(**model_params, K=self.config.BENCHMARK_CHEBNET_K)
+            return ChebNet(**model_params, K=config.BENCHMARK_CHEBNET_K)
         elif name == "RGCN":
-            return RGCN(**model_params, num_relations=self.config.BENCHMARK_RGCN_NUM_RELATIONS)
+            return RGCN(**model_params, num_relations=config.BENCHMARK_RGCN_NUM_RELATIONS)
         elif name == "TongDiGCN":
             return TongDiGCN(**model_params)
         elif name == "DirectGCN":
@@ -134,7 +134,9 @@ class GNNBenchmarker:
             # adapted for standard benchmark datasets.
             # --- MODIFICATION: Define DirectGCN with the same deep, hierarchical
             # architecture used in the main ProtGram pipeline. ---
-            layer_dims = [data.num_features] + self.config.GCN_HIDDEN_LAYER_DIMS
+            layer_dims = [data.num_features] + config.GCN_HIDDEN_LAYER_DIMS
+            # --- NEW: Use the override if provided, otherwise use the global config setting ---
+            use
             return DirectGCN(
                 layer_dims=layer_dims,
                 num_graph_nodes=data.num_nodes,

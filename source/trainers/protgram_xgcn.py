@@ -23,6 +23,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch_geometric.data import Data
+from torch_geometric.utils import homophily
 from torch_geometric.utils import to_networkx
 from tqdm.auto import tqdm
 
@@ -171,17 +172,27 @@ class ProtGramXGCNTrainer:
             task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(n, self.config.GCN_DEFAULT_TASK_TYPE)
             labels, num_classes_for_task = self.label_generator.generate_task_labels(graph_obj, task_type)
 
-            # --- NEW: Split edges by homophily if the feature is enabled ---
-            if self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS:
+            # --- NEW: Dynamic Architecture Selection for DirectGCN ---
+            # Calculate homophily to decide if specialized paths should be used for this level.
+            use_homo_hetero_paths_for_level = False
+            if model_type == 'directgcn':
+                homophily_ratio = homophily(graph_obj.A_undirected_norm_sparse.indices(), labels, method='edge')
+                is_heterophilic = homophily_ratio < 0.6  # Standard threshold
+                print(f"  Graph n={n} Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
+                if is_heterophilic:
+                    print(f"  -> Enabling specialized homophily/heterophily paths for DirectGCN at n={n}.")
+                    use_homo_hetero_paths_for_level = True
+
+            if use_homo_hetero_paths_for_level:
                 graph_obj.split_edges_by_homophily(labels)
 
-            model = self._build_model(model_type, n, initial_features.shape[1], num_classes_for_task, graph_obj.number_of_nodes)
+            model = self._build_model(model_type, n, initial_features.shape[1], num_classes_for_task, graph_obj, use_homo_hetero_paths_for_level)
             if model is None: continue
 
             data = Data(x=initial_features, y=labels, graph_obj=graph_obj)
             optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=self.config.GCN_WEIGHT_DECAY)
 
-            self._train_single_level(model, graph_obj, data, optimizer)
+            self._train_single_level(model, graph_obj, data, optimizer, use_homo_hetero_paths_for_level)
 
             ngram_embeddings_per_level[n] = EmbeddingProcessor.extract_gcn_node_embeddings(
                 model, data, graph_obj, self.config, self.device,

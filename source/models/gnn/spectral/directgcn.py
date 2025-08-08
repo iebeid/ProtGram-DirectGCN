@@ -85,12 +85,11 @@ class DirectGCNLayer(MessagePassing):
 
     def reset_parameters(self):
         """Initializes all learnable parameters of the layer."""
-        # --- FIX: Conditionally initialize the correct set of layers ---
+        # Conditionally initialize the correct set of layers
         if self.use_homo_hetero_paths:
             layers_to_init = [self.lin_main_in_homo, self.lin_main_in_hetero, self.lin_main_out_homo,
                               self.lin_main_out_hetero]
-            biases_to_init = [self.bias_main_in_homo, self.bias_main_in_hetero, self.bias_main_out_homo,
-                              self.bias_main_out_hetero]
+            biases_to_init = [self.bias_main_in_homo, self.bias_main_in_hetero, self.bias_main_out_homo, self.bias_main_out_hetero]
         else:
             layers_to_init = [self.lin_main_in, self.lin_main_out]
             biases_to_init = [self.bias_main_in, self.bias_main_out]
@@ -125,7 +124,7 @@ class DirectGCNLayer(MessagePassing):
 
         # --- 1. Directed Path Propagation ---
         if self.use_homo_hetero_paths:
-            # --- FIX: Use the specialized homophily/heterophily paths ---
+            # Use the specialized homophily/heterophily paths
             h_in_homo = self.propagate(data.edge_index_in_homo, x=self.lin_main_in_homo(x),
                                        edge_weight=data.edge_weight_in_homo)
             h_in_hetero = self.propagate(data.edge_index_in_hetero, x=self.lin_main_in_hetero(x),
@@ -246,7 +245,7 @@ class DirectGCN(nn.Module):
         if x is None:
             raise ValueError("DirectGCN requires 'x' in the Data object.")
 
-        # --- FIX: Check for required edge indices based on the mode ---
+        # Check for required edge indices based on the mode
         if self.use_homo_hetero_paths:
             required_keys = ['edge_index_in_homo', 'edge_index_in_hetero', 'edge_index_out_homo',
                              'edge_index_out_hetero', 'edge_index_undirected_norm']
