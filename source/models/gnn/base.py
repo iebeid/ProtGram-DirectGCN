@@ -1,24 +1,8 @@
-import os
-from typing import Dict, Optional, List, Tuple, Set, Union, TYPE_CHECKING, Iterator
-
-import h5py
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
 from torch_geometric.data import Data
-from tqdm.auto import tqdm
-from pathlib import Path
-
-# Local imports are safe here as this is a core utility module
-from source.utils.data import DataUtils
-
-if TYPE_CHECKING:
-    from gensim.models import Word2Vec
-    from configuration.config import Config
-    from source.data_builders.graph import DirectedNgramGraph
+from typing import Tuple, Optional
 
 
 class GNN(nn.Module):
@@ -48,22 +32,16 @@ class GNN(nn.Module):
             self.convs.append(conv_layer_class(hidden_channels, out_channels, **self.conv_kwargs))
 
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        A generic forward pass for GNN models. It intelligently handles whether
-        to pass edge_weights based on the convolution layer's signature.
-
-        Returns:
-            A tuple containing:
-            - The final logits for classification.
-            - The node embeddings from the last hidden layer.
-        """
-        x, edge_index, edge_weight = data.x, data.edge_index, getattr(data, 'edge_attr', None)
+        x, edge_index = data.x, data.edge_index
+        # --- FIX: Correctly get edge weights from data.edge_attr ---
+        # This was the root cause of the poor performance for standard GNNs.
+        edge_weight = getattr(data, 'edge_attr', None)
 
         # Handle the single-layer case where logits are the embeddings
         if len(self.convs) == 1:
             try:
                 logits = self.convs[0](x, edge_index, edge_weight=edge_weight)
-            except TypeError:  # For layers like SAGEConv that don't accept edge_weight
+            except TypeError:  # Fallback for layers that don't accept edge_weight
                 logits = self.convs[0](x, edge_index)
             self.embedding_output = logits
             return logits, self.embedding_output
@@ -71,6 +49,7 @@ class GNN(nn.Module):
         # Process all but the final layer
         for conv in self.convs[:-1]:
             try:
+                # Pass edge_weight to the convolution
                 x = conv(x, edge_index, edge_weight=edge_weight)
             except TypeError:
                 x = conv(x, edge_index)
@@ -82,6 +61,7 @@ class GNN(nn.Module):
 
         # Apply the final layer to get logits
         try:
+            # Pass edge_weight to the final convolution
             logits = self.convs[-1](self.embedding_output, edge_index, edge_weight=edge_weight)
         except TypeError:
             logits = self.convs[-1](self.embedding_output, edge_index)
@@ -89,10 +69,6 @@ class GNN(nn.Module):
         return logits, self.embedding_output
 
     def get_embeddings(self, data: Data) -> Optional[torch.Tensor]:
-        """
-        A standardized way to get embeddings after a forward pass.
-        Assumes the forward pass stores embeddings in self.embedding_output.
-        """
         if self.embedding_output is None:
             print(f"Warning: embedding_output is None for {self.__class__.__name__}. Call forward pass first.")
         return self.embedding_output

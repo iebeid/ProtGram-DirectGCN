@@ -387,6 +387,8 @@ class GNNBenchmarker:
                     mlflow.log_metrics({"test_accuracy": metrics.get('Accuracy', 0.0),
                                         "f1_macro": metrics.get('F1-Score (Macro)', 0.0)})
                     # Create a temporary file for the history and log it
+                    # --- FIX: Defensively create the parent directory to prevent OSError in tests ---
+                    Path(self.output_dir).mkdir(parents=True, exist_ok=True)
                     history_path = Path(self.output_dir) / f"history_{model_name}_{variant_name}.csv"
                     history_df.to_csv(history_path, index=False)
                     mlflow.log_artifact(str(history_path), "training_history")
