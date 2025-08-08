@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: models/gnn/gin.py
 # PURPOSE: A standard implementation of the Graph Isomorphism Network (GIN).
-# VERSION: 3.3 (Corrected forward pass indexing)
+# VERSION: 3.4 (Corrected forward pass to use edge weights)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -79,18 +79,20 @@ class GIN(nn.Module):
             - The final logits for classification.
             - The node embeddings from the last hidden layer.
         """
-        x, edge_index = data.x, data.edge_index
+        x, edge_index, edge_weight = data.x, data.edge_index, getattr(data, 'edge_attr', None)
 
         # Handle the single-layer case
         if len(self.convs) == 1:
-            logits = self.convs[0](x, edge_index)
+            # --- FIX: Pass edge_weight to the convolution layer ---
+            logits = self.convs[0](x, edge_index, edge_weight=edge_weight)
             # For a single-layer model, the logits are also the embeddings
             self.embedding_output = logits
             return logits, self.embedding_output.clone()
 
         # Process all but the final layer
         for conv in self.convs[:-1]:
-            x = conv(x, edge_index)
+            # --- FIX: Pass edge_weight to the convolution layer ---
+            x = conv(x, edge_index, edge_weight=edge_weight)
             x = F.relu(x)  # Activation is applied *after* the GINConv
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
 
@@ -98,6 +100,7 @@ class GIN(nn.Module):
         self.embedding_output = x
 
         # Apply the final layer to get logits
-        logits = self.convs[-1](self.embedding_output, edge_index)
+        # --- FIX: Pass edge_weight to the convolution layer ---
+        logits = self.convs[-1](self.embedding_output, edge_index, edge_weight=edge_weight)
 
         return logits, self.embedding_output.clone()

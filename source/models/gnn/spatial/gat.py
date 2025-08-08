@@ -1,12 +1,9 @@
 # ==============================================================================
 # MODULE: models/gnn/gat.py
 # PURPOSE: A standard implementation of the Graph Attention Network (GAT).
-# VERSION: 9.2 (Corrected to properly inherit from BaseGNN)
+# VERSION: 9.3 (Removed incorrect forward override to inherit from base class)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
-import torch.nn as nn
-import torch.nn.functional as F
-from torch_geometric.data import Data
 from torch_geometric.nn import GATConv
 
 from source.models.gnn.base import GNN
@@ -16,8 +13,7 @@ class GAT(GNN):
     """
     A standard implementation of the Graph Attention Network (GAT) model.
     This architecture uses self-attention to weigh the importance of neighboring
-    nodes during message passing. It uses a custom forward pass to correctly
-    implement a multi-head attention architecture.
+    nodes during message passing.
     """
 
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int,
@@ -49,22 +45,3 @@ class GAT(GNN):
         # The last layer should average heads, so we rebuild it.
         if num_layers > 1:
             self.convs[-1] = GATConv(hidden_channels * heads, out_channels, heads=1, concat=False, dropout=dropout_rate)
-        else:  # Single layer case
-            self.convs[0] = GATConv(in_channels, out_channels, heads=1, concat=False, dropout=dropout_rate)
-
-    def forward(self, data: Data):
-        x, edge_index = data.x, data.edge_index
-
-        # Apply all but the final layer
-        for conv in self.convs[:-1]:
-            x = F.dropout(x, p=self.dropout_rate, training=self.training)
-            x = conv(x, edge_index)
-            x = F.elu(x)
-
-        # The output of the last hidden layer is the embedding
-        self.embedding_output = x
-
-        # Apply the final layer to get logits
-        x = F.dropout(x, p=self.dropout_rate, training=self.training)
-        logits = self.convs[-1](x, edge_index)
-        return logits, self.embedding_output
