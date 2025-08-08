@@ -270,10 +270,10 @@ class Config:
         self.PCA_TARGET_DIMENSION = 64
         # NEW: Protein-level pooling strategy
         # Strategy for pooling final n-gram embeddings to create a single protein embedding.
-        # Options: 'mean', 'sum', 'max', 'attention'
+        # Options: 'mean' (fast), 'sum', 'max', 'attention' (slower, more expressive)
         self.GCN_PROTEIN_POOLING_STRATEGY = 'attention'
         # NEW: Hierarchical pooling strategy
-        # Strategy for pooling (n-1)-gram embeddings to initialize n-gram features.
+        # Strategy for pooling (n-1)-gram embeddings to initialize n-gram features for n>1.
         # Options: 'mean', 'attention'
         self.GCN_HIERARCHICAL_POOLING_STRATEGY = 'attention'
 
@@ -289,7 +289,7 @@ class Config:
         self.W2V_WINDOW = 5
         self.W2V_MIN_COUNT = 1
         self.W2V_EPOCHS = 5
-        self.W2V_WORKERS = 1
+        self.W2V_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
         self.W2V_POOLING_STRATEGY = 'mean'
 
     def _setup_transformer_params(self):

@@ -479,12 +479,10 @@ def run_graph_builder_full_test():
         f.write(fasta_content)
 
     config = Config()
-    # Isolate ALL paths by overriding the base directory first
+    # FIX: Isolate ALL paths by overriding them *after* initialization to avoid being reset.
     config.BASE_OUTPUT_DIR = Path(base_test_dir) / "test_pipeline_output"
-    # Override the sequence file paths to point to our dummy file
+    config.RESULTS_GRAPH_OBJECTS_DIR = config.BASE_OUTPUT_DIR / "graph_objects"
     config.SEQUENCE_FILE_PATHS = [Path(fasta_path)]
-    # Now that the base is overridden, regenerate all derived paths
-    config._setup_paths()
 
     config.DEBUG_VERBOSE = True
     config.GCN_NGRAM_MAX_N = 3
@@ -546,10 +544,10 @@ class TestGraphBuilderSmoke(unittest.TestCase):
         print("=" * 80)
         try:
             config = Config()
-            # FIX: Properly isolate all paths used by GraphBuilder
+            # FIX: Properly isolate all paths used by GraphBuilder by overriding them after init
             config.BASE_OUTPUT_DIR = Path(self.temp_output_dir)
+            config.RESULTS_GRAPH_OBJECTS_DIR = config.BASE_OUTPUT_DIR / "graph_objects"
             config.SEQUENCE_FILE_PATHS = [Path(self.fasta_path)]
-            config._setup_paths()  # Regenerate derived paths like RESULTS_GRAPH_OBJECTS_DIR
 
             config.GCN_NGRAM_MAX_N = 1
             config.GRAPH_BUILDER_WORKERS = 1

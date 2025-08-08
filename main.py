@@ -156,13 +156,12 @@ def _launch_mlflow_ui(config: Config):
         time.sleep(5)
         try:
             # webbrowser.open() returns True on success, False on failure.
-            was_opened = webbrowser.open("http://127.0.0.1:5000")
-            if not was_opened:
-                print("\nCould not automatically open web browser.")
-                print("Please open http://127.0.0.1:5000 manually to view results.")
-            else:
-                print("\nMLflow UI has been launched in your web browser.")
-                print("The server is running in the background. It will terminate when you close this terminal.")
+            webbrowser.open("http://127.0.0.1:5000")
+            # --- FIX: Make background process behavior more explicit to the user ---
+            print("\nMLflow UI has been launched in your web browser (or a new tab).")
+            print("The MLflow server is running as a background process.")
+            print("To stop it when you are finished, you may need to close this terminal or")
+            print("manually find and stop the 'mlflow ui' process.")
         except webbrowser.Error as e:
             print(f"\nCould not automatically open web browser due to an error: {e}")
             print("Please open http://12.0.0.1:5000 manually to view results.")

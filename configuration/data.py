@@ -159,8 +159,14 @@ def setup_data(config: Config):
             try:
                 with gzip.open(download_path, 'rb') as f_in, open(final_path, 'wb') as f_out:
                     shutil.copyfileobj(f_in, f_out)
+                # Re-validate after decompression
+                if not _is_file_valid(final_path):
+                    print(f"  Warning: Decompressed file '{final_path.name}' failed validation. Deleting and attempting re-download.")
+                    final_path.unlink(missing_ok=True)
             except (gzip.BadGzipFile, EOFError) as e:
                 print(f"  Warning: Decompression failed for '{download_path.name}' (likely corrupt). Error: {e}. Attempting re-download.")
+                # --- FIX: Clean up the potentially invalid/empty file created by the failed attempt ---
+                final_path.unlink(missing_ok=True)
             # If decompression fails or the result is invalid, we fall through to the download logic.
 
         # 3. If neither exists, attempt to download.

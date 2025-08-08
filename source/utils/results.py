@@ -439,14 +439,14 @@ class EvaluationReporter:
                 for other_res in [r for r in results_list if r.get('embedding_name') != main_emb_name]:
                     other_scores = [s for s in other_res.get(scores_key, []) if not np.isnan(s)]
                     # FIX: Ensure there's enough data for a meaningful test
-                    if len(main_scores) == len(other_scores) and len(main_scores) > 1:
+                    if len(main_scores) == len(other_scores) and len(main_scores) > 1: # Wilcoxon needs > 0 samples
                         try:
                             if np.allclose(main_scores, other_scores):
                                 p_val_wilcoxon = 1.0
                                 conclusion = "Identical scores"
                             else:
                                 _, p_val_wilcoxon = wilcoxon(main_scores, other_scores)
-                                conclusion = f"Yes (p < {alpha})" if p_val_wilcoxon < alpha else "No"
+                                conclusion = f"Yes (p < {alpha:.2f})" if p_val_wilcoxon < alpha else "No"
 
                             p_corr, _ = pearsonr(main_scores, other_scores) if len(np.unique(main_scores)) > 1 and len(np.unique(other_scores)) > 1 else (np.nan, 0)
                             f.write(f"{other_res.get('embedding_name', 'Unknown'):<30} | {p_val_wilcoxon:<20.4e} | {conclusion:<25} | {p_corr:<10.4f}\n")

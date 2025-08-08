@@ -7,6 +7,7 @@
 
 import os
 import traceback
+import shutil
 from typing import Dict, List, Any, Tuple
 import mlflow
 from pathlib import Path

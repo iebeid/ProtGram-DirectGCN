@@ -66,7 +66,7 @@ git stash push -m "start.sh-autostash-$(date +%s)" > /dev/null 2>&1 || true
 echo "INFO: Pulling latest changes from the remote repository..."
 git pull --rebase
 echo "INFO: Restoring any stashed local changes..."
-git stash pop > /dev/null 2>&1 || true # Ignore error if stash is empty
+git stash pop > /dev/null 2>&1 || echo "INFO: No local changes to restore."
 
 # --- NEW: Handle self-update ---
 # Check if the start.sh script itself was updated by the pull.

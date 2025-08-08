@@ -36,7 +36,7 @@ class LstmPytorchDataset(Dataset):
         # The number of sequences is derived from the total text length.
         # We subtract `seq_len` for the input sequence itself, and an additional `1`
         # for the target character that must follow the input sequence.
-        # The `max(0, ...)` ensures this doesn't crash if the text is too short.
+        # --- FIX: The `max(0, ...)` ensures this doesn't crash if the text is too short. ---
         self.num_sequences = max(0, (len(self.text) - self.seq_len - 1) // self.step)
         print(f"  [PyTorch Dataset] Corpus has {len(text):,} characters, creating {self.num_sequences:,} samples.")
 
