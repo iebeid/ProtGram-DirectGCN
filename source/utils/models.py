@@ -375,6 +375,7 @@ class EmbeddingProcessor:
     def extract_gcn_node_embeddings(model: nn.Module,
                                     full_data: Data, graph_obj: 'DirectedNgramGraph',
                                     config: 'Config', device: torch.device,
+                                    use_homo_hetero_paths: bool,
                                     create_clustered_subgraphs_func: callable) -> np.ndarray:
         """Extracts node embeddings from a GNN, handling both full-batch and clustered inference."""
         model.eval()
@@ -393,7 +394,8 @@ class EmbeddingProcessor:
                     model_type=model.__class__.__name__.lower(),
                     full_features=full_data.x,
                     full_labels=full_data.y,
-                    node_subset=nodes_tensor
+                    node_subset=nodes_tensor,
+                    use_homo_hetero_paths=use_homo_hetero_paths
                 ).to(device)
 
                 with torch.no_grad():
@@ -415,7 +417,7 @@ class EmbeddingProcessor:
             data_dict = {'x': full_data.x}
 
             if model_type == 'directgcn':
-                if config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS and graph_obj.A_out_w_homo is not None:
+                if use_homo_hetero_paths and graph_obj.A_out_w_homo is not None:
                     data_dict.update({
                         'edge_index_in_homo': graph_obj.A_in_w_homo.indices(), 'edge_weight_in_homo': graph_obj.A_in_w_homo.values(),
                         'edge_index_in_hetero': graph_obj.A_in_w_hetero.indices(), 'edge_weight_in_hetero': graph_obj.A_in_w_hetero.values(),

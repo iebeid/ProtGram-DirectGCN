@@ -132,31 +132,29 @@ class GNNBenchmarker:
         elif name == "DirectGCN":
             # The DirectGCN model has a complex signature that must be
             # adapted for standard benchmark datasets.
-            # --- MODIFICATION: Define DirectGCN with the same deep, hierarchical
-            # architecture used in the main ProtGram pipeline. ---
             layer_dims = [data.num_features] + config.GCN_HIDDEN_LAYER_DIMS
-            # --- NEW: Use the override if provided, otherwise use the global config setting ---
-            use
+            # --- FIX: The dynamic override is now the only source of truth. Default to False if not provided. ---
+            use_homo_hetero = use_homo_hetero_override if use_homo_hetero_override is not None else False
             return DirectGCN(
                 layer_dims=layer_dims,
                 num_graph_nodes=data.num_nodes,
                 # The internal decoder will map the final GNN embedding to the number of classes
                 task_num_output_classes=num_classes,
                 n_gram_len=1,  # Mimics n=1 level; PE is skipped if feature dim doesn't match
-                # --- FIX: Use the actual feature dim for benchmark consistency ---
-                one_gram_dim=data.num_features,
-                max_pe_len=self.config.GCN_MAX_PE_LEN,
-                dropout=self.config.GCN_DROPOUT_RATE, use_homo_hetero_paths=self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS,
-                gating_mode=self.config.GCN_GATING_COEFF_MODE
+                one_gram_dim=data.num_features,  # Use actual feature dim for benchmark consistency
+                max_pe_len=config.GCN_MAX_PE_LEN,
+                dropout=config.GCN_DROPOUT_RATE,
+                use_homo_hetero_paths=use_homo_hetero,
+                gating_mode=config.GCN_GATING_COEFF_MODE
             )
         else:
             raise ValueError(f"Model '{name}' not found in GNNBenchmarker.")
 
-    def _preprocess_for_custom_models(self, data: Data) -> Data:
+    def _preprocess_for_custom_models(self, data: Data, use_homo_hetero_paths: bool) -> Data:
         """Prepares a data object with all necessary edge indices for custom models."""
         # --- NEW: Split edges by homophily using node labels for benchmarks ---
         # This allows testing the homophily-aware architecture on standard datasets.
-        if self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS:
+        if use_homo_hetero_paths:
             edge_index = data.edge_index
             y = data.y
             # --- FIX: Propagate original edge weights to homophily/heterophily paths ---
@@ -346,9 +344,6 @@ class GNNBenchmarker:
         data.x = torch.randn((data.num_nodes, new_feature_dim))
         # The data.num_features property will now automatically reflect the new dimension.
 
-        # Preprocess data once for all custom models
-        data = self._preprocess_for_custom_models(data)
-
         # --- NEW: Dynamic Architecture Selection for DirectGCN ---
         # Calculate the graph's homophily to decide whether to use the specialized paths.
         # This allows the model to adapt to the dataset's characteristics.
@@ -357,8 +352,9 @@ class GNNBenchmarker:
         is_heterophilic = homophily_ratio < 0.6
         print(f"  Dataset Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
 
-        # Create a temporary config override for this specific run
-        run_config = self.config
+        # Preprocess data once for all custom models based on the dynamic decision
+        data = self._preprocess_for_custom_models(data, use_homo_hetero_paths=is_heterophilic)
+
         if is_heterophilic:
             print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.")
 
@@ -374,11 +370,9 @@ class GNNBenchmarker:
                     mlflow.log_param("learning_rate", 0.01)  # As hardcoded in train_and_evaluate
                     mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
-                    # --- FIX: Dynamically enable homophily paths for DirectGCN on this run ---
-                    if model_name == "DirectGCN":
-                        run_config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS = is_heterophilic
-
-                    model = self._get_model(model_name, data, num_classes, run_config)
+                    # Pass the dynamic decision as a temporary override
+                    use_homo_override = is_heterophilic if model_name == "DirectGCN" else None
+                    model = self._get_model(model_name, data, num_classes, self.config, use_homo_hetero_override=use_homo_override)
 
                     if self.config.DEBUG_VERBOSE:
                         print("  Model Architecture:")

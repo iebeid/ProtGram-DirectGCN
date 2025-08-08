@@ -195,7 +195,7 @@ class ProtGramXGCNTrainer:
             self._train_single_level(model, graph_obj, data, optimizer, use_homo_hetero_paths_for_level)
 
             ngram_embeddings_per_level[n] = EmbeddingProcessor.extract_gcn_node_embeddings(
-                model, data, graph_obj, self.config, self.device,
+                model, data, graph_obj, self.config, self.device, use_homo_hetero_paths_for_level,
                 lambda g: self._partition_graph(g)
             )
 
@@ -207,17 +207,17 @@ class ProtGramXGCNTrainer:
 
         return ngram_embeddings_per_level, hierarchical_attention_per_level
 
-    def _build_model(self, model_type: str, n_val: int, in_channels: int, num_classes: int, num_nodes: int) -> Optional[nn.Module]:
+    def _build_model(self, model_type: str, n_val: int, in_channels: int, num_classes: int, graph_obj: DirectedNgramGraph, use_homo_hetero_paths: bool) -> Optional[nn.Module]:
         """Model factory for creating different GNN architectures."""
         layer_dims = [in_channels] + self.config.GCN_HIDDEN_LAYER_DIMS
         if num_classes <= 0: num_classes = 1
 
         if model_type == 'directgcn':
             return DirectGCN(
-                layer_dims=layer_dims, num_graph_nodes=num_nodes,
+                layer_dims=layer_dims, num_graph_nodes=graph_obj.number_of_nodes,
                 task_num_output_classes=num_classes,
                 n_gram_len=n_val,
-                use_homo_hetero_paths=self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS,
+                use_homo_hetero_paths=use_homo_hetero_paths,
                 one_gram_dim=self.config.GCN_1GRAM_INIT_DIM, max_pe_len=self.config.GCN_MAX_PE_LEN,
                 dropout=self.config.GCN_DROPOUT_RATE, gating_mode=self.config.GCN_GATING_COEFF_MODE
             )
@@ -229,22 +229,22 @@ class ProtGramXGCNTrainer:
             print(f"  ERROR: Unknown model type '{model_type}' for ProtGram training.")
             return None
 
-    def _train_single_level(self, model: nn.Module, graph_obj: DirectedNgramGraph, data: Data, optimizer: torch.optim.Optimizer):
+    def _train_single_level(self, model: nn.Module, graph_obj: DirectedNgramGraph, data: Data, optimizer: torch.optim.Optimizer, use_homo_hetero_paths: bool):
         """Orchestrates the training for a single level, choosing between full-batch and clustered training."""
         task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(graph_obj.n_value, self.config.GCN_DEFAULT_TASK_TYPE)
 
         if self.config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
             node_partitions = self._partition_graph(graph_obj)
-            self._train_single_level_clustered(model, data, node_partitions, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type)
+            self._train_single_level_clustered(model, data, node_partitions, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, use_homo_hetero_paths)
         else:
-            self._train_single_level_full_batch(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type)
+            self._train_single_level_full_batch(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, use_homo_hetero_paths)
 
     def _train_single_level_full_batch(self, model: nn.Module, data: Data, optimizer: torch.optim.Optimizer, epochs: int,
-                                       task_type: str):
+                                       task_type: str, use_homo_hetero_paths: bool):
         """Full-batch training logic for a single GNN level."""
         model.train()
         model.to(self.device)
-        full_data_gpu = self._prepare_data_for_model(model.__class__.__name__.lower(), data.graph_obj, data.x, data.y).to(self.device)
+        full_data_gpu = self._prepare_data_for_model(model.__class__.__name__.lower(), data.graph_obj, data.x, data.y, use_homo_hetero_paths).to(self.device)
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE, factor=self.config.GCN_LR_SCHEDULER_FACTOR) if self.config.GCN_USE_LR_SCHEDULER else None
         early_stopper = EarlyStopper(patience=self.config.GCN_EARLY_STOPPING_PATIENCE, min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA) if self.config.GCN_USE_EARLY_STOPPING else None
@@ -268,7 +268,7 @@ class ProtGramXGCNTrainer:
                 break
 
     def _train_single_level_clustered(self, model: nn.Module, full_data: Data, node_partitions: List[List[int]],
-                                      optimizer: torch.optim.Optimizer, epochs: int, task_type: str):
+                                      optimizer: torch.optim.Optimizer, epochs: int, task_type: str, use_homo_hetero_paths: bool):
         """Clustered training logic for a single GNN level."""
         model.train()
         model.to(self.device)
@@ -286,7 +286,8 @@ class ProtGramXGCNTrainer:
                     model_type=model.__class__.__name__.lower(),
                     full_features=full_data.x,
                     full_labels=full_data.y,
-                    node_subset=torch.tensor(node_idx_batch, dtype=torch.long)
+                    node_subset=torch.tensor(node_idx_batch, dtype=torch.long),
+                    use_homo_hetero_paths=use_homo_hetero_paths
                 ).to(self.device)
 
                 optimizer.zero_grad()
@@ -335,7 +336,7 @@ class ProtGramXGCNTrainer:
         print(f"  Graph partitioned into {len(cluster_list)} clusters.")
         return cluster_list
 
-    def _prepare_data_for_model(self, model_type: str, graph: DirectedNgramGraph, features: torch.Tensor, labels: torch.Tensor) -> Data:
+    def _prepare_data_for_model(self, model_type: str, graph: DirectedNgramGraph, features: torch.Tensor, labels: torch.Tensor, use_homo_hetero_paths: bool) -> Data:
         """Prepares a PyG Data object tailored to the specific model's needs for full-batch training."""
         data_dict = {'x': features, 'y': labels}
 
@@ -351,7 +352,7 @@ class ProtGramXGCNTrainer:
             # intended expressive power. The mathcal_A matrices are computed for use
             # by other, more standard GNN models if they were to be used in this pipeline.
 
-            if self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS and graph.A_out_w_homo is not None:
+            if use_homo_hetero_paths and graph.A_out_w_homo is not None:
                 print("  Preparing data with separate homophily/heterophily paths.")
                 data_dict.update({
                     'edge_index_in_homo': graph.A_in_w_homo.indices(), 'edge_weight_in_homo': graph.A_in_w_homo.values(),
