@@ -205,10 +205,9 @@ class SingletonXGCNTrainer:
             data_dict['edge_index'] = self.graph.A_out_w.indices()
             data_dict['edge_index_backward'] = self.graph.A_in_w.indices()
         else:  # GCN, GAT, etc.
-            # Most standard GNNs work best with the undirected, normalized adjacency matrix.
-            # Here we use mathcal_A for consistency with older GCN versions, though A_undirected_norm_sparse is often better.
-            # This could be a point of experimentation.
-            data_dict['edge_index'] = self.graph.mathcal_A_out.indices()
-            data_dict['edge_attr'] = self.graph.mathcal_A_out.values()
+            # --- FIX: Standard GNNs must use the standard, symmetrically normalized graph representation. ---
+            # Using the custom mathcal_A matrix was causing these models to fail to train.
+            data_dict['edge_index'] = self.graph.A_undirected_norm_sparse.indices()
+            data_dict['edge_attr'] = self.graph.A_undirected_norm_sparse.values()
 
         return Data.from_dict(data_dict)
