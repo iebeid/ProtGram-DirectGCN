@@ -249,9 +249,9 @@ class Config:
 
         # Self-Supervised Tasks
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
-            1: "community", 2: "next_node", 3: "next_node",
+            1: "next_node", 2: "next_node", 3: "next_node",
         }
-        self.GCN_DEFAULT_TASK_TYPE: str = "community"
+        self.GCN_DEFAULT_TASK_TYPE: str = "next_node"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
 
         # Cluster-GCN Strategy

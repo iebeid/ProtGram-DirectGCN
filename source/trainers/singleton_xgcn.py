@@ -205,9 +205,17 @@ class SingletonXGCNTrainer:
             data_dict['edge_index'] = self.graph.A_out_w.indices()
             data_dict['edge_index_backward'] = self.graph.A_in_w.indices()
         else:  # GCN, GAT, etc.
-            # --- FIX: Standard GNNs must use the standard, symmetrically normalized graph representation. ---
-            # Using the custom mathcal_A matrix was causing these models to fail to train.
-            data_dict['edge_index'] = self.graph.A_undirected_norm_sparse.indices()
-            data_dict['edge_attr'] = self.graph.A_undirected_norm_sparse.values()
+            # --- FIX: Provide a more informative graph to standard GNNs for a fairer comparison. ---
+            # Instead of the pre-normalized undirected graph, we provide the full set of
+            # directed edges (treated as an undirected set) with their raw weights. This gives
+            # the model more information to work with and avoids reinforcing a homophily assumption.
+            edge_index_out = self.graph.A_out_w.indices()
+            edge_weights_out = self.graph.A_out_w.values()
+            edge_index_in = self.graph.A_in_w.indices()
+            edge_weights_in = self.graph.A_in_w.values()
+
+            # Combine forward and backward edges to represent the full graph structure
+            data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
+            data_dict['edge_attr'] = torch.cat([edge_weights_out, edge_weights_in], dim=0)
 
         return Data.from_dict(data_dict)
