@@ -23,7 +23,6 @@ import pyarrow.parquet as pq
 
 from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
-from source.trainers.singleton_xgcn import SingletonXGCNTrainer
 from source.utils.data import DataUtils, FastaUtils, ProtgramDaskHelpers
 
 
@@ -40,17 +39,13 @@ class ProtGramBuilder:
         print(
             f"GraphBuilder initialized: n_max={self.n_max}, configured_workers={self.num_workers_config}, output_dir='{self.output_dir}'")
         DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
-
-    def run(self, run_singleton_eval: bool = True) -> Optional[pd.DataFrame]:
+    def run(self) -> None:
         """
         Main execution function for the graph builder.
 
         This method orchestrates the entire graph construction process, from
         reading sequences to building and saving the final graph objects for
         each n-gram level. It also triggers the singleton evaluation if configured.
-
-        Args:
-            run_singleton_eval (bool): If True, runs the rapid evaluation on the n=1 graph.
 
         Returns:
             Optional[pd.DataFrame]: A DataFrame with the singleton evaluation results, or None.
@@ -70,7 +65,7 @@ class ProtGramBuilder:
         if all_graphs_exist:
             print("\nAll required n-gram graph objects already exist in the output directory.")
             DataUtils.print_header(f"N-gram Graph Building SKIPPED (Files exist)")
-            return None
+            return
         # --- END Check ---
 
         if os.path.exists(self.temp_dir):
@@ -108,12 +103,12 @@ class ProtGramBuilder:
             sequence_stream_list = list(get_preprocessed_sequence_stream())
             if not sequence_stream_list:
                 print("ERROR: No sequences found in the FASTA file. Cannot proceed.")
-                return None
+                return
             print(f"  Loaded {len(sequence_stream_list)} sequences from FASTA.")
         except FileNotFoundError:
             print(f"ERROR: One or more FASTA files not found in {self.protein_sequence_files}")
             return
-        except MemoryError as e_mem_seq_list:
+        except (MemoryError, ValueError) as e_mem_seq_list:
             print(f"ERROR: Memory error creating sequence list from FASTA: {e_mem_seq_list}.")
             return
 
@@ -249,7 +244,6 @@ class ProtGramBuilder:
 
         DataUtils.print_header("Phase 2: Building and saving final graph objects")
         phase2_start_time = time.monotonic()
-        singleton_results_df = None
         for n in n_values:
             print(f"\n--- Processing n = {n} for final graph object ---")
             ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
@@ -344,14 +338,6 @@ class ProtGramBuilder:
 
             del graph_object, idx_to_node
 
-            # --- NEW: Singleton Evaluation Trigger ---
-            if n == 1 and self.config.RUN_SINGLETON_GCN_EVAL and run_singleton_eval:
-                # Reload the object to ensure it's clean for the trainer
-                fresh_graph_obj = DataUtils.load_object(output_path)
-                singleton_trainer = SingletonXGCNTrainer(self.config, fresh_graph_obj)
-                singleton_results_df = singleton_trainer.run()
-                # The prompt is now handled in main.py after all benchmarks are done.
-                self._display_singleton_results(singleton_results_df)
             gc.collect()
 
         print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.")
@@ -362,25 +348,4 @@ class ProtGramBuilder:
             shutil.rmtree(self.temp_dir)
             print(f"  Temporary directory {self.temp_dir} cleaned up.")
         print(f"<<< Phase 3 finished in {time.monotonic() - phase3_start_time:.2f}s.")
-
         DataUtils.print_header(f"N-gram Graph Building FINISHED in {time.monotonic() - overall_start_time:.2f}s")
-        return singleton_results_df
-
-    def _display_singleton_results(self, results_df: Optional[pd.DataFrame]):
-        """Displays the results of the singleton evaluation."""
-        DataUtils.print_header("Singleton GCN (n=1) Rapid Evaluation Results")
-        if results_df is not None and not results_df.empty:
-            print("This is a quick evaluation to check if the model architecture is learning.")
-            print("Results on the test split of the n=1 graph nodes:")
-
-            # Create a DataFrame for better formatting
-            df = results_df.copy()
-            # Format float columns
-            float_cols = df.select_dtypes(include=['float']).columns
-            for col in float_cols:
-                df[col] = df[col].map('{:.4f}'.format)
-
-            print(df.to_string(index=False))
-
-        else:
-            print("Singleton evaluation did not produce any metrics.")

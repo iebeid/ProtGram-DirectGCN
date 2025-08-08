@@ -257,18 +257,28 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
 
     # --- Step 2: Run the n=1 ProtGramBuilder and Singleton GCN Evaluation ---
     if config.RUN_SINGLETON_GCN_EVAL:
-        DataUtils.print_header("Running Singleton (n=1) Graph Evaluation")
+        DataUtils.print_header("Ensuring n=1 Graph is Built for Singleton Evaluation")
         singleton_config = copy.deepcopy(config)
         singleton_config.GCN_NGRAM_MAX_N = 1
-        singleton_results_df = ProtGramBuilder(singleton_config).run(run_singleton_eval=True)
+        # This will build the n=1 graph or skip if it already exists.
+        ProtGramBuilder(singleton_config).run()
 
-        if singleton_results_df is not None and not singleton_results_df.empty:
-            # Standardize singleton results to fit the benchmark table
-            singleton_results_df = singleton_results_df.rename(columns={'Model': 'model'})
-            singleton_results_df['dataset'] = f"ProtGram_n1_Singleton_{fasta_file_path.stem}"
-            singleton_results_df['error'] = None
-            # The columns should already match the new format.
-            all_benchmark_results.append(singleton_results_df)
+        # Now, explicitly load the graph and run the evaluation.
+        n1_graph_path = singleton_config.RESULTS_GRAPH_OBJECTS_DIR / "ngram_graph_n1.pkl"
+        if n1_graph_path.exists():
+            print("  n=1 graph found. Proceeding with singleton evaluation...")
+            from source.data_builders.graph import DirectedNgramGraph
+            from source.trainers.singleton_xgcn import SingletonXGCNTrainer
+            n1_graph: DirectedNgramGraph = DataUtils.load_object(str(n1_graph_path))
+            if n1_graph:
+                singleton_results_df = SingletonXGCNTrainer(singleton_config, n1_graph).run()
+                if singleton_results_df is not None and not singleton_results_df.empty:
+                    singleton_results_df = singleton_results_df.rename(columns={'Model': 'model'})
+                    singleton_results_df['dataset'] = f"ProtGram_n1_Singleton_{fasta_file_path.stem}"
+                    singleton_results_df['error'] = None
+                    all_benchmark_results.append(singleton_results_df)
+        else:
+            print(f"  Warning: n=1 graph not found at {n1_graph_path}. Skipping singleton evaluation.")
 
     # --- Step 3: Display the aggregated summary ---
     _display_aggregated_benchmark_summary(all_benchmark_results)
