@@ -16,10 +16,10 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from sklearn.metrics import f1_score, precision_score, recall_score
-from torch_geometric.data import Data
+from torch_geometric.data import Data, Dataset
 from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 from torch_geometric.transforms import ToUndirected
-from torch_geometric.utils import to_undirected
+from torch_geometric.utils import to_undirected, homophily
 
 from configuration.config import Config
 from source.models.gnn.spectral.chebnet import ChebNet
@@ -141,7 +141,8 @@ class GNNBenchmarker:
                 # The internal decoder will map the final GNN embedding to the number of classes
                 task_num_output_classes=num_classes,
                 n_gram_len=1,  # Mimics n=1 level; PE is skipped if feature dim doesn't match
-                one_gram_dim=self.config.GCN_1GRAM_INIT_DIM,
+                # --- FIX: Use the actual feature dim for benchmark consistency ---
+                one_gram_dim=data.num_features,
                 max_pe_len=self.config.GCN_MAX_PE_LEN,
                 dropout=self.config.GCN_DROPOUT_RATE, use_homo_hetero_paths=self.config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS,
                 gating_mode=self.config.GCN_GATING_COEFF_MODE
@@ -346,6 +347,19 @@ class GNNBenchmarker:
         # Preprocess data once for all custom models
         data = self._preprocess_for_custom_models(data)
 
+        # --- NEW: Dynamic Architecture Selection for DirectGCN ---
+        # Calculate the graph's homophily to decide whether to use the specialized paths.
+        # This allows the model to adapt to the dataset's characteristics.
+        homophily_ratio = homophily(data.edge_index, data.y, method='edge')
+        # A common threshold is 0.6. Below this, the graph is considered heterophilic.
+        is_heterophilic = homophily_ratio < 0.6
+        print(f"  Dataset Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
+
+        # Create a temporary config override for this specific run
+        run_config = self.config
+        if is_heterophilic:
+            print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.")
+
         results = []
         for model_name in self.config.BENCHMARK_GNN_MODELS_TO_RUN:
             print(f"\n--- Benchmarking Model: {model_name} on Dataset: {variant_name} ---")
@@ -358,7 +372,12 @@ class GNNBenchmarker:
                     mlflow.log_param("learning_rate", 0.01)  # As hardcoded in train_and_evaluate
                     mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
-                    model = self._get_model(model_name, data, num_classes)
+                    # --- FIX: Dynamically enable homophily paths for DirectGCN on this run ---
+                    if model_name == "DirectGCN":
+                        run_config.GCN_USE_HOMOPHILY_HETEROPHILY_PATHS = is_heterophilic
+
+                    model = self._get_model(model_name, data, num_classes, run_config)
+
                     if self.config.DEBUG_VERBOSE:
                         print("  Model Architecture:")
                         print(model)
