@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: models/gnn/gin.py
 # PURPOSE: A standard implementation of the Graph Isomorphism Network (GIN).
-# VERSION: 3.4 (Corrected forward pass to use edge weights)
+# VERSION: 3.5 (Corrected forward pass to NOT use edge weights, which GINConv does not support)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -79,7 +79,7 @@ class GIN(nn.Module):
             - The final logits for classification.
             - The node embeddings from the last hidden layer.
         """
-        x, edge_index, edge_weight = data.x, data.edge_index, getattr(data, 'edge_attr', None)
+        x, edge_index
 
         # Handle the single-layer case
         if len(self.convs) == 1:

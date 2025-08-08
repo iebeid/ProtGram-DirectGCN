@@ -2,21 +2,20 @@
 # MODULE: models/gnn/rgcn.py
 # PURPOSE: A standard implementation of the Relational Graph Convolutional
 #          Network (RGCN).
-# VERSION: 4.3 (Corrected forward pass indexing)
-# AUTHOR: Islam Ebeid
+# VERSION: 5.0 (Refactored to be standalone and correctly handle edge_type)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 from typing import Tuple
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import RGCNConv
 
-from source.models.gnn.base import GNN
 
-
-class RGCN(GNN):
+class RGCN(nn.Module):
     """
     A standard Relational Graph Convolutional Network (RGCN) model.
     This architecture is designed for node classification on graphs with multiple
