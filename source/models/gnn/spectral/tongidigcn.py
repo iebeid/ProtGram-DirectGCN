@@ -53,15 +53,21 @@ class TongDiGCN(nn.Module):
             - The final logits for classification.
             - The concatenated node embeddings from the forward and backward GCNs.
         """
-        # Create a new Data object for the forward pass
-        data_forward = Data(x=data.x, edge_index=data.edge_index, edge_attr=getattr(data, 'edge_attr', None))
+        # --- FIX: Use specific directed attributes if available to avoid conflict with benchmarker preprocessing ---
+        # The benchmarker may overwrite `data.edge_index` for other models. This makes TongDiGCN robust.
+        fwd_idx = getattr(data, 'edge_index_out', data.edge_index)
+        fwd_w = getattr(data, 'edge_weight_out', None)
+        data_forward = Data(x=data.x, edge_index=fwd_idx, edge_attr=fwd_w)
         # The GCN model returns (logits, embeddings). We use the embeddings.
         _, x_forward = self.gcn_forward(data_forward)
 
         # Create a new Data object for the backward pass
         if not hasattr(data, 'edge_index_backward'):
             raise ValueError("TongDiGCN requires 'edge_index_backward' in the Data object.")
-        data_backward = Data(x=data.x, edge_index=data.edge_index_backward, edge_attr=getattr(data, 'edge_attr', None))
+
+        bwd_idx = getattr(data, 'edge_index_in', data.edge_index_backward)
+        bwd_w = getattr(data, 'edge_weight_in', None)
+        data_backward = Data(x=data.x, edge_index=bwd_idx, edge_attr=bwd_w)
         _, x_backward = self.gcn_backward(data_backward)
 
         # Concatenate the outputs from both GCNs to form the final embeddings
