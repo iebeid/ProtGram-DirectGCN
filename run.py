@@ -60,9 +60,9 @@ def is_environment_valid(project_root: Path) -> bool:
             if not in_dependencies_section:
                 continue
 
-            # --- FIX: The original parsing logic was brittle and case-sensitive ---
             line = line.strip()
-            if not line or line.startswith(('#', 'name:', 'channels:', 'prefix:', 'pip:')):
+            # Skip comments, metadata, and empty lines
+            if not line or line.startswith(('#', 'name:', 'channels:', 'prefix:')):
                 continue
 
             # The actual package spec starts after the YAML list marker '- '
@@ -70,7 +70,12 @@ def is_environment_valid(project_root: Path) -> bool:
             if line.startswith('- '):
                 package_spec = line[2:].strip()
 
-            # NEW: A more robust parser for package names with various version specifiers.
+            # --- FIX: Skip the 'pip:' section header, which is not a package ---
+            # The previous logic incorrectly identified '- pip:' as a package named 'pip:'.
+            if package_spec == 'pip:':
+                continue
+
+            # A more robust parser for package names with various version specifiers.
             package_name = package_spec.split('=')[0].split('>')[0].split('<')[0].strip()
 
             # The package name in yml (e.g., scikit-learn) should match conda list output.
