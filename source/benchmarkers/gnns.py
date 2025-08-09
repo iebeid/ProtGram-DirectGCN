@@ -204,6 +204,11 @@ class GNNBenchmarker:
         # The BaseGNN class expects weights in `edge_attr`. Without this, standard
         # models (GCN, GAT, etc.) were treating the graph as unweighted.
         data.edge_attr = data.edge_weight_undirected_norm
+
+        # --- NEW FIX: Ensure the edge_index and edge_attr are consistent for BaseGNN ---
+        # The BaseGNN forward pass uses `data.edge_index`. We must ensure it matches
+        # the `data.edge_attr` we just assigned to prevent shape mismatches.
+        data.edge_index = data.edge_index_undirected_norm
         return data
 
     def _get_1d_mask(self, mask_tensor: torch.Tensor) -> torch.Tensor:
