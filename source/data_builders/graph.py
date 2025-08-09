@@ -319,6 +319,12 @@ class DirectedNgramGraph(Graph):
         mathcal_A_with_self_loops_sparse = (mathcal_A_base_sparse + identity_sparse).coalesce()
         print_sparse_info(mathcal_A_with_self_loops_sparse, "mathcal_A_final", current_n_val)
         del mathcal_A_base_sparse, identity_sparse
+        if not torch.all(torch.isfinite(mathcal_A_with_self_loops_sparse.values())):
+            print("  ERROR: Mathcal_A_with_self_loops contains non-finite values (NaN or Inf). Skipping matrix.")
+            # If there are non-finite values, replace with a zero tensor
+            empty_indices = torch.empty((2, 0), dtype=torch.long, device=dev)
+            empty_values = torch.empty(0, dtype=torch.float32, device=dev)
+            mathcal_A_with_self_loops_sparse = torch.sparse_coo_tensor(empty_indices, empty_values, (num_nodes, num_nodes)).coalesce()
 
         return mathcal_A_with_self_loops_sparse
 

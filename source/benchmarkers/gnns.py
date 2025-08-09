@@ -374,7 +374,7 @@ class GNNBenchmarker:
                     mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
                     use_homo_override = is_heterophilic if model_name == "DirectGCN" else None
-                    model = self._get_model(model_name, data, num_classes, self.config, use_homo_hetero_override=use_homo_override)
+                    model = self._get_model(model_name, data, num_classes, self.config, use_homo_hetero_override=is_heterophilic)
 
                     if self.config.DEBUG_VERBOSE:
                         print("  Model Architecture:")
