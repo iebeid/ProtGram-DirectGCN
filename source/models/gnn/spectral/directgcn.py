@@ -283,7 +283,7 @@ class DirectGCN(nn.Module):
             h = F.dropout(h, p=self.dropout, training=self.training)
 
         final_embed_for_task = h
-        logits = self.decoder_fc(final_embed_for_task)
         final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
+        logits = self.decoder_fc(final_embed_for_task)
 
         return logits, final_normalized_embeddings

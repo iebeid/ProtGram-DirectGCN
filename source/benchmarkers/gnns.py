@@ -370,7 +370,7 @@ class GNNBenchmarker:
                     mlflow.set_tag("model_name", model_name)
                     mlflow.set_tag("dataset_name", variant_name)
                     mlflow.log_param("epochs", self.config.EVAL_EPOCHS)
-                    mlflow.log_param("learning_rate", 0.01)
+                    mlflow.log_param("learning_rate", 0.01)  # FIX no learning rate
                     mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
                     use_homo_override = is_heterophilic if model_name == "DirectGCN" else None
@@ -380,7 +380,7 @@ class GNNBenchmarker:
                         print("  Model Architecture:")
                         print(model)
 
-                    metrics, history_df = self.train_and_evaluate(model, data)
+                    metrics, history_df = self.train_and_evaluate(model, data) #FIX Expected target size [120, 5], got [120] for every data except karate
                     result_row = {"dataset": variant_name, "model": model_name, "error": None}
                     result_row.update(metrics)
                     results.append(result_row)
