@@ -149,7 +149,6 @@ class DirectGCNLayer(MessagePassing):
         h_main_undir = self.propagate(data.edge_index_undirected_norm, x=self.lin_undirected(x), edge_weight=data.edge_weight_undirected_norm) + self.bias_undirected
         path_combinations.append(self.proj_in(torch.cat([h_main_in, h_shared + self.bias_shared_in], dim=-1)))
         path_combinations.append(self.proj_out(torch.cat([h_main_out, h_shared + self.bias_shared_out], dim=-1)))
-        path_combinations.append(self.proj_undir(torch.cat([h_main_undir, h_shared + self.bias_shared_undir], dim=-1)))
 
         # Conditional paths for homophily/heterophily
         if self.use_homo_hetero_paths:
@@ -159,52 +158,41 @@ class DirectGCNLayer(MessagePassing):
             path_combinations.append(self.proj_homo(torch.cat([h_homo, h_shared + self.bias_shared_undir], dim=-1)))
             path_combinations.append(self.proj_hetero(torch.cat([h_hetero, h_shared + self.bias_shared_undir], dim=-1)))
 
-        # --- 3. Get Gating Coefficients ---
-        gating_logits_list = []
-        if self.gating_mode in ['vector', 'node_gate_vector']:
-            gating_logits_list.extend([self.C_in_vec, self.C_out_vec, self.C_undirected_vec])
-            if self.use_homo_hetero_paths:
-                gating_logits_list.extend([self.C_homo_vec, self.C_hetero_vec])
-
-            gating_logits_full = torch.stack(gating_logits_list, dim=-1)
-            if original_indices is not None:
-                gating_logits = gating_logits_full[original_indices]
-                constant_term = self.constant[original_indices] if self.constant is not None else 0
-            else:
-                gating_logits = gating_logits_full
-                constant_term = self.constant if self.constant is not None else 0
-        elif self.gating_mode == 'scalar':
-            gating_logits_list.extend([self.C_in, self.C_out, self.C_undirected])
-            if self.use_homo_hetero_paths:
-                gating_logits_list.extend([self.C_homo, self.C_hetero])
-            gating_logits = torch.cat(gating_logits_list, dim=0)
-            constant_term = 0  # No node-specific constant in scalar mode
-        else:
+        # --- 3. Get Gating Coefficients and combine paths ---
+        if self.gating_mode == 'none':
             # 'none' mode, just sum the combinations
             final_combination = torch.stack(path_combinations, dim=0).sum(dim=0)
-            return final_combination
+        else:
+            # Handle 'scalar', 'vector', and 'node_gate_vector' modes
+            gating_logits_list = []
+            if self.gating_mode in ['vector', 'node_gate_vector']:
+                gating_logits_list.extend([self.C_in_vec, self.C_out_vec, self.C_undirected_vec])
+                if self.use_homo_hetero_paths:
+                    gating_logits_list.extend([self.C_homo_vec, self.C_hetero_vec])
+                gating_logits_full = torch.stack(gating_logits_list, dim=-1)
+                gating_logits = gating_logits_full[original_indices] if original_indices is not None else gating_logits_full
+            else:  # scalar mode
+                gating_logits_list.extend([self.C_in, self.C_out, self.C_undirected])
+                if self.use_homo_hetero_paths:
+                    gating_logits_list.extend([self.C_homo, self.C_hetero])
+                gating_logits = torch.cat(gating_logits_list, dim=0)
 
-        # --- FIX: Use sigmoid for independent, non-competitive gating ---
-        # Softmax forces a zero-sum competition between paths, which can be unstable
-        # on small or extremely homophilic/heterophilic graphs by forcing the model
-        # to discard potentially useful paths. Sigmoid allows the model to learn to
-        # use multiple paths simultaneously by weighting each path independently.
-        gating_weights = torch.sigmoid(gating_logits)
-        # --- FIX: Memory-efficient combination to prevent CUDA OOM on large graphs ---
-        # The original torch.stack created a large intermediate tensor. This loop is equivalent but uses less memory.
-        final_combination = torch.zeros_like(path_combinations[0])
-        # --- FIX: Handle scalar and vector gating modes with correct broadcasting ---
-        if self.gating_mode == 'scalar':
-            for i, path_emb in enumerate(path_combinations):
-                # gating_weights[i] is a scalar, broadcasts over path_emb
-                final_combination += gating_weights[i] * path_emb
-        else:  # vector and node_gate_vector modes
-            for i, path_emb in enumerate(path_combinations):
-                # gating_weights shape is [num_nodes, gate_dim, num_paths]
-                # gating_weights[:, :, i] has shape [num_nodes, gate_dim]
-                final_combination += gating_weights[:, :, i] * path_emb
+            gating_weights = torch.sigmoid(gating_logits)
+            final_combination = torch.zeros_like(path_combinations[0])
+            if self.gating_mode == 'scalar':
+                for i, path_emb in enumerate(path_combinations):
+                    final_combination += gating_weights[i] * path_emb
+            else:  # vector and node_gate_vector modes
+                for i, path_emb in enumerate(path_combinations):
+                    final_combination += gating_weights[:, :, i] * path_emb
 
-        final_combination += constant_term
+        # --- 4. Add the learnable node-specific constant ---
+        # This is applied after gating, acting as a final node-specific bias.
+        # It is intentionally not applied in 'scalar' mode, as per the original logic.
+        if self.gating_mode != 'scalar' and self.constant is not None:
+            constant_term = self.constant[original_indices] if original_indices is not None else self.constant
+            final_combination += constant_term
+
         return final_combination
 
     def message(self, x_j: torch.Tensor, edge_weight: Optional[torch.Tensor]) -> torch.Tensor:
@@ -234,6 +222,7 @@ class DirectGCN(nn.Module):
 
         self.convs = nn.ModuleList()
         self.res_projs = nn.ModuleList()
+        self.layer_norms = nn.ModuleList()
 
         if not layer_dims or len(layer_dims) < 2:
             raise ValueError("layer_dims must contain at least input and output dimensions (length >= 2).")
@@ -244,6 +233,7 @@ class DirectGCN(nn.Module):
             self.convs.append(
                 DirectGCNLayer(in_dim, out_dim, current_num_nodes, gating_mode, use_homo_hetero_paths))
             self.res_projs.append(nn.Linear(in_dim, out_dim) if in_dim != out_dim else nn.Identity())
+            self.layer_norms.append(nn.LayerNorm(out_dim))
 
         final_embedding_dim = layer_dims[-1]
         decoder_hidden_dim = final_embedding_dim // 2 if final_embedding_dim > 1 else 1
@@ -289,11 +279,13 @@ class DirectGCN(nn.Module):
 
         for i in range(len(self.convs)):
             h_res = h
-            gcn_layer, res_layer = self.convs[i], self.res_projs[i]
+            gcn_layer, res_layer, norm_layer = self.convs[i], self.res_projs[i], self.layer_norms[i]
             # Pass the entire data object to the layer
             gcn_output = gcn_layer(h_res, data)
             residual_output = res_layer(h_res)
-            h = F.leaky_relu(gcn_output + residual_output)
+            h = F.tanh(gcn_output + residual_output)
+            # --- DEFINITIVE FIX: Apply LayerNorm to stabilize activations ---
+            h = norm_layer(h)
             h = F.dropout(h, p=self.dropout, training=self.training)
 
         final_embed_for_task = h
