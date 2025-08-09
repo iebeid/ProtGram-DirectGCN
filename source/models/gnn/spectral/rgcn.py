@@ -65,6 +65,6 @@ class RGCN(nn.Module):
         # The output of the last hidden layer is the embedding
         self.embedding_output = x
         # Apply the final layer to get logits
-        logits = self.convs[-1](x, edge_index, edge_type)
+        logits = self.convs-1
 
         return logits, self.embedding_output
