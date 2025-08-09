@@ -66,7 +66,7 @@ class PPIPipeline:
             new_config = config_item.copy()
 
             # --- FIX: Avoid re-running PCA on an already processed file ---
-            if f"_pca{target_dim}" in original_path.stem:
+            if f".pca_{target_dim}" in original_path.name:
                 print(f"  Skipping PCA for '{original_path.name}' as it appears to be already processed.")
                 processed_configs.append(new_config)
                 continue
@@ -206,6 +206,13 @@ class PPIPipeline:
         skf = StratifiedKFold(n_splits=self.config.EVAL_N_FOLDS, shuffle=True, random_state=self.config.RANDOM_STATE)
         fold_metrics_list: List[Dict[str, Any]] = []
 
+        # --- NEW: Define expected metric keys for consistency across all folds ---
+        expected_metric_keys = (
+            ['precision_sklearn', 'recall_sklearn', 'f1_sklearn', 'auc_sklearn', 'roc_data'] +
+            [f'hits_at_{k}' for k in self.config.EVAL_K_VALUES_FOR_TABLE] +
+            [f'ndcg_at_{k}' for k in self.config.EVAL_K_VALUES_FOR_TABLE]
+        )
+
         first_valid_emb = next((v for v in protein_embeddings.values() if v is not None and v.size > 0), None)
         if first_valid_emb is None:
             aggregated_results['notes'] = "No valid embeddings found for CV."
@@ -240,21 +247,22 @@ class PPIPipeline:
                 print(f"    Fold {fold_num + 1} completed in {time.monotonic() - fold_start_time:.2f}s.")
             except Exception as e:
                 print(f"    ❌ ERROR in Fold {fold_num + 1} for {embedding_name}: {e}")
+                # --- NEW: Add verbose traceback logging for easier debugging ---
+                if self.config.DEBUG_VERBOSE:
+                    import traceback
+                    traceback.print_exc()
                 # Log the failure for this fold if using MLflow
                 if self.config.USE_MLFLOW:
                     with mlflow.start_run(run_name=f"Fold_{fold_num + 1}_FAILED", nested=True):
                         mlflow.set_tag("status", "FAILED")
-                        mlflow.log_param("error", str(e)) # --- FIX: Append NaN metrics to ensure failed folds are counted and do not skew the average ---
+                        mlflow.log_param("error", str(e))
+                # --- FIX: Use a predefined, consistent set of keys for failed folds ---
                 # This prevents silent failures from skewing the final average metrics.
-                keys_to_nan = (fold_metrics_list[0].keys() if fold_metrics_list
-                               else ['precision_sklearn', 'recall_sklearn', 'f1_sklearn', 'auc_sklearn',
-                                     'roc_data'] + [f'hits_at_{k}' for k in self.config.EVAL_K_VALUES_FOR_TABLE] + [
-                                        f'ndcg_at_{k}' for k in self.config.EVAL_K_VALUES_FOR_TABLE])
-                nan_metrics = {key: np.nan for key in keys_to_nan}
+                nan_metrics = {key: np.nan for key in expected_metric_keys}
                 fold_metrics_list.append(nan_metrics)
 
         if fold_metrics_list:
-            metrics_keys = fold_metrics_list[0].keys() - {'roc_data'}
+            metrics_keys = [k for k in expected_metric_keys if k != 'roc_data']
             for key in metrics_keys:
                 values = [fm.get(key, np.nan) for fm in fold_metrics_list]
                 aggregated_results[f'test_{key}'] = np.nanmean(values)

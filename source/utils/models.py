@@ -173,7 +173,8 @@ class EmbeddingProcessor:
         """
         print(f"Applying PCA to file: '{input_h5_path.name}'. Target dimension: {target_dimension}")
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_h5_path = output_dir / f"{input_h5_path.stem}_pca{target_dimension}.h5"
+        # --- FIX: Use a more robust and specific suffix for PCA files ---
+        output_h5_path = output_dir / f"{input_h5_path.stem}.pca_{target_dimension}.h5"
 
         if output_h5_path.exists():
             print(f"  PCA-processed file already exists: {output_h5_path.name}. Skipping.")
@@ -497,10 +498,14 @@ class EmbeddingProcessor:
             parent1_idx = prev_level_map.get(parent1_str)
             parent2_idx = prev_level_map.get(parent2_str)
 
-            if parent1_idx is not None and parent2_idx is not None:
-                p1 = prev_level_embeddings[parent1_idx].astype(np.float32)
-                p2 = prev_level_embeddings[parent2_idx].astype(np.float32)
+            valid_parents = []
+            if parent1_idx is not None:
+                valid_parents.append(prev_level_embeddings[parent1_idx].astype(np.float32))
+            if parent2_idx is not None:
+                valid_parents.append(prev_level_embeddings[parent2_idx].astype(np.float32))
 
+            if len(valid_parents) == 2:
+                p1, p2 = valid_parents[0], valid_parents[1]
                 if strategy == 'attention':
                     # Use a simple attention mechanism based on the dot product with the mean
                     context_vec = (p1 + p2) / 2.0
@@ -518,6 +523,9 @@ class EmbeddingProcessor:
                     }
                 else:  # Default to mean pooling
                     initial_features[node_idx] = (p1 + p2) / 2.0
+            elif len(valid_parents) == 1:
+                # --- FIX: If only one parent is valid, use its embedding directly ---
+                initial_features[node_idx] = valid_parents[0]
 
         return torch.from_numpy(initial_features), hierarchical_attention_log
 

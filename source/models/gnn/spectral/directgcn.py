@@ -130,7 +130,8 @@ class DirectGCNLayer(MessagePassing):
                 nn.init.ones_(self.C_hetero)
 
         if self.constant is not None:
-            nn.init.xavier_uniform_(self.constant)
+            # --- FIX: Initialize bias-like constant to zeros for stability ---
+            nn.init.zeros_(self.constant)
 
     def forward(self, x: torch.Tensor, data: Data) -> torch.Tensor:
         """Forward pass implementing the hierarchical, dual-path logic."""

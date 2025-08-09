@@ -114,6 +114,8 @@ class SingletonXGCNTrainer:
                 if data_for_model.train_mask.sum() > 0:
                     loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask].long())
                     loss.backward()
+                    # --- FIX: Add Gradient Clipping to stabilize training on small/volatile graphs ---
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     optimizer.step()
 
             # Evaluation

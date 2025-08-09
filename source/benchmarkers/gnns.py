@@ -221,7 +221,7 @@ class GNNBenchmarker:
         """Handles the training and evaluation loop for a given model and data."""
         model.to(self.device)
         data = data.to(self.device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
+        optimizer = torch.optim.Adam(model.parameters(), lr=self.config.BENCHMARK_GNN_LEARNING_RATE, weight_decay=5e-4)
 
         best_val_acc = -1
         test_acc_at_best_val = -1
@@ -238,6 +238,8 @@ class GNNBenchmarker:
             target = data.y[train_mask].long()  # Ensure target is Long type
             loss = F.cross_entropy(logits[train_mask], target)
             loss.backward()
+            # --- FIX: Add Gradient Clipping to stabilize training on small/volatile graphs ---
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             model.eval()
@@ -380,8 +382,8 @@ class GNNBenchmarker:
                 try:
                     mlflow.set_tag("model_name", model_name)
                     mlflow.set_tag("dataset_name", variant_name)
-                    mlflow.log_param("epochs", self.config.EVAL_EPOCHS)
-                    mlflow.log_param("learning_rate", 0.01)  # FIX no learning rate
+                    mlflow.log_param("epochs", self.config.EVAL_EPOCHS) # --- FIX: Use config for LR ---
+                    mlflow.log_param("learning_rate", self.config.BENCHMARK_GNN_LEARNING_RATE)
                     mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
                     use_homo_override = is_heterophilic if model_name == "DirectGCN" else None

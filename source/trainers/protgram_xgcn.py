@@ -257,10 +257,11 @@ class ProtGramXGCNTrainer:
             with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
                 output, _ = model(data=full_data_gpu)
                 loss = criterion(output, full_data_gpu.y)
-            # --- FIX: Add Gradient Clipping to prevent exploding gradients on small/volatile graphs ---
-            # This is crucial for stabilizing training for complex models like DirectGCN.
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.scale(loss).backward()
+            # --- FIX: Correctly order gradient clipping and scaling ---
+            # Unscale gradients before clipping to ensure we clip the true gradients, not the scaled ones.
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(optimizer)
             scaler.update()
             if scheduler: scheduler.step(loss)
@@ -297,10 +298,11 @@ class ProtGramXGCNTrainer:
                 with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
                     output, _ = model(data=subgraph_data)
                     loss = criterion(output, subgraph_data.y)
-                # --- FIX: Add Gradient Clipping to prevent exploding gradients on small/volatile graphs ---
-                # This is crucial for stabilizing training for complex models like DirectGCN.
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 scaler.scale(loss).backward()
+                # --- FIX: Correctly order gradient clipping and scaling ---
+                # Unscale gradients before clipping to ensure we clip the true gradients, not the scaled ones.
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 scaler.step(optimizer)
                 scaler.update()
                 epoch_loss += loss.item()
@@ -379,9 +381,9 @@ class ProtGramXGCNTrainer:
             data_dict['edge_index'] = graph.A_out_w.indices()
             data_dict['edge_index_backward'] = graph.A_in_w.indices()
         else:
-            print(f"  Note: Using standard undirected graph representation for model type '{model_type}'.")
-            data_dict['edge_index'] = graph.A_undirected_norm_sparse.indices()
-            data_dict['edge_attr'] = graph.A_undirected_norm_sparse.values()
+            # --- FIX: Raise an error for unsupported models to prevent silent failures ---
+            raise ValueError(f"Model type '{model_type}' is not explicitly supported by the ProtGramXGCNTrainer's "
+                             f"data preparation logic. Add a case for it or use a supported model.")
         return Data.from_dict(data_dict)
 
     def _load_id_map(self) -> Optional[Mapping]:

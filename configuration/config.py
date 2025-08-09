@@ -211,13 +211,16 @@ class Config:
         self.BENCHMARK_GAT_HEADS = 8
         self.BENCHMARK_GAT_DROPOUT_RATE = 0.6  # GAT often benefits from higher dropout
         self.BENCHMARK_CHEBNET_K = 3
+        self.BENCHMARK_GNN_LEARNING_RATE = 0.01
         self.BENCHMARK_RGCN_NUM_RELATIONS = 2
 
     def _setup_gcn_params(self):
         """Sets parameters for the main ProtGram-DirectGCN pipeline."""
         # Graph Building
         self.GCN_NGRAM_MAX_N = 3
-        self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
+        # --- FIX: Safely handle os.cpu_count() returning None ---
+        cpu_cores = os.cpu_count()
+        self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
 
         # ID Mapping
         # Options: 'file' (recommended), 'regex', 'api', 'none'.
@@ -276,7 +279,8 @@ class Config:
         self.GCN_MAX_CLUSTERS = 500
 
         # Post-Processing
-        self.POOLING_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
+        # --- FIX: Safely handle os.cpu_count() returning None ---
+        self.POOLING_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
         self.PCA_TARGET_DIMENSION = 64
         # NEW: Protein-level pooling strategy
         # Strategy for pooling final n-gram embeddings to create a single protein embedding.
