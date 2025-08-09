@@ -228,8 +228,16 @@ class EmbeddingProcessor:
                                         embedding_dim: int) -> Optional[np.ndarray]:
         if not sequence: return np.zeros((0, embedding_dim), dtype=np.float32)
         if not hasattr(w2v_model, 'wv'): return np.zeros((0, embedding_dim), dtype=np.float32)
-        residue_vectors = [w2v_model.wv[residue] for residue in sequence if residue in w2v_model.wv]
-        return np.array(residue_vectors, dtype=np.float32) if residue_vectors else np.zeros((0, embedding_dim), dtype=np.float32)
+        # --- FIX: More memory-efficient implementation ---
+        # Pre-allocate the array and fill it, avoiding a large intermediate list of arrays.
+        valid_residues = [res for res in sequence if res in w2v_model.wv]
+        if not valid_residues:
+            return np.zeros((0, embedding_dim), dtype=np.float32)
+
+        residue_vectors = np.zeros((len(valid_residues), embedding_dim), dtype=np.float32)
+        for i, residue in enumerate(valid_residues):
+            residue_vectors[i] = w2v_model.wv[residue]
+        return residue_vectors
 
     @staticmethod
     def pool_residue_embeddings(residue_embeddings: np.ndarray, strategy: str,

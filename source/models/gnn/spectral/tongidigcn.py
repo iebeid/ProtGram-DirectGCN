@@ -54,14 +54,14 @@ class TongDiGCN(nn.Module):
             - The concatenated node embeddings from the forward and backward GCNs.
         """
         # Create a new Data object for the forward pass
-        data_forward = Data(x=data.x, edge_index=data.edge_index)
+        data_forward = Data(x=data.x, edge_index=data.edge_index, edge_attr=getattr(data, 'edge_attr', None))
         # The GCN model returns (logits, embeddings). We use the embeddings.
         _, x_forward = self.gcn_forward(data_forward)
 
         # Create a new Data object for the backward pass
         if not hasattr(data, 'edge_index_backward'):
             raise ValueError("TongDiGCN requires 'edge_index_backward' in the Data object.")
-        data_backward = Data(x=data.x, edge_index=data.edge_index_backward)
+        data_backward = Data(x=data.x, edge_index=data.edge_index_backward, edge_attr=getattr(data, 'edge_attr', None))
         _, x_backward = self.gcn_backward(data_backward)
 
         # Concatenate the outputs from both GCNs to form the final embeddings

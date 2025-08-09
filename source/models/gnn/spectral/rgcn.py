@@ -55,13 +55,16 @@ class RGCN(nn.Module):
             return logits, self.embedding_output
 
         # Multi-layer case
-        for i, conv in enumerate(self.convs):
+        # --- FIX: Correctly separate embedding generation from final logit calculation ---
+        # Process all but the final layer
+        for conv in self.convs[:-1]:
             x = conv(x, edge_index, edge_type)
-            if i < len(self.convs) - 1:
-                self.embedding_output = x  # Store embedding from last hidden layer
-                x = F.relu(x)
-                x = F.dropout(x, p=self.dropout_rate, training=self.training)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout_rate, training=self.training)
 
-        logits = x
+        # The output of the last hidden layer is the embedding
+        self.embedding_output = x
+        # Apply the final layer to get logits
+        logits = self.convs-1
 
         return logits, self.embedding_output

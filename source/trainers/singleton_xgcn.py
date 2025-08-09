@@ -201,20 +201,12 @@ class SingletonXGCNTrainer:
             data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
             data_dict['edge_type'] = torch.cat([torch.zeros(edge_index_out.size(1)), torch.ones(edge_index_in.size(1))]).long()
         elif model_name_lower == 'tongdigcn':
-            data_dict['edge_index'] = self.graph.A_out_w.indices()
-            data_dict['edge_index_backward'] = self.graph.A_in_w.indices()
+            data_dict['edge_index'] = self.graph.A_out_w.indices() # Forward pass uses outgoing edges
+            data_dict['edge_index_backward'] = self.graph.A_in_w.indices() # Backward pass uses incoming edges
         else:  # GCN, GAT, etc.
-            # --- FIX: Provide a more informative graph to standard GNNs for a fairer comparison. ---
-            # Instead of the pre-normalized undirected graph, we provide the full set of
-            # directed edges (treated as an undirected set) with their raw weights. This gives
-            # the model more information to work with and avoids reinforcing a homophily assumption.
-            edge_index_out = self.graph.A_out_w.indices()
-            edge_weights_out = self.graph.A_out_w.values()
-            edge_index_in = self.graph.A_in_w.indices()
-            edge_weights_in = self.graph.A_in_w.values()
-
-            # Combine forward and backward edges to represent the full graph structure
-            data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
-            data_dict['edge_attr'] = torch.cat([edge_weights_out, edge_weights_in], dim=0)
+            # --- FIX: Align with the main GNN benchmarker for consistency. ---
+            # Use the symmetrically normalized undirected graph for standard GNNs.
+            data_dict['edge_index'] = self.graph.A_undirected_norm_sparse.indices()
+            data_dict['edge_attr'] = self.graph.A_undirected_norm_sparse.values()
 
         return Data.from_dict(data_dict)

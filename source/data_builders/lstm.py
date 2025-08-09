@@ -35,10 +35,12 @@ class LstmPytorchDataset(Dataset):
         self.char_to_int = char_to_int
         # The number of sequences is derived from the total text length.
         # The last possible starting index is `len(text) - seq_len - 1`.
-        # The number of samples is `floor(last_start_index / step) + 1`.
-        # --- FIX: Corrected an off-by-one error in the calculation. ---
-        # The original formula was missing a '+1', causing it to miss the last sample.
-        self.num_sequences = max(0, (len(self.text) - self.seq_len - 1) // self.step + 1)
+        # The number of samples is `floor((last_start_index) / step) + 1`.
+        # --- FIX: Corrected an off-by-one error in the calculation. --- # The original formula was missing a '+1', causing it to miss the last sample.
+        if len(self.text) > self.seq_len:
+            self.num_sequences = (len(self.text) - self.seq_len - 1) // self.step + 1
+        else:
+            self.num_sequences = 0
         print(f"  [PyTorch Dataset] Corpus has {len(text):,} characters, creating {self.num_sequences:,} samples.")
 
     def __len__(self) -> int:

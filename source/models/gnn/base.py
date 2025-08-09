@@ -39,19 +39,20 @@ class GNN(nn.Module):
 
         # Handle the single-layer case where logits are the embeddings
         if len(self.convs) == 1:
-            try:
+            # --- FIX: Use explicit check for edge_weight for clarity and robustness ---
+            if edge_weight is not None:
                 logits = self.convs[0](x, edge_index, edge_weight=edge_weight)
-            except TypeError:  # Fallback for layers that don't accept edge_weight
+            else:
                 logits = self.convs[0](x, edge_index)
             self.embedding_output = logits
             return logits, self.embedding_output
 
         # Process all but the final layer
         for conv in self.convs[:-1]:
-            try:
+            if edge_weight is not None:
                 # Pass edge_weight to the convolution
                 x = conv(x, edge_index, edge_weight=edge_weight)
-            except TypeError:
+            else:
                 x = conv(x, edge_index)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
@@ -60,10 +61,10 @@ class GNN(nn.Module):
         self.embedding_output = x
 
         # Apply the final layer to get logits
-        try:
+        if edge_weight is not None:
             # Pass edge_weight to the final convolution
             logits = self.convs[-1](self.embedding_output, edge_index, edge_weight=edge_weight)
-        except TypeError:
+        else:
             logits = self.convs[-1](self.embedding_output, edge_index)
 
         return logits, self.embedding_output

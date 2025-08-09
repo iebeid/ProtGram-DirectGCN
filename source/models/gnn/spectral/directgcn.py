@@ -175,28 +175,33 @@ class DirectGCNLayer(MessagePassing):
         elif self.gating_mode == 'scalar':
             gating_logits_list.extend([self.C_in, self.C_out, self.C_undirected])
             if self.use_homo_hetero_paths:
-                homoc_combined = self.proj_homo(torch.cat([h_homo, h_shared + self.bias_shared_undir], dim=-1))
-                heteroc_combined = self.proj_hetero(torch.cat([h_hetero, h_shared + self.bias_shared_undir], dim=-1))
                 gating_logits_list.extend([self.C_homo, self.C_hetero])
-                path_combinations.extend([homoc_combined, heteroc_combined])
             gating_logits = torch.cat(gating_logits_list, dim=0)
-            constant_term = 0
+            constant_term = 0  # No node-specific constant in scalar mode
         else:
             # 'none' mode, just sum the combinations
             final_combination = torch.stack(path_combinations, dim=0).sum(dim=0)
             return final_combination
 
-        gating_weights = F.softmax(gating_logits, dim=-1)
+        # --- FIX: Use sigmoid for independent, non-competitive gating ---
+        # Softmax forces a zero-sum competition between paths, which can be unstable
+        # on small or extremely homophilic/heterophilic graphs by forcing the model
+        # to discard potentially useful paths. Sigmoid allows the model to learn to
+        # use multiple paths simultaneously by weighting each path independently.
+        gating_weights = torch.sigmoid(gating_logits)
         # --- FIX: Memory-efficient combination to prevent CUDA OOM on large graphs ---
         # The original torch.stack created a large intermediate tensor. This loop is equivalent but uses less memory.
         final_combination = torch.zeros_like(path_combinations[0])
-        for i, path_emb in enumerate(path_combinations):
-            # --- FIX: Correctly handle broadcasting for both scalar and vector gating ---
-            # gating_weights has shape [num_nodes, num_paths, gate_dim]
-            # We select the weights for the i-th path, which will have shape [num_nodes, gate_dim]
-            # This shape correctly broadcasts with path_emb's shape [num_nodes, out_channels]
-            # when gate_dim is 1 (for scalar/vector) or out_channels (for node_gate_vector).
-            final_combination += gating_weights[:, :, i] * path_emb
+        # --- FIX: Handle scalar and vector gating modes with correct broadcasting ---
+        if self.gating_mode == 'scalar':
+            for i, path_emb in enumerate(path_combinations):
+                # gating_weights[i] is a scalar, broadcasts over path_emb
+                final_combination += gating_weights[i] * path_emb
+        else:  # vector and node_gate_vector modes
+            for i, path_emb in enumerate(path_combinations):
+                # gating_weights shape is [num_nodes, gate_dim, num_paths]
+                # gating_weights[:, :, i] has shape [num_nodes, gate_dim]
+                final_combination += gating_weights[:, :, i] * path_emb
 
         final_combination += constant_term
         return final_combination
@@ -219,6 +224,7 @@ class DirectGCN(nn.Module):
         self.one_gram_dim = one_gram_dim
         self.dropout = dropout
         self.l2_eps = l2_eps
+        self.embedding_output = None
         self.use_homo_hetero_paths = use_homo_hetero_paths
 
         self.pe_layer = None
@@ -250,7 +256,8 @@ class DirectGCN(nn.Module):
     def _apply_pe(self, x: torch.Tensor) -> torch.Tensor:
         """Applies positional embeddings to the input features if applicable."""
         if self.pe_layer is None: return x
-        if self.n_gram_len > 0 and self.one_gram_dim > 0 and x.shape[1] == self.n_gram_len * self.one_gram_dim:
+        # --- FIX: Only apply PE when n > 1 to avoid applying it to random features in benchmarks ---
+        if self.n_gram_len > 1 and self.one_gram_dim > 0 and x.shape[1] == self.n_gram_len * self.one_gram_dim:
             x_with_pe = x.clone()
             x_reshaped = x_with_pe.view(-1, self.n_gram_len, self.one_gram_dim)
             pos_to_enc = min(self.n_gram_len, self.pe_layer.num_embeddings)
@@ -289,8 +296,8 @@ class DirectGCN(nn.Module):
             h = F.dropout(h, p=self.dropout, training=self.training)
 
         final_embed_for_task = h
+        self.embedding_output = final_embed_for_task  # For consistency with other models
         logits = self.decoder_fc(final_embed_for_task)
         final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
-
 
         return logits, final_normalized_embeddings
