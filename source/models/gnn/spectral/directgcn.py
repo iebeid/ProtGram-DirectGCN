@@ -191,8 +191,12 @@ class DirectGCNLayer(MessagePassing):
         # The original torch.stack created a large intermediate tensor. This loop is equivalent but uses less memory.
         final_combination = torch.zeros_like(path_combinations[0])
         for i, path_emb in enumerate(path_combinations):
-            # gating_weights[:, i] has shape [num_nodes], unsqueeze to [num_nodes, 1] for broadcasting
-            final_combination += gating_weights[:, i].unsqueeze(1) * path_emb
+            # --- FIX: Correctly handle broadcasting for both scalar and vector gating ---
+            # gating_weights has shape [num_nodes, num_paths, gate_dim]
+            # We select the weights for the i-th path, which will have shape [num_nodes, gate_dim]
+            # This shape correctly broadcasts with path_emb's shape [num_nodes, out_channels]
+            # when gate_dim is 1 (for scalar/vector) or out_channels (for node_gate_vector).
+            final_combination += gating_weights[:, :, i] * path_emb
 
         final_combination += constant_term
         return final_combination
