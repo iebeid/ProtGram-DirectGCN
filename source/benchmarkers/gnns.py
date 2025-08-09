@@ -225,7 +225,8 @@ class GNNBenchmarker:
             model.train()
             optimizer.zero_grad()
             logits, _ = model(data)
-            loss = F.cross_entropy(logits[train_mask], data.y[train_mask])
+            target = data.y[train_mask].long()  # Ensure target is Long type
+            loss = F.cross_entropy(logits[train_mask], target)
             loss.backward()
             optimizer.step()
 
