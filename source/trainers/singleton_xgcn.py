@@ -112,7 +112,7 @@ class SingletonXGCNTrainer:
                 optimizer.zero_grad()
                 logits, _ = model(data_for_model)
                 if data_for_model.train_mask.sum() > 0:
-                    loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask].long()) #This line is still getting called for direct gcn
+                    loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask].long())
                     loss.backward()
                     optimizer.step()
 

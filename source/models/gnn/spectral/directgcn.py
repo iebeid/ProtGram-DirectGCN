@@ -136,34 +136,34 @@ class DirectGCNLayer(MessagePassing):
         """Forward pass implementing the hierarchical, dual-path logic."""
         original_indices = getattr(data, 'original_indices', None)
 
-        # --- 1. Propagate on all available paths ---
+        # --- 1. Shared transformation (do this once) ---
+        h_shared = self.lin_shared(x)
+
+        # --- 2. Propagate on all potential paths and combine with shared features ---
+        path_combinations = []
+
+        # Standard paths (always present)
         h_main_in = self.propagate(data.edge_index_in, x=self.lin_main_in(x), edge_weight=data.edge_weight_in) + self.bias_main_in
         h_main_out = self.propagate(data.edge_index_out, x=self.lin_main_out(x), edge_weight=data.edge_weight_out) + self.bias_main_out
         h_main_undir = self.propagate(data.edge_index_undirected_norm, x=self.lin_undirected(x), edge_weight=data.edge_weight_undirected_norm) + self.bias_undirected
+        path_combinations.append(self.proj_in(torch.cat([h_main_in, h_shared + self.bias_shared_in], dim=-1)))
+        path_combinations.append(self.proj_out(torch.cat([h_main_out, h_shared + self.bias_shared_out], dim=-1)))
+        path_combinations.append(self.proj_undir(torch.cat([h_main_undir, h_shared + self.bias_shared_undir], dim=-1)))
 
-        # --- 2. Shared transformation ---
-        h_shared = self.lin_shared(x)
+        # Conditional paths for homophily/heterophily
+        if self.use_homo_hetero_paths:
+            h_homo = self.propagate(data.edge_index_homo, x=self.lin_homo(x), edge_weight=data.edge_weight_homo) + self.bias_homo
+            h_hetero = self.propagate(data.edge_index_hetero, x=self.lin_hetero(x), edge_weight=data.edge_weight_hetero) + self.bias_hetero
+            # Note: using bias_shared_undir for both as they are undirected views
+            path_combinations.append(self.proj_homo(torch.cat([h_homo, h_shared + self.bias_shared_undir], dim=-1)))
+            path_combinations.append(self.proj_hetero(torch.cat([h_hetero, h_shared + self.bias_shared_undir], dim=-1)))
 
-        # --- 3. Combine path-specific and shared features ---
-        ic_combined = self.proj_in(torch.cat([h_main_in, h_shared + self.bias_shared_in], dim=-1))
-        oc_combined = self.proj_out(torch.cat([h_main_out, h_shared + self.bias_shared_out], dim=-1))
-        uc_combined = self.proj_undir(torch.cat([h_main_undir, h_shared + self.bias_shared_undir], dim=-1))
-
-        # --- 4. Get Gating Coefficients and apply Softmax for stability ---
+        # --- 3. Get Gating Coefficients ---
         gating_logits_list = []
-        path_combinations = []
-
         if self.gating_mode in ['vector', 'node_gate_vector']:
             gating_logits_list.extend([self.C_in_vec, self.C_out_vec, self.C_undirected_vec])
-            path_combinations.extend([ic_combined, oc_combined, uc_combined])
-
             if self.use_homo_hetero_paths:
-                h_homo = self.propagate(data.edge_index_homo, x=self.lin_homo(x), edge_weight=data.edge_weight_homo) + self.bias_homo
-                h_hetero = self.propagate(data.edge_index_hetero, x=self.lin_hetero(x), edge_weight=data.edge_weight_hetero) + self.bias_hetero
-                homoc_combined = self.proj_homo(torch.cat([h_homo, h_shared + self.bias_shared_undir], dim=-1))
-                heteroc_combined = self.proj_hetero(torch.cat([h_hetero, h_shared + self.bias_shared_undir], dim=-1))
                 gating_logits_list.extend([self.C_homo_vec, self.C_hetero_vec])
-                path_combinations.extend([homoc_combined, heteroc_combined])
 
             gating_logits_full = torch.stack(gating_logits_list, dim=-1)
             if original_indices is not None:
@@ -172,13 +172,9 @@ class DirectGCNLayer(MessagePassing):
             else:
                 gating_logits = gating_logits_full
                 constant_term = self.constant if self.constant is not None else 0
-
         elif self.gating_mode == 'scalar':
             gating_logits_list.extend([self.C_in, self.C_out, self.C_undirected])
-            path_combinations.extend([ic_combined, oc_combined, uc_combined])
             if self.use_homo_hetero_paths:
-                h_homo = self.propagate(data.edge_index_homo, x=self.lin_homo(x), edge_weight=data.edge_weight_homo) + self.bias_homo
-                h_hetero = self.propagate(data.edge_index_hetero, x=self.lin_hetero(x), edge_weight=data.edge_weight_hetero) + self.bias_hetero
                 homoc_combined = self.proj_homo(torch.cat([h_homo, h_shared + self.bias_shared_undir], dim=-1))
                 heteroc_combined = self.proj_hetero(torch.cat([h_hetero, h_shared + self.bias_shared_undir], dim=-1))
                 gating_logits_list.extend([self.C_homo, self.C_hetero])
@@ -191,9 +187,15 @@ class DirectGCNLayer(MessagePassing):
             return final_combination
 
         gating_weights = F.softmax(gating_logits, dim=-1)
-        final_combination = torch.sum(gating_weights.unsqueeze(-1) * torch.stack(path_combinations, dim=-2), dim=-2)
+        # --- FIX: Memory-efficient combination to prevent CUDA OOM on large graphs ---
+        # The original torch.stack created a large intermediate tensor. This loop is equivalent but uses less memory.
+        final_combination = torch.zeros_like(path_combinations[0])
+        for i, path_emb in enumerate(path_combinations):
+            # gating_weights[:, i] has shape [num_nodes], unsqueeze to [num_nodes, 1] for broadcasting
+            final_combination += gating_weights[:, i].unsqueeze(1) * path_emb
+
         final_combination += constant_term
-        return final_combination.squeeze(-1)
+        return final_combination
 
     def message(self, x_j: torch.Tensor, edge_weight: Optional[torch.Tensor]) -> torch.Tensor:
         if edge_weight is None:
@@ -283,7 +285,8 @@ class DirectGCN(nn.Module):
             h = F.dropout(h, p=self.dropout, training=self.training)
 
         final_embed_for_task = h
-        final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
         logits = self.decoder_fc(final_embed_for_task)
+        final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
+
 
         return logits, final_normalized_embeddings
