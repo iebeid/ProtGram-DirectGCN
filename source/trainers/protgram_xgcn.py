@@ -257,6 +257,9 @@ class ProtGramXGCNTrainer:
             with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
                 output, _ = model(data=full_data_gpu)
                 loss = criterion(output, full_data_gpu.y)
+            # --- FIX: Add Gradient Clipping to prevent exploding gradients on small/volatile graphs ---
+            # This is crucial for stabilizing training for complex models like DirectGCN.
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -294,6 +297,9 @@ class ProtGramXGCNTrainer:
                 with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
                     output, _ = model(data=subgraph_data)
                     loss = criterion(output, subgraph_data.y)
+                # --- FIX: Add Gradient Clipping to prevent exploding gradients on small/volatile graphs ---
+                # This is crucial for stabilizing training for complex models like DirectGCN.
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
