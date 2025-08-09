@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: data_builders/graph.py
 # PURPOSE: Contains robust classes for n-gram graph representation.
-# VERSION: 8.3 (Corrected subgraph creation and added homophily splitting)
+# VERSION: 9.1 (Improved documentation for undirected matrix creation)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -67,8 +67,9 @@ class Graph:
                                   isinstance(idx, (int, np.integer)) and idx >= 0}
             # --- FIX: Add a warning for potential data inconsistency ---
             if all_integer_indices and valid_node_indices and max(all_integer_indices) > max(valid_node_indices):
-                print(f"  - WARNING: Edge data contains node indices greater than the maximum index in the provided node map.")
-                print(f"    (Max edge index: {max(all_integer_indices)}, Max map index: {max(valid_node_indices)}). This may indicate a data mismatch.")
+                # --- ENHANCEMENT: Make the warning more specific and explain the consequence ---
+                print(f"  - WARNING: Data inconsistency detected. Max edge index ({max(all_integer_indices)}) "
+                      f"exceeds max node map index ({max(valid_node_indices)}). This can lead to silent data loss.")
             if valid_node_indices:
                 max_node_map_idx = max(valid_node_indices)
 
@@ -117,7 +118,9 @@ class DirectedNgramGraph(Graph):
         self.A_out_w_hetero: Optional[torch.Tensor] = None
         self.A_in_w_homo: Optional[torch.Tensor] = None
         self.A_in_w_hetero: Optional[torch.Tensor] = None
-        # --- END NEW ---
+        # --- NEW: Top-level adjacency matrices for pure homophily/heterophily views ---
+        self.A_homo_w: Optional[torch.Tensor] = None
+        self.A_hetero_w: Optional[torch.Tensor] = None
 
         if self.number_of_nodes > 0 and edge_file_path and os.path.exists(edge_file_path):
             print(f"    Loading edges from {os.path.basename(edge_file_path)}...")
@@ -157,7 +160,9 @@ class DirectedNgramGraph(Graph):
         self.A_out_w_hetero = None
         self.A_in_w_homo = None
         self.A_in_w_hetero = None
-        # --- END NEW ---
+        # --- NEW: Initialize top-level views ---
+        self.A_homo_w = None
+        self.A_hetero_w = None
 
     @staticmethod
     def _sparse_identity(size: int, device: torch.device) -> torch.Tensor:
@@ -195,9 +200,18 @@ class DirectedNgramGraph(Graph):
 
     def _create_undirected_normalized_adj_matrix(self):
         """
-        Creates a symmetric, degree-normalized adjacency matrix from the raw
-        weighted adjacency matrix. This ensures the undirected path also
-        benefits from the original transition weights.
+        Creates a symmetric, degree-normalized adjacency matrix.
+
+        This method follows a standard and robust procedure for creating a normalized
+        undirected graph representation from the raw, directed transition counts:
+
+        1.  **Symmetrize Raw Counts**: It first creates a symmetric matrix `A_undir_w`
+            by adding the outgoing matrix `A_out_w` and the incoming matrix `A_in_w`.
+            This correctly sums the raw counts for any reciprocal edges.
+        2.  **Add Self-Loops**: It adds self-loops (with a weight of 1.0) to this
+            symmetric, raw-count-weighted matrix for stability.
+        3.  **Normalize**: Finally, it performs symmetric degree normalization
+            (D^-0.5 * A * D^-0.5) on the result to produce the final matrix.
         """
         print(f"  Creating undirected normalized adjacency matrix for n={self.n_value}...")
         if self.number_of_nodes == 0:
@@ -356,6 +370,12 @@ class DirectedNgramGraph(Graph):
         self.A_in_w_homo = self.A_out_w_homo.t().coalesce()
         self.A_in_w_hetero = self.A_out_w_hetero.t().coalesce()
 
+        # --- NEW: Create the undirected homophilic and heterophilic adjacency matrices ---
+        # These represent the pure "sameness" and "differentness" connections.
+        self.A_homo_w = (self.A_in_w_homo + self.A_out_w_homo).coalesce()
+        self.A_hetero_w = (self.A_in_w_hetero + self.A_out_w_hetero).coalesce()
+        # --- END NEW ---
+
         print(f"    - Outgoing Homophilous Edges: {self.A_out_w_homo._nnz()}")
         print(f"    - Outgoing Heterophilous Edges: {self.A_out_w_hetero._nnz()}")
 
@@ -375,10 +395,10 @@ class DirectedNgramGraph(Graph):
         if model_type == 'directgcn':
             # --- FIX: Create subgraphs from the correct raw weighted matrices, not the pre-computed ones ---
             if self.A_out_w_homo is not None and self.A_out_w_hetero is not None:
-                # Homophily/Heterophily paths are enabled on the graph object
+                # Use the 5 parallel views for the new architecture
                 path_matrices = {
-                    'in_homo': self.A_in_w_homo, 'in_hetero': self.A_in_w_hetero,
-                    'out_homo': self.A_out_w_homo, 'out_hetero': self.A_out_w_hetero,
+                    'in': self.A_in_w, 'out': self.A_out_w,
+                    'homo': self.A_homo_w, 'hetero': self.A_hetero_w,
                     'undirected_norm': self.A_undirected_norm_sparse
                 }
             else:

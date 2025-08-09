@@ -2,7 +2,7 @@
 # MODULE: utils/models.py
 # PURPOSE: Contains tools for loading and post-processing embeddings, such as PCA,
 #          normalization, pooling, and edge feature creation.
-# VERSION: 6.2 (Final fix for embedding extraction for all GNN types)
+# VERSION: 7.0 (Aligned DirectGCN embedding extraction with Parallel Views architecture)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -417,23 +417,21 @@ class EmbeddingProcessor:
             data_dict = {'x': full_data.x}
 
             if model_type == 'directgcn':
-                if use_homo_hetero_paths and graph_obj.A_out_w_homo is not None:
+                # Always include the base structural and directional paths
+                data_dict.update({
+                    'edge_index_in': graph_obj.A_in_w.indices(), 'edge_weight_in': graph_obj.A_in_w.values(),
+                    'edge_index_out': graph_obj.A_out_w.indices(), 'edge_weight_out': graph_obj.A_out_w.values(),
+                    'edge_index_undirected_norm': graph_obj.A_undirected_norm_sparse.indices(),
+                    'edge_weight_undirected_norm': graph_obj.A_undirected_norm_sparse.values()
+                })
+
+                # Conditionally add the new top-level homophily/heterophily paths
+                if use_homo_hetero_paths and graph_obj.A_homo_w is not None and graph_obj.A_hetero_w is not None:
                     data_dict.update({
-                        'edge_index_in_homo': graph_obj.A_in_w_homo.indices(), 'edge_weight_in_homo': graph_obj.A_in_w_homo.values(),
-                        'edge_index_in_hetero': graph_obj.A_in_w_hetero.indices(), 'edge_weight_in_hetero': graph_obj.A_in_w_hetero.values(),
-                        'edge_index_out_homo': graph_obj.A_out_w_homo.indices(), 'edge_weight_out_homo': graph_obj.A_out_w_homo.values(),
-                        'edge_index_out_hetero': graph_obj.A_out_w_hetero.indices(), 'edge_weight_out_hetero': graph_obj.A_out_w_hetero.values(),
-                        'edge_index_undirected_norm': graph_obj.A_undirected_norm_sparse.indices(),
-                        'edge_weight_undirected_norm': graph_obj.A_undirected_norm_sparse.values()
+                        'edge_index_homo': graph_obj.A_homo_w.indices(), 'edge_weight_homo': graph_obj.A_homo_w.values(),
+                        'edge_index_hetero': graph_obj.A_hetero_w.indices(), 'edge_weight_hetero': graph_obj.A_hetero_w.values()
                     })
-                else:
-                    # Use standard raw weighted matrices
-                    data_dict.update({
-                        'edge_index_in': graph_obj.A_in_w.indices(), 'edge_weight_in': graph_obj.A_in_w.values(),
-                        'edge_index_out': graph_obj.A_out_w.indices(), 'edge_weight_out': graph_obj.A_out_w.values(),
-                        'edge_index_undirected_norm': graph_obj.A_undirected_norm_sparse.indices(),
-                        'edge_weight_undirected_norm': graph_obj.A_undirected_norm_sparse.values()
-                    })
+
             elif model_type == 'rgcn':
                 # RGCN needs a combined edge_index and an edge_type tensor
                 edge_index_out = graph_obj.A_out_w.indices()

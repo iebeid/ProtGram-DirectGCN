@@ -80,6 +80,20 @@ class Config:
         self.RESULTS_BENCHMARKING_DIR = self.BASE_OUTPUT_DIR / "benchmarking_results"
         self.RESULTS_BENCHMARK_EMBEDDINGS_DIR = self.RESULTS_BENCHMARKING_DIR / "embeddings"
 
+        # --- NEW: Proactively create all necessary directories ---
+        # This makes the configuration self-sufficient and prevents FileNotFoundError
+        # in downstream modules if they are run in isolation.
+        dirs_to_create = [
+            self.LOG_DIR, self.DATA_SEQUENCES_DIR, self.DATA_GROUND_TRUTH_DIR,
+            self.DATA_MODELS_DIR, self.DATA_MAPPINGS_DIR, self.DATA_STANDARD_DATASETS_DIR,
+            self.RESULTS_GRAPH_OBJECTS_DIR, self.RESULTS_GCN_EMBEDDINGS_DIR,
+            self.RESULTS_W2V_EMBEDDINGS_DIR, self.RESULTS_LSTM_EMBEDDINGS_DIR,
+            self.RESULTS_TRANSFORMER_EMBEDDINGS_DIR, self.RESULTS_EVALUATION_DIR,
+            self.RESULTS_BENCHMARKING_DIR, self.RESULTS_BENCHMARK_EMBEDDINGS_DIR
+        ]
+        for directory in dirs_to_create:
+            directory.mkdir(parents=True, exist_ok=True)
+
     def _setup_pipeline_flags(self):
         """Sets flags to control which parts of the main pipeline are executed."""
         self.RUN_GCN_PIPELINE = True

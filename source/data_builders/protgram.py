@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: data_builders/protgram.py
 # PURPOSE: Main class to orchestrate the graph building process.
-# VERSION: 8.0 (Corrected conditional singleton evaluation logic for new workflow)
+# VERSION: 8.1 (Aligned run signature with main pipeline and removed obsolete evaluation logic)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -39,16 +39,20 @@ class ProtGramBuilder:
         print(
             f"GraphBuilder initialized: n_max={self.n_max}, configured_workers={self.num_workers_config}, output_dir='{self.output_dir}'")
         DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
-    def run(self) -> None:
+
+    def run(self, run_singleton_eval: bool = True) -> None:
         """
         Main execution function for the graph builder.
 
         This method orchestrates the entire graph construction process, from
-        reading sequences to building and saving the final graph objects for
-        each n-gram level. It also triggers the singleton evaluation if configured.
+        reading sequences to building and saving the final graph objects for each n-gram level.
+
+        Note: The `run_singleton_eval` parameter is maintained for API compatibility with the main
+        pipeline orchestrator but is no longer used within this class, as evaluation logic has
+        been moved to the respective trainer modules.
 
         Returns:
-            Optional[pd.DataFrame]: A DataFrame with the singleton evaluation results, or None.
+            None
         """
         overall_start_time = time.monotonic()
         DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs")

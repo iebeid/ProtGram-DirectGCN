@@ -54,14 +54,15 @@ def is_environment_valid(project_root: Path) -> bool:
         required_packages = set()
         in_dependencies_section = False
         for line in lines:
-            line = line.strip()
             if line.startswith("dependencies:"):
                 in_dependencies_section = True
                 continue
             if not in_dependencies_section:
                 continue
-            # Correctly handle comments and metadata lines
-            if not line or line.startswith(('#', 'name:', 'channels:', 'prefix:')) or 'pip:' in line:
+
+            # --- FIX: The original parsing logic was brittle and case-sensitive ---
+            line = line.strip()
+            if not line or line.startswith(('#', 'name:', 'channels:', 'prefix:', 'pip:')):
                 continue
 
             # The actual package spec starts after the YAML list marker '- '
@@ -69,21 +70,17 @@ def is_environment_valid(project_root: Path) -> bool:
             if line.startswith('- '):
                 package_spec = line[2:].strip()
 
-            # Handle package strings like 'numpy=1.26.4=pypi_0' or 'numpy==1.26.4'
-            # We only care about the package name for this validation.
-            if '==' in package_spec:  # pip format
-                package_name = package_spec.split('==')[0].strip()
-            elif '=' in package_spec:  # conda format
-                package_name = package_spec.split('=')[0].strip()
-            else:  # package name only
-                package_name = package_spec.strip()
+            # NEW: A more robust parser for package names with various version specifiers.
+            package_name = package_spec.split('=')[0].split('>')[0].split('<')[0].strip()
 
             # The package name in yml (e.g., scikit-learn) should match conda list output.
             if package_name:
-                required_packages.add(package_name.lower())
+                required_packages.add(package_name.lower()) # NEW: Standardize to lowercase
 
-        # 3. Check if all required packages are installed
-        missing_packages = required_packages - installed_packages
+        # 3. Check if all required packages are installed (case-insensitively)
+        installed_packages_lower = {pkg.lower() for pkg in installed_packages}
+        missing_packages = required_packages - installed_packages_lower
+
         if missing_packages:
             print(f"--- Validation FAILED. Missing required packages: {', '.join(sorted(list(missing_packages)))} ---")
             return False

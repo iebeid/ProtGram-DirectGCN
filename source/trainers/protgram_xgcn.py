@@ -343,33 +343,24 @@ class ProtGramXGCNTrainer:
         if model_type == 'directgcn':
             # --- DESIGN NOTE on DirectGCN Data ---
             # The DirectGCN model is designed to work with the raw, weighted adjacency
-            # matrices (A_in_w, A_out_w). Its internal architecture, with separate
-            # linear layers for each path (e.g., lin_main_in, lin_main_out), performs
-            # the transformation and "normalization" as part of the message passing.
-            #
-            # We do NOT pass the pre-computed mathcal_A matrices to DirectGCN, as that
-            # would apply a different, simpler normalization scheme and bypass the model's
-            # intended expressive power. The mathcal_A matrices are computed for use
-            # by other, more standard GNN models if they were to be used in this pipeline.
+            # matrices. For the "Parallel Views" architecture, we provide 5 distinct
+            # views when homophily/heterophily paths are enabled.
 
-            if use_homo_hetero_paths and graph.A_out_w_homo is not None:
-                print("  Preparing data with separate homophily/heterophily paths.")
+            # Always include the base structural and directional paths
+            data_dict.update({
+                'edge_index_in': graph.A_in_w.indices(), 'edge_weight_in': graph.A_in_w.values(),
+                'edge_index_out': graph.A_out_w.indices(), 'edge_weight_out': graph.A_out_w.values(),
+                'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
+                'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values()
+            })
+
+            # Conditionally add the new top-level homophily/heterophily paths
+            if use_homo_hetero_paths and graph.A_homo_w is not None and graph.A_hetero_w is not None:
+                # --- FIX: Corrected log message and added the missing logic to update the data object ---
+                print("  Preparing data with parallel homophily/heterophily paths...")
                 data_dict.update({
-                    'edge_index_in_homo': graph.A_in_w_homo.indices(), 'edge_weight_in_homo': graph.A_in_w_homo.values(),
-                    'edge_index_in_hetero': graph.A_in_w_hetero.indices(), 'edge_weight_in_hetero': graph.A_in_w_hetero.values(),
-                    'edge_index_out_homo': graph.A_out_w_homo.indices(), 'edge_weight_out_homo': graph.A_out_w_homo.values(),
-                    'edge_index_out_hetero': graph.A_out_w_hetero.indices(), 'edge_weight_out_hetero': graph.A_out_w_hetero.values(),
-                    'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
-                    'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values()
-                })
-            else:
-                # Fallback to standard raw weighted matrices
-                print("  Preparing data with standard raw weighted paths.")
-                data_dict.update({
-                    'edge_index_in': graph.A_in_w.indices(), 'edge_weight_in': graph.A_in_w.values(),
-                    'edge_index_out': graph.A_out_w.indices(), 'edge_weight_out': graph.A_out_w.values(),
-                    'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
-                    'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values()
+                    'edge_index_homo': graph.A_homo_w.indices(), 'edge_weight_homo': graph.A_homo_w.values(),
+                    'edge_index_hetero': graph.A_hetero_w.indices(), 'edge_weight_hetero': graph.A_hetero_w.values()
                 })
         elif model_type == 'rgcn':
             edge_index_out = graph.A_out_w.indices()

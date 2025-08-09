@@ -33,21 +33,16 @@ class DirectGCNLayer(MessagePassing):
 
         # --- Path-Specific Components ---
         if self.use_homo_hetero_paths:
-            # Create separate layers for homophilous and heterophilous paths
-            self.lin_main_in_homo = nn.Linear(in_channels, out_channels, bias=False)
-            self.lin_main_in_hetero = nn.Linear(in_channels, out_channels, bias=False)
-            self.lin_main_out_homo = nn.Linear(in_channels, out_channels, bias=False)
-            self.lin_main_out_hetero = nn.Linear(in_channels, out_channels, bias=False)
-            self.bias_main_in_homo = nn.Parameter(torch.Tensor(out_channels))
-            self.bias_main_in_hetero = nn.Parameter(torch.Tensor(out_channels))
-            self.bias_main_out_homo = nn.Parameter(torch.Tensor(out_channels))
-            self.bias_main_out_hetero = nn.Parameter(torch.Tensor(out_channels))
-        else:
-            # Standard single path layers
-            self.lin_main_in = nn.Linear(in_channels, out_channels, bias=False)
-            self.lin_main_out = nn.Linear(in_channels, out_channels, bias=False)
-            self.bias_main_in = nn.Parameter(torch.Tensor(out_channels))
-            self.bias_main_out = nn.Parameter(torch.Tensor(out_channels))
+            # --- NEW: Add layers for the new top-level homo/hetero paths ---
+            self.lin_homo = nn.Linear(in_channels, out_channels, bias=False)
+            self.lin_hetero = nn.Linear(in_channels, out_channels, bias=False)
+            self.bias_homo = nn.Parameter(torch.Tensor(out_channels))
+            self.bias_hetero = nn.Parameter(torch.Tensor(out_channels))
+        # Standard in/out paths are always present
+        self.lin_main_in = nn.Linear(in_channels, out_channels, bias=False)
+        self.lin_main_out = nn.Linear(in_channels, out_channels, bias=False)
+        self.bias_main_in = nn.Parameter(torch.Tensor(out_channels))
+        self.bias_main_out = nn.Parameter(torch.Tensor(out_channels))
 
         # Undirected path is always present
         self.lin_undirected = nn.Linear(in_channels, out_channels, bias=False)
@@ -57,6 +52,11 @@ class DirectGCNLayer(MessagePassing):
         self.proj_in = nn.Linear(out_channels * 2, out_channels)
         self.proj_out = nn.Linear(out_channels * 2, out_channels)
         self.proj_undir = nn.Linear(out_channels * 2, out_channels)
+        # --- NEW: Add projection layers for the new paths ---
+        if self.use_homo_hetero_paths:
+            # Note: These do not use the shared bias, as they represent distinct views
+            self.proj_homo = nn.Linear(out_channels * 2, out_channels)
+            self.proj_hetero = nn.Linear(out_channels * 2, out_channels)
 
         # --- Shared Components (used by all paths) ---
         self.lin_shared = nn.Linear(in_channels, out_channels, bias=False)
@@ -70,10 +70,18 @@ class DirectGCNLayer(MessagePassing):
             self.C_in_vec = nn.Parameter(torch.Tensor(num_nodes, gate_dim))
             self.C_out_vec = nn.Parameter(torch.Tensor(num_nodes, gate_dim))
             self.C_undirected_vec = nn.Parameter(torch.Tensor(num_nodes, gate_dim))
+            # --- NEW: Add gating parameters for the new paths ---
+            if self.use_homo_hetero_paths:
+                self.C_homo_vec = nn.Parameter(torch.Tensor(num_nodes, gate_dim))
+                self.C_hetero_vec = nn.Parameter(torch.Tensor(num_nodes, gate_dim))
         elif self.gating_mode == 'scalar':
             self.C_in = nn.Parameter(torch.Tensor(1))
             self.C_out = nn.Parameter(torch.Tensor(1))
             self.C_undirected = nn.Parameter(torch.Tensor(1))
+            # --- NEW: Add gating parameters for the new paths ---
+            if self.use_homo_hetero_paths:
+                self.C_homo = nn.Parameter(torch.Tensor(1))
+                self.C_hetero = nn.Parameter(torch.Tensor(1))
 
         # --- Learnable Node-Specific Constant ---
         if self.num_nodes > 0:
@@ -85,18 +93,16 @@ class DirectGCNLayer(MessagePassing):
 
     def reset_parameters(self):
         """Initializes all learnable parameters of the layer."""
-        # Conditionally initialize the correct set of layers
-        if self.use_homo_hetero_paths:
-            layers_to_init = [self.lin_main_in_homo, self.lin_main_in_hetero, self.lin_main_out_homo,
-                              self.lin_main_out_hetero]
-            biases_to_init = [self.bias_main_in_homo, self.bias_main_in_hetero, self.bias_main_out_homo, self.bias_main_out_hetero]
-        else:
-            layers_to_init = [self.lin_main_in, self.lin_main_out]
-            biases_to_init = [self.bias_main_in, self.bias_main_out]
+        layers_to_init = [self.lin_main_in, self.lin_main_out]
+        biases_to_init = [self.bias_main_in, self.bias_main_out]
 
         # Always initialize these
         layers_to_init.extend([self.lin_undirected, self.lin_shared, self.proj_in, self.proj_out, self.proj_undir])
         biases_to_init.extend([self.bias_undirected, self.bias_shared_in, self.bias_shared_out, self.bias_shared_undir])
+        # --- NEW: Add new layers to the initialization lists ---
+        if self.use_homo_hetero_paths:
+            layers_to_init.extend([self.lin_homo, self.lin_hetero, self.proj_homo, self.proj_hetero])
+            biases_to_init.extend([self.bias_homo, self.bias_hetero])
 
         for lin in layers_to_init:
             nn.init.xavier_uniform_(lin.weight)
@@ -110,10 +116,18 @@ class DirectGCNLayer(MessagePassing):
             nn.init.ones_(self.C_in_vec)
             nn.init.ones_(self.C_out_vec)
             nn.init.ones_(self.C_undirected_vec)
+            # --- NEW: Initialize new gating vectors ---
+            if self.use_homo_hetero_paths:
+                nn.init.ones_(self.C_homo_vec)
+                nn.init.ones_(self.C_hetero_vec)
         elif self.gating_mode == 'scalar':
             nn.init.ones_(self.C_in)
             nn.init.ones_(self.C_out)
             nn.init.ones_(self.C_undirected)
+            # --- NEW: Initialize new gating scalars ---
+            if self.use_homo_hetero_paths:
+                nn.init.ones_(self.C_homo)
+                nn.init.ones_(self.C_hetero)
 
         if self.constant is not None:
             nn.init.xavier_uniform_(self.constant)
@@ -122,63 +136,64 @@ class DirectGCNLayer(MessagePassing):
         """Forward pass implementing the hierarchical, dual-path logic."""
         original_indices = getattr(data, 'original_indices', None)
 
-        # --- 1. Directed Path Propagation ---
-        if self.use_homo_hetero_paths:
-            # Use the specialized homophily/heterophily paths
-            h_in_homo = self.propagate(data.edge_index_in_homo, x=self.lin_main_in_homo(x),
-                                       edge_weight=data.edge_weight_in_homo)
-            h_in_hetero = self.propagate(data.edge_index_in_hetero, x=self.lin_main_in_hetero(x),
-                                         edge_weight=data.edge_weight_in_hetero)
-            h_out_homo = self.propagate(data.edge_index_out_homo, x=self.lin_main_out_homo(x),
-                                        edge_weight=data.edge_weight_out_homo)
-            h_out_hetero = self.propagate(data.edge_index_out_hetero, x=self.lin_main_out_hetero(x),
-                                          edge_weight=data.edge_weight_out_hetero)
+        # --- 1. Propagate on all available paths ---
+        h_main_in = self.propagate(data.edge_index_in, x=self.lin_main_in(x), edge_weight=data.edge_weight_in) + self.bias_main_in
+        h_main_out = self.propagate(data.edge_index_out, x=self.lin_main_out(x), edge_weight=data.edge_weight_out) + self.bias_main_out
+        h_main_undir = self.propagate(data.edge_index_undirected_norm, x=self.lin_undirected(x), edge_weight=data.edge_weight_undirected_norm) + self.bias_undirected
 
-            # Combine features from homo/hetero paths before projection
-            h_main_in = h_in_homo + self.bias_main_in_homo + h_in_hetero + self.bias_main_in_hetero
-            h_main_out = h_out_homo + self.bias_main_out_homo + h_out_hetero + self.bias_main_out_hetero
-        else:
-            # Standard path propagation
-            h_main_in_prop = self.propagate(data.edge_index_in, x=self.lin_main_in(x), edge_weight=data.edge_weight_in)
-            h_main_out_prop = self.propagate(data.edge_index_out, x=self.lin_main_out(x),
-                                             edge_weight=data.edge_weight_out)
-            h_main_in = h_main_in_prop + self.bias_main_in
-            h_main_out = h_main_out_prop + self.bias_main_out
-
-        # --- 2. Undirected Path Propagation (always runs) ---
-        h_main_undir_prop = self.propagate(data.edge_index_undirected_norm, x=self.lin_undirected(x),
-                                           edge_weight=data.edge_weight_undirected_norm)
-        h_main_undir = h_main_undir_prop + self.bias_undirected
-
-        # --- 3. Shared transformation ---
+        # --- 2. Shared transformation ---
         h_shared = self.lin_shared(x)
 
-        # --- 4. Combine path-specific and shared features ---
+        # --- 3. Combine path-specific and shared features ---
         ic_combined = self.proj_in(torch.cat([h_main_in, h_shared + self.bias_shared_in], dim=-1))
         oc_combined = self.proj_out(torch.cat([h_main_out, h_shared + self.bias_shared_out], dim=-1))
         uc_combined = self.proj_undir(torch.cat([h_main_undir, h_shared + self.bias_shared_undir], dim=-1))
 
-        # --- 5. Get Gating Coefficients and Constant based on the configured mode ---
+        # --- 4. Get Gating Coefficients and apply Softmax for stability ---
+        gating_logits_list = []
+        path_combinations = []
+
         if self.gating_mode in ['vector', 'node_gate_vector']:
+            gating_logits_list.extend([self.C_in_vec, self.C_out_vec, self.C_undirected_vec])
+            path_combinations.extend([ic_combined, oc_combined, uc_combined])
+
+            if self.use_homo_hetero_paths:
+                h_homo = self.propagate(data.edge_index_homo, x=self.lin_homo(x), edge_weight=data.edge_weight_homo) + self.bias_homo
+                h_hetero = self.propagate(data.edge_index_hetero, x=self.lin_hetero(x), edge_weight=data.edge_weight_hetero) + self.bias_hetero
+                homoc_combined = self.proj_homo(torch.cat([h_homo, h_shared + self.bias_shared_undir], dim=-1))
+                heteroc_combined = self.proj_hetero(torch.cat([h_hetero, h_shared + self.bias_shared_undir], dim=-1))
+                gating_logits_list.extend([self.C_homo_vec, self.C_hetero_vec])
+                path_combinations.extend([homoc_combined, heteroc_combined])
+
+            gating_logits_full = torch.stack(gating_logits_list, dim=-1)
             if original_indices is not None:
-                c_in, c_out = self.C_in_vec[original_indices], self.C_out_vec[original_indices]
-                c_undirected = self.C_undirected_vec[original_indices]
+                gating_logits = gating_logits_full[original_indices]
                 constant_term = self.constant[original_indices] if self.constant is not None else 0
             else:
-                c_in, c_out = self.C_in_vec, self.C_out_vec
-                c_undirected = self.C_undirected_vec
+                gating_logits = gating_logits_full
                 constant_term = self.constant if self.constant is not None else 0
-        elif self.gating_mode == 'scalar':
-            c_in, c_out, c_undirected = self.C_in, self.C_out, self.C_undirected
-            constant_term = 0
-        elif self.gating_mode == 'none':
-            c_in, c_out, c_undirected, constant_term = 1.0, 1.0, 1.0, 0.0
-        else:
-            raise ValueError(f"Unknown gating mode: '{self.gating_mode}'")
 
-        # --- 6. Final Hierarchical Combination ---
-        final_combination = (c_undirected * uc_combined) + (c_in * ic_combined) + (c_out * oc_combined) + constant_term
-        return final_combination
+        elif self.gating_mode == 'scalar':
+            gating_logits_list.extend([self.C_in, self.C_out, self.C_undirected])
+            path_combinations.extend([ic_combined, oc_combined, uc_combined])
+            if self.use_homo_hetero_paths:
+                h_homo = self.propagate(data.edge_index_homo, x=self.lin_homo(x), edge_weight=data.edge_weight_homo) + self.bias_homo
+                h_hetero = self.propagate(data.edge_index_hetero, x=self.lin_hetero(x), edge_weight=data.edge_weight_hetero) + self.bias_hetero
+                homoc_combined = self.proj_homo(torch.cat([h_homo, h_shared + self.bias_shared_undir], dim=-1))
+                heteroc_combined = self.proj_hetero(torch.cat([h_hetero, h_shared + self.bias_shared_undir], dim=-1))
+                gating_logits_list.extend([self.C_homo, self.C_hetero])
+                path_combinations.extend([homoc_combined, heteroc_combined])
+            gating_logits = torch.cat(gating_logits_list, dim=0)
+            constant_term = 0
+        else:
+            # 'none' mode, just sum the combinations
+            final_combination = torch.stack(path_combinations, dim=0).sum(dim=0)
+            return final_combination
+
+        gating_weights = F.softmax(gating_logits, dim=-1)
+        final_combination = torch.sum(gating_weights.unsqueeze(-1) * torch.stack(path_combinations, dim=-2), dim=-2)
+        final_combination += constant_term
+        return final_combination.squeeze(-1)
 
     def message(self, x_j: torch.Tensor, edge_weight: Optional[torch.Tensor]) -> torch.Tensor:
         if edge_weight is None:
@@ -247,8 +262,8 @@ class DirectGCN(nn.Module):
 
         # Check for required edge indices based on the mode
         if self.use_homo_hetero_paths:
-            required_keys = ['edge_index_in_homo', 'edge_index_in_hetero', 'edge_index_out_homo',
-                             'edge_index_out_hetero', 'edge_index_undirected_norm']
+            required_keys = ['edge_index_in', 'edge_index_out', 'edge_index_undirected_norm',
+                             'edge_index_homo', 'edge_index_hetero']
         else:
             required_keys = ['edge_index_in', 'edge_index_out', 'edge_index_undirected_norm']
 

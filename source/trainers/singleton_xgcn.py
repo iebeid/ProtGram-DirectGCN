@@ -180,21 +180,20 @@ class SingletonXGCNTrainer:
         model_name_lower = model_name.lower()
 
         if model_name_lower == 'directgcn':
-            if use_homo_hetero_paths and self.graph.A_out_w_homo is not None:
+            # Always include the base structural and directional paths
+            data_dict.update({
+                'edge_index_in': self.graph.A_in_w.indices(), 'edge_weight_in': self.graph.A_in_w.values(),
+                'edge_index_out': self.graph.A_out_w.indices(), 'edge_weight_out': self.graph.A_out_w.values(),
+                'edge_index_undirected_norm': self.graph.A_undirected_norm_sparse.indices(),
+                'edge_weight_undirected_norm': self.graph.A_undirected_norm_sparse.values()
+            })
+
+            # Conditionally add the new top-level homophily/heterophily paths
+            if use_homo_hetero_paths and self.graph.A_homo_w is not None and self.graph.A_hetero_w is not None:
+                print("  Preparing data with parallel homophily/heterophily paths for singleton evaluation.")
                 data_dict.update({
-                    'edge_index_in_homo': self.graph.A_in_w_homo.indices(), 'edge_weight_in_homo': self.graph.A_in_w_homo.values(),
-                    'edge_index_in_hetero': self.graph.A_in_w_hetero.indices(), 'edge_weight_in_hetero': self.graph.A_in_w_hetero.values(),
-                    'edge_index_out_homo': self.graph.A_out_w_homo.indices(), 'edge_weight_out_homo': self.graph.A_out_w_homo.values(),
-                    'edge_index_out_hetero': self.graph.A_out_w_hetero.indices(), 'edge_weight_out_hetero': self.graph.A_out_w_hetero.values(),
-                    'edge_index_undirected_norm': self.graph.A_undirected_norm_sparse.indices(),
-                    'edge_weight_undirected_norm': self.graph.A_undirected_norm_sparse.values()
-                })
-            else:
-                data_dict.update({
-                    'edge_index_in': self.graph.A_in_w.indices(), 'edge_weight_in': self.graph.A_in_w.values(),
-                    'edge_index_out': self.graph.A_out_w.indices(), 'edge_weight_out': self.graph.A_out_w.values(),
-                    'edge_index_undirected_norm': self.graph.A_undirected_norm_sparse.indices(),
-                    'edge_weight_undirected_norm': self.graph.A_undirected_norm_sparse.values()
+                    'edge_index_homo': self.graph.A_homo_w.indices(), 'edge_weight_homo': self.graph.A_homo_w.values(),
+                    'edge_index_hetero': self.graph.A_hetero_w.indices(), 'edge_weight_hetero': self.graph.A_hetero_w.values()
                 })
         elif model_name_lower == 'rgcn':
             edge_index_out = self.graph.A_out_w.indices()

@@ -156,25 +156,27 @@ class GNNBenchmarker:
         # This allows testing the homophily-aware architecture on standard datasets.
         if use_homo_hetero_paths:
             edge_index = data.edge_index
-            y = data.y
-            # --- FIX: Propagate original edge weights to homophily/heterophily paths ---
-            # First, get the base edge weights (either from data.edge_attr or ones)
             base_edge_weight = data.edge_attr if hasattr(data, 'edge_attr') and data.edge_attr is not None else torch.ones(edge_index.shape[1], device=edge_index.device)
 
             source_nodes, target_nodes = edge_index[0], edge_index[1]
-            source_labels = y[source_nodes]
-            target_labels = y[target_nodes]
+            source_labels = data.y[source_nodes]
+            target_labels = data.y[target_nodes]
             homo_mask = (source_labels == target_labels)
             hetero_mask = ~homo_mask
-            data.edge_index_out_homo = edge_index[:, homo_mask]
-            data.edge_index_out_hetero = edge_index[:, hetero_mask]
-            # Now, use the masks to select the correct weights
-            data.edge_weight_out_homo = base_edge_weight[homo_mask]
-            data.edge_weight_out_hetero = base_edge_weight[hetero_mask]
-            data.edge_index_in_homo = data.edge_index_out_homo.flip(0)
-            data.edge_index_in_hetero = data.edge_index_out_hetero.flip(0)
-            data.edge_weight_in_homo = data.edge_weight_out_homo
-            data.edge_weight_in_hetero = data.edge_weight_out_hetero
+
+            # Create directed homophilic edges and then combine for the undirected path
+            edge_index_out_homo = edge_index[:, homo_mask]
+            edge_weight_out_homo = base_edge_weight[homo_mask]
+            edge_index_in_homo = edge_index_out_homo.flip(0)
+            data.edge_index_homo = torch.cat([edge_index_out_homo, edge_index_in_homo], dim=1)
+            data.edge_weight_homo = torch.cat([edge_weight_out_homo, edge_weight_out_homo], dim=0)
+
+            # Create directed heterophilic edges and then combine for the undirected path
+            edge_index_out_hetero = edge_index[:, hetero_mask]
+            edge_weight_out_hetero = base_edge_weight[hetero_mask]
+            edge_index_in_hetero = edge_index_out_hetero.flip(0)
+            data.edge_index_hetero = torch.cat([edge_index_out_hetero, edge_index_in_hetero], dim=1)
+            data.edge_weight_hetero = torch.cat([edge_weight_out_hetero, edge_weight_out_hetero], dim=0)
 
         # For TongDiGCN, which needs a backward edge index
         data.edge_index_backward = data.edge_index.flip(0)
@@ -361,16 +363,16 @@ class GNNBenchmarker:
         results = []
         for model_name in self.config.BENCHMARK_GNN_MODELS_TO_RUN:
             print(f"\n--- Benchmarking Model: {model_name} on Dataset: {variant_name} ---")
-            try:
-                # FIX: The entire try/except block for a single model run should be INSIDE the mlflow run context.
-                with mlflow.start_run(run_name=f"{model_name}_on_{variant_name}", nested=True):
+            # --- FIX: The try/except block is now inside the MLflow run context ---
+            # This ensures that if a model fails, the MLflow run is correctly marked as FAILED.
+            with mlflow.start_run(run_name=f"{model_name}_on_{variant_name}", nested=True):
+                try:
                     mlflow.set_tag("model_name", model_name)
                     mlflow.set_tag("dataset_name", variant_name)
                     mlflow.log_param("epochs", self.config.EVAL_EPOCHS)
-                    mlflow.log_param("learning_rate", 0.01)  # As hardcoded in train_and_evaluate
+                    mlflow.log_param("learning_rate", 0.01)
                     mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
-                    # Pass the dynamic decision as a temporary override
                     use_homo_override = is_heterophilic if model_name == "DirectGCN" else None
                     model = self._get_model(model_name, data, num_classes, self.config, use_homo_hetero_override=use_homo_override)
 
@@ -383,25 +385,22 @@ class GNNBenchmarker:
                     result_row.update(metrics)
                     results.append(result_row)
 
-                    # --- MLFLOW INTEGRATION: Log
-                    mlflow.log_metrics({"test_accuracy": metrics.get('Accuracy', 0.0),
-                                        "f1_macro": metrics.get('F1-Score (Macro)', 0.0)})
-                    # Create a temporary file for the history and log it
-                    # --- FIX: Defensively create the parent directory to prevent OSError in tests ---
+                    mlflow.log_metrics({
+                        "test_accuracy": metrics.get('Accuracy', 0.0),
+                        "f1_macro": metrics.get('F1-Score (Macro)', 0.0)
+                    })
                     Path(self.output_dir).mkdir(parents=True, exist_ok=True)
                     history_path = Path(self.output_dir) / f"history_{model_name}_{variant_name}.csv"
                     history_df.to_csv(history_path, index=False)
                     mlflow.log_artifact(str(history_path), "training_history")
-                    history_path.unlink()  # Clean up the temp f
+                    history_path.unlink()
 
-                    # --- MLFLOW INTEGRATION: Log
-            except Exception as e:
-                print(f"ERROR during training/evaluation of {model_name} on {variant_name}: {e}")
-                traceback.print_exc()
-                # --- MLFLOW INTEGRATION: Log failure ---
-                mlflow.set_tag("status", "FAILED")
-                mlflow.log_param("error", str(e))
-                results.append({"dataset": variant_name, "model": model_name, "error": str(e)})
+                except Exception as e:
+                    print(f"ERROR during training/evaluation of {model_name} on {variant_name}: {e}")
+                    traceback.print_exc()
+                    mlflow.set_tag("status", "FAILED")
+                    mlflow.log_param("error", str(e))
+                    results.append({"dataset": variant_name, "model": model_name, "error": str(e)})
         return results
 
     def run(self):

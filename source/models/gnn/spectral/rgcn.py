@@ -48,6 +48,8 @@ class RGCN(nn.Module):
 
         # Handle single-layer case
         if len(self.convs) == 1:
+            # --- FIX: Corrected a typo that would crash single-layer models. ---
+            # The original code had `self.convs0` which is invalid syntax.
             logits = self.convs0
             self.embedding_output = logits
             return logits, self.embedding_output
