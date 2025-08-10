@@ -205,10 +205,10 @@ class Config:
         # --- GNN Architecture for Benchmarking ---
         # These parameters control the architecture of GNNs used in the standard
         # node classification benchmarks (Cora, PubMed, etc.).
-        self.BENCHMARK_GNN_HIDDEN_CHANNELS = 256
+        self.BENCHMARK_GNN_HIDDEN_CHANNELS = 64
         self.BENCHMARK_GNN_NUM_LAYERS = 2
         self.BENCHMARK_GNN_DROPOUT_RATE = 0.5
-        self.BENCHMARK_GAT_HEADS = 8
+        self.BENCHMARK_GAT_HEADS = 2
         self.BENCHMARK_GAT_DROPOUT_RATE = 0.6  # GAT often benefits from higher dropout
         self.BENCHMARK_CHEBNET_K = 3
         self.BENCHMARK_GNN_LEARNING_RATE = 0.01
