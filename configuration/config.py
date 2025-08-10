@@ -303,7 +303,9 @@ class Config:
         self.W2V_WINDOW = 5
         self.W2V_MIN_COUNT = 1
         self.W2V_EPOCHS = 5
-        self.W2V_WORKERS: Optional[int] = max(1, os.cpu_count() - 4) if os.cpu_count() else 1
+        # --- FIX: Safely handle os.cpu_count() returning None ---
+        cpu_cores = os.cpu_count()
+        self.W2V_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
         self.W2V_POOLING_STRATEGY = 'mean'
 
     def _setup_transformer_params(self):
@@ -333,7 +335,7 @@ class Config:
 
     def _setup_singleton_eval_params(self):
         """Sets parameters for the rapid, n=1 GCN evaluation."""
-        self.SINGLETON_EVAL_EPOCHS = 50
+        self.SINGLETON_EVAL_EPOCHS = 300
         self.SINGLETON_EVAL_TEST_SPLIT = 0.2
         self.SINGLETON_EVAL_LR = 0.01
         # A list of models to test in the singleton evaluation.

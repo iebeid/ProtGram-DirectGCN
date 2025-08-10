@@ -438,9 +438,9 @@ class EvaluationReporter:
 
                 for other_res in [r for r in results_list if r.get('embedding_name') != main_emb_name]:
                     other_scores = [s for s in other_res.get(scores_key, []) if not np.isnan(s)]
-                    # --- FIX: Make statistical test more robust to missing fold data ---
-                    # Instead of requiring identical lengths, just check if both have enough data points.
-                    if len(main_scores) > 1 and len(other_scores) > 1:
+                    # --- FIX: Wilcoxon test requires equal sample sizes. ---
+                    # Only perform the test if both models have the same number of valid fold scores.
+                    if len(main_scores) > 1 and len(other_scores) == len(main_scores):
                         try:
                             if np.allclose(main_scores, other_scores):
                                 p_val_wilcoxon = 1.0
