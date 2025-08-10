@@ -209,7 +209,7 @@ class Config:
         self.BENCHMARK_GNN_NUM_LAYERS = 2
         self.BENCHMARK_GNN_DROPOUT_RATE = 0.5
         self.BENCHMARK_GAT_HEADS = 2
-        self.BENCHMARK_GAT_DROPOUT_RATE = 0.6  # GAT often benefits from higher dropout
+        self.BENCHMARK_GAT_DROPOUT_RATE = 0.5  # GAT often benefits from higher dropout
         self.BENCHMARK_CHEBNET_K = 3
         self.BENCHMARK_GNN_LEARNING_RATE = 0.01
         self.BENCHMARK_RGCN_NUM_RELATIONS = 2
