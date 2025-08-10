@@ -35,17 +35,17 @@ class GAT(nn.Module):
         # --- DEFINITIVE FIX: Implement GAT as a standalone module for correctness ---
         if num_layers == 1:
             # For a single layer, we don't concatenate and use a single head for the output.
-            self.convs.append(GATConv(in_channels, out_channels, heads=1, concat=False, dropout=dropout_rate))
+            self.convs.append(GATConv(in_channels, out_channels, heads=1, concat=False))
         else:
             # Input layer
-            self.convs.append(GATConv(in_channels, hidden_channels, heads=heads, concat=True, dropout=dropout_rate))
+            self.convs.append(GATConv(in_channels, hidden_channels, heads=heads, concat=True))
 
             # Hidden layers (if any)
             for _ in range(num_layers - 2):
-                self.convs.append(GATConv(hidden_channels * heads, hidden_channels, heads=heads, concat=True, dropout=dropout_rate))
+                self.convs.append(GATConv(hidden_channels * heads, hidden_channels, heads=heads, concat=True))
 
             # Output layer
-            self.convs.append(GATConv(hidden_channels * heads, out_channels, heads=1, concat=False, dropout=dropout_rate))
+            self.convs.append(GATConv(hidden_channels * heads, out_channels, heads=1, concat=False))
 
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
         x, edge_index = data.x, data.edge_index

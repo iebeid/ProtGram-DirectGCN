@@ -56,15 +56,20 @@ class SingletonXGCNTrainer:
             print("  Singleton Trainer: Graph is empty or invalid. Cannot proceed.")
             return pd.DataFrame()
 
-        # 1. Generate self-supervised labels (community detection for n=1)
-        labels, num_classes = self.label_generator.generate_task_labels(self.graph, 'community')
+        # 1. Generate self-supervised labels based on the configuration for n=1
+        # --- FIX: Use the task defined in the config, not a hardcoded one ---
+        task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(1, self.config.GCN_DEFAULT_TASK_TYPE)
+        labels, num_classes = self.label_generator.generate_task_labels(self.graph, task_type)
+
         if num_classes <= 1:
             print("  Singleton Trainer: Only one community found. Cannot perform meaningful classification.")
             return pd.DataFrame()
 
         # --- NEW: Dynamic Architecture Selection for DirectGCN ---
         # Calculate homophily to decide if specialized paths should be used.
-        homophily_ratio = homophily(self.graph.A_undirected_norm_sparse.indices(), labels, method='edge')
+        # --- FIX: Handle case where labels are None (for masked_node task) ---
+        y_for_homophily = labels if labels is not None else torch.zeros(self.graph.number_of_nodes, dtype=torch.long)
+        homophily_ratio = homophily(self.graph.A_undirected_norm_sparse.indices(), y_for_homophily, method='edge')
         is_heterophilic = homophily_ratio < 0.6  # Standard threshold
         print(f"  Singleton Graph (n=1) Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
 
@@ -78,7 +83,7 @@ class SingletonXGCNTrainer:
                 node_indices,
                 test_size=self.config.SINGLETON_EVAL_TEST_SPLIT,
                 random_state=self.config.RANDOM_STATE,
-                stratify=labels.numpy()
+                stratify=y_for_homophily.numpy()
             )
         except ValueError:
             # Fallback for very small classes that can't be stratified
@@ -107,19 +112,29 @@ class SingletonXGCNTrainer:
 
             model.to(self.device)
             optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
-            data_for_model = self._prepare_data_for_model(model_name, initial_features, labels, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
+            data_for_model = self._prepare_data_for_model(model_name, initial_features, y_for_homophily, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
 
             # Training Loop
             for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
                 model.train()
                 optimizer.zero_grad()
-                logits, _ = model(data_for_model)
-                if data_for_model.train_mask.sum() > 0:
-                    loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask].long())
-                    loss.backward()
-                    # --- FIX: Add Gradient Clipping to stabilize training on small/volatile graphs ---
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                    optimizer.step()
+
+                # --- FIX: Handle dynamic label generation for masked_node task ---
+                if task_type == 'masked_node':
+                    masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
+                        self.graph, initial_features, masking_fraction=self.config.GCN_MASKED_NODE_FRACTION, exclude_mask=test_mask
+                    )
+                    epoch_data = self._prepare_data_for_model(model_name, masked_features, labels, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
+                    logits, _ = model(epoch_data)
+                    loss = F.cross_entropy(logits[masked_indices], original_node_ids.to(self.device))
+                else:
+                    logits, _ = model(data_for_model)
+                    if data_for_model.train_mask.sum() > 0:
+                        loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask].long())
+
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
 
             # Evaluation
             model.eval()
