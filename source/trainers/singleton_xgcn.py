@@ -141,21 +141,21 @@ class SingletonXGCNTrainer:
 
     def _get_model(self, name: str, in_channels: int, num_classes: int, use_homo_hetero_paths: bool) -> torch.nn.Module:
         """Model factory for instantiating GNNs."""
-        # --- FIX: Use benchmark parameters from config for consistency ---
+        # --- FIX: Use dedicated SINGLETON parameters from config for consistency and independent control ---
         model_params = {
             'in_channels': in_channels,
-            'hidden_channels': self.config.BENCHMARK_GNN_HIDDEN_CHANNELS,
+            'hidden_channels': self.config.SINGLETON_GNN_HIDDEN_CHANNELS,
             'out_channels': num_classes,
-            'num_layers': self.config.BENCHMARK_GNN_NUM_LAYERS,
-            'dropout_rate': self.config.BENCHMARK_GNN_DROPOUT_RATE
+            'num_layers': self.config.SINGLETON_GNN_NUM_LAYERS,
+            'dropout_rate': self.config.SINGLETON_GNN_DROPOUT_RATE
         }
         if name == "GCN":
             return GCN(**model_params)
         if name == "GAT":
             gat_params = model_params.copy()
             gat_params.update({
-                'heads': self.config.BENCHMARK_GAT_HEADS,
-                'dropout_rate': self.config.BENCHMARK_GAT_DROPOUT_RATE
+                'heads': self.config.SINGLETON_GAT_HEADS,
+                'dropout_rate': self.config.SINGLETON_GAT_DROPOUT_RATE
             })
             return GAT(**gat_params)
         if name == "GraphSAGE":
@@ -163,12 +163,12 @@ class SingletonXGCNTrainer:
         if name == "GIN":
             return GIN(**model_params)
         if name == "ChebNet":
-            return ChebNet(**model_params, K=self.config.BENCHMARK_CHEBNET_K)
+            return ChebNet(**model_params, K=self.config.SINGLETON_CHEBNET_K)
         if name == "RGCN":
-            return RGCN(**model_params, num_relations=self.config.BENCHMARK_RGCN_NUM_RELATIONS)
+            return RGCN(**model_params, num_relations=self.config.SINGLETON_RGCN_NUM_RELATIONS)
         if name == "TongDiGCN": return TongDiGCN(**model_params)
         if name == "DirectGCN":
-            layer_dims = [in_channels] + self.config.GCN_HIDDEN_LAYER_DIMS
+            layer_dims = [in_channels] + self.config.SINGLETON_DIRECTGCN_HIDDEN_LAYER_DIMS
             return DirectGCN(
                 layer_dims=layer_dims, num_graph_nodes=self.graph.number_of_nodes,
                 task_num_output_classes=num_classes,

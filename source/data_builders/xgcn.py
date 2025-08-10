@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: utils/xgcn.py
+# MODULE: data_builders/xgcn.py
 # PURPOSE: Generates labels for various self-supervised GNN training tasks.
 # VERSION: 1.0 (Created by Gemini Code Assist)
 # AUTHOR: Islam Ebeid
@@ -7,7 +7,7 @@
 
 import collections
 import random
-from typing import Tuple, Optional
+from typing import Tuple, Optional, TYPE_CHECKING
 
 import community as community_louvain
 import torch
@@ -15,18 +15,21 @@ from torch_geometric.data import Data
 from torch_geometric.utils import to_networkx
 from tqdm.auto import tqdm
 
-from configuration.config import Config
-from source.data_builders.graph import DirectedNgramGraph
 from source.utils.data import FastaUtils
+
+if TYPE_CHECKING:
+    from configuration.config import Config
+    from source.data_builders.graph import DirectedNgramGraph
 
 
 class XGCNDataset:
     """A class dedicated to generating labels for self-supervised tasks on graphs."""
 
-    def __init__(self, config: Config):
+    def __init__(self, config: 'Config'):
         self.config = config
 
-    def generate_task_labels(self, graph: DirectedNgramGraph, task_type: str) -> Tuple[Optional[torch.Tensor], int]:
+    def generate_task_labels(self, graph: 'DirectedNgramGraph', task_type: str) -> Tuple[
+        Optional[torch.Tensor], int]:
         """Dispatcher for generating labels for different self-supervised tasks."""
         print(f"  Generating self-supervised labels for task: '{task_type}'")
         if task_type == 'community':
@@ -35,10 +38,16 @@ class XGCNDataset:
             return self._generate_next_node_labels(graph)
         elif task_type == 'closest_aa':
             return self._generate_closest_amino_acid_labels(graph, self.config.GCN_CLOSEST_AA_K_HOPS)
+        elif task_type == 'masked_node':
+            # This task is handled differently. The labels are generated dynamically
+            # during training. We return None for the labels and the total number of
+            # nodes as the number of "classes" for the model's output layer.
+            print("    Task is 'masked_node'. Labels will be generated dynamically per epoch.")
+            return None, graph.number_of_nodes
         else:
             raise ValueError(f"Unknown self-supervised task type: '{task_type}'")
 
-    def _generate_community_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
+    def _generate_community_labels(self, graph: 'DirectedNgramGraph') -> Tuple[torch.Tensor, int]:
         """Generates community detection labels using the Louvain algorithm."""
         num_nodes = graph.number_of_nodes
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1
@@ -61,7 +70,7 @@ class XGCNDataset:
         print(f"      Found {num_classes} communities.")
         return labels, num_classes
 
-    def _generate_next_node_labels(self, graph: DirectedNgramGraph) -> Tuple[torch.Tensor, int]:
+    def _generate_next_node_labels(self, graph: 'DirectedNgramGraph') -> Tuple[torch.Tensor, int]:
         """Generates labels by predicting the most likely next node based on transition weights."""
         num_nodes = graph.number_of_nodes
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1
@@ -80,7 +89,8 @@ class XGCNDataset:
                 labels_list[i] = random.choice(max_weight_successors.cpu().tolist())
         return torch.tensor(labels_list, dtype=torch.long), num_nodes
 
-    def _generate_closest_amino_acid_labels(self, graph: DirectedNgramGraph, k_hops: int) -> Tuple[torch.Tensor, int]:
+    def _generate_closest_amino_acid_labels(self, graph: 'DirectedNgramGraph', k_hops: int) -> Tuple[
+        torch.Tensor, int]:
         """Generates labels by finding the shortest path distance to a randomly chosen amino acid."""
         num_nodes = graph.number_of_nodes
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), k_hops + 1
@@ -113,3 +123,53 @@ class XGCNDataset:
             if found_at_hop != -1:
                 labels[start_node] = found_at_hop
         return labels, k_hops + 1
+
+    def generate_masked_node_task(self, graph_obj: 'DirectedNgramGraph', features: torch.Tensor, *,
+                                  masking_fraction: float = 0.15,
+                                  exclude_mask: Optional[torch.Tensor] = None
+                                  ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Creates data for a Masked Node Prediction task.
+
+        This task is analogous to Masked Language Modeling (MLM) in NLP. It masks a
+        fraction of nodes in the graph and tasks the model with predicting the
+        original identity of these masked nodes based on their neighborhood context.
+
+        Args:
+            graph_obj: The graph object.
+            features: The original node feature matrix.
+            masking_fraction: The fraction of nodes to mask.
+            exclude_mask: An optional boolean tensor where `True` indicates nodes
+                          that should NOT be masked (e.g., validation/test set).
+
+        Returns:
+            A tuple containing:
+            - masked_features (torch.Tensor): A new feature matrix where some nodes are masked.
+            - masked_indices (torch.Tensor): The indices of the nodes that were masked.
+            - original_node_labels (torch.Tensor): The original node indices of the masked nodes,
+                                                   which serve as the ground truth labels.
+        """
+        num_nodes = graph_obj.number_of_nodes
+
+        # --- NEW: Respect the exclude_mask to prevent data leakage in other contexts ---
+        if exclude_mask is not None:
+            candidate_indices = torch.where(~exclude_mask)[0]
+        else:
+            candidate_indices = torch.arange(num_nodes)
+
+        num_candidates = len(candidate_indices)
+        num_to_mask = int(num_candidates * masking_fraction)
+
+        if num_to_mask == 0:
+            return features.clone(), torch.tensor([], dtype=torch.long), torch.tensor([], dtype=torch.long)
+
+        all_node_indices = candidate_indices[torch.randperm(num_candidates)]
+        masked_indices = all_node_indices[:num_to_mask]
+        original_node_labels = masked_indices.clone()
+
+        masked_features = features.clone()
+        mask_token = torch.zeros(features.shape[1], dtype=features.dtype, device=features.device)
+        masked_features[masked_indices] = mask_token
+
+        print(f"  Created Masked Node Prediction task: Masked {len(masked_indices)} out of {num_nodes} nodes.")
+        return masked_features, masked_indices, original_node_labels

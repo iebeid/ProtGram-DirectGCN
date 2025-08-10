@@ -100,7 +100,7 @@ class Config:
         self.RUN_LSTM_PIPELINE = True
         self.RUN_WORD2VEC_PIPELINE = True
         self.RUN_TRANSFORMER_PIPELINE = True
-        self.RUN_BENCHMARKING_PIPELINE = True
+        self.RUN_BENCHMARKING_PIPELINE = False
         self.RUN_NETWORK_EMBEDDING_BENCHMARKING = True
         self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_INTEGRATED_TESTS = False  # Runs all unit, smoke, and verification testers
@@ -217,7 +217,7 @@ class Config:
     def _setup_gcn_params(self):
         """Sets parameters for the main ProtGram-DirectGCN pipeline."""
         # Graph Building
-        self.GCN_NGRAM_MAX_N = 3
+        self.GCN_NGRAM_MAX_N = 4
         # --- FIX: Safely handle os.cpu_count() returning None ---
         cpu_cores = os.cpu_count()
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
@@ -253,23 +253,24 @@ class Config:
         self.GCN_GATING_COEFF_MODE = "vector"
 
         # Training Hyperparameters
-        self.GCN_EPOCHS_PER_LEVEL = 300
-        self.GCN_LR = 0.005
+        self.GCN_EPOCHS_PER_LEVEL = 500
+        self.GCN_LR = 0.001
         self.GCN_DROPOUT_RATE = 0.5
         self.GCN_WEIGHT_DECAY = 1e-4 # Standard L2 regularization
         self.GCN_USE_LR_SCHEDULER = True
         self.GCN_LR_SCHEDULER_PATIENCE = 10
         self.GCN_LR_SCHEDULER_FACTOR = 0.5
         self.GCN_USE_EARLY_STOPPING = True
-        self.GCN_EARLY_STOPPING_PATIENCE = 25
+        self.GCN_EARLY_STOPPING_PATIENCE = 50
         self.GCN_EARLY_STOPPING_MIN_DELTA = 1e-5
 
         # Self-Supervised Tasks
         self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
-            1: "next_node", 2: "next_node", 3: "next_node",
+            1: "masked_node", 2: "masked_node", 3: "next_node", 4: "next_node"
         }
-        self.GCN_DEFAULT_TASK_TYPE: str = "next_node"
+        self.GCN_DEFAULT_TASK_TYPE: str = "masked_node"
         self.GCN_CLOSEST_AA_K_HOPS: int = 3
+        self.GCN_MASKED_NODE_FRACTION: float = 0.15  # Fraction of nodes to mask for the masked_node task
 
         # Cluster-GCN Strategy
         self.GCN_USE_CLUSTER_TRAINING = True
@@ -290,6 +291,9 @@ class Config:
         # Strategy for pooling (n-1)-gram embeddings to initialize n-gram features for n>1.
         # Options: 'mean', 'attention'
         self.GCN_HIERARCHICAL_POOLING_STRATEGY = 'attention'
+        # NEW: Control whether to log potentially large attention files.
+        # Set to True to generate attention plots, False to save memory/time.
+        self.GCN_LOG_ATTENTION_WEIGHTS = False
 
         # Sanity Check
         self.GCN_RUN_SANITY_CHECK_PPI = True
@@ -341,6 +345,16 @@ class Config:
         # A list of models to test in the singleton evaluation.
         # Options: "GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "TongDiGCN", "DirectGCN"
         self.SINGLETON_EVAL_MODELS_TO_RUN: List[str] = ["DirectGCN", "GCN", "RGCN", "TongDiGCN"]
+        # --- NEW: Dedicated architecture parameters for the singleton evaluation ---
+        self.SINGLETON_GNN_HIDDEN_CHANNELS = 64
+        self.SINGLETON_GNN_NUM_LAYERS = 2
+        self.SINGLETON_GNN_DROPOUT_RATE = 0.5
+        self.SINGLETON_GAT_HEADS = 2
+        self.SINGLETON_GAT_DROPOUT_RATE = 0.5
+        self.SINGLETON_CHEBNET_K = 3
+        self.SINGLETON_RGCN_NUM_RELATIONS = 2
+        # --- NEW: Dedicated architecture for the singleton DirectGCN model ---
+        self.SINGLETON_DIRECTGCN_HIDDEN_LAYER_DIMS = [512, 256, 128, 64]
 
     def _setup_evaluation_params(self):
         """Sets parameters for the final PPI evaluation pipeline."""

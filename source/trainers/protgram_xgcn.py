@@ -89,8 +89,9 @@ class ProtGramXGCNTrainer:
 
         output_paths = self._save_final_embeddings(final_protein_embeddings_per_model)
 
-        # Save and visualize all collected attention data
-        self._save_and_visualize_attention(all_attention_data_per_model)
+        # --- FIX: Only save/visualize attention if enabled in the config ---
+        if self.config.GCN_LOG_ATTENTION_WEIGHTS:
+            self._save_and_visualize_attention(all_attention_data_per_model)
 
         if self.config.GCN_RUN_SANITY_CHECK_PPI:
             main_model_name_raw = self.config.PROTGRAM_MODELS_TO_TRAIN[0]
@@ -255,13 +256,30 @@ class ProtGramXGCNTrainer:
         criterion = F.cross_entropy
         print(f"  Starting full-batch training for up to {epochs} epochs (Task: {task_type}, Weight Decay: {optimizer.param_groups[0]['weight_decay']})...")
         for epoch in range(1, epochs + 1):
+            # --- CONCEPTUAL CHANGE FOR MASKED NODE PREDICTION ---
+            # If the task is 'masked_node', we need to generate a new mask for each epoch.
+            if task_type == 'masked_node':
+                masked_features, masked_indices, original_labels = self.label_generator.generate_masked_node_task(
+                    graph_obj=full_data_gpu.graph_obj, features=full_data_gpu.x,
+                    masking_fraction=self.config.GCN_MASKED_NODE_FRACTION
+                )
+                # Update the data object for this epoch's forward pass
+                epoch_data = full_data_gpu.clone()
+                epoch_data.x = masked_features.to(self.device)
+                masked_indices = masked_indices.to(self.device)
+                original_labels = original_labels.to(self.device)
+            else:
+                epoch_data = full_data_gpu
+
             optimizer.zero_grad()
             with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
-                output, _ = model(data=full_data_gpu)
-                loss = criterion(output, full_data_gpu.y)
+                output, _ = model(data=epoch_data)
+                if task_type == 'masked_node':
+                    loss = criterion(output[masked_indices], original_labels)
+                else: # Original 'next_node' or 'community' logic
+                    loss = criterion(output, epoch_data.y)
+
             scaler.scale(loss).backward()
-            # --- FIX: Correctly order gradient clipping and scaling ---
-            # Unscale gradients before clipping to ensure we clip the true gradients, not the scaled ones.
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(optimizer)

@@ -292,6 +292,9 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
     # --- FIX: Make the prompt more robust to I/O buffering issues from background processes. ---
     # By explicitly flushing stdout and reading directly from stdin, we can sometimes bypass
     # hangs caused by lingering resources from previous computational steps.
+    print("\n" + "#" * 80)
+    print("### PRELIMINARY ANALYSIS COMPLETE ###")
+    print("#" * 80)
     print("\nDo you want to continue with the full, long-running pipelines for this dataset? (y/n): ")
     sys.stdout.flush()
     response = sys.stdin.readline().strip().lower()
