@@ -20,6 +20,7 @@ from tqdm.auto import tqdm
 from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
 from source.data_builders.xgcn import XGCNDataset
+from source.utils.data import DataUtils
 from source.models.gnn.spatial.gat import GAT
 from source.models.gnn.spatial.gin import GIN
 from source.models.gnn.spatial.graphsage import GraphSAGE
