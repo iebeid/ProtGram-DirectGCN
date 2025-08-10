@@ -43,6 +43,10 @@ class DataUtils:
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
+        # --- DEFINITIVE FIX for Reproducibility ---
+        # This forces PyTorch to use deterministic algorithms, which is essential for run-to-run consistency.
+        # It may impact performance slightly but is crucial for reliable experiments.
+        torch.use_deterministic_algorithms(True)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
             # The following two lines are crucial for GPU reproducibility
