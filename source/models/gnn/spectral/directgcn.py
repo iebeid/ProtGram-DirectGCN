@@ -149,7 +149,7 @@ class DirectGCNLayer(MessagePassing):
         h_main_undir = self.propagate(data.edge_index_undirected_norm, x=self.lin_undirected(x), edge_weight=data.edge_weight_undirected_norm) + self.bias_undirected
         path_combinations.append(self.proj_in(torch.cat([h_main_in, h_shared + self.bias_shared_in], dim=-1))) # --- FIX: Restore the undirected path to the combination logic ---
         path_combinations.append(self.proj_out(torch.cat([h_main_out, h_shared + self.bias_shared_out], dim=-1))) # This was a significant bug where the undirected graph view was calculated but never used.
-        path_combinations.append(self.proj_undir(torch.cat([h_main_undir, h_shared + self.bias_shared_undir], dim=-1)))
+        # path_combinations.append(self.proj_undir(torch.cat([h_main_undir, h_shared + self.bias_shared_undir], dim=-1)))
 
         # Conditional paths for homophily/heterophily
         if self.use_homo_hetero_paths:
