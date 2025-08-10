@@ -45,6 +45,8 @@ class PPIPipeline:
         self.config = config
         print("PPIPipeline initialized.")
         DataUtils.print_header("PPI Evaluation Pipeline Initialized")
+        # --- NEW: Set seeds for reproducibility of MLP initialization and training ---
+        DataUtils.set_seeds(self.config.RANDOM_STATE)
 
     def _preprocess_embeddings_with_pca(self, emb_configs: List[Dict]) -> List[Dict]:
         """

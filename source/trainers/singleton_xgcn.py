@@ -41,6 +41,8 @@ class SingletonXGCNTrainer:
         self.graph = graph_obj
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.label_generator = XGCNDataset(config)
+        # --- NEW: Set seeds for reproducibility ---
+        DataUtils.set_seeds(self.config.RANDOM_STATE)
 
     def run(self) -> pd.DataFrame:
         """

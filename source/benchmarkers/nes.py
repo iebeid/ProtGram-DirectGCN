@@ -59,6 +59,8 @@ class NetworkEmbeddingBenchmarker:
         print(f"  Output directory: {self.output_dir}")
         print(f"  Dataset root: {self.dataset_root}")
         print("=" * 80)
+        # --- NEW: Set seeds for reproducibility of Node2Vec and MLP training ---
+        DataUtils.set_seeds(self.config.RANDOM_STATE)
 
     def _get_dataset(self, name: str) -> Any:
         """Loads a standard PyG dataset."""
@@ -175,12 +177,11 @@ class NetworkEmbeddingBenchmarker:
             sparse=True,
         ).to(self.device)
 
-        # --- DEFINITIVE FIX for hidden prompt: Set num_workers=0 ---
-        # Using multiple worker processes (num_workers > 0) in the DataLoader
-        # causes a well-known issue where the main script hangs before an
-        # input() prompt, waiting for background processes to terminate.
-        # Setting this to 0 forces data loading to happen in the main thread,
-        # resolving the hang and ensuring the prompt appears immediately.
+        # --- DEFINITIVE FIX for hidden prompt and reproducibility: Set num_workers=0 ---
+        # Using multiple worker processes (num_workers > 0) can cause two issues:
+        # 1. The main script hangs before an input() prompt, waiting for background processes.
+        # 2. It introduces non-determinism unless a specific `worker_init_fn` is used.
+        # Setting num_workers=0 forces data loading to happen in the main thread, resolving both.
         loader = node2vec_model.loader(batch_size=128, shuffle=True, num_workers=0)
         optimizer = torch.optim.SparseAdam(list(node2vec_model.parameters()), lr=0.01)
 

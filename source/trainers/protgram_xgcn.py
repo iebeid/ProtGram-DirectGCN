@@ -51,6 +51,8 @@ class ProtGramXGCNTrainer:
         self.label_generator = XGCNDataset(config)
         print(f"Using device: {self.device}")
         self._loaded_graphs: Dict[int, DirectedNgramGraph] = {}
+        # --- NEW: Set seeds for reproducibility of model initialization and training ---
+        DataUtils.set_seeds(self.config.RANDOM_STATE)
 
     def run(self) -> Dict[str, str]:
         """

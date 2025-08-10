@@ -307,6 +307,9 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
 def main():
     script_start_time = time.monotonic()
     base_config = Config()
+    # --- NEW: Set all random seeds at the very beginning of the run ---
+    # This is the primary fix for ensuring run-to-run reproducibility.
+    DataUtils.set_seeds(base_config.RANDOM_STATE)
     logger = FileLogger(base_config.LOG_DIR, enabled=base_config.ENABLE_FILE_LOGGING)
 
     with logger:

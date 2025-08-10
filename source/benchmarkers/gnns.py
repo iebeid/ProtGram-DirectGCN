@@ -69,14 +69,10 @@ class GNNBenchmarker:
 
         self.dataset_root = str(project_benchmark_dir)
         # --- END NEW ---
-
         print("GNNBenchmarker initialized. Using device: {}".format(self.device))
         print(f"Benchmark embeddings will be saved to: {self.embedding_dir}")
-        torch.manual_seed(config.RANDOM_STATE)
-        np.random.seed(config.RANDOM_STATE)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(config.RANDOM_STATE)
-        print(f"  Seeds set to {config.RANDOM_STATE} for reproducibility.")
+        # --- FIX: Use the centralized seeding utility for consistency ---
+        DataUtils.set_seeds(config.RANDOM_STATE)
 
     def _get_dataset(self, name: str, undirected: bool):
         """Loads a standard PyG dataset."""

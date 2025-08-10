@@ -1,11 +1,12 @@
 # ==============================================================================
 # MODULE: utils/data.py
 # PURPOSE: Contains all data loading and processing utilities.
-# VERSION: 3.0 (Refactored for logical class organization)
+# VERSION: 4.0 (Added global seeding and reservoir sampling)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import os
+import json
 import pickle
 import random
 import re
@@ -18,6 +19,7 @@ import dask.dataframe as dd
 import h5py
 import numpy as np
 import pandas as pd
+import torch
 import requests
 from Bio import SeqIO
 from dask.diagnostics import ProgressBar
@@ -31,6 +33,22 @@ from configuration.config import Config
 # ==============================================================================
 class DataUtils:
     """General data utility functions."""
+
+    @staticmethod
+    def set_seeds(seed: int):
+        """
+        Sets random seeds for all relevant libraries to ensure reproducibility.
+        Also configures PyTorch to use deterministic algorithms for CUDA.
+        """
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+            # The following two lines are crucial for GPU reproducibility
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+        print(f"  Seeds set to {seed} for reproducibility. PyTorch CUDA deterministic mode is ON.")
 
     @staticmethod
     def print_header(title: str):
@@ -70,6 +88,11 @@ class DataUtils:
             print(f"Error saving DataFrame to {output_path}: {e}")
 
     @staticmethod
+    def save_json(data: Dict, filepath: Union[str, Path]):
+        """Saves a dictionary to a JSON file with pretty printing."""
+        filepath = Path(filepath)
+        try:
+            filepath.parent
     def write_h5(embeddings_dict: Dict, path: Path, desc: str):
         """Helper function to write a dictionary of embeddings to an HDF5 file."""
         path.parent.mkdir(parents=True, exist_ok=True)
