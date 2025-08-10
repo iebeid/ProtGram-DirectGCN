@@ -283,7 +283,7 @@ class DirectGCN(nn.Module):
             # Pass the entire data object to the layer
             gcn_output = gcn_layer(h_res, data)
             residual_output = res_layer(h_res)
-            h = F.tanh(gcn_output + residual_output)
+            h = F.leaky_relu(gcn_output + residual_output)
             # --- DEFINITIVE FIX: Apply LayerNorm to stabilize activations ---
             h = norm_layer(h)
             h = F.dropout(h, p=self.dropout, training=self.training)
