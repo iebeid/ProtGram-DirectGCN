@@ -92,7 +92,14 @@ class DataUtils:
         """Saves a dictionary to a JSON file with pretty printing."""
         filepath = Path(filepath)
         try:
-            filepath.parent
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=4, sort_keys=True)
+            print(f"  JSON data saved to {filepath.name}")
+        except Exception as e:
+            print(f"  ERROR: Could not save JSON to {filepath.name}: {e}")
+
+    @staticmethod
     def write_h5(embeddings_dict: Dict, path: Path, desc: str):
         """Helper function to write a dictionary of embeddings to an HDF5 file."""
         path.parent.mkdir(parents=True, exist_ok=True)
