@@ -100,7 +100,7 @@ class Config:
         self.RUN_LSTM_PIPELINE = True
         self.RUN_WORD2VEC_PIPELINE = True
         self.RUN_TRANSFORMER_PIPELINE = True
-        self.RUN_BENCHMARKING_PIPELINE = False
+        self.RUN_BENCHMARKING_PIPELINE = True
         self.RUN_NETWORK_EMBEDDING_BENCHMARKING = True
         self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_INTEGRATED_TESTS = False  # Runs all unit, smoke, and verification testers
