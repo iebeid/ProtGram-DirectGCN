@@ -108,8 +108,13 @@ class ModelFactory:
                 layer_dims_config = self.config.BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS
             else:  # protgram
                 layer_dims_config = self.config.DIRECTGCN_HIDDEN_LAYER_DIMS
+
+            # --- FIX: Handle both PyG Data (num_nodes) and custom Graph (number_of_nodes) objects ---
+            graph_obj = kwargs.get('graph_obj')
+            num_nodes = getattr(graph_obj, 'number_of_nodes', getattr(graph_obj, 'num_nodes', 0))
+
             layer_dims = [in_channels] + layer_dims_config
-            return DirectGCN(layer_dims=layer_dims, num_graph_nodes=kwargs['graph_obj'].number_of_nodes,
+            return DirectGCN(layer_dims=layer_dims, num_graph_nodes=num_nodes,
                              task_num_output_classes=num_classes, n_gram_len=kwargs.get('n_val', 1),
                              use_homo_hetero_paths=kwargs.get('use_homo_hetero_paths', False),
                              one_gram_dim=self.config.PROTGRAM_1GRAM_INIT_DIM, max_pe_len=self.config.PROTGRAM_MAX_PE_LEN,

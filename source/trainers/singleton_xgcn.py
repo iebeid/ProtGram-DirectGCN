@@ -52,7 +52,8 @@ class SingletonXGCNTrainer:
             return pd.DataFrame()
 
         # 1. Determine the task and generate labels if necessary
-        task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(1, self.config.GCN_DEFAULT_TASK_TYPE)
+        # --- FIX: Use correct PROTGRAM_ prefixed config variables ---
+        task_type = self.config.PROTGRAM_TASK_TYPES_PER_LEVEL.get(1, self.config.PROTGRAM_DEFAULT_TASK_TYPE)
         labels, num_classes = self.label_generator.generate_task_labels(self.graph, task_type)
 
         if task_type != 'masked_node' and num_classes <= 1:
@@ -73,7 +74,8 @@ class SingletonXGCNTrainer:
             print("  Homophily calculation skipped for non-classification task (e.g., masked_node).")
 
         # 2. Create initial random features
-        initial_features = torch.randn((self.graph.number_of_nodes, self.config.GCN_1GRAM_INIT_DIM))
+        # --- FIX: Use correct PROTGRAM_ prefixed config variables ---
+        initial_features = torch.randn((self.graph.number_of_nodes, self.config.PROTGRAM_1GRAM_INIT_DIM))
 
         # 3. Create train/test splits for nodes
         node_indices = np.arange(self.graph.number_of_nodes)
@@ -125,7 +127,8 @@ class SingletonXGCNTrainer:
                 # --- FIX: Handle dynamic label generation for masked_node task ---
                 if task_type == 'masked_node':
                     masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
-                        self.graph, initial_features, masking_fraction=self.config.GCN_MASKED_NODE_FRACTION, exclude_mask=test_mask
+                        # --- FIX: Use correct PROTGRAM_ prefixed config variables ---
+                        self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=test_mask
                     )
                     # For masked_node, the 'labels' (y) are not used in the loss calculation itself.
                     epoch_data = self._prepare_data_for_model(model_name, masked_features, y_for_stratify, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
@@ -149,7 +152,8 @@ class SingletonXGCNTrainer:
                 # This measures how well the model learned the general context.
                 with torch.no_grad():
                     masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
-                        self.graph, initial_features, masking_fraction=self.config.GCN_MASKED_NODE_FRACTION, exclude_mask=train_mask # Mask only from test set
+                        # --- FIX: Use correct PROTGRAM_ prefixed config variables ---
+                        self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=train_mask # Mask only from test set
                     )
                     eval_data = self._prepare_data_for_model(model_name, masked_features, y_for_stratify, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
                     logits, _ = model(eval_data)
