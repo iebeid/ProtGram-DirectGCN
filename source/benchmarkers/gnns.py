@@ -307,7 +307,7 @@ class GNNBenchmarker(BaseBenchmarker):
             dataset_results = []
 
             # --- Run on Original (potentially directed) Graph ---
-            dataset_original = self._get_dataset(dataset_name, undirected=False)
+            dataset_original = self._get_dataset(dataset_name)
             if dataset_original:
                 dataset_results.extend(self._run_on_dataset_variant(dataset_original, f"{dataset_name}_Original"))
 

@@ -20,7 +20,7 @@ from tqdm.auto import tqdm
 from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
 from source.data_builders.xgcn import XGCNDataset
-from source.utils.data import DataUtils
+from source.models.factory import ModelFactory
 from source.utils.data import DataUtils
 
 
