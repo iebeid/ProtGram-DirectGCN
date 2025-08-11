@@ -171,5 +171,4 @@ class XGCNDataset:
         mask_token = torch.zeros(features.shape[1], dtype=features.dtype, device=features.device)
         masked_features[masked_indices] = mask_token
 
-        print(f"  Created Masked Node Prediction task: Masked {len(masked_indices)} out of {num_nodes} nodes.")
         return masked_features, masked_indices, original_node_labels

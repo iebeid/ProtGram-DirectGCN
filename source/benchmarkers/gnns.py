@@ -94,53 +94,36 @@ class GNNBenchmarker(BaseBenchmarker):
 
     def _preprocess_for_custom_models(self, data: Data, use_homo_hetero_paths: bool) -> Data:
         """Prepares a data object with all necessary edge indices for custom models."""
-        # --- NEW: Split edges by homophily using node labels for benchmarks ---
-        # This allows testing the homophily-aware architecture on standard datasets.
+        base_edge_weight = data.edge_attr if hasattr(data, 'edge_attr') and data.edge_attr is not None else torch.ones(data.edge_index.shape[1], device=data.edge_index.device)
+
         if use_homo_hetero_paths:
             edge_index = data.edge_index
-            base_edge_weight = data.edge_attr if hasattr(data, 'edge_attr') and data.edge_attr is not None else torch.ones(edge_index.shape[1], device=edge_index.device)
-
             source_nodes, target_nodes = edge_index[0], edge_index[1]
             source_labels = data.y[source_nodes]
             target_labels = data.y[target_nodes]
             homo_mask = (source_labels == target_labels)
             hetero_mask = ~homo_mask
 
-            # Create directed homophilic edges and then combine for the undirected path
             edge_index_out_homo = edge_index[:, homo_mask]
             edge_weight_out_homo = base_edge_weight[homo_mask]
             A_out_w_homo = torch.sparse_coo_tensor(edge_index_out_homo, edge_weight_out_homo, (data.num_nodes, data.num_nodes)).coalesce()
             A_homo_w = (A_out_w_homo + A_out_w_homo.t()).coalesce()
             data.edge_index_homo_norm, data.edge_weight_homo_norm = self._normalize_symmetric_matrix(A_homo_w, data.num_nodes).coalesce().indices(), self._normalize_symmetric_matrix(A_homo_w, data.num_nodes).coalesce().values()
 
-            # Create directed heterophilic edges and then combine for the undirected path
             edge_index_out_hetero = edge_index[:, hetero_mask]
             edge_weight_out_hetero = base_edge_weight[hetero_mask]
             A_out_w_hetero = torch.sparse_coo_tensor(edge_index_out_hetero, edge_weight_out_hetero, (data.num_nodes, data.num_nodes)).coalesce()
             A_hetero_w = (A_out_w_hetero + A_out_w_hetero.t()).coalesce()
             data.edge_index_hetero_norm, data.edge_weight_hetero_norm = self._normalize_symmetric_matrix(A_hetero_w, data.num_nodes).coalesce().indices(), self._normalize_symmetric_matrix(A_hetero_w, data.num_nodes).coalesce().values()
 
-        # For TongDiGCN, which needs a backward edge index
-        data.edge_index_backward = data.edge_index.flip(0)
-
-        # For DirectGCN, which needs separate in, out, and undirected matrices
-        edge_index_undir = to_undirected(data.edge_index, num_nodes=data.num_nodes)
-        row, col = edge_index_undir
-        deg = torch.bincount(col, minlength=data.num_nodes).float()
-        deg_inv_sqrt = deg.pow(-0.5)
-        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
-        edge_weight_undir = deg_inv_sqrt[row] * deg_inv_sqrt[col]
-
-        # --- FIX: Use existing edge attributes if they exist, otherwise default to 1.0 ---
-        # This makes the benchmarker more general for weighted datasets.
-        base_edge_weight = data.edge_attr if hasattr(data, 'edge_attr') and data.edge_attr is not None else torch.ones(data.edge_index.shape[1], device=data.edge_index.device)
-
-        data.edge_index_undirected_norm = edge_index_undir
-        data.edge_weight_undirected_norm = edge_weight_undir
-        data.edge_index_out = data.edge_index
-        data.edge_weight_out = base_edge_weight
-        data.edge_index_in = data.edge_index.flip(0)
-        data.edge_weight_in = base_edge_weight
+        A_out_w_sparse = torch.sparse_coo_tensor(data.edge_index, base_edge_weight, (data.num_nodes, data.num_nodes)).coalesce()
+        A_in_w_sparse = A_out_w_sparse.t().coalesce()
+        A_undir_w = (A_out_w_sparse + A_in_w_sparse).coalesce()
+        A_undirected_norm = self._normalize_symmetric_matrix(A_undir_w, data.num_nodes)
+        data.edge_index_out, data.edge_weight_out = A_out_w_sparse.indices(), A_out_w_sparse.values()
+        data.edge_index_in, data.edge_weight_in = A_in_w_sparse.indices(), A_in_w_sparse.values()
+        data.edge_index_undirected_norm, data.edge_weight_undirected_norm = A_undirected_norm.indices(), A_undirected_norm.values()
+        data.edge_index_backward = data.edge_index_in
 
         # --- FIX: Assign edge weights to edge_attr for standard GNNs ---
         # The BaseGNN class expects weights in `edge_attr`. Without this, standard
@@ -151,6 +134,12 @@ class GNNBenchmarker(BaseBenchmarker):
         # The BaseGNN forward pass uses `data.edge_index`. We must ensure it matches
         # the `data.edge_attr` we just assigned to prevent shape mismatches.
         data.edge_index = data.edge_index_undirected_norm
+
+        # --- NEW: Calculate and add the mathcal{A} matrices for DirectGCN ---
+        mathcal_A_out = self._calculate_single_propagation_matrix(A_out_w_sparse, data.num_nodes)
+        mathcal_A_in = self._calculate_single_propagation_matrix(A_in_w_sparse, data.num_nodes)
+        data.edge_index_mathcal_out, data.edge_weight_mathcal_out = mathcal_A_out.indices(), mathcal_A_out.values()
+        data.edge_index_mathcal_in, data.edge_weight_mathcal_in = mathcal_A_in.indices(), mathcal_A_in.values()
         return data
 
     def train_and_evaluate(self, model: torch.nn.Module, data: Data) -> Tuple[Dict[str, float], pd.DataFrame]:

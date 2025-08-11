@@ -133,9 +133,11 @@ class SingletonXGCNTrainer:
                 # --- FIX: Handle dynamic label generation for masked_node task ---
                 if task_type == 'masked_node':
                     masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
-                        # --- FIX: Use correct PROTGRAM_ prefixed config variables ---
                         self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=test_mask
                     )
+                    if epoch == 1: # Print only on the first epoch
+                        print(f"  Created Masked Node Prediction task: Masked {len(masked_indices)} out of {self.graph.number_of_nodes} nodes.")
+
                     # For masked_node, the 'labels' (y) are not used in the loss calculation itself.
                     epoch_data = prepare_pyg_data_from_protgram_graph(
                         model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
@@ -161,9 +163,11 @@ class SingletonXGCNTrainer:
                 # This measures how well the model learned the general context.
                 with torch.no_grad():
                     masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
-                        # --- FIX: Use correct PROTGRAM_ prefixed config variables ---
                         self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=train_mask # Mask only from test set
                     )
+                    if epoch == 1:
+                        print(f"  Created Masked Node Prediction task for evaluation: Masked {len(masked_indices)} nodes.")
+
                     eval_data = prepare_pyg_data_from_protgram_graph(
                         model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
                         use_homo_hetero_paths=use_homo_hetero_for_this_model
