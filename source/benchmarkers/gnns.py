@@ -156,7 +156,7 @@ class GNNBenchmarker(BaseBenchmarker):
         val_mask = self._get_1d_mask(data.val_mask)
         test_mask = self._get_1d_mask(data.test_mask)
 
-        for epoch in range(1, self.config.EVAL_EPOCHS + 1):
+        for epoch in range(1, self.config.BENCHMARK_GNN_EPOCHS + 1):
             model.train()
             optimizer.zero_grad()
             logits, _ = model(data)
@@ -191,7 +191,7 @@ class GNNBenchmarker(BaseBenchmarker):
                 precision_at_best_val = precision_score(y_true_test, y_pred_test, average='macro', zero_division=0)
                 recall_at_best_val = recall_score(y_true_test, y_pred_test, average='macro', zero_division=0)
 
-            if self.config.DEBUG_VERBOSE and (epoch == 1 or epoch % 10 == 0 or epoch == self.config.EVAL_EPOCHS):
+            if self.config.DEBUG_VERBOSE and (epoch == 1 or epoch % 10 == 0 or epoch == self.config.BENCHMARK_GNN_EPOCHS):
                 print(f"    Epoch {epoch:03d}, Loss: {loss:.4f}, Val Acc: {val_acc:.4f}, Test Acc: {test_acc:.4f}")
 
         metrics = {

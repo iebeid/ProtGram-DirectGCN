@@ -160,6 +160,10 @@ class XGCNDataset:
         num_candidates = len(candidate_indices)
         num_to_mask = int(num_candidates * masking_fraction)
 
+        # --- FIX: Ensure at least one node is masked if possible, to prevent empty test sets. ---
+        if num_candidates > 0 and num_to_mask == 0:
+            num_to_mask = 1
+
         if num_to_mask == 0:
             return features.clone(), torch.tensor([], dtype=torch.long), torch.tensor([], dtype=torch.long)
 

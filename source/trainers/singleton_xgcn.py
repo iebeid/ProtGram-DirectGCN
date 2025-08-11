@@ -135,7 +135,8 @@ class SingletonXGCNTrainer:
                     masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
                         self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=test_mask
                     )
-                    if epoch == 1: # Print only on the first epoch
+                    # --- FIX: Print log message here instead of in the generator ---
+                    if epoch == 1:  # Print only on the first epoch
                         print(f"  Created Masked Node Prediction task: Masked {len(masked_indices)} out of {self.graph.number_of_nodes} nodes.")
 
                     # For masked_node, the 'labels' (y) are not used in the loss calculation itself.
@@ -165,8 +166,8 @@ class SingletonXGCNTrainer:
                     masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
                         self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=train_mask # Mask only from test set
                     )
-                    if epoch == 1:
-                        print(f"  Created Masked Node Prediction task for evaluation: Masked {len(masked_indices)} nodes.")
+                    # This part runs only once per model, so no need to check epoch
+                    print(f"  Created Masked Node Prediction task for evaluation: Masked {len(masked_indices)} nodes.")
 
                     eval_data = prepare_pyg_data_from_protgram_graph(
                         model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,

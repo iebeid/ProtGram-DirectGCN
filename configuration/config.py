@@ -212,9 +212,11 @@ class Config:
         self.BENCHMARK_GAT_DROPOUT_RATE = 0.5  # GAT often benefits from higher dropout
         self.BENCHMARK_CHEBNET_K = 3
         self.BENCHMARK_GNN_LEARNING_RATE = 0.01
+        # --- NEW: Dedicated epochs for the GNN benchmark suite ---
+        self.BENCHMARK_GNN_EPOCHS = 300
         self.BENCHMARK_RGCN_NUM_RELATIONS = 2
         # --- NEW: Dedicated architecture for the benchmark DirectGCN model ---
-        self.BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS = [64, 64]
+        self.BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS = [512, 256, 128, 64]
         # --- NEW: Dedicated initial feature dimension for benchmark models ---
         self.BENCHMARK_GNN_INIT_DIM = 64
 
@@ -260,7 +262,7 @@ class Config:
         self.PROTGRAM_GATING_COEFF_MODE = "vector"
 
         # --- ProtGram Training Hyperparameters ---
-        self.PROTGRAM_EPOCHS_PER_LEVEL = 500
+        self.PROTGRAM_EPOCHS_PER_LEVEL = 300
         self.PROTGRAM_LR = 0.001
         self.PROTGRAM_DROPOUT_RATE = 0.5
         self.PROTGRAM_WEIGHT_DECAY = 1e-4 # Standard L2 regularization
