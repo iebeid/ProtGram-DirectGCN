@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: benchmarkers/gnns.py
 # PURPOSE: Handles benchmarking of various GNN models on standard datasets.
-# VERSION: 4.2 (Fixed CUDA assert by deriving num_classes from data)
+# VERSION: 5.0 (Refactored to use BaseBenchmarker)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -22,129 +22,18 @@ from torch_geometric.transforms import ToUndirected
 from torch_geometric.utils import to_undirected, homophily
 
 from configuration.config import Config
-from source.models.gnn.spectral.chebnet import ChebNet
-from source.models.gnn.spectral.directgcn import DirectGCN
-from source.models.gnn.spatial.gat import GAT
-from source.models.gnn.spectral.gcn import GCN
-from source.models.gnn.spatial.gin import GIN
-from source.models.gnn.spatial.graphsage import GraphSAGE
-from source.models.gnn.spectral.rgcn import RGCN
-from source.models.gnn.spectral.tongidigcn import TongDiGCN
+from source.benchmarkers.base import BaseBenchmarker
+from source.models.factory import ModelFactory
 from source.utils.data import DataUtils
 from source.utils.models import EmbeddingProcessor
 
 
-class GNNBenchmarker:
+class GNNBenchmarker(BaseBenchmarker):
     def __init__(self, config: Config):
-        self.config = config
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.output_dir = config.RESULTS_BENCHMARKING_DIR
+        super().__init__(config, "GNN Benchmarker")
         self.embedding_dir = config.RESULTS_BENCHMARK_EMBEDDINGS_DIR
-
-        # --- NEW: Persistent Caching for Benchmark Datasets ---
-        project_benchmark_dir = config.DATA_STANDARD_DATASETS_DIR
-        cache_benchmark_dir = config.PERSISTENT_DATA_CACHE / "benchmarks"
-        cache_benchmark_dir.mkdir(parents=True, exist_ok=True)
-
-        # If the project directory exists but isn't a link, migrate its contents to the cache.
-        if project_benchmark_dir.exists() and not project_benchmark_dir.is_symlink():
-            print(f"  Migrating existing benchmark data from '{project_benchmark_dir.relative_to(config.PROJECT_ROOT)}' to persistent cache...")
-            # This loop is safer for moving contents across different filesystems
-            for item_name in os.listdir(project_benchmark_dir):
-                source_item = project_benchmark_dir / item_name
-                dest_item = cache_benchmark_dir / item_name
-                # Move the item, overwriting if it exists in the cache (to ensure latest version)
-                if dest_item.exists():
-                    if source_item.is_dir():
-                        shutil.rmtree(dest_item)
-                    else:
-                        dest_item.unlink()
-                shutil.move(str(source_item), str(dest_item))
-            project_benchmark_dir.rmdir()  # Remove the now-empty directory
-            os.symlink(cache_benchmark_dir, project_benchmark_dir, target_is_directory=True)
-            print("  Migration complete.")
-        elif not project_benchmark_dir.exists():
-            os.symlink(cache_benchmark_dir, project_benchmark_dir, target_is_directory=True)
-            print(f"  Symlinked project benchmark directory to persistent cache.")
-
-        self.dataset_root = str(project_benchmark_dir)
-        # --- END NEW ---
-        print("GNNBenchmarker initialized. Using device: {}".format(self.device))
+        self.model_factory = ModelFactory(config, context='benchmark')
         print(f"Benchmark embeddings will be saved to: {self.embedding_dir}")
-        # --- FIX: Use the centralized seeding utility for consistency ---
-        DataUtils.set_seeds(config.RANDOM_STATE)
-
-    def _get_dataset(self, name: str, undirected: bool):
-        """Loads a standard PyG dataset."""
-        transform = ToUndirected() if undirected else None
-        path = self.dataset_root
-        try:
-            if name in ['Cora', 'CiteSeer', 'PubMed']:
-                return Planetoid(root=path, name=name, transform=transform)
-            elif name in ['Cornell', 'Texas', 'Wisconsin']:
-                return WebKB(root=path, name=name, transform=transform)
-            elif name == 'Actor':
-                return Actor(root=path, transform=transform)
-            elif name == 'KarateClub':
-                return KarateClub(transform=transform)
-            else:
-                print(f"  Dataset '{name}' not recognized by this loader.")
-                return None
-        except Exception as e:
-            print(f"  Error loading dataset '{name}': {e}")
-            return None
-
-    def _get_model(self, name: str, data: Any, num_classes: int, config: Config, use_homo_hetero_override: Optional[bool] = None) -> torch.nn.Module:
-        """Model factory that correctly handles parameters for all models."""
-        # Standardized parameters for most models
-        # --- FIX: All parameters are now sourced from the config object ---
-        model_params = {
-            'in_channels': data.num_features,
-            'hidden_channels': config.BENCHMARK_GNN_HIDDEN_CHANNELS,
-            'out_channels': num_classes,
-            'num_layers': config.BENCHMARK_GNN_NUM_LAYERS,
-            'dropout_rate': config.BENCHMARK_GNN_DROPOUT_RATE
-        }
-
-        if name == "GCN":
-            return GCN(**model_params)
-        elif name == "GAT":
-            gat_params = model_params.copy()
-            gat_params.update({
-                'heads': config.BENCHMARK_GAT_HEADS,
-                'dropout_rate': config.BENCHMARK_GAT_DROPOUT_RATE
-            })
-            return GAT(**gat_params)
-        elif name == "GraphSAGE":
-            return GraphSAGE(**model_params)
-        elif name == "GIN":
-            return GIN(**model_params)
-        elif name == "ChebNet":
-            return ChebNet(**model_params, K=config.BENCHMARK_CHEBNET_K)
-        elif name == "RGCN":
-            return RGCN(**model_params, num_relations=config.BENCHMARK_RGCN_NUM_RELATIONS)
-        elif name == "TongDiGCN":
-            return TongDiGCN(**model_params)
-        elif name == "DirectGCN":
-            # The DirectGCN model has a complex signature that must be
-            # adapted for standard benchmark datasets.
-            layer_dims = [data.num_features] + config.GCN_HIDDEN_LAYER_DIMS
-            # --- FIX: The dynamic override is now the only source of truth. Default to False if not provided. ---
-            use_homo_hetero = use_homo_hetero_override if use_homo_hetero_override is not None else False
-            return DirectGCN(
-                layer_dims=layer_dims,
-                num_graph_nodes=data.num_nodes,
-                # The internal decoder will map the final GNN embedding to the number of classes
-                task_num_output_classes=num_classes,
-                n_gram_len=1,  # Mimics n=1 level; PE is skipped if feature dim doesn't match
-                one_gram_dim=data.num_features,  # Use actual feature dim for benchmark consistency
-                max_pe_len=config.GCN_MAX_PE_LEN,
-                dropout=config.GCN_DROPOUT_RATE,
-                use_homo_hetero_paths=use_homo_hetero,
-                gating_mode=config.GCN_GATING_COEFF_MODE
-            )
-        else:
-            raise ValueError(f"Model '{name}' not found in GNNBenchmarker.")
 
     def _preprocess_for_custom_models(self, data: Data, use_homo_hetero_paths: bool) -> Data:
         """Prepares a data object with all necessary edge indices for custom models."""
@@ -206,12 +95,6 @@ class GNNBenchmarker:
         # the `data.edge_attr` we just assigned to prevent shape mismatches.
         data.edge_index = data.edge_index_undirected_norm
         return data
-
-    def _get_1d_mask(self, mask_tensor: torch.Tensor) -> torch.Tensor:
-        """Helper to handle masks from datasets that may have multiple splits (e.g., WebKB)."""
-        if mask_tensor.dim() > 1:
-            return mask_tensor[:, 0].bool()
-        return mask_tensor.bool()
 
     def train_and_evaluate(self, model: torch.nn.Module, data: Data) -> Tuple[Dict[str, float], pd.DataFrame]:
         """Handles the training and evaluation loop for a given model and data."""
@@ -349,7 +232,7 @@ class GNNBenchmarker:
         # This aligns the benchmark with the ProtGram n=1 setup, testing the
         # models' ability to learn from structure alone without relying on
         # pre-existing node attributes.
-        new_feature_dim = self.config.GCN_1GRAM_INIT_DIM
+        new_feature_dim = self.config.BENCHMARK_GNN_INIT_DIM
         print(f"  Ignoring original features. Initializing new random features with dimension: {new_feature_dim}")
         # Create the random features on the CPU; they will be moved to the GPU later.
         data.x = torch.randn((data.num_nodes, new_feature_dim))
@@ -382,8 +265,10 @@ class GNNBenchmarker:
                     mlflow.log_param("learning_rate", self.config.BENCHMARK_GNN_LEARNING_RATE)
                     mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
-                    use_homo_override = is_heterophilic if model_name == "DirectGCN" else None
-                    model = self._get_model(model_name, data, num_classes, self.config, use_homo_hetero_override=is_heterophilic)
+                    model = self.model_factory.create_model(
+                        model_name=model_name, in_channels=data.num_features, num_classes=num_classes,
+                        graph_obj=data, use_homo_hetero_paths=is_heterophilic
+                    )
 
                     if self.config.DEBUG_VERBOSE:
                         print("  Model Architecture:")

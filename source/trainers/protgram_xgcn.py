@@ -34,7 +34,7 @@ from source.experiments.ppi_1 import PPIPipeline
 from source.models.gnn.spectral.directgcn import DirectGCN
 from source.models.gnn.spectral.rgcn import RGCN
 from source.models.gnn.spectral.tongidigcn import TongDiGCN
-from source.utils.data import DataUtils, IDMapGenerator, FastaUtils
+from source.utils.data import DataUtils, IDMapGenerator, FastaUtils, prepare_pyg_data_from_protgram_graph
 from source.utils.models import EmbeddingProcessor, EarlyStopper
 from source.utils.results import EvaluationReporter
 
@@ -90,10 +90,10 @@ class ProtGramXGCNTrainer:
         output_paths = self._save_final_embeddings(final_protein_embeddings_per_model)
 
         # --- FIX: Only save/visualize attention if enabled in the config ---
-        if self.config.GCN_LOG_ATTENTION_WEIGHTS:
+        if self.config.PROTGRAM_LOG_ATTENTION_WEIGHTS:
             self._save_and_visualize_attention(all_attention_data_per_model)
 
-        if self.config.GCN_RUN_SANITY_CHECK_PPI:
+        if self.config.PROTGRAM_RUN_SANITY_CHECK_PPI:
             main_model_name_raw = self.config.PROTGRAM_MODELS_TO_TRAIN[0]
             main_model_key = f"ProtGram{main_model_name_raw.capitalize()}"
             # --- FIX: Prioritize the original, non-PCA'd file for the sanity check ---
@@ -126,8 +126,6 @@ class ProtGramXGCNTrainer:
         graph_obj.A_out_w = graph_obj.A_out_w.cpu()
         graph_obj.A_in_w = graph_obj.A_in_w.cpu()
         graph_obj.A_undirected_norm_sparse = graph_obj.A_undirected_norm_sparse.cpu()
-        # This is for other models, DirectGCN does not use it.
-        graph_obj._create_propagation_matrices_for_gcn()
         return graph_obj
 
     def _get_initial_features_for_level(self, n: int, graph_obj: DirectedNgramGraph,
@@ -135,7 +133,7 @@ class ProtGramXGCNTrainer:
                                         prev_level_map: Optional[Dict[str, int]]) -> Optional[Tuple[torch.Tensor, Dict]]:
         """Generates the initial node features for the current n-gram level."""
         if n == 1:
-            features = torch.randn((graph_obj.number_of_nodes, self.config.GCN_1GRAM_INIT_DIM))
+            features = torch.randn((graph_obj.number_of_nodes, self.config.PROTGRAM_1GRAM_INIT_DIM))
             return features, {}
         else:
             if prev_level_embeddings is None or prev_level_embeddings.size == 0 or prev_level_map is None:
@@ -143,7 +141,7 @@ class ProtGramXGCNTrainer:
                 return None
             result = EmbeddingProcessor.pool_lower_level_embeddings_for_init(
                 graph_obj, prev_level_embeddings, prev_level_map,
-                strategy=self.config.GCN_HIERARCHICAL_POOLING_STRATEGY)
+                strategy=self.config.PROTGRAM_HIERARCHICAL_POOLING_STRATEGY)
             if result is None:
                 return None
             features, attention_log = result
@@ -155,7 +153,7 @@ class ProtGramXGCNTrainer:
         level_ngram_to_idx: Dict[int, Dict[str, int]] = {}
         hierarchical_attention_per_level: Dict[int, Dict] = {}
 
-        for n in range(1, self.config.GCN_NGRAM_MAX_N + 1):
+        for n in range(1, self.config.PROTGRAM_NGRAM_MAX_N + 1):
             DataUtils.print_header(f"Processing N-gram Level: n = {n} for model '{model_type}'")
 
             graph_obj = self._load_graph_for_level(n)
@@ -172,34 +170,39 @@ class ProtGramXGCNTrainer:
             if hierarchical_attention:
                 hierarchical_attention_per_level[n] = hierarchical_attention
 
-            task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(n, self.config.GCN_DEFAULT_TASK_TYPE)
+            task_type = self.config.PROTGRAM_TASK_TYPES_PER_LEVEL.get(n, self.config.PROTGRAM_DEFAULT_TASK_TYPE)
             labels, num_classes_for_task = self.label_generator.generate_task_labels(graph_obj, task_type)
 
             # --- NEW: Dynamic Architecture Selection for DirectGCN ---
             # Calculate homophily to decide if specialized paths should be used for this level.
             use_homo_hetero_paths_for_level = False
-            if model_type == 'directgcn':
+            if model_type == 'directgcn' and labels is not None:
+                # --- FIX: Only calculate homophily and split edges if labels are available ---
+                # This prevents crashes when using tasks like 'masked_node' which don't have static labels.
                 homophily_ratio = homophily(graph_obj.A_undirected_norm_sparse.indices(), labels, method='edge')
                 is_heterophilic = homophily_ratio < 0.6  # Standard threshold
                 print(f"  Graph n={n} Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
                 if is_heterophilic:
                     print(f"  -> Enabling specialized homophily/heterophily paths for DirectGCN at n={n}.")
+                    # --- DEFINITIVE FIX: Set the flag AND call the method to create the edge splits ---
                     use_homo_hetero_paths_for_level = True
-
-            if use_homo_hetero_paths_for_level:
-                graph_obj.split_edges_by_homophily(labels)
+                    graph_obj.split_edges_by_homophily(labels)
 
             model = self._build_model(model_type, n, initial_features.shape[1], num_classes_for_task, graph_obj, use_homo_hetero_paths_for_level)
             if model is None: continue
 
             data = Data(x=initial_features, y=labels, graph_obj=graph_obj)
-            optimizer = optim.Adam(model.parameters(), lr=self.config.GCN_LR, weight_decay=self.config.GCN_WEIGHT_DECAY)
+            optimizer = optim.Adam(model.parameters(), lr=self.config.PROTGRAM_LR, weight_decay=self.config.PROTGRAM_WEIGHT_DECAY)
 
             self._train_single_level(model, graph_obj, data, optimizer, use_homo_hetero_paths_for_level)
 
+            # --- FIX: Pass the trainer's data prep function to the extractor to avoid duplicated logic ---
+            prepare_func = partial(prepare_pyg_data_from_protgram_graph,
+                                   use_homo_hetero_paths=use_homo_hetero_paths_for_level)
             ngram_embeddings_per_level[n] = EmbeddingProcessor.extract_gcn_node_embeddings(
-                model, data, graph_obj, self.config, self.device, use_homo_hetero_paths_for_level,
-                lambda g: self._partition_graph(g)
+                model, data, graph_obj, self.config, self.device,
+                prepare_data_func=prepare_func,
+                create_clustered_subgraphs_func=lambda g: self._partition_graph(g)
             )
 
             print(f"  Generated {ngram_embeddings_per_level[n].shape[0]} embeddings of dim {ngram_embeddings_per_level[n].shape[1]} for n={n}.")
@@ -212,56 +215,64 @@ class ProtGramXGCNTrainer:
 
     def _build_model(self, model_type: str, n_val: int, in_channels: int, num_classes: int, graph_obj: DirectedNgramGraph, use_homo_hetero_paths: bool) -> Optional[nn.Module]:
         """Model factory for creating different GNN architectures."""
-        layer_dims = [in_channels] + self.config.GCN_HIDDEN_LAYER_DIMS
-        if num_classes <= 0: num_classes = 1
+        if num_classes <= 0:
+            num_classes = 1
 
         if model_type == 'directgcn':
+            layer_dims = [in_channels] + self.config.DIRECTGCN_HIDDEN_LAYER_DIMS
             return DirectGCN(
                 layer_dims=layer_dims, num_graph_nodes=graph_obj.number_of_nodes,
                 task_num_output_classes=num_classes,
                 n_gram_len=n_val,
                 use_homo_hetero_paths=use_homo_hetero_paths,
-                one_gram_dim=self.config.GCN_1GRAM_INIT_DIM, max_pe_len=self.config.GCN_MAX_PE_LEN,
-                dropout=self.config.GCN_DROPOUT_RATE, gating_mode=self.config.GCN_GATING_COEFF_MODE
+                one_gram_dim=self.config.PROTGRAM_1GRAM_INIT_DIM, max_pe_len=self.config.PROTGRAM_MAX_PE_LEN,
+                dropout=self.config.PROTGRAM_DROPOUT_RATE, gating_mode=self.config.PROTGRAM_GATING_COEFF_MODE
             )
         elif model_type == 'rgcn':
-            return RGCN(in_channels, self.config.GCN_HIDDEN_LAYER_DIMS[-1], num_classes, num_relations=2)
+            return RGCN(in_channels=in_channels, hidden_channels=self.config.PROTGRAM_GNN_HIDDEN_CHANNELS,
+                        out_channels=num_classes, num_relations=2,
+                        num_layers=self.config.PROTGRAM_GNN_NUM_LAYERS, dropout_rate=self.config.PROTGRAM_DROPOUT_RATE)
         elif model_type == 'tongdigcn':
-            return TongDiGCN(in_channels, self.config.GCN_HIDDEN_LAYER_DIMS[0], num_classes)
+            return TongDiGCN(in_channels=in_channels, hidden_channels=self.config.PROTGRAM_GNN_HIDDEN_CHANNELS,
+                             out_channels=num_classes, num_layers=self.config.PROTGRAM_GNN_NUM_LAYERS,
+                             dropout_rate=self.config.PROTGRAM_DROPOUT_RATE)
         else:
             print(f"  ERROR: Unknown model type '{model_type}' for ProtGram training.")
             return None
 
     def _train_single_level(self, model: nn.Module, graph_obj: DirectedNgramGraph, data: Data, optimizer: torch.optim.Optimizer, use_homo_hetero_paths: bool):
         """Orchestrates the training for a single level, choosing between full-batch and clustered training."""
-        task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(graph_obj.n_value, self.config.GCN_DEFAULT_TASK_TYPE)
+        task_type = self.config.PROTGRAM_TASK_TYPES_PER_LEVEL.get(graph_obj.n_value, self.config.PROTGRAM_DEFAULT_TASK_TYPE)
 
-        if self.config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
+        if self.config.PROTGRAM_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES:
             node_partitions = self._partition_graph(graph_obj)
-            self._train_single_level_clustered(model, data, node_partitions, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, use_homo_hetero_paths)
+            self._train_single_level_clustered(model, data, node_partitions, optimizer, self.config.PROTGRAM_EPOCHS_PER_LEVEL, task_type, use_homo_hetero_paths)
         else:
-            self._train_single_level_full_batch(model, data, optimizer, self.config.GCN_EPOCHS_PER_LEVEL, task_type, use_homo_hetero_paths)
+            self._train_single_level_full_batch(model, data, optimizer, self.config.PROTGRAM_EPOCHS_PER_LEVEL, task_type, use_homo_hetero_paths)
 
     def _train_single_level_full_batch(self, model: nn.Module, data: Data, optimizer: torch.optim.Optimizer, epochs: int,
                                        task_type: str, use_homo_hetero_paths: bool):
         """Full-batch training logic for a single GNN level."""
         model.train()
         model.to(self.device)
-        full_data_gpu = self._prepare_data_for_model(model.__class__.__name__.lower(), data.graph_obj, data.x, data.y, use_homo_hetero_paths).to(self.device)
+        # --- FIX: Use the centralized data preparation utility ---
+        full_data_gpu = prepare_pyg_data_from_protgram_graph(
+            model_type=model.__class__.__name__.lower(), graph=data.graph_obj,
+            features=data.x, labels=data.y, use_homo_hetero_paths=use_homo_hetero_paths
+        ).to(self.device)
 
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE, factor=self.config.GCN_LR_SCHEDULER_FACTOR) if self.config.GCN_USE_LR_SCHEDULER else None
-        early_stopper = EarlyStopper(patience=self.config.GCN_EARLY_STOPPING_PATIENCE, min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA) if self.config.GCN_USE_EARLY_STOPPING else None
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.PROTGRAM_LR_SCHEDULER_PATIENCE, factor=self.config.PROTGRAM_LR_SCHEDULER_FACTOR) if self.config.PROTGRAM_USE_LR_SCHEDULER else None
+        early_stopper = EarlyStopper(patience=self.config.PROTGRAM_EARLY_STOPPING_PATIENCE, min_delta=self.config.PROTGRAM_EARLY_STOPPING_MIN_DELTA) if self.config.PROTGRAM_USE_EARLY_STOPPING else None
         scaler = torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
 
         criterion = F.cross_entropy
-        print(f"  Starting full-batch training for up to {epochs} epochs (Task: {task_type}, Weight Decay: {optimizer.param_groups[0]['weight_decay']})...")
+        print(f"  Starting full-batch training for up to {epochs} epochs (Task: {task_type})...")
         for epoch in range(1, epochs + 1):
             # --- CONCEPTUAL CHANGE FOR MASKED NODE PREDICTION ---
             # If the task is 'masked_node', we need to generate a new mask for each epoch.
             if task_type == 'masked_node':
-                masked_features, masked_indices, original_labels = self.label_generator.generate_masked_node_task(
-                    graph_obj=full_data_gpu.graph_obj, features=full_data_gpu.x,
-                    masking_fraction=self.config.GCN_MASKED_NODE_FRACTION
+                masked_features, masked_indices, original_labels = self.label_generator.generate_masked_node_task(                    graph_obj=full_data_gpu.graph_obj, features=data.x,
+                    masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION
                 )
                 # Update the data object for this epoch's forward pass
                 epoch_data = full_data_gpu.clone()
@@ -292,12 +303,12 @@ class ProtGramXGCNTrainer:
                 break
 
     def _train_single_level_clustered(self, model: nn.Module, full_data: Data, node_partitions: List[List[int]],
-                                      optimizer: torch.optim.Optimizer, epochs: int, task_type: str, use_homo_hetero_paths: bool):
+                                      optimizer: torch.optim.Optimizer, epochs: int, task_type: str):
         """Clustered training logic for a single GNN level."""
         model.train()
         model.to(self.device)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.GCN_LR_SCHEDULER_PATIENCE, factor=self.config.GCN_LR_SCHEDULER_FACTOR) if self.config.GCN_USE_LR_SCHEDULER else None
-        early_stopper = EarlyStopper(patience=self.config.GCN_EARLY_STOPPING_PATIENCE, min_delta=self.config.GCN_EARLY_STOPPING_MIN_DELTA) if self.config.GCN_USE_EARLY_STOPPING else None
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.PROTGRAM_LR_SCHEDULER_PATIENCE, factor=self.config.PROTGRAM_LR_SCHEDULER_FACTOR) if self.config.PROTGRAM_USE_LR_SCHEDULER else None
+        early_stopper = EarlyStopper(patience=self.config.PROTGRAM_EARLY_STOPPING_PATIENCE, min_delta=self.config.PROTGRAM_EARLY_STOPPING_MIN_DELTA) if self.config.PROTGRAM_USE_EARLY_STOPPING else None
         scaler = torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
         criterion = F.cross_entropy
         print(f"  Starting Cluster-GCN style training for up to {epochs} epochs on {len(node_partitions)} subgraphs (Task: {task_type})...")
@@ -310,14 +321,36 @@ class ProtGramXGCNTrainer:
                     model_type=model.__class__.__name__.lower(),
                     full_features=full_data.x,
                     full_labels=full_data.y,
-                    node_subset=torch.tensor(node_idx_batch, dtype=torch.long),
-                    use_homo_hetero_paths=use_homo_hetero_paths
+                    node_subset=torch.tensor(node_idx_batch, dtype=torch.long)
                 ).to(self.device)
 
                 optimizer.zero_grad()
                 with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
-                    output, _ = model(data=subgraph_data)
-                    loss = criterion(output, subgraph_data.y)
+                    # --- DEFINITIVE FIX: Implement masked_node logic for clustered training ---
+                    if task_type == 'masked_node':
+                        num_subgraph_nodes = subgraph_data.num_nodes
+                        num_to_mask = int(num_subgraph_nodes * self.config.PROTGRAM_MASKED_NODE_FRACTION)
+
+                        if num_to_mask > 0:
+                            # Indices are relative to the subgraph for this batch
+                            permuted_subgraph_indices = torch.randperm(num_subgraph_nodes, device=self.device)
+                            subgraph_masked_indices = permuted_subgraph_indices[:num_to_mask]
+
+                            # The ground truth labels are the original, full-graph node IDs
+                            original_node_labels = subgraph_data.original_indices[subgraph_masked_indices]
+
+                            # Create a masked version of the subgraph features for this batch
+                            masked_subgraph_features = subgraph_data.x.clone()
+                            masked_subgraph_features[subgraph_masked_indices] = 0.0
+                            subgraph_data.x = masked_subgraph_features
+
+                            output, _ = model(data=subgraph_data)
+                            loss = criterion(output[subgraph_masked_indices], original_node_labels)
+                        else:
+                            loss = torch.tensor(0.0, device=self.device, requires_grad=True)
+                    else:  # Original logic for community/next_node
+                        output, _ = model(data=subgraph_data)
+                        loss = criterion(output, subgraph_data.y)
                 scaler.scale(loss).backward()
                 # --- FIX: Correctly order gradient clipping and scaling ---
                 # Unscale gradients before clipping to ensure we clip the true gradients, not the scaled ones.
@@ -341,13 +374,13 @@ class ProtGramXGCNTrainer:
         This version is now model-agnostic and only returns the node indices for each partition.
         """
         if graph.number_of_nodes == 0: return []
-        num_clusters_calculated = math.ceil(graph.number_of_nodes / self.config.GCN_TARGET_NODES_PER_CLUSTER)
-        num_clusters = max(self.config.GCN_MIN_CLUSTERS, num_clusters_calculated)
-        num_clusters = min(num_clusters, self.config.GCN_MAX_CLUSTERS, graph.number_of_nodes)
+        num_clusters_calculated = math.ceil(graph.number_of_nodes / self.config.PROTGRAM_TARGET_NODES_PER_CLUSTER)
+        num_clusters = max(self.config.PROTGRAM_MIN_CLUSTERS, num_clusters_calculated)
+        num_clusters = min(num_clusters, self.config.PROTGRAM_MAX_CLUSTERS, graph.number_of_nodes)
         print(f"  Partitioning graph with {graph.number_of_nodes} nodes into {num_clusters} clusters...")
 
         A_combined_cpu = (graph.A_in_w.cpu() + graph.A_out_w.cpu()).coalesce()
-        g_nx = to_networkx(Data(edge_index=A_combined_cpu.indices(), edge_attr=A_combined_cpu.values(), num_nodes=graph.number_of_nodes), to_undirected=True, edge_attrs=['edge_attr'])
+        g_nx = to_networkx(Data(edge_index=A_combined_cpu.indices(), edge_attr=A_combined_cpu.values(), num_nodes=graph.number_of_nodes), to_undirected=True, edge_attrs=['edge_attr']) # type: ignore
 
         try:
             import metis
@@ -363,48 +396,6 @@ class ProtGramXGCNTrainer:
         cluster_list = list(clusters.values())
         print(f"  Graph partitioned into {len(cluster_list)} clusters.")
         return cluster_list
-
-    def _prepare_data_for_model(self, model_type: str, graph: DirectedNgramGraph, features: torch.Tensor, labels: torch.Tensor, use_homo_hetero_paths: bool) -> Data:
-        """Prepares a PyG Data object tailored to the specific model's needs for full-batch training."""
-        data_dict = {'x': features, 'y': labels}
-
-        if model_type == 'directgcn':
-            # --- DESIGN NOTE on DirectGCN Data ---
-            # The DirectGCN model is designed to work with the raw, weighted adjacency
-            # matrices. For the "Parallel Views" architecture, we provide 5 distinct
-            # views when homophily/heterophily paths are enabled.
-
-            # Always include the base structural and directional paths
-            data_dict.update({
-                'edge_index_in': graph.A_in_w.indices(), 'edge_weight_in': graph.A_in_w.values(),
-                'edge_index_out': graph.A_out_w.indices(), 'edge_weight_out': graph.A_out_w.values(),
-                'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
-                'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values()
-            })
-
-            # Conditionally add the new top-level homophily/heterophily paths
-            if use_homo_hetero_paths and graph.A_homo_w is not None and graph.A_hetero_w is not None:
-                # --- FIX: Corrected log message and added the missing logic to update the data object ---
-                print("  Preparing data with parallel homophily/heterophily paths...")
-                data_dict.update({
-                    'edge_index_homo': graph.A_homo_w.indices(), 'edge_weight_homo': graph.A_homo_w.values(),
-                    'edge_index_hetero': graph.A_hetero_w.indices(), 'edge_weight_hetero': graph.A_hetero_w.values()
-                })
-        elif model_type == 'rgcn':
-            edge_index_out = graph.A_out_w.indices()
-            edge_index_in = graph.A_in_w.indices()
-            edge_type_out = torch.zeros(edge_index_out.size(1), dtype=torch.long)
-            edge_type_in = torch.ones(edge_index_in.size(1), dtype=torch.long)
-            data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
-            data_dict['edge_type'] = torch.cat([edge_type_out, edge_type_in], dim=0)
-        elif model_type == 'tongdigcn':
-            data_dict['edge_index'] = graph.A_out_w.indices()
-            data_dict['edge_index_backward'] = graph.A_in_w.indices()
-        else:
-            # --- FIX: Raise an error for unsupported models to prevent silent failures ---
-            raise ValueError(f"Model type '{model_type}' is not explicitly supported by the ProtGramXGCNTrainer's "
-                             f"data preparation logic. Add a case for it or use a supported model.")
-        return Data.from_dict(data_dict)
 
     def _load_id_map(self) -> Optional[Mapping]:
         """Loads the UniProt ID mapping file if configured."""
@@ -423,7 +414,7 @@ class ProtGramXGCNTrainer:
     def _pool_to_protein_level(self, ngram_embeddings_per_level: Dict[int, np.ndarray],
                                level_ngram_to_idx: Dict[int, Dict[str, int]]) -> Tuple[Dict[str, np.ndarray], Dict[str, Dict[int, float]]]:
         """Pools the final n-gram embeddings to the protein level."""
-        final_n = self.config.GCN_NGRAM_MAX_N
+        final_n = self.config.PROTGRAM_NGRAM_MAX_N
         final_level_embeddings = ngram_embeddings_per_level.get(final_n)
         final_level_map = level_ngram_to_idx.get(final_n)
 
@@ -438,7 +429,7 @@ class ProtGramXGCNTrainer:
             n_val=final_n,
             ngram_map=final_level_map,
             ngram_embeddings=final_level_embeddings,
-            strategy=self.config.GCN_PROTEIN_POOLING_STRATEGY
+            strategy=self.config.PROTGRAM_PROTEIN_POOLING_STRATEGY
         )
 
     def _save_final_embeddings(self, embeddings_per_model: Dict[str, Dict[str, np.ndarray]]) -> Dict[str, str]:
@@ -495,7 +486,7 @@ class ProtGramXGCNTrainer:
         sanity_config = copy.deepcopy(self.config)
 
         # Override config for a quick run
-        sanity_config.EVAL_EPOCHS = self.config.GCN_SANITY_CHECK_EPOCHS
+        sanity_config.EVAL_EPOCHS = self.config.PROTGRAM_SANITY_CHECK_EPOCHS
         sanity_config.EVAL_N_FOLDS = 2  # A minimal number of folds for a quick check
         sanity_config.EVAL_GENERATE_SHAP_SUMMARY = False  # Disable for speed
         sanity_config.PLOT_TRAINING_HISTORY = False  # Disable for speed

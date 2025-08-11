@@ -31,7 +31,7 @@ class ProtGramBuilder:
         self.config = config
         self.protein_sequence_files = [str(p) for p in config.SEQUENCE_FILE_PATHS]
         self.output_dir = str(config.RESULTS_GRAPH_OBJECTS_DIR)
-        self.n_max = config.GCN_NGRAM_MAX_N  # This is now the default max, can be overridden
+        self.n_max = config.PROTGRAM_NGRAM_MAX_N  # This is now the default max, can be overridden
         self.num_workers_config = config.GRAPH_BUILDER_WORKERS if config.GRAPH_BUILDER_WORKERS is not None else 1
         self.temp_dir = os.path.join(str(config.BASE_OUTPUT_DIR), "temp_graph_builder")
         self.gcn_propagation_epsilon = getattr(config, 'GCN_PROPAGATION_EPSILON', 1e-9)

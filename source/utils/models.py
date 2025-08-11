@@ -7,7 +7,7 @@
 # ==============================================================================
 
 from pathlib import Path
-from typing import Dict, Optional, List, Tuple, Set, Union, TYPE_CHECKING, Iterator
+from typing import Dict, Optional, List, Tuple, Set, Union, TYPE_CHECKING, Iterator, Callable
 
 import h5py
 import numpy as np
@@ -384,13 +384,13 @@ class EmbeddingProcessor:
     def extract_gcn_node_embeddings(model: nn.Module,
                                     full_data: Data, graph_obj: 'DirectedNgramGraph',
                                     config: 'Config', device: torch.device,
-                                    use_homo_hetero_paths: bool,
+                                    prepare_data_func: Callable,
                                     create_clustered_subgraphs_func: callable) -> np.ndarray:
         """Extracts node embeddings from a GNN, handling both full-batch and clustered inference."""
         model.eval()
         model.to(device)
 
-        if config.GCN_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > config.GCN_CLUSTER_TRAINING_THRESHOLD_NODES:
+        if config.PROTGRAM_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > config.PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES:
             print(f"  Extracting embeddings for {graph_obj.number_of_nodes} nodes using clustered inference...")
             partitions = create_clustered_subgraphs_func(graph_obj)
             if not partitions:
@@ -403,8 +403,7 @@ class EmbeddingProcessor:
                     model_type=model.__class__.__name__.lower(),
                     full_features=full_data.x,
                     full_labels=full_data.y,
-                    node_subset=nodes_tensor,
-                    use_homo_hetero_paths=use_homo_hetero_paths
+                    node_subset=nodes_tensor
                 ).to(device)
 
                 with torch.no_grad():
@@ -420,46 +419,12 @@ class EmbeddingProcessor:
             return all_node_embeddings.numpy()
         else:
             print(f"  Extracting embeddings for {graph_obj.number_of_nodes} nodes using full-batch inference...")
-            # --- CRITICAL FIX: This block must prepare data consistently with the trainer. ---
-            # It must use the raw weighted matrices for DirectGCN and handle the homophily flag.
-            model_type = model.__class__.__name__.lower()
-            data_dict = {'x': full_data.x}
-
-            if model_type == 'directgcn':
-                # Always include the base structural and directional paths
-                data_dict.update({
-                    'edge_index_in': graph_obj.A_in_w.indices(), 'edge_weight_in': graph_obj.A_in_w.values(),
-                    'edge_index_out': graph_obj.A_out_w.indices(), 'edge_weight_out': graph_obj.A_out_w.values(),
-                    'edge_index_undirected_norm': graph_obj.A_undirected_norm_sparse.indices(),
-                    'edge_weight_undirected_norm': graph_obj.A_undirected_norm_sparse.values()
-                })
-
-                # Conditionally add the new top-level homophily/heterophily paths
-                if use_homo_hetero_paths and graph_obj.A_homo_w is not None and graph_obj.A_hetero_w is not None:
-                    data_dict.update({
-                        'edge_index_homo': graph_obj.A_homo_w.indices(), 'edge_weight_homo': graph_obj.A_homo_w.values(),
-                        'edge_index_hetero': graph_obj.A_hetero_w.indices(), 'edge_weight_hetero': graph_obj.A_hetero_w.values()
-                    })
-
-            elif model_type == 'rgcn':
-                # RGCN needs a combined edge_index and an edge_type tensor
-                edge_index_out = graph_obj.A_out_w.indices()
-                edge_index_in = graph_obj.A_in_w.indices()
-                data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
-                data_dict['edge_type'] = torch.cat([
-                    torch.zeros(edge_index_out.size(1), dtype=torch.long),
-                    torch.ones(edge_index_in.size(1), dtype=torch.long)
-                ])
-            elif model_type == 'tongdigcn':
-                # TongDiGCN needs separate forward and backward edge indices
-                data_dict['edge_index'] = graph_obj.A_out_w.indices()
-                data_dict['edge_index_backward'] = graph_obj.A_in_w.indices()
-            else:
-                # Default for standard GNNs (GCN, GAT, etc.) is the undirected normalized matrix
-                data_dict['edge_index'] = graph_obj.A_undirected_norm_sparse.indices()
-                data_dict['edge_attr'] = graph_obj.A_undirected_norm_sparse.values()
-
-            prepared_data = Data.from_dict(data_dict).to(device)
+            # --- DEFINITIVE FIX: Use the provided data preparation function ---
+            # This ensures that data for inference is prepared identically to how it was for training.
+            prepared_data = prepare_data_func(
+                model_type=model.__class__.__name__.lower(),
+                graph=graph_obj, features=full_data.x, labels=full_data.y
+            ).to(device)
 
             with torch.no_grad():
                 _, embeddings = model(data=prepared_data)

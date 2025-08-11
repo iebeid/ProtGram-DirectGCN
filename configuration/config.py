@@ -213,11 +213,15 @@ class Config:
         self.BENCHMARK_CHEBNET_K = 3
         self.BENCHMARK_GNN_LEARNING_RATE = 0.01
         self.BENCHMARK_RGCN_NUM_RELATIONS = 2
+        # --- NEW: Dedicated architecture for the benchmark DirectGCN model ---
+        self.BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS = [64, 64]
+        # --- NEW: Dedicated initial feature dimension for benchmark models ---
+        self.BENCHMARK_GNN_INIT_DIM = 64
 
     def _setup_gcn_params(self):
         """Sets parameters for the main ProtGram-DirectGCN pipeline."""
-        # Graph Building
-        self.GCN_NGRAM_MAX_N = 4
+        # --- ProtGram Graph Building ---
+        self.PROTGRAM_NGRAM_MAX_N = 4
         # --- FIX: Safely handle os.cpu_count() returning None ---
         cpu_cores = os.cpu_count()
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
@@ -238,68 +242,71 @@ class Config:
         # 'rgcn' treats in/out edges as 2 relations.
         self.PROTGRAM_MODELS_TO_TRAIN = ['directgcn']
 
-        # Model Architecture
+        # --- ProtGram Model Architecture ---
         # Defines the architecture of the DirectGCN model. The length of the list determines
         # the model's depth, and each value specifies the output dimension of a GCN layer.
         # The final value is the dimension of the output node embeddings.
-        self.GCN_HIDDEN_LAYER_DIMS = [512, 256, 128, 64]
-        self.GCN_1GRAM_INIT_DIM = 512
-        self.GCN_MAX_PE_LEN = 512 # Max length for positional embeddings
+        self.DIRECTGCN_HIDDEN_LAYER_DIMS = [512, 256, 128, 64]
+        self.PROTGRAM_1GRAM_INIT_DIM = 512
+        self.PROTGRAM_MAX_PE_LEN = 512 # Max length for positional embeddings
+        # --- NEW: Architecture for other GNNs in the ProtGram pipeline ---
+        self.PROTGRAM_GNN_HIDDEN_CHANNELS = 64
+        self.PROTGRAM_GNN_NUM_LAYERS = 2
         # Gating mode for DirectGCN.
         # 'scalar': One learnable scalar per path, per layer (shared by all nodes).
         # 'vector': One learnable scalar per path, per node, per layer (more expressive).
         # 'node_gate_vector': A learnable *vector* per path, per node, per layer for element-wise gating. Most expressive.
         # 'none': No gating, paths are simply added.
-        self.GCN_GATING_COEFF_MODE = "vector"
+        self.PROTGRAM_GATING_COEFF_MODE = "vector"
 
-        # Training Hyperparameters
-        self.GCN_EPOCHS_PER_LEVEL = 500
-        self.GCN_LR = 0.001
-        self.GCN_DROPOUT_RATE = 0.5
-        self.GCN_WEIGHT_DECAY = 1e-4 # Standard L2 regularization
-        self.GCN_USE_LR_SCHEDULER = True
-        self.GCN_LR_SCHEDULER_PATIENCE = 10
-        self.GCN_LR_SCHEDULER_FACTOR = 0.5
-        self.GCN_USE_EARLY_STOPPING = True
-        self.GCN_EARLY_STOPPING_PATIENCE = 50
-        self.GCN_EARLY_STOPPING_MIN_DELTA = 1e-5
+        # --- ProtGram Training Hyperparameters ---
+        self.PROTGRAM_EPOCHS_PER_LEVEL = 500
+        self.PROTGRAM_LR = 0.001
+        self.PROTGRAM_DROPOUT_RATE = 0.5
+        self.PROTGRAM_WEIGHT_DECAY = 1e-4 # Standard L2 regularization
+        self.PROTGRAM_USE_LR_SCHEDULER = True
+        self.PROTGRAM_LR_SCHEDULER_PATIENCE = 10
+        self.PROTGRAM_LR_SCHEDULER_FACTOR = 0.5
+        self.PROTGRAM_USE_EARLY_STOPPING = True
+        self.PROTGRAM_EARLY_STOPPING_PATIENCE = 50
+        self.PROTGRAM_EARLY_STOPPING_MIN_DELTA = 1e-5
 
-        # Self-Supervised Tasks
-        self.GCN_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
+        # --- ProtGram Self-Supervised Tasks ---
+        self.PROTGRAM_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
             1: "masked_node", 2: "masked_node", 3: "next_node", 4: "next_node"
         }
-        self.GCN_DEFAULT_TASK_TYPE: str = "masked_node"
-        self.GCN_CLOSEST_AA_K_HOPS: int = 3
-        self.GCN_MASKED_NODE_FRACTION: float = 0.15  # Fraction of nodes to mask for the masked_node task
+        self.PROTGRAM_DEFAULT_TASK_TYPE: str = "masked_node"
+        self.PROTGRAM_CLOSEST_AA_K_HOPS: int = 3
+        self.PROTGRAM_MASKED_NODE_FRACTION: float = 0.15  # Fraction of nodes to mask for the masked_node task
 
-        # Cluster-GCN Strategy
-        self.GCN_USE_CLUSTER_TRAINING = True
-        self.GCN_CLUSTER_TRAINING_THRESHOLD_NODES = 5000
-        self.GCN_TARGET_NODES_PER_CLUSTER = 2000
-        self.GCN_MIN_CLUSTERS = 2
-        self.GCN_MAX_CLUSTERS = 500
+        # --- ProtGram Cluster-GCN Strategy ---
+        self.PROTGRAM_USE_CLUSTER_TRAINING = True
+        self.PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES = 5000
+        self.PROTGRAM_TARGET_NODES_PER_CLUSTER = 2000
+        self.PROTGRAM_MIN_CLUSTERS = 2
+        self.PROTGRAM_MAX_CLUSTERS = 500
 
-        # Post-Processing
+        # --- ProtGram Post-Processing ---
         # --- FIX: Safely handle os.cpu_count() returning None ---
         self.POOLING_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
         self.PCA_TARGET_DIMENSION = 64
         # NEW: Protein-level pooling strategy
         # Strategy for pooling final n-gram embeddings to create a single protein embedding.
         # Options: 'mean' (fast), 'sum', 'max', 'attention' (slower, more expressive)
-        self.GCN_PROTEIN_POOLING_STRATEGY = 'attention'
+        self.PROTGRAM_PROTEIN_POOLING_STRATEGY = 'attention'
         # NEW: Hierarchical pooling strategy
         # Strategy for pooling (n-1)-gram embeddings to initialize n-gram features for n>1.
         # Options: 'mean', 'attention'
-        self.GCN_HIERARCHICAL_POOLING_STRATEGY = 'attention'
+        self.PROTGRAM_HIERARCHICAL_POOLING_STRATEGY = 'attention'
         # NEW: Control whether to log potentially large attention files.
         # Set to True to generate attention plots, False to save memory/time.
-        self.GCN_LOG_ATTENTION_WEIGHTS = False
+        self.PROTGRAM_LOG_ATTENTION_WEIGHTS = True
 
-        # Sanity Check
-        self.GCN_RUN_SANITY_CHECK_PPI = True
-        self.GCN_SANITY_CHECK_EPOCHS = 5
-        self.GCN_SANITY_CHECK_TEST_SPLIT = 0.2
-        self.GCN_SANITY_CHECK_SAMPLE_SIZE = 2000
+        # --- ProtGram Sanity Check ---
+        self.PROTGRAM_RUN_SANITY_CHECK_PPI = True
+        self.PROTGRAM_SANITY_CHECK_EPOCHS = 5
+        self.PROTGRAM_SANITY_CHECK_TEST_SPLIT = 0.2
+        self.PROTGRAM_SANITY_CHECK_SAMPLE_SIZE = 2000
 
     def _setup_word2vec_params(self):
         """Sets parameters for the Word2Vec pipeline."""
@@ -339,7 +346,7 @@ class Config:
 
     def _setup_singleton_eval_params(self):
         """Sets parameters for the rapid, n=1 GCN evaluation."""
-        self.SINGLETON_EVAL_EPOCHS = 300
+        self.SINGLETON_EVAL_EPOCHS = 500
         self.SINGLETON_EVAL_TEST_SPLIT = 0.2
         self.SINGLETON_EVAL_LR = 0.01
         # A list of models to test in the singleton evaluation.

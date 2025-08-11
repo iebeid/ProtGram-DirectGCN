@@ -259,7 +259,7 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
     if config.RUN_SINGLETON_GCN_EVAL:
         DataUtils.print_header("Ensuring n=1 Graph is Built for Singleton Evaluation")
         singleton_config = copy.deepcopy(config)
-        singleton_config.GCN_NGRAM_MAX_N = 1
+        singleton_config.PROTGRAM_NGRAM_MAX_N = 1
         # This will build the n=1 graph or skip if it already exists.
         ProtGramBuilder(singleton_config).run()
 

@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: benchmarkers/nes.py
 # PURPOSE: Handles benchmarking of Network Embedding models like Node2Vec.
-# VERSION: 3.0 (Fixed WebKB mask handling and updated metrics reporting)
+# VERSION: 4.0 (Refactored to use BaseBenchmarker)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -20,6 +20,7 @@ from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 from torch_geometric.nn import Node2Vec
 
 from configuration.config import Config
+from source.benchmarkers.base import BaseBenchmarker
 from source.utils.data import DataUtils
 
 
@@ -47,46 +48,9 @@ class SimpleMLP(torch.nn.Module):
         return x
 
 
-class NetworkEmbeddingBenchmarker:
+class NetworkEmbeddingBenchmarker(BaseBenchmarker):
     def __init__(self, config: Config):
-        self.config = config
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.output_dir = config.RESULTS_BENCHMARKING_DIR
-        self.dataset_root = str(config.DATA_STANDARD_DATASETS_DIR)
-        print("\n" + "=" * 80)
-        DataUtils.print_header("Network Embedding Benchmarker Initialized")
-        print(f"  Device: {self.device}")
-        print(f"  Output directory: {self.output_dir}")
-        print(f"  Dataset root: {self.dataset_root}")
-        print("=" * 80)
-        # --- NEW: Set seeds for reproducibility of Node2Vec and MLP training ---
-        DataUtils.set_seeds(self.config.RANDOM_STATE)
-
-    def _get_dataset(self, name: str) -> Any:
-        """Loads a standard PyG dataset."""
-        path = self.dataset_root
-        try:
-            if name in ['Cora', 'CiteSeer', 'PubMed']:
-                return Planetoid(root=path, name=name)
-            elif name in ['Cornell', 'Texas', 'Wisconsin']:
-                return WebKB(root=path, name=name)
-            elif name == 'Actor':
-                return Actor(root=path)
-            elif name == 'KarateClub':
-                return KarateClub()
-            else:
-                print(f"  Dataset '{name}' not recognized by this loader.")
-                return None
-        except Exception as e:
-            print(f"  Error loading dataset '{name}': {e}")
-            return None
-
-    def _get_1d_mask(self, mask_tensor: torch.Tensor) -> torch.Tensor:
-        """Helper to handle masks from datasets that may have multiple splits (e.g., WebKB)."""
-        if mask_tensor.dim() > 1:
-            # WebKB datasets have a [num_nodes, 10] mask for 10 splits. We use the first one.
-            return mask_tensor[:, 0].bool()
-        return mask_tensor.bool()
+        super().__init__(config, "Network Embedding Benchmarker")
 
     def _train_and_evaluate_mlp(self, embeddings: torch.Tensor, data: Data) -> Dict[str, float]:
         """Trains and evaluates a simple MLP on the generated embeddings."""

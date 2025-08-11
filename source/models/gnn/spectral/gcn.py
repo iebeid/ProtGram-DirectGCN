@@ -1,36 +1,55 @@
 # ==============================================================================
 # MODULE: models/gnn/gcn.py
 # PURPOSE: A standard implementation of the Graph Convolutional Network (GCN).
-# VERSION: 4.0 (Refactored to use generic BaseGNN)
+# VERSION: 5.0 (Refactored to be a standalone nn.Module for architectural correctness)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
+from typing import Tuple
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch_geometric.data import Data
 from torch_geometric.nn import GCNConv
 
-from source.models.gnn.base import GNN
 
-
-class GCN(GNN):
+class GCN(nn.Module):
     """
     A standard implementation of the Graph Convolutional Network (GCN) model.
+    This architecture performs spectral-based convolutions on graphs.
     """
 
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int,
-                 num_layers: int = 2, dropout_rate: float = 0.5):
-        """
-        Initializes the GCN model layers by deferring to the BaseGNN.
+                 num_layers: int = 2, dropout_rate: float = 0.5, **kwargs):
+        super().__init__()
+        self.convs = nn.ModuleList()
+        self.dropout_rate = dropout_rate
+        self.embedding_output = None
 
-        Args:
-            in_channels (int): Dimensionality of input node features.
-            hidden_channels (int): Dimensionality of hidden layers.
-            out_channels (int): Dimensionality of output (number of classes).
-            num_layers (int): The number of GCN layers. Defaults to 2.
-            dropout_rate (float): The dropout rate to apply between layers. Defaults to 0.5.
-        """
-        super().__init__(
-            conv_layer_class=GCNConv,
-            in_channels=in_channels,
-            hidden_channels=hidden_channels,
-            out_channels=out_channels,
-            num_layers=num_layers,
-            dropout_rate=dropout_rate
-        )
+        if num_layers <= 0:
+            raise ValueError("num_layers must be positive")
+
+        if num_layers == 1:
+            self.convs.append(GCNConv(in_channels, out_channels, **kwargs))
+        else:
+            self.convs.append(GCNConv(in_channels, hidden_channels, **kwargs))
+            for _ in range(num_layers - 2):
+                self.convs.append(GCNConv(hidden_channels, hidden_channels, **kwargs))
+            self.convs.append(GCNConv(hidden_channels, out_channels, **kwargs))
+
+    def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
+        x, edge_index, edge_weight = data.x, data.edge_index, getattr(data, 'edge_attr', None)
+
+        for i, conv in enumerate(self.convs):
+            x = conv(x, edge_index, edge_weight=edge_weight)
+            if i < len(self.convs) - 1:
+                # The output of the last hidden layer is the embedding
+                self.embedding_output = x
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout_rate, training=self.training)
+
+        # If single layer, embedding is the output
+        if len(self.convs) == 1:
+            self.embedding_output = x
+
+        return x, self.embedding_output

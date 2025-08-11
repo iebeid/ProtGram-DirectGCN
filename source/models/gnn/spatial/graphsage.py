@@ -1,15 +1,19 @@
 # ==============================================================================
 # MODULE: models/gnn/graphsage.py
 # PURPOSE: A standard implementation of the GraphSAGE model.
-# VERSION: 4.0 (Refactored to use generic BaseGNN)
+# VERSION: 5.0 (Refactored to be a standalone nn.Module for architectural correctness)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
+from typing import Tuple
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch_geometric.data import Data
 from torch_geometric.nn import SAGEConv
 
-from source.models.gnn.base import GNN
 
-
-class GraphSAGE(GNN):
+class GraphSAGE(nn.Module):
     """
     A standard implementation of the GraphSAGE model.
     This architecture learns to aggregate feature information from a node's
@@ -17,22 +21,29 @@ class GraphSAGE(GNN):
     """
 
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int,
-                 num_layers: int = 2, dropout_rate: float = 0.5):
-        """
-        Initializes the GraphSAGE model layers by deferring to the BaseGNN.
+                 num_layers: int = 2, dropout_rate: float = 0.5, **kwargs):
+        super().__init__()
+        self.convs = nn.ModuleList()
+        self.dropout_rate = dropout_rate
+        self.embedding_output = None
 
-        Args:
-            in_channels (int): Dimensionality of input node features.
-            hidden_channels (int): Dimensionality of hidden layers.
-            out_channels (int): Dimensionality of output (number of classes).
-            num_layers (int): The number of GraphSAGE layers. Defaults to 2.
-            dropout_rate (float): The dropout rate to apply between layers. Defaults to 0.5.
-        """
-        super().__init__(
-            conv_layer_class=SAGEConv,
-            in_channels=in_channels,
-            hidden_channels=hidden_channels,
-            out_channels=out_channels,
-            num_layers=num_layers,
-            dropout_rate=dropout_rate
-        )
+        if num_layers <= 0:
+            raise ValueError("num_layers must be positive")
+
+        if num_layers == 1:
+            self.convs.append(SAGEConv(in_channels, out_channels, **kwargs))
+        else:
+            self.convs.append(SAGEConv(in_channels, hidden_channels, **kwargs))
+            for _ in range(num_layers - 2):
+                self.convs.append(SAGEConv(hidden_channels, hidden_channels, **kwargs))
+            self.convs.append(SAGEConv(hidden_channels, out_channels, **kwargs))
+
+    def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
+        x, edge_index = data.x, data.edge_index
+        for i, conv in enumerate(self.convs[:-1]):
+            x = conv(x, edge_index)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        self.embedding_output = x
+        logits = self.convs[-1](x, edge_index)
+        return logits, self.embedding_output

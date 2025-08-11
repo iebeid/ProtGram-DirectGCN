@@ -141,11 +141,11 @@ class DirectGCNLayer(MessagePassing):
         h_shared = self.lin_shared(x)
 
         # --- 2. Propagate on all potential paths and combine with shared features ---
+        # --- FIX: Use the correctly processed matrices from the data object ---
         path_combinations = []
 
-        # Standard paths (always present)
-        h_main_in = self.propagate(data.edge_index_in, x=self.lin_main_in(x), edge_weight=data.edge_weight_in) + self.bias_main_in
-        h_main_out = self.propagate(data.edge_index_out, x=self.lin_main_out(x), edge_weight=data.edge_weight_out) + self.bias_main_out
+        h_main_in = self.propagate(data.edge_index_mathcal_in, x=self.lin_main_in(x), edge_weight=data.edge_weight_mathcal_in) + self.bias_main_in
+        h_main_out = self.propagate(data.edge_index_mathcal_out, x=self.lin_main_out(x), edge_weight=data.edge_weight_mathcal_out) + self.bias_main_out
         h_main_undir = self.propagate(data.edge_index_undirected_norm, x=self.lin_undirected(x), edge_weight=data.edge_weight_undirected_norm) + self.bias_undirected
         path_combinations.append(self.proj_in(torch.cat([h_main_in, h_shared + self.bias_shared_in], dim=-1)))
         path_combinations.append(self.proj_out(torch.cat([h_main_out, h_shared + self.bias_shared_out], dim=-1)))
@@ -153,8 +153,8 @@ class DirectGCNLayer(MessagePassing):
 
         # Conditional paths for homophily/heterophily
         if self.use_homo_hetero_paths:
-            h_homo = self.propagate(data.edge_index_homo, x=self.lin_homo(x), edge_weight=data.edge_weight_homo) + self.bias_homo
-            h_hetero = self.propagate(data.edge_index_hetero, x=self.lin_hetero(x), edge_weight=data.edge_weight_hetero) + self.bias_hetero
+            h_homo = self.propagate(data.edge_index_homo_norm, x=self.lin_homo(x), edge_weight=data.edge_weight_homo_norm) + self.bias_homo
+            h_hetero = self.propagate(data.edge_index_hetero_norm, x=self.lin_hetero(x), edge_weight=data.edge_weight_hetero_norm) + self.bias_hetero
             # Note: using bias_shared_undir for both as they are undirected views
             path_combinations.append(self.proj_homo(torch.cat([h_homo, h_shared + self.bias_shared_undir], dim=-1)))
             path_combinations.append(self.proj_hetero(torch.cat([h_hetero, h_shared + self.bias_shared_undir], dim=-1)))
@@ -267,10 +267,10 @@ class DirectGCN(nn.Module):
 
         # Check for required edge indices based on the mode
         if self.use_homo_hetero_paths:
-            required_keys = ['edge_index_in', 'edge_index_out', 'edge_index_undirected_norm',
-                             'edge_index_homo', 'edge_index_hetero']
+            required_keys = ['edge_index_mathcal_in', 'edge_index_mathcal_out', 'edge_index_undirected_norm',
+                             'edge_index_homo_norm', 'edge_index_hetero_norm']
         else:
-            required_keys = ['edge_index_in', 'edge_index_out', 'edge_index_undirected_norm']
+            required_keys = ['edge_index_mathcal_in', 'edge_index_mathcal_out', 'edge_index_undirected_norm']
 
         for key in required_keys:
             if not hasattr(data, key):

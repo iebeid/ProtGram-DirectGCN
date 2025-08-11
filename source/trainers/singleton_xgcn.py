@@ -21,14 +21,7 @@ from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
 from source.data_builders.xgcn import XGCNDataset
 from source.utils.data import DataUtils
-from source.models.gnn.spatial.gat import GAT
-from source.models.gnn.spatial.gin import GIN
-from source.models.gnn.spatial.graphsage import GraphSAGE
-from source.models.gnn.spectral.chebnet import ChebNet
-from source.models.gnn.spectral.directgcn import DirectGCN
-from source.models.gnn.spectral.gcn import GCN
-from source.models.gnn.spectral.rgcn import RGCN
-from source.models.gnn.spectral.tongidigcn import TongDiGCN
+from source.utils.data import DataUtils
 
 
 class SingletonXGCNTrainer:
@@ -42,6 +35,8 @@ class SingletonXGCNTrainer:
         self.graph = graph_obj
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.label_generator = XGCNDataset(config)
+        # --- NEW: Centralized model creation ---
+        self.model_factory = ModelFactory(config, context='singleton')
         # --- NEW: Set seeds for reproducibility ---
         DataUtils.set_seeds(self.config.RANDOM_STATE)
 
@@ -56,22 +51,26 @@ class SingletonXGCNTrainer:
             print("  Singleton Trainer: Graph is empty or invalid. Cannot proceed.")
             return pd.DataFrame()
 
-        # 1. Generate self-supervised labels based on the configuration for n=1
-        # --- FIX: Use the task defined in the config, not a hardcoded one ---
+        # 1. Determine the task and generate labels if necessary
         task_type = self.config.GCN_TASK_TYPES_PER_LEVEL.get(1, self.config.GCN_DEFAULT_TASK_TYPE)
         labels, num_classes = self.label_generator.generate_task_labels(self.graph, task_type)
 
-        if num_classes <= 1:
+        if task_type != 'masked_node' and num_classes <= 1:
             print("  Singleton Trainer: Only one community found. Cannot perform meaningful classification.")
             return pd.DataFrame()
 
         # --- NEW: Dynamic Architecture Selection for DirectGCN ---
         # Calculate homophily to decide if specialized paths should be used.
-        # --- FIX: Handle case where labels are None (for masked_node task) ---
-        y_for_homophily = labels if labels is not None else torch.zeros(self.graph.number_of_nodes, dtype=torch.long)
-        homophily_ratio = homophily(self.graph.A_undirected_norm_sparse.indices(), y_for_homophily, method='edge')
-        is_heterophilic = homophily_ratio < 0.6  # Standard threshold
-        print(f"  Singleton Graph (n=1) Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
+        # --- DEFINITIVE FIX: Only calculate homophily if we have valid labels for a classification task ---
+        is_heterophilic = False
+        y_for_stratify = torch.zeros(self.graph.number_of_nodes, dtype=torch.long)
+        if labels is not None:
+            y_for_stratify = labels
+            homophily_ratio = homophily(self.graph.A_undirected_norm_sparse.indices(), y_for_stratify, method='edge')
+            is_heterophilic = homophily_ratio < 0.6  # Standard threshold
+            print(f"  Singleton Graph (n=1) Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
+        else:
+            print("  Homophily calculation skipped for non-classification task (e.g., masked_node).")
 
         # 2. Create initial random features
         initial_features = torch.randn((self.graph.number_of_nodes, self.config.GCN_1GRAM_INIT_DIM))
@@ -83,7 +82,7 @@ class SingletonXGCNTrainer:
                 node_indices,
                 test_size=self.config.SINGLETON_EVAL_TEST_SPLIT,
                 random_state=self.config.RANDOM_STATE,
-                stratify=y_for_homophily.numpy()
+                stratify=y_for_stratify.numpy()
             )
         except ValueError:
             # Fallback for very small classes that can't be stratified
@@ -102,17 +101,21 @@ class SingletonXGCNTrainer:
 
             # Determine if this model run should use the specialized paths
             use_homo_hetero_for_this_model = is_heterophilic if model_name.lower() == 'directgcn' else False
-            if use_homo_hetero_for_this_model:
+            if use_homo_hetero_for_this_model and labels is not None:
                 print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.")
                 self.graph.split_edges_by_homophily(labels)
 
-            model = self._get_model(model_name, initial_features.shape[1], num_classes, use_homo_hetero_for_this_model)
+            model = self.model_factory.create_model(
+                model_name=model_name, in_channels=initial_features.shape[1], num_classes=num_classes,
+                graph_obj=self.graph, use_homo_hetero_paths=use_homo_hetero_for_this_model
+            )
             if model is None:
                 continue
+            print(model)
 
             model.to(self.device)
             optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
-            data_for_model = self._prepare_data_for_model(model_name, initial_features, y_for_homophily, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
+            data_for_model = self._prepare_data_for_model(model_name, initial_features, y_for_stratify, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
 
             # Training Loop
             for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
@@ -124,26 +127,42 @@ class SingletonXGCNTrainer:
                     masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
                         self.graph, initial_features, masking_fraction=self.config.GCN_MASKED_NODE_FRACTION, exclude_mask=test_mask
                     )
-                    epoch_data = self._prepare_data_for_model(model_name, masked_features, labels, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
+                    # For masked_node, the 'labels' (y) are not used in the loss calculation itself.
+                    epoch_data = self._prepare_data_for_model(model_name, masked_features, y_for_stratify, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
                     logits, _ = model(epoch_data)
                     loss = F.cross_entropy(logits[masked_indices], original_node_ids.to(self.device))
                 else:
                     logits, _ = model(data_for_model)
                     if data_for_model.train_mask.sum() > 0:
                         loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask].long())
+                    else:
+                        loss = torch.tensor(0.0, device=self.device) # No training nodes
 
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
 
-            # Evaluation
+            # --- DEFINITIVE FIX: Use task-appropriate evaluation logic ---
             model.eval()
-            with torch.no_grad():
-                logits, _ = model(data_for_model)
-                preds = logits.argmax(dim=-1)
-                y_true = data_for_model.y[data_for_model.test_mask].cpu().numpy()
-                y_pred = preds[data_for_model.test_mask].cpu().numpy()
-
+            if task_type == 'masked_node':
+                # For masked_node, we evaluate on a fresh mask from the test set
+                # This measures how well the model learned the general context.
+                with torch.no_grad():
+                    masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
+                        self.graph, initial_features, masking_fraction=self.config.GCN_MASKED_NODE_FRACTION, exclude_mask=train_mask # Mask only from test set
+                    )
+                    eval_data = self._prepare_data_for_model(model_name, masked_features, y_for_stratify, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
+                    logits, _ = model(eval_data)
+                    preds = logits[masked_indices].argmax(dim=-1)
+                    y_true = original_node_ids.cpu().numpy()
+                    y_pred = preds.cpu().numpy()
+            else: # Standard classification evaluation
+                with torch.no_grad():
+                    logits, _ = model(data_for_model)
+                    preds = logits.argmax(dim=-1)
+                    y_true = data_for_model.y[data_for_model.test_mask].cpu().numpy()
+                    y_pred = preds[data_for_model.test_mask].cpu().numpy()
+            if len(y_true) > 0:
                 metrics = {
                     "Model": model_name,
                     "Accuracy": accuracy_score(y_true, y_pred),
@@ -151,48 +170,11 @@ class SingletonXGCNTrainer:
                     "Precision (Macro)": precision_score(y_true, y_pred, average='macro', zero_division=0),
                     "Recall (Macro)": recall_score(y_true, y_pred, average='macro', zero_division=0)
                 }
-            all_results.append(metrics)
-        return pd.DataFrame(all_results)
+                all_results.append(metrics)
+            else:
+                print(f"  Skipping metrics for {model_name} as there was no data in the test set to evaluate.")
 
-    def _get_model(self, name: str, in_channels: int, num_classes: int, use_homo_hetero_paths: bool) -> torch.nn.Module:
-        """Model factory for instantiating GNNs."""
-        # --- FIX: Use dedicated SINGLETON parameters from config for consistency and independent control ---
-        model_params = {
-            'in_channels': in_channels,
-            'hidden_channels': self.config.SINGLETON_GNN_HIDDEN_CHANNELS,
-            'out_channels': num_classes,
-            'num_layers': self.config.SINGLETON_GNN_NUM_LAYERS,
-            'dropout_rate': self.config.SINGLETON_GNN_DROPOUT_RATE
-        }
-        if name == "GCN":
-            return GCN(**model_params)
-        if name == "GAT":
-            gat_params = model_params.copy()
-            gat_params.update({
-                'heads': self.config.SINGLETON_GAT_HEADS,
-                'dropout_rate': self.config.SINGLETON_GAT_DROPOUT_RATE
-            })
-            return GAT(**gat_params)
-        if name == "GraphSAGE":
-            return GraphSAGE(**model_params)
-        if name == "GIN":
-            return GIN(**model_params)
-        if name == "ChebNet":
-            return ChebNet(**model_params, K=self.config.SINGLETON_CHEBNET_K)
-        if name == "RGCN":
-            return RGCN(**model_params, num_relations=self.config.SINGLETON_RGCN_NUM_RELATIONS)
-        if name == "TongDiGCN": return TongDiGCN(**model_params)
-        if name == "DirectGCN":
-            layer_dims = [in_channels] + self.config.SINGLETON_DIRECTGCN_HIDDEN_LAYER_DIMS
-            return DirectGCN(
-                layer_dims=layer_dims, num_graph_nodes=self.graph.number_of_nodes,
-                task_num_output_classes=num_classes,
-                n_gram_len=1, # This is the singleton trainer, so n is always 1
-                use_homo_hetero_paths=use_homo_hetero_paths,
-                one_gram_dim=self.config.GCN_1GRAM_INIT_DIM, max_pe_len=self.config.GCN_MAX_PE_LEN,
-                dropout=self.config.GCN_DROPOUT_RATE, gating_mode=self.config.GCN_GATING_COEFF_MODE
-            )
-        raise ValueError(f"Unknown model name '{name}' for singleton evaluation.")
+        return pd.DataFrame(all_results)
 
     def _prepare_data_for_model(self, model_name: str, features: torch.Tensor, labels: torch.Tensor, train_mask: torch.Tensor, test_mask: torch.Tensor, use_homo_hetero_paths: bool) -> Data:
         """Prepares a PyG Data object tailored to the specific model's needs."""
@@ -219,7 +201,11 @@ class SingletonXGCNTrainer:
             edge_index_out = self.graph.A_out_w.indices()
             edge_index_in = self.graph.A_in_w.indices()
             data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
-            data_dict['edge_type'] = torch.cat([torch.zeros(edge_index_out.size(1)), torch.ones(edge_index_in.size(1))]).long()
+            # --- FIX: Ensure edge_type tensor is on the same device as edge_index ---
+            device = edge_index_out.device
+            edge_type_out = torch.zeros(edge_index_out.size(1), dtype=torch.long, device=device)
+            edge_type_in = torch.ones(edge_index_in.size(1), dtype=torch.long, device=device)
+            data_dict['edge_type'] = torch.cat([edge_type_out, edge_type_in])
         elif model_name_lower == 'tongdigcn':
             data_dict['edge_index'] = self.graph.A_out_w.indices() # Forward pass uses outgoing edges
             data_dict['edge_index_backward'] = self.graph.A_in_w.indices() # Backward pass uses incoming edges

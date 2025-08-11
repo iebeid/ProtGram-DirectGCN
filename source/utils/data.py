@@ -2,7 +2,7 @@
 # MODULE: utils/data.py
 # PURPOSE: Contains all data loading and processing utilities.
 # VERSION: 4.0 (Added global seeding and reservoir sampling)
-# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import os
@@ -13,13 +13,14 @@ import re
 import sqlite3
 import time
 from pathlib import Path
-from typing import Dict, Iterator, List, Mapping, Optional, Set, Tuple, Union
+from typing import Dict, Iterator, List, Mapping, Optional, Set, Tuple, Union, Any
 
 import dask.dataframe as dd
 import h5py
 import numpy as np
 import pandas as pd
 import torch
+from torch_geometric.data import Data
 import requests
 from Bio import SeqIO
 from dask.diagnostics import ProgressBar
@@ -623,3 +624,57 @@ class ProtgramDaskHelpers:
                 if source_id is not None and target_id is not None:
                     # Yield a string representation for easy writing to text files
                     yield f"{source_id} {target_id}"
+
+def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramGraph', features: torch.Tensor,
+                                         labels: Optional[torch.Tensor], use_homo_hetero_paths: bool) -> Data:
+    """
+    A centralized utility to prepare a PyG Data object from a DirectedNgramGraph,
+    tailored to the specific model's needs. This eliminates duplicated logic
+    between the ProtGram and Singleton trainers.
+    """
+    data_dict: Dict[str, Any] = {'x': features, 'y': labels, 'graph_obj': graph}
+    model_name_lower = model_type.lower()
+
+    if model_name_lower == 'directgcn':
+        # --- FIX: Pass the correctly processed matrices to the model ---
+        # The undirected path, and the specialized mathcal_A for directed paths.
+        data_dict.update({
+            'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
+            'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values(),
+            'edge_index_mathcal_in': graph.mathcal_A_in.indices(),
+            'edge_weight_mathcal_in': graph.mathcal_A_in.values(),
+            'edge_index_mathcal_out': graph.mathcal_A_out.indices(),
+            'edge_weight_mathcal_out': graph.mathcal_A_out.values()
+        })
+        # Conditionally add the NORMALIZED homophily/heterophily paths.
+        if use_homo_hetero_paths and graph.A_homo_w is not None and graph.A_hetero_w is not None:
+            print("  Preparing data with normalized homophily/heterophily paths...")
+            data_dict.update({
+                'edge_index_homo_norm': graph.A_homo_norm.indices(), 'edge_weight_homo_norm': graph.A_homo_norm.values(),
+                'edge_index_hetero_norm': graph.A_hetero_norm.indices(), 'edge_weight_hetero_norm': graph.A_hetero_norm.values()
+            })
+
+    elif model_name_lower == 'rgcn':
+        # RGCN requires a single edge_index and an edge_type tensor.
+        edge_index_out = graph.A_out_w.indices()
+        edge_index_in = graph.A_in_w.indices()
+        device = edge_index_out.device
+        edge_type_out = torch.zeros(edge_index_out.size(1), dtype=torch.long, device=device)
+        edge_type_in = torch.ones(edge_index_in.size(1), dtype=torch.long, device=device)
+        data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
+        data_dict['edge_type'] = torch.cat([edge_type_out, edge_type_in])
+
+    elif model_name_lower == 'tongdigcn':
+        # TongDiGCN requires separate forward and backward edge indices.
+        data_dict['edge_index'] = graph.A_out_w.indices()
+        # --- FIX: Add the corresponding edge weights for the forward GCN pass ---
+        data_dict['edge_attr'] = graph.A_out_w.values()
+        data_dict['edge_index_backward'] = graph.A_in_w.indices()
+
+    else:  # Default for standard GNNs (GCN, GAT, GraphSAGE, etc.)
+        # These models expect a single, undirected, weighted graph.
+        print(f"  Preparing data for standard GNN '{model_type}' using undirected normalized graph.")
+        data_dict['edge_index'] = graph.A_undirected_norm_sparse.indices()
+        data_dict['edge_attr'] = graph.A_undirected_norm_sparse.values()
+
+    return Data.from_dict(data_dict)
