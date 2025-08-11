@@ -16,7 +16,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from sklearn.metrics import f1_score, precision_score, recall_score
-from torch_geometric.data import Data, Dataset
+from torch_geometric.data import Data
 from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 from torch_geometric.transforms import ToUndirected
 from torch_geometric.utils import to_undirected, homophily
@@ -35,6 +35,63 @@ class GNNBenchmarker(BaseBenchmarker):
         self.model_factory = ModelFactory(config, context='benchmark')
         print(f"Benchmark embeddings will be saved to: {self.embedding_dir}")
 
+    def _sparse_identity(self, size: int, device: torch.device) -> torch.Tensor:
+        """Creates a sparse identity matrix of given size."""
+        if size <= 0:
+            empty_indices = torch.empty((2, 0), dtype=torch.long, device=device)
+            empty_values = torch.empty(0, dtype=torch.float32, device=device)
+            return torch.sparse_coo_tensor(empty_indices, empty_values, (size, size)).coalesce()
+
+        indices = torch.arange(size, device=device).unsqueeze(0).repeat(2, 1)
+        values = torch.ones(size, device=device, dtype=torch.float32)
+        return torch.sparse_coo_tensor(indices, values, (size, size)).coalesce()
+
+    def _calculate_single_propagation_matrix(self, A_w_torch_sparse: torch.Tensor, num_nodes: int) -> torch.Tensor:
+        """
+        Calculates the propagation matrix mathcal{A} = sqrt(S^2 + K^2 + epsilon) + I
+        This logic is replicated from the main GraphBuilder for benchmark compatibility.
+        """
+        if num_nodes == 0 or (A_w_torch_sparse.is_sparse and A_w_torch_sparse._nnz() == 0):
+            empty_indices = torch.empty((2, 0), dtype=torch.long, device=A_w_torch_sparse.device)
+            empty_values = torch.empty(0, dtype=torch.float32, device=A_w_torch_sparse.device)
+            return torch.sparse_coo_tensor(empty_indices, empty_values, (num_nodes, num_nodes)).coalesce()
+
+        dev = A_w_torch_sparse.device
+        row_sum = torch.sparse.sum(A_w_torch_sparse, dim=1).to_dense()
+        D_inv_diag_vals = torch.zeros_like(row_sum, dtype=torch.float32, device=dev)
+        non_zero_degrees_mask = row_sum != 0
+        if torch.any(non_zero_degrees_mask):
+            D_inv_diag_vals[non_zero_degrees_mask] = 1.0 / row_sum[non_zero_degrees_mask]
+
+        A_w_indices = A_w_torch_sparse.indices()
+        A_w_values = A_w_torch_sparse.values()
+        scaled_values = A_w_values * D_inv_diag_vals[A_w_indices[0]]
+        A_n_sparse = torch.sparse_coo_tensor(A_w_indices, scaled_values, A_w_torch_sparse.size()).coalesce()
+
+        A_n_sq_values = A_n_sparse.values().pow(2)
+        A_n_sq_sparse = torch.sparse_coo_tensor(A_n_sparse.indices(), A_n_sq_values, A_n_sparse.size()).coalesce()
+        A_n_sq_t_sparse = A_n_sq_sparse.t().coalesce()
+        S_sq_plus_K_sq_sparse = (A_n_sq_sparse + A_n_sq_t_sparse).coalesce()
+        S_sq_plus_K_sq_sparse = torch.sparse_coo_tensor(S_sq_plus_K_sq_sparse.indices(), S_sq_plus_K_sq_sparse.values() * 0.5, S_sq_plus_K_sq_sparse.size()).coalesce()
+
+        epsilon_tensor = torch.tensor(1e-9, device=dev, dtype=torch.float32)
+        mathcal_A_base_values = torch.sqrt(S_sq_plus_K_sq_sparse.values() + epsilon_tensor)
+        mathcal_A_base_sparse = torch.sparse_coo_tensor(S_sq_plus_K_sq_sparse.indices(), mathcal_A_base_values, S_sq_plus_K_sq_sparse.size()).coalesce()
+
+        identity_sparse = self._sparse_identity(num_nodes, device=dev)
+        return (mathcal_A_base_sparse + identity_sparse).coalesce()
+
+    def _normalize_symmetric_matrix(self, matrix: torch.Tensor, num_nodes: int) -> torch.Tensor:
+        """Helper to apply GCN normalization to a symmetric matrix."""
+        if matrix.numel() == 0 or matrix._nnz() == 0: return matrix
+        edge_index, edge_weight = add_self_loops(matrix.indices(), matrix.values(), fill_value=1.0, num_nodes=num_nodes)
+        row, col = edge_index
+        deg = degree(col, num_nodes, dtype=edge_weight.dtype)
+        deg_inv_sqrt = deg.pow(-0.5)
+        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
+        norm_values = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
+        return torch.sparse_coo_tensor(edge_index, norm_values, matrix.shape).coalesce()
+
     def _preprocess_for_custom_models(self, data: Data, use_homo_hetero_paths: bool) -> Data:
         """Prepares a data object with all necessary edge indices for custom models."""
         # --- NEW: Split edges by homophily using node labels for benchmarks ---
@@ -52,16 +109,16 @@ class GNNBenchmarker(BaseBenchmarker):
             # Create directed homophilic edges and then combine for the undirected path
             edge_index_out_homo = edge_index[:, homo_mask]
             edge_weight_out_homo = base_edge_weight[homo_mask]
-            edge_index_in_homo = edge_index_out_homo.flip(0)
-            data.edge_index_homo = torch.cat([edge_index_out_homo, edge_index_in_homo], dim=1)
-            data.edge_weight_homo = torch.cat([edge_weight_out_homo, edge_weight_out_homo], dim=0)
+            A_out_w_homo = torch.sparse_coo_tensor(edge_index_out_homo, edge_weight_out_homo, (data.num_nodes, data.num_nodes)).coalesce()
+            A_homo_w = (A_out_w_homo + A_out_w_homo.t()).coalesce()
+            data.edge_index_homo_norm, data.edge_weight_homo_norm = self._normalize_symmetric_matrix(A_homo_w, data.num_nodes).coalesce().indices(), self._normalize_symmetric_matrix(A_homo_w, data.num_nodes).coalesce().values()
 
             # Create directed heterophilic edges and then combine for the undirected path
             edge_index_out_hetero = edge_index[:, hetero_mask]
             edge_weight_out_hetero = base_edge_weight[hetero_mask]
-            edge_index_in_hetero = edge_index_out_hetero.flip(0)
-            data.edge_index_hetero = torch.cat([edge_index_out_hetero, edge_index_in_hetero], dim=1)
-            data.edge_weight_hetero = torch.cat([edge_weight_out_hetero, edge_weight_out_hetero], dim=0)
+            A_out_w_hetero = torch.sparse_coo_tensor(edge_index_out_hetero, edge_weight_out_hetero, (data.num_nodes, data.num_nodes)).coalesce()
+            A_hetero_w = (A_out_w_hetero + A_out_w_hetero.t()).coalesce()
+            data.edge_index_hetero_norm, data.edge_weight_hetero_norm = self._normalize_symmetric_matrix(A_hetero_w, data.num_nodes).coalesce().indices(), self._normalize_symmetric_matrix(A_hetero_w, data.num_nodes).coalesce().values()
 
         # For TongDiGCN, which needs a backward edge index
         data.edge_index_backward = data.edge_index.flip(0)

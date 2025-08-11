@@ -20,8 +20,8 @@ from tqdm.auto import tqdm
 from configuration.config import Config
 from source.data_builders.graph import DirectedNgramGraph
 from source.data_builders.xgcn import XGCNDataset
+from source.utils.data import DataUtils, prepare_pyg_data_from_protgram_graph
 from source.models.factory import ModelFactory
-from source.utils.data import DataUtils
 
 
 class SingletonXGCNTrainer:
@@ -117,8 +117,14 @@ class SingletonXGCNTrainer:
 
             model.to(self.device)
             optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
-            data_for_model = self._prepare_data_for_model(model_name, initial_features, y_for_stratify, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
-
+            # --- FIX: Use the centralized, correct data preparation utility ---
+            data_for_model = prepare_pyg_data_from_protgram_graph(
+                model_type=model_name, graph=self.graph, features=initial_features, labels=y_for_stratify,
+                use_homo_hetero_paths=use_homo_hetero_for_this_model
+            )
+            data_for_model.train_mask = train_mask
+            data_for_model.test_mask = test_mask
+            data_for_model = data_for_model.to(self.device)
             # Training Loop
             for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
                 model.train()
@@ -131,7 +137,10 @@ class SingletonXGCNTrainer:
                         self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=test_mask
                     )
                     # For masked_node, the 'labels' (y) are not used in the loss calculation itself.
-                    epoch_data = self._prepare_data_for_model(model_name, masked_features, y_for_stratify, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
+                    epoch_data = prepare_pyg_data_from_protgram_graph(
+                        model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
+                        use_homo_hetero_paths=use_homo_hetero_for_this_model
+                    ).to(self.device)
                     logits, _ = model(epoch_data)
                     loss = F.cross_entropy(logits[masked_indices], original_node_ids.to(self.device))
                 else:
@@ -155,7 +164,10 @@ class SingletonXGCNTrainer:
                         # --- FIX: Use correct PROTGRAM_ prefixed config variables ---
                         self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=train_mask # Mask only from test set
                     )
-                    eval_data = self._prepare_data_for_model(model_name, masked_features, y_for_stratify, train_mask, test_mask, use_homo_hetero_for_this_model).to(self.device)
+                    eval_data = prepare_pyg_data_from_protgram_graph(
+                        model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
+                        use_homo_hetero_paths=use_homo_hetero_for_this_model
+                    ).to(self.device)
                     logits, _ = model(eval_data)
                     preds = logits[masked_indices].argmax(dim=-1)
                     y_true = original_node_ids.cpu().numpy()
@@ -177,46 +189,4 @@ class SingletonXGCNTrainer:
                 all_results.append(metrics)
             else:
                 print(f"  Skipping metrics for {model_name} as there was no data in the test set to evaluate.")
-
         return pd.DataFrame(all_results)
-
-    def _prepare_data_for_model(self, model_name: str, features: torch.Tensor, labels: torch.Tensor, train_mask: torch.Tensor, test_mask: torch.Tensor, use_homo_hetero_paths: bool) -> Data:
-        """Prepares a PyG Data object tailored to the specific model's needs."""
-        data_dict = {'x': features, 'y': labels, 'train_mask': train_mask, 'test_mask': test_mask}
-        model_name_lower = model_name.lower()
-
-        if model_name_lower == 'directgcn':
-            # Always include the base structural and directional paths
-            data_dict.update({
-                'edge_index_in': self.graph.A_in_w.indices(), 'edge_weight_in': self.graph.A_in_w.values(),
-                'edge_index_out': self.graph.A_out_w.indices(), 'edge_weight_out': self.graph.A_out_w.values(),
-                'edge_index_undirected_norm': self.graph.A_undirected_norm_sparse.indices(),
-                'edge_weight_undirected_norm': self.graph.A_undirected_norm_sparse.values()
-            })
-
-            # Conditionally add the new top-level homophily/heterophily paths
-            if use_homo_hetero_paths and self.graph.A_homo_w is not None and self.graph.A_hetero_w is not None:
-                print("  Preparing data with parallel homophily/heterophily paths for singleton evaluation.")
-                data_dict.update({
-                    'edge_index_homo': self.graph.A_homo_w.indices(), 'edge_weight_homo': self.graph.A_homo_w.values(),
-                    'edge_index_hetero': self.graph.A_hetero_w.indices(), 'edge_weight_hetero': self.graph.A_hetero_w.values()
-                })
-        elif model_name_lower == 'rgcn':
-            edge_index_out = self.graph.A_out_w.indices()
-            edge_index_in = self.graph.A_in_w.indices()
-            data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
-            # --- FIX: Ensure edge_type tensor is on the same device as edge_index ---
-            device = edge_index_out.device
-            edge_type_out = torch.zeros(edge_index_out.size(1), dtype=torch.long, device=device)
-            edge_type_in = torch.ones(edge_index_in.size(1), dtype=torch.long, device=device)
-            data_dict['edge_type'] = torch.cat([edge_type_out, edge_type_in])
-        elif model_name_lower == 'tongdigcn':
-            data_dict['edge_index'] = self.graph.A_out_w.indices() # Forward pass uses outgoing edges
-            data_dict['edge_index_backward'] = self.graph.A_in_w.indices() # Backward pass uses incoming edges
-        else:  # GCN, GAT, etc.
-            # --- FIX: Align with the main GNN benchmarker for consistency. ---
-            # Use the symmetrically normalized undirected graph for standard GNNs.
-            data_dict['edge_index'] = self.graph.A_undirected_norm_sparse.indices()
-            data_dict['edge_attr'] = self.graph.A_undirected_norm_sparse.values()
-
-        return Data.from_dict(data_dict)
