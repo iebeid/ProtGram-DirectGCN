@@ -19,7 +19,7 @@ from sklearn.metrics import f1_score, precision_score, recall_score
 from torch_geometric.data import Data
 from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 from torch_geometric.transforms import ToUndirected
-from torch_geometric.utils import to_undirected, homophily
+from torch_geometric.utils import to_undirected, homophily, add_self_loops, degree
 
 from configuration.config import Config
 from source.benchmarkers.base import BaseBenchmarker
@@ -82,7 +82,7 @@ class GNNBenchmarker(BaseBenchmarker):
         return (mathcal_A_base_sparse + identity_sparse).coalesce()
 
     def _normalize_symmetric_matrix(self, matrix: torch.Tensor, num_nodes: int) -> torch.Tensor:
-        """Helper to apply GCN normalization to a symmetric matrix."""
+        """Helper to apply GCN normalization to a symmetric matrix.""" # noqa
         if matrix.numel() == 0 or matrix._nnz() == 0: return matrix
         edge_index, edge_weight = add_self_loops(matrix.indices(), matrix.values(), fill_value=1.0, num_nodes=num_nodes)
         row, col = edge_index
