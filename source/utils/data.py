@@ -678,19 +678,16 @@ class ProtgramDaskHelpers:
 
     @staticmethod
     def extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int,
-                                           ngram_to_id_map: Dict[str, int]) -> Iterator[str]:
+                                          ngram_to_id_map: Dict[str, int]) -> Iterator[str]:
         """Extracts n-gram transitions (edges) from a single processed sequence."""
         _, processed_seq_text = seq_tuple
         if len(processed_seq_text) >= n_val + 1:
             for i in range(len(processed_seq_text) - n_val):
-                # source_id = ngram_to_id_map.get(processed_seq_text[i:i + n_val])
-                # target_id = ngram_to_id_map.get(processed_seq_text[i + 1:i + 1 + n_val])
-                # if source_id is not None and target_id is not None:
-                #     # Yield a string representation for easy writing to text files
-                #     yield f"{source_id} {target_id}"
-                source_ngram = processed_seq_text[i:i + n_val]
-                target_ngram = processed_seq_text[i + 1:i + 1 + n_val]
-                yield source_ngram, target_ngram
+                source_id = ngram_to_id_map.get(processed_seq_text[i:i + n_val])
+                target_id = ngram_to_id_map.get(processed_seq_text[i + 1:i + 1 + n_val])
+                if source_id is not None and target_id is not None:
+                    # Yield a string representation for easy writing to text files
+                    yield f"{source_id} {target_id}"
 
     @staticmethod
     def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramGraph', features: torch.Tensor,
