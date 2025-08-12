@@ -141,7 +141,7 @@ class ProtGramDataBuilder:
             print(f"  [n={n_val_loop}] Generating n-grams using Dask Bag (source: final_preprocessed_input_bag)...")
             sys.stdout.flush()
 
-            extract_ngrams_partial = partial(ProtgramDaskHelpers._extract_ngrams_from_sequence_tuple, n_val=n_val_loop)
+            extract_ngrams_partial = partial(ProtgramDaskHelpers.extract_ngrams_from_sequence_tuple, n_val=n_val_loop)
             all_ngrams_bag_flattened = final_preprocessed_input_bag.map(extract_ngrams_partial).flatten()
 
             print(f"    Computing unique n-grams using Dask Bag's distinct()...")
@@ -195,7 +195,7 @@ class ProtGramDataBuilder:
             print(f"  [n={n_val_loop}] Generating edge strings using Dask Bag (source: final_preprocessed_input_bag)...")
             sys.stdout.flush()
 
-            extract_edges_partial = partial(ProtgramDaskHelpers._extract_edges_from_sequence_tuple,
+            extract_edges_partial = partial(ProtgramDaskHelpers.extract_edges_from_sequence_tuple,
                                             n_val=n_val_loop,
                                             ngram_to_id_map=ngram_to_id_map)
             all_edges_str_bag_flattened = final_preprocessed_input_bag.map(extract_edges_partial).flatten()
