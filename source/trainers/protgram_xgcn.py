@@ -87,7 +87,7 @@ class ProtGramXGCNTrainer:
                     "protein_pooling": protein_pooling_attention
                 }
 
-        output_paths = self._save_final_embeddings(final_protein_embeddings_per_model)
+        output_paths = DataUtils.save_final_embeddings(self, final_protein_embeddings_per_model)
 
         # --- FIX: Only save/visualize attention if enabled in the config ---
         if self.config.PROTGRAM_LOG_ATTENTION_WEIGHTS:
