@@ -2,7 +2,7 @@
 # MODULE: models/gnn/spectral/dirgnn.py
 # PURPOSE: Implements the Dir-GNN model from "Edge Directionality Improves
 #          Learning on Heterophilic Graphs" using the official PyG wrapper.
-# VERSION: 7.2 (Definitively fixed forward pass logic)
+# VERSION: 7.3 (Corrected forward pass argument handling)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -57,9 +57,10 @@ class DirGNN(nn.Module):
         if edge_index_backward is None:
             raise ValueError("DirGNN requires 'edge_index_backward' in the Data object.")
 
-        # --- DEFINITIVE FIX: Correctly loop through layers and apply activations ---
+        # --- DEFINITIVE FIX: Call the conv layer with positional arguments ---
         for i in range(len(self.convs) - 1):
-            x = self.convs[i](x, edge_index, edge_index_backward=edge_index_backward)
+            # The DirGNNConv expects (x, edge_index, edge_index_backward) positionally.
+            x = self.convs[i](x, edge_index, edge_index_backward)
             if i < len(self.norms):
                 x = self.norms[i](x)
             x = F.relu(x)
@@ -69,7 +70,6 @@ class DirGNN(nn.Module):
         self.embedding_output = x
 
         # Apply the final layer to get logits
-        x = self.convs[-1](x, edge_index, edge_index_backward=edge_index_backward)
-        logits = x
+        logits = self.convs[-1](self.embedding_output, edge_index, edge_index_backward)
 
         return logits, self.embedding_output
