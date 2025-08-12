@@ -462,15 +462,12 @@ class DirectedNgramGraph(Graph):
         A_out_w_homo = torch.sparse_coo_tensor(edge_index[:, homo_mask], edge_weights[homo_mask], self.A_out_w.shape).coalesce()
         A_out_w_hetero = torch.sparse_coo_tensor(edge_index[:, hetero_mask], edge_weights[hetero_mask], self.A_out_w.shape).coalesce()
 
-        A_homo_w = (A_out_w_homo + A_out_w_homo.t()).coalesce()
-        A_hetero_w = (A_out_w_hetero + A_out_w_hetero.t()).coalesce()
-
         print("    Normalizing homophilic and heterophilic matrices...")
-        A_homo_norm = self._normalize_symmetric_matrix(A_homo_w)
-        A_hetero_norm = self._normalize_symmetric_matrix(A_hetero_w)
+        A_homo_norm = self._normalize_symmetric_matrix((A_out_w_homo + A_out_w_homo.t()).coalesce())
+        A_hetero_norm = self._normalize_symmetric_matrix((A_out_w_hetero + A_out_w_hetero.t()).coalesce())
 
-        print(f"    - Undirected Homophilous Edges: {A_homo_w._nnz()}")
-        print(f"    - Undirected Heterophilous Edges: {A_hetero_w._nnz()}")
+        print(f"    - Undirected Homophilous Edges: {(A_out_w_homo + A_out_w_homo.t())._nnz()}")
+        print(f"    - Undirected Heterophilous Edges: {(A_out_w_hetero + A_out_w_hetero.t())._nnz()}")
         return A_homo_norm, A_hetero_norm
 
     def create_subgraph_data_for_model(self, model_type: str,

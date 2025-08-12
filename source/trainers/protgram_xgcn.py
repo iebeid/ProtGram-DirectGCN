@@ -168,7 +168,9 @@ class ProtGramXGCNTrainer:
             initial_features, hierarchical_attention = feature_result
 
             bn = torch.nn.BatchNorm1d(initial_features.shape[1]).to(self.device)
-            initial_features = bn(initial_features.to(self.device)).cpu()
+            # --- FIX: Detach the features from the computation graph after normalization ---
+            # This prevents the "trying to backward through the graph a second time" error in the training loop.
+            initial_features = bn(initial_features.to(self.device)).detach().cpu()
 
             if hierarchical_attention and self.config.PROTGRAM_LOG_ATTENTION_WEIGHTS:
                 hierarchical_attention_per_level[n] = hierarchical_attention
@@ -184,11 +186,10 @@ class ProtGramXGCNTrainer:
                 is_heterophilic = homophily_ratio < self.config.GCN_HETEROPHILY_THRESHOLD
                 print(f"  Graph n={n} Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
                 if is_heterophilic:
-                    print(f"  -> Enabling specialized homophily/heterophily paths for DirectGCN at n={n}.")
+                    print(f"  -> Enabling specialized homophily/heterophily paths for DirectGCN at n={n}.") # --- FIX: Capture the returned matrices from the functional method ---
                     use_homo_hetero_paths_for_level = True
-                    split_result = graph_obj.split_edges_by_homophily(labels)
-                    if split_result:
-                        A_homo_norm, A_hetero_norm = split_result
+                    split_result = graph_obj.split_edges_by_homophily(labels) # This now returns a tuple
+                    if split_result: A_homo_norm, A_hetero_norm = split_result
 
             model = self.model_factory.create_model(
                 model_name=model_type, in_channels=initial_features.shape[1],

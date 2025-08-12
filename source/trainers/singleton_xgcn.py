@@ -94,10 +94,9 @@ class SingletonXGCNTrainer:
             A_homo_norm, A_hetero_norm = None, None
             use_homo_hetero_for_this_model = is_heterophilic if model_name.lower() == 'directgcn' else False
             if use_homo_hetero_for_this_model and labels is not None:
-                print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.")
-                split_result = self.graph.split_edges_by_homophily(labels)
-                if split_result:
-                    A_homo_norm, A_hetero_norm = split_result
+                print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.") # --- FIX: Capture the returned matrices from the functional method ---
+                split_result = self.graph.split_edges_by_homophily(labels) # This now returns a tuple
+                if split_result: A_homo_norm, A_hetero_norm = split_result
 
             model = self.model_factory.create_model(
                 model_name=model_name, in_channels=initial_features.shape[1], num_classes=num_classes,

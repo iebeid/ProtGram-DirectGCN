@@ -60,11 +60,11 @@ class DirGNN(nn.Module):
         """
         The forward pass for the DirGNN model. It now only requires x and edge_index.
         """
-        x, edge_index = data.x, data.edge_index
+        x, edge_index, edge_weight = data.x, data.edge_index, getattr(data, 'edge_attr', None)
 
         # Loop through intermediate layers
         for i in range(len(self.convs) - 1):
-            x = self.convs[i](x, edge_index)
+            x = self.convs[i](x, edge_index, edge_weight=edge_weight)
             if i < len(self.norms):
                 x = self.norms[i](x)
             x = F.relu(x)
@@ -74,6 +74,6 @@ class DirGNN(nn.Module):
         self.embedding_output = x
 
         # Apply the final layer to get the output logits
-        logits = self.convs[-1](self.embedding_output, edge_index)
+        logits = self.convs[-1](self.embedding_output, edge_index, edge_weight=edge_weight)
 
         return logits, self.embedding_output
