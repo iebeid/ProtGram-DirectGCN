@@ -692,9 +692,11 @@ class ProtgramDaskHelpers:
                 target_ngram = processed_seq_text[i + 1:i + 1 + n_val]
                 yield source_ngram, target_ngram
 
+    @staticmethod
     def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramGraph', features: torch.Tensor,
                                              labels: Optional[torch.Tensor], use_homo_hetero_paths: bool,
-                                             homo_hetero_mats: Optional[Dict] = None) -> Data:
+                                             A_homo_norm: Optional[torch.Tensor] = None,
+                                             A_hetero_norm: Optional[torch.Tensor] = None) -> Data:
         """
         A centralized utility to prepare a PyG Data object from a DirectedNgramGraph,
         tailored to the specific model's needs. This eliminates duplicated logic
@@ -703,8 +705,16 @@ class ProtgramDaskHelpers:
         data_dict: Dict[str, Any] = {'x': features, 'y': labels, 'graph_obj': graph}
         model_name_lower = model_type.lower()
 
+        # --- DEFINITIVE FIX: Always provide a default, undirected graph structure ---
+        # All models can use this as a fallback, and it's required by the base layers.
+        # This prevents the zero-metric issue by ensuring standard GNNs get the
+        # graph representation they were designed for.
+        print(f"  Preparing data for '{model_type}' using undirected normalized graph as baseline.")
+        data_dict['edge_index'] = graph.A_undirected_norm_sparse.indices()
+        data_dict['edge_attr'] = graph.A_undirected_norm_sparse.values()
+
         if model_name_lower == 'directgcn':
-            # DirectGCN uses multiple, specific graph views
+            # DirectGCN uses additional, specific graph views which we add here.
             data_dict.update({
                 'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
                 'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values(),
@@ -713,49 +723,26 @@ class ProtgramDaskHelpers:
                 'edge_index_mathcal_out': graph.mathcal_A_out.indices(),
                 'edge_weight_mathcal_out': graph.mathcal_A_out.values()
             })
-            if use_homo_hetero_paths and homo_hetero_mats:
-                print("    -> Adding normalized homophily/heterophily paths.")
-                data_dict.update(homo_hetero_mats)
-        else:
-            # --- DEFINITIVE FIX for Zero-Accuracy Bug ---
-            # All standard GNNs (GCN, GAT, RGCN, DirGNN, etc.) expect a simple,
-            # undirected, and normalized graph for stable training. The previous
-            # logic provided raw, directed edges to some models, causing them to fail.
-            # This ensures all standard models receive the same valid input.
-            print(f"  Preparing data for standard GNN '{model_type}' using undirected normalized graph.")
-            data_dict['edge_index'] = graph.A_undirected_norm_sparse.indices()
-            data_dict['edge_attr'] = graph.A_undirected_norm_sparse.values()
-            # For directed models like DirGNN, provide the backward pass edges.
-            # They can handle this argument gracefully even if they primarily use the undirected graph.
-            data_dict['edge_index_backward'] = graph.A_in_w.indices()
+            if use_homo_hetero_paths and A_homo_norm is not None and A_hetero_norm is not None:
+                print("    -> Adding normalized homophily/heterophily paths for DirectGCN.")
+                data_dict.update({
+                    'edge_index_homo_norm': A_homo_norm.indices(), 'edge_weight_homo_norm': A_homo_norm.values(),
+                    'edge_index_hetero_norm': A_hetero_norm.indices(), 'edge_weight_hetero_norm': A_hetero_norm.values()
+                })
 
-        #     if use_homo_hetero_paths and A_homo_norm is not None and A_hetero_norm is not None:
-        #         print("  Preparing data with normalized homophily/heterophily paths...")
-        #         data_dict.update({
-        #             'edge_index_homo_norm': A_homo_norm.indices(), 'edge_weight_homo_norm': A_homo_norm.values(),
-        #             'edge_index_hetero_norm': A_hetero_norm.indices(), 'edge_weight_hetero_norm': A_hetero_norm.values()
-        #         })
-        #
-        # elif model_name_lower == 'rgcn':
-        #     # RGCN requires a single edge_index and an edge_type tensor.
-        #     edge_index_out = graph.A_out_w.indices()
-        #     edge_index_in = graph.A_in_w.indices()
-        #     device = edge_index_out.device
-        #     edge_type_out = torch.zeros(edge_index_out.size(1), dtype=torch.long, device=device)
-        #     edge_type_in = torch.ones(edge_index_in.size(1), dtype=torch.long, device=device)
-        #     data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
-        #     data_dict['edge_type'] = torch.cat([edge_type_out, edge_type_in])
-        #
-        # elif model_name_lower == 'dirgnn':
-        #     # DirGNN uses the raw forward edges and requires the backward edges to be passed separately.
-        #     data_dict['edge_index'] = graph.A_out_w.indices()
-        #     data_dict['edge_attr'] = graph.A_out_w.values()
-        #     data_dict['edge_index_backward'] = graph.A_in_w.indices()
-        #
-        # else:  # Default for standard GNNs (GCN, GAT, GraphSAGE, etc.)
-        #     # These models expect a single, undirected, weighted graph.
-        #     print(f"  Preparing data for standard GNN '{model_type}' using undirected normalized graph.")
-        #     data_dict['edge_index'] = graph.A_undirected_norm_sparse.indices()
-        #     data_dict['edge_attr'] = graph.A_undirected_norm_sparse.values()
+        elif model_name_lower == 'rgcn':
+            # RGCN requires a specific edge_type tensor. We overwrite the default edge_index here.
+            edge_index_out = graph.A_out_w.indices()
+            edge_index_in = graph.A_in_w.indices()
+            device = edge_index_out.device
+            edge_type_out = torch.zeros(edge_index_out.size(1), dtype=torch.long, device=device)
+            edge_type_in = torch.ones(edge_index_in.size(1), dtype=torch.long, device=device)
+            data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
+            data_dict['edge_type'] = torch.cat([edge_type_out, edge_type_in])
+
+        elif model_name_lower == 'dirgnn':
+            # DirGNN needs the raw directed edges, so we overwrite the default edge_index.
+            data_dict['edge_index'] = graph.A_out_w.indices()
+            data_dict['edge_attr'] = graph.A_out_w.values()
 
         return Data.from_dict(data_dict)
