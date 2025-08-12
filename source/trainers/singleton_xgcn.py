@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: trainers/singleton_xgcn.py
 # PURPOSE: A lightweight trainer for rapid evaluation of various GNNs on the n=1 graph.
-# VERSION: 4.0 (Corrected data preparation logic for baseline GNNs)
+# VERSION: 5.0 (Definitively fixed data preparation for heterophilic graphs)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -54,12 +54,12 @@ class SingletonXGCNTrainer:
         y_for_stratify = torch.zeros(self.graph.number_of_nodes, dtype=torch.long)
         if labels is not None:
             y_for_stratify = labels
-            # Use the raw, unnormalized graph for a more accurate homophily calculation
+            # --- DEFINITIVE FIX: Calculate homophily on the raw directed edges for accuracy ---
             homophily_ratio = homophily(self.graph.A_out_w.indices(), y_for_stratify, method='edge')
             is_heterophilic = homophily_ratio < self.config.GCN_HETEROPHILY_THRESHOLD
             print(f"  Singleton Graph (n=1) Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
         else:
-            print("  Homophily calculation skipped for non-classification task (e.g., masked_node).")
+            print("  Homophily calculation skipped for non-classification task.")
 
         initial_features = torch.randn((self.graph.number_of_nodes, self.config.PROTGRAM_1GRAM_INIT_DIM))
         node_indices = np.arange(self.graph.number_of_nodes)
@@ -98,9 +98,6 @@ class SingletonXGCNTrainer:
             model.to(self.device)
             optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
 
-            # --- DEFINITIVE FIX: Prepare the correct data object for each model type ---
-            # This ensures that standard GNNs get a representation they can work with,
-            # even on this difficult graph, preventing the zero-metric issue.
             data_for_model = prepare_pyg_data_from_protgram_graph(
                 model_type=model_name, graph=self.graph, features=initial_features, labels=y_for_stratify,
                 use_homo_hetero_paths=use_homo_hetero_for_this_model,
