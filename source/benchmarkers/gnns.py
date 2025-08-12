@@ -186,7 +186,7 @@ class GNNBenchmarker(BaseBenchmarker):
                         print("  Model Architecture:")
                         print(model)
 
-                    metrics, history_df = self._train_and_evaluate(model, data) #FIX Expected target size [120, 5], got [120] for every data except karate
+                    metrics, history_df = self._train_and_evaluate(model, data)
                     result_row = {"dataset": variant_name, "model": model_name, "error": None}
                     result_row.update(metrics)
                     results.append(result_row)
@@ -199,7 +199,8 @@ class GNNBenchmarker(BaseBenchmarker):
                     history_path = Path(self.output_dir) / f"history_{model_name}_{variant_name}.csv"
                     history_df.to_csv(history_path, index=False)
                     mlflow.log_artifact(str(history_path), "training_history")
-                    history_path.unlink()
+                    if os.path.exists(history_path):
+                        os.remove(history_path)
 
                 except Exception as e:
                     print(f"ERROR during training/evaluation of {model_name} on {variant_name}: {e}")

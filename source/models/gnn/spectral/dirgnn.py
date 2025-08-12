@@ -59,7 +59,7 @@ class DirGNN(nn.Module):
 
         # --- DEFINITIVE FIX: Correctly loop through layers and apply activations ---
         for i in range(len(self.convs) - 1):
-            x = self.convs[i](x, edge_index, edge_index_backward)
+            x = self.convs[i](x, edge_index, edge_index_backward=edge_index_backward)
             if i < len(self.norms):
                 x = self.norms[i](x)
             x = F.relu(x)
@@ -69,7 +69,7 @@ class DirGNN(nn.Module):
         self.embedding_output = x
 
         # Apply the final layer to get logits
-        x = self.convs[-1](x, edge_index, edge_index_backward)
+        x = self.convs[-1](x, edge_index, edge_index_backward=edge_index_backward)
         logits = x
 
         return logits, self.embedding_output
