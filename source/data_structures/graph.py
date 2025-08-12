@@ -377,11 +377,14 @@ class DirectedNgramGraph(Graph):
         num_nodes = self.number_of_nodes
 
         row_sum = torch.sparse.sum(A_w_torch_sparse, dim=1).to_dense()
-        D_inv_diag_vals = torch.zeros_like(row_sum, dtype=torch.float32, device=dev)
-        non_zero_degrees_mask = row_sum != 0
+        # --- DEFINITIVE FIX: Clamp row_sum to prevent division by very small numbers, which causes NaNs. ---
+        row_sum_clamped = torch.clamp(row_sum, min=self.epsilon_propagation)
+
+        D_inv_diag_vals = torch.zeros_like(row_sum_clamped, dtype=torch.float32, device=dev)
+        non_zero_degrees_mask = row_sum_clamped != 0
         if torch.any(non_zero_degrees_mask):
-            D_inv_diag_vals[non_zero_degrees_mask] = 1.0 / row_sum[non_zero_degrees_mask]
-        del row_sum
+            D_inv_diag_vals[non_zero_degrees_mask] = 1.0 / row_sum_clamped[non_zero_degrees_mask]
+        del row_sum, row_sum_clamped
 
         A_w_indices = A_w_torch_sparse.indices()
         A_w_values = A_w_torch_sparse.values()
@@ -480,22 +483,38 @@ class DirectedNgramGraph(Graph):
         subgraph_labels = full_labels[node_subset] if full_labels is not None else None
 
         if model_type.lower() == 'directgcn':
+            # --- DEFINITIVE FIX: Correctly initialize and populate the data dictionary for DirectGCN subgraphs ---
+            subgraph_data_dict = {
+                'x': subgraph_features,
+                'y': subgraph_labels,
+                'original_indices': node_subset
+            }
+
             path_matrices = {
                 'mathcal_in': self.mathcal_A_in, 'mathcal_out': self.mathcal_A_out,
                 'undirected_norm': self.A_undirected_norm_sparse
             }
+            for name, matrix in path_matrices.items():
+                if matrix is not None:
+                    edge_index, edge_weight = subgraph(
+                        node_subset, matrix.indices(), matrix.values(),
+                        relabel_nodes=True, num_nodes=self.number_of_nodes
+                    )
+                    subgraph_data_dict[f'edge_index_{name}'] = edge_index
+                    subgraph_data_dict[f'edge_weight_{name}'] = edge_weight
+
             # --- ANTICIPATORY DEBUGGING: Conditionally add the new matrices if they were generated. ---
             # This makes the function flexible for both heterophilic and homophilic graphs.
             if A_homo_norm is not None and A_hetero_norm is not None:
-                path_matrices.update({'homo_norm': A_homo_norm, 'hetero_norm': A_hetero_norm})
-
-            subgraph_data_dict = {'x': subgraph_features, 'y': subgraph_labels, 'original_indices': node_subset}
-            for name, matrix in path_matrices.items():
-                if matrix is not None:
-                    edge_index, edge_weight = subgraph(node_subset, matrix.indices(), matrix.values(),
-                                                       relabel_nodes=True, num_nodes=self.number_of_nodes)
-                    subgraph_data_dict[f'edge_index_{name}'] = edge_index
-                    subgraph_data_dict[f'edge_weight_{name}'] = edge_weight
+                homo_edge_index, homo_edge_weight = subgraph(node_subset, A_homo_norm.indices(), A_homo_norm.values(),
+                                                             relabel_nodes=True, num_nodes=self.number_of_nodes)
+                hetero_edge_index, hetero_edge_weight = subgraph(node_subset, A_hetero_norm.indices(),
+                                                                 A_hetero_norm.values(),
+                                                                 relabel_nodes=True, num_nodes=self.number_of_nodes)
+                subgraph_data_dict.update({
+                    'edge_index_homo_norm': homo_edge_index, 'edge_weight_homo_norm': homo_edge_weight,
+                    'edge_index_hetero_norm': hetero_edge_index, 'edge_weight_hetero_norm': hetero_edge_weight
+                })
             return Data.from_dict(subgraph_data_dict)
         else:
             # Default for other GNNs (uses undirected graph)
