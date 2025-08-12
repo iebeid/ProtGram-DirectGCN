@@ -123,6 +123,10 @@ class SingletonXGCNTrainer:
                 use_homo_hetero_paths=use_homo_hetero_for_this_model,
                 A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
             )
+            # --- DEFINITIVE FIX: Attach the masks to the data object after creation ---
+            data_for_model.train_mask = train_mask
+            data_for_model.test_mask = test_mask
+
             # Training Loop
             for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
                 model.train()
