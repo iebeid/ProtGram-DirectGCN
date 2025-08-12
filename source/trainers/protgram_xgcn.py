@@ -242,7 +242,13 @@ class ProtGramXGCNTrainer:
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.PROTGRAM_LR_SCHEDULER_PATIENCE, factor=self.config.PROTGRAM_LR_SCHEDULER_FACTOR) if self.config.PROTGRAM_USE_LR_SCHEDULER else None
         early_stopper = EarlyStopper(patience=self.config.PROTGRAM_EARLY_STOPPING_PATIENCE, min_delta=self.config.PROTGRAM_EARLY_STOPPING_MIN_DELTA) if self.config.PROTGRAM_USE_EARLY_STOPPING else None
-        scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == 'cuda'))
+
+        # --- DEFINITIVE FIX for NaN Loss: Disable mixed-precision for the unstable n=1 graph ---
+        # The n=1 graph is small and uses random features, which can cause float16 overflow with AMP.
+        # Forcing float32 for n=1 provides stability, while n>1 can use AMP for performance.
+        n_val = data.graph_obj.n_value
+        use_amp = (self.device.type == 'cuda') and (n_val > 1)
+        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
         criterion = F.cross_entropy
         print(f"  Starting full-batch training for up to {epochs} epochs (Task: {task_type})...")
@@ -262,7 +268,7 @@ class ProtGramXGCNTrainer:
                 epoch_data = full_data_gpu
 
             optimizer.zero_grad()
-            with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
+            with torch.amp.autocast(device_type=self.device.type, enabled=use_amp):
                 output, _ = model(data=epoch_data)
                 if task_type == 'masked_node':
                     loss = criterion(output[masked_indices], original_labels)
