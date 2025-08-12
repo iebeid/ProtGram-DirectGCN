@@ -32,7 +32,7 @@ from source.data_structures.graph import DirectedNgramGraph
 from source.data_builders.xgcn import XGCNDataBuilder
 from source.experiments.ppi_1 import PPIPipeline
 from source.models.factory import ModelFactory
-from source.utils.data import DataUtils, IDMapGenerator, FastaUtils, prepare_pyg_data_from_protgram_graph
+from source.utils.data import DataUtils, IDMapGenerator, FastaUtils, ProtgramDaskHelpers
 from source.utils.models import EmbeddingProcessor, EarlyStopper
 from source.utils.results import EvaluationReporter
 
@@ -212,7 +212,7 @@ class ProtGramXGCNTrainer:
 
             # --- FIX: Pass the trainer's data prep function to the extractor to avoid duplicated logic ---
             # Also pass the newly created matrices to the data preparation function.
-            prepare_func = partial(prepare_pyg_data_from_protgram_graph,
+            prepare_func = partial(ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph,
                                    use_homo_hetero_paths=use_homo_hetero_paths_for_level,
                                    A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm)
             ngram_embeddings_per_level[n] = EmbeddingProcessor.extract_gcn_node_embeddings(
@@ -245,7 +245,7 @@ class ProtGramXGCNTrainer:
         model.train()
         model.to(self.device)
         # --- FIX: Use the centralized data preparation utility --- # noqa
-        full_data_gpu = prepare_pyg_data_from_protgram_graph(
+        full_data_gpu = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
             model_type=model.__class__.__name__.lower(), graph=data.graph_obj,
             features=data.x, labels=data.y, use_homo_hetero_paths=use_homo_hetero_paths
         ).to(self.device)

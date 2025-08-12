@@ -17,7 +17,7 @@ from tqdm.auto import tqdm
 from configuration.config import Config
 from source.data_structures.graph import DirectedNgramGraph
 from source.data_builders.xgcn import XGCNDataBuilder
-from source.utils.data import DataUtils, prepare_pyg_data_from_protgram_graph
+from source.utils.data import DataUtils, ProtgramDaskHelpers
 from source.models.factory import ModelFactory
 
 
@@ -58,7 +58,7 @@ class SingletonXGCNTrainer:
         if labels is not None:
             y_for_stratify = labels
             homophily_ratio = homophily(self.graph.A_undirected_norm_sparse.indices(), y_for_stratify, method='edge')
-            is_heterophilic = homophily_ratio < 0.6
+            is_heterophilic = homophily_ratio < self.config.GCN_HETEROPHILY_THRESHOLD
             print(f"  Singleton Graph (n=1) Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
         else:
             print("  Homophily calculation skipped for non-classification task (e.g., masked_node).")
@@ -101,7 +101,7 @@ class SingletonXGCNTrainer:
 
             model.to(self.device)
             optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
-            data_for_model = prepare_pyg_data_from_protgram_graph(
+            data_for_model = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
                 model_type=model_name, graph=self.graph, features=initial_features, labels=y_for_stratify,
                 use_homo_hetero_paths=use_homo_hetero_for_this_model,
                 A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
@@ -121,7 +121,7 @@ class SingletonXGCNTrainer:
                     masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
                         self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=test_mask
                     )
-                    epoch_data = prepare_pyg_data_from_protgram_graph(
+                    epoch_data = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
                         model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
                         use_homo_hetero_paths=use_homo_hetero_for_this_model,
                         A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
@@ -145,7 +145,7 @@ class SingletonXGCNTrainer:
                     masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
                         self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=train_mask
                     )
-                    eval_data = prepare_pyg_data_from_protgram_graph(
+                    eval_data = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
                         model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
                         use_homo_hetero_paths=use_homo_hetero_for_this_model,
                         A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
