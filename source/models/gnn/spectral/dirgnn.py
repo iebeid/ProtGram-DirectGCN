@@ -69,6 +69,7 @@ class DirGNN(nn.Module):
         self.embedding_output = x
 
         # Apply the final layer to get logits
-        logits = self.convs[-1](x, edge_index, edge_index_backward)
+        x = self.convs[-1](x, edge_index, edge_index_backward)
+        logits = x
 
         return logits, self.embedding_output
