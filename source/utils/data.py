@@ -188,12 +188,13 @@ class DataUtils:
 
         return output_paths
 
-    def save_embeddings(self, model: torch.nn.Module, data: Data):
+    @staticmethod
+    def save_embeddings(model: torch.nn.Module, data: Data, config: Config, embedding_dir: Path, device: torch.device):
         """Extracts, processes (with PCA), and saves embeddings."""
         print(f"    Extracting embeddings for {model.__class__.__name__}...")
         with torch.no_grad():
             model.eval()
-            _, embeddings = model(data.to(self.device))
+            _, embeddings = model(data.to(device))
 
         if embeddings is None:
             print("    Warning: Could not extract embeddings.")
@@ -203,17 +204,17 @@ class DataUtils:
         final_embedding_dim = embeddings_np.shape[1]
         output_suffix = f"_dim{final_embedding_dim}"
 
-        if self.config.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS and embeddings_np.shape[0] > self.config.BENCHMARK_PCA_TARGET_DIM:
-            print(f"      Applying PCA (target dim: {self.config.BENCHMARK_PCA_TARGET_DIM})...")
+        if config.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS and embeddings_np.shape[0] > config.BENCHMARK_PCA_TARGET_DIM:
+            print(f"      Applying PCA (target dim: {config.BENCHMARK_PCA_TARGET_DIM})...")
             embeddings_for_pca = {i: emb for i, emb in enumerate(embeddings_np)}
-            pca_embed_dict = EmbeddingProcessor.apply_pca(embeddings_for_pca, self.config.BENCHMARK_PCA_TARGET_DIM, self.config.RANDOM_STATE)
+            pca_embed_dict = EmbeddingProcessor.apply_pca(embeddings_for_pca, config.BENCHMARK_PCA_TARGET_DIM, config.RANDOM_STATE)
             if pca_embed_dict:
                 embeddings_np = np.array(list(pca_embed_dict.values()))
                 final_embedding_dim = embeddings_np.shape[1]
                 output_suffix = f"_pca{final_embedding_dim}"
 
         emb_dict = {str(i): embeddings_np[i] for i in range(embeddings_np.shape[0])}
-        save_path_emb_dir = self.embedding_dir / data.name
+        save_path_emb_dir = embedding_dir / data.name
         save_path_emb_dir.mkdir(parents=True, exist_ok=True)
         h5_path = save_path_emb_dir / f"{model.__class__.__name__}_embeddings{output_suffix}.h5"
         DataUtils.write_h5(emb_dict, h5_path, f"Writing H5 for {model.__class__.__name__}")

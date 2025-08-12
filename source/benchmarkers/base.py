@@ -69,8 +69,8 @@ class BaseBenchmarker(ABC):
         try:
             if name in ['Cora', 'CiteSeer', 'PubMed']: return Planetoid(root=self.dataset_root, name=name, **kwargs)
             if name in ['Cornell', 'Texas', 'Wisconsin']: return WebKB(root=self.dataset_root, name=name, **kwargs)
-            if name == 'Actor': return Actor(root=self.dataset_root, **kwargs)
-            if name == 'KarateClub': return KarateClub(root=self.dataset_root, **kwargs)
+            if name == 'Actor': return Actor(root=self.dataset_root, **kwargs) # noqa
+            if name == 'KarateClub': return KarateClub(**kwargs)
             raise ValueError(f"Dataset '{name}' not recognized.")
         except Exception as e:
             print(f"  Error loading dataset '{name}': {e}")

@@ -213,7 +213,7 @@ class Config:
         self.BENCHMARK_CHEBNET_K = 3
         self.BENCHMARK_GNN_LEARNING_RATE = 0.01
         # --- NEW: Dedicated epochs for the GNN benchmark suite ---
-        self.BENCHMARK_GNN_EPOCHS = 300
+        self.BENCHMARK_GNN_EPOCHS = 50
         self.BENCHMARK_RGCN_NUM_RELATIONS = 2
         # --- FIX: Align DirectGCN's benchmark architecture with other GNNs for a fair comparison. ---
         # It will now also be a 2-layer model with 64 hidden channels.

@@ -100,7 +100,7 @@ class GNNBenchmarker(BaseBenchmarker):
         print(f"  Finished training. Best Val Acc: {best_val_acc:.4f}, Corresponding Test Acc: {test_acc_at_best_val:.4f}")
 
         if self.config.BENCHMARK_SAVE_EMBEDDINGS:
-            DataUtils.save_embeddings(model, data, self.config, self.embedding_dir)
+            DataUtils.save_embeddings(model, data, self.config, self.embedding_dir, self.device)
 
         return metrics, pd.DataFrame(history)
 
