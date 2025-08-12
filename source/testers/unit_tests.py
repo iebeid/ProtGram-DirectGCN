@@ -641,7 +641,7 @@ def test_transformer_embedder_pipeline_run():
             })
 
             embedder = TransformerEmbedder(config)
-            generated_paths = embedder.run()
+            generated_paths = embedder.run(parent_run_id=run.info.run_id)
             assert isinstance(generated_paths, dict), "TransformerEmbedder.run() should return a dictionary."
             assert "ProtBERT" in generated_paths, "Expected 'ProtBERT' key in the returned paths."
             assert generated_paths["ProtBERT"].exists(), "The embedding file for ProtBERT was not created."

@@ -118,18 +118,23 @@ class TransformerEmbedder:
             traceback.print_exc()
             return None, None, None, 0
 
-    def run(self) -> Dict[str, Path]:
+    def run(self, parent_run_id: Optional[str] = None) -> Dict[str, Path]:
         """
         Main entry point for the Transformer embedding generation pipeline.
         This method efficiently processes the sequence file by loading each model
         only once and then iterating through chunks of data.
+
+        Args:
+            parent_run_id (Optional[str]): If provided, this pipeline will run
+                                           as a nested MLflow run.
         """
         DataUtils.print_header("PIPELINE STEP: Generating Embeddings from Transformers")
         self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
         generated_paths = {}
 
         mlflow_active = self.config.USE_MLFLOW
-        run_context = mlflow.start_run(run_name="Transformer_Embedding_Pipeline") if mlflow_active else nullcontext()
+        # --- FIX: Allow this pipeline to be nested within a parent MLflow run ---
+        run_context = mlflow.start_run(run_name="Transformer_Embedding_Pipeline", nested=bool(parent_run_id)) if mlflow_active else nullcontext()
 
         with run_context:
             if tf.config.list_physical_devices('GPU'):

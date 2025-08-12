@@ -97,11 +97,11 @@ class Config:
     def _setup_pipeline_flags(self):
         """Sets flags to control which parts of the main pipeline are executed."""
         self.RUN_GCN_PIPELINE = True
-        self.RUN_LSTM_PIPELINE = False
-        self.RUN_WORD2VEC_PIPELINE = False
-        self.RUN_TRANSFORMER_PIPELINE = False
+        self.RUN_LSTM_PIPELINE = True
+        self.RUN_WORD2VEC_PIPELINE = True
+        self.RUN_TRANSFORMER_PIPELINE = True
         self.RUN_BENCHMARKING_PIPELINE = True
-        self.RUN_NETWORK_EMBEDDING_BENCHMARKING = False
+        self.RUN_NETWORK_EMBEDDING_BENCHMARKING = True
         self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers
         self.RUN_SINGLETON_GCN_EVAL = True # Runs a fast evaluation on the n=1 graph for rapid prototyping
