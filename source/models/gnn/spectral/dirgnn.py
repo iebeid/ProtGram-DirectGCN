@@ -30,6 +30,7 @@ class DirGNN(nn.Module):
                  num_layers: int = 2, dropout_rate: float = 0.5, **kwargs):
         super().__init__()
         self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
         self.dropout_rate = dropout_rate
         self.embedding_output = None
 
@@ -51,6 +52,7 @@ class DirGNN(nn.Module):
             for _ in range(num_layers - 2):
                 base_conv_hidden = GCNConv(hidden_channels, hidden_channels)
                 self.convs.append(DirGNNConv(conv=base_conv_hidden, alpha=0.5))
+                self.norms.append(nn.LayerNorm(hidden_channels))
 
             # Output layer
             base_conv_out = GCNConv(hidden_channels, out_channels)
@@ -65,9 +67,11 @@ class DirGNN(nn.Module):
         x, edge_index = data.x, data.edge_index
 
         # Process all but the final layer to generate embeddings.
-        for conv in self.convs[:-1]:
+        for i, conv in enumerate(self.convs[:-1]):
             # --- FIX: Pass only x and edge_index to the wrapper ---
             x = conv(x, edge_index)
+            if i < len(self.norms):
+                x = self.norms[i](x)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
 

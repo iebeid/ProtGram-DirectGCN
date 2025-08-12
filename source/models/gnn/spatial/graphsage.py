@@ -24,6 +24,7 @@ class GraphSAGE(nn.Module):
                  num_layers: int = 2, dropout_rate: float = 0.5, **kwargs):
         super().__init__()
         self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
         self.dropout_rate = dropout_rate
         self.embedding_output = None
 
@@ -36,12 +37,15 @@ class GraphSAGE(nn.Module):
             self.convs.append(SAGEConv(in_channels, hidden_channels, **kwargs))
             for _ in range(num_layers - 2):
                 self.convs.append(SAGEConv(hidden_channels, hidden_channels, **kwargs))
+                self.norms.append(nn.LayerNorm(hidden_channels))
             self.convs.append(SAGEConv(hidden_channels, out_channels, **kwargs))
 
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
         x, edge_index = data.x, data.edge_index
         for i, conv in enumerate(self.convs[:-1]):
             x = conv(x, edge_index)
+            if i < len(self.norms):
+                x = self.norms[i](x)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
         self.embedding_output = x

@@ -26,6 +26,7 @@ class RGCN(nn.Module):
                  num_relations: int, num_layers: int = 2, dropout_rate: float = 0.5, **kwargs):
         super().__init__()
         self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
         self.dropout_rate = dropout_rate
         self.embedding_output = None
 
@@ -35,6 +36,7 @@ class RGCN(nn.Module):
             self.convs.append(RGCNConv(in_channels, hidden_channels, num_relations, **kwargs))
             for _ in range(num_layers - 2):
                 self.convs.append(RGCNConv(hidden_channels, hidden_channels, num_relations, **kwargs))
+                self.norms.append(nn.LayerNorm(hidden_channels))
             self.convs.append(RGCNConv(hidden_channels, out_channels, num_relations, **kwargs))
 
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -55,8 +57,10 @@ class RGCN(nn.Module):
 
         # Multi-layer case
         # Process all but the final layer
-        for conv in self.convs[:-1]:
+        for i, conv in enumerate(self.convs[:-1]):
             x = conv(x, edge_index, edge_type)
+            if i < len(self.norms):
+                x = self.norms[i](x)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
 

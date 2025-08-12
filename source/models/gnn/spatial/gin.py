@@ -39,6 +39,7 @@ class GIN(nn.Module):
         """
         super().__init__()
         self.embedding_output = None
+        self.norms = nn.ModuleList()
         self.convs = nn.ModuleList()
         self.dropout_rate = dropout_rate
         if num_layers <= 0:
@@ -55,6 +56,7 @@ class GIN(nn.Module):
                 nn.ReLU(),
                 nn.Linear(hidden_channels, hidden_channels)
             )
+            self.norms.append(nn.LayerNorm(hidden_channels))
             self.convs.append(GINConv(mlp_in))
 
             # Hidden layers
@@ -64,6 +66,7 @@ class GIN(nn.Module):
                     nn.ReLU(),
                     nn.Linear(hidden_channels, hidden_channels)
                 )
+                self.norms.append(nn.LayerNorm(hidden_channels))
                 self.convs.append(GINConv(mlp_hidden))
 
             # Output layer
@@ -88,8 +91,10 @@ class GIN(nn.Module):
             return logits, self.embedding_output
 
         # Process all but the final layer
-        for conv in self.convs[:-1]:
+        for i, conv in enumerate(self.convs[:-1]):
             x = conv(x, edge_index)
+            if i < len(self.norms):
+                x = self.norms[i](x)
             x = F.relu(x)  # Activation is applied *after* the GINConv
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
 

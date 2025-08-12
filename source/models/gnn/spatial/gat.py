@@ -26,6 +26,7 @@ class GAT(nn.Module):
                  heads: int = 8, num_layers: int = 2, dropout_rate: float = 0.6):
         super().__init__()
         self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
         self.dropout_rate = dropout_rate
         self.embedding_output = None
 
@@ -43,6 +44,7 @@ class GAT(nn.Module):
             # Hidden layers (if any)
             for _ in range(num_layers - 2):
                 self.convs.append(GATConv(hidden_channels * heads, hidden_channels, heads=heads, concat=True))
+                self.norms.append(nn.LayerNorm(hidden_channels * heads))
 
             # Output layer
             self.convs.append(GATConv(hidden_channels * heads, out_channels, heads=1, concat=False))
@@ -57,8 +59,10 @@ class GAT(nn.Module):
             return logits, self.embedding_output
 
         # Multi-layer case
-        for conv in self.convs[:-1]:
+        for i, conv in enumerate(self.convs[:-1]):
             x = conv(x, edge_index)
+            if i < len(self.norms):
+                x = self.norms[i](x)
             x = F.elu(x)
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
 
