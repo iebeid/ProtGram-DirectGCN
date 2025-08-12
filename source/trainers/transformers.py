@@ -83,7 +83,20 @@ class TransformerEmbedder:
         try:
             tokenizer_class = T5Tokenizer if is_t5 else AutoTokenizer
             tokenizer = tokenizer_class.from_pretrained(hf_id)
+
+        # --- DEFINITIVE FIX for model loading and memory issues ---
+        # First, try to load the native TensorFlow model. This is the most memory-efficient.
+        try:
+            print("  Attempting to load native TensorFlow weights...")
             model = TFAutoModel.from_pretrained(hf_id)
+        except OSError as e:
+            # If native TF weights are not found, the library helpfully tells us to use `from_pt=True`.
+            if "from_pt=True" in str(e):
+                print("  Native TF weights not found. Falling back to loading from PyTorch weights (`from_pt=True`).")
+                print("  NOTE: This can be memory-intensive for large models and may fail on systems with limited RAM.")
+                model = TFAutoModel.from_pretrained(hf_id, from_pt=True)
+            else:
+                raise e # Re-raise other OSErrors (e.g., network issues)
 
             inference_func = self._get_model_inference_function(
                 model, hf_id, is_t5, self.config.USE_XLA_COMPILATION)
