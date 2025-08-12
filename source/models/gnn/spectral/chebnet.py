@@ -45,5 +45,5 @@ class ChebNet(nn.Module):
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
         self.embedding_output = x
-        logits = self.convs[-1](x, edge_index, edge_weight)
+        logits = self.convs[-1](self.embedding_output, edge_index, edge_weight)
         return logits, self.embedding_output

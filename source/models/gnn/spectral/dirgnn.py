@@ -74,8 +74,8 @@ class DirGNN(nn.Module):
         # The output of the last hidden layer is the embedding.
         self.embedding_output = x
         # Apply the final layer to get logits.
-        # --- FIX: Correct the typo and the arguments for the forward pass ---
-        logits = self.convs[-1](x, edge_index)
+        # --- DEFINITIVE FIX: Use the learned embeddings, not the original features. ---
+        logits = self.convs[-1](self.embedding_output, edge_index)
 
         # For a single-layer model, the logits are also the embeddings.
         if len(self.convs) == 1:
