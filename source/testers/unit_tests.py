@@ -32,7 +32,7 @@ from source.models.fnn.mlp import MLP
 from source.trainers.transformers import TransformerEmbedder
 from source.trainers.word2vec import Word2VecEmbedder
 from source.utils.data import DataUtils, IDMapGenerator
-from source.utils.models import EmbeddingLoader
+from source.utils.post import EmbeddingLoader
 from source.utils.results import EvaluationReporter
 
 

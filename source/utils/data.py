@@ -27,7 +27,7 @@ from dask.diagnostics import ProgressBar
 from tqdm.auto import tqdm
 
 from configuration.config import Config
-from source.utils.models import EmbeddingProcessor
+from source.utils.post import EmbeddingProcessor
 
 
 # ==============================================================================

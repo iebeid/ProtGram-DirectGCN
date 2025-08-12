@@ -18,7 +18,7 @@ from tqdm.auto import tqdm
 
 from configuration.config import Config
 from source.utils.data import FastaUtils, DataUtils, IDMapGenerator
-from source.utils.models import EmbeddingProcessor
+from source.utils.post import EmbeddingProcessor
 
 
 class Word2VecEmbedder:

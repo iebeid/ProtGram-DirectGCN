@@ -33,7 +33,7 @@ from source.data_builders.xgcn import XGCNDataBuilder
 from source.experiments.ppi_1 import PPIPipeline
 from source.models.factory import ModelFactory
 from source.utils.data import DataUtils, IDMapGenerator, FastaUtils, ProtgramDaskHelpers
-from source.utils.models import EmbeddingProcessor, EarlyStopper
+from source.utils.post import EmbeddingProcessor, EarlyStopper
 from source.utils.results import EvaluationReporter
 
 

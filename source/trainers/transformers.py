@@ -20,7 +20,7 @@ from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
 
 from configuration.config import Config
 from source.utils.data import DataUtils, FastaUtils
-from source.utils.models import EmbeddingProcessor
+from source.utils.post import EmbeddingProcessor
 
 
 class TransformerEmbedder:

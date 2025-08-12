@@ -26,7 +26,8 @@ from configuration.config import Config
 from source.benchmarkers.base import BaseBenchmarker
 from source.models.factory import ModelFactory
 from source.data_structures.graph import DirectedGraph, DirectedNgramGraph
-from source.utils.data import DataUtils, EmbeddingProcessor
+from source.utils.post import EmbeddingProcessor
+from source.utils.data import DataUtils
 
 
 class GNNBenchmarker(BaseBenchmarker):

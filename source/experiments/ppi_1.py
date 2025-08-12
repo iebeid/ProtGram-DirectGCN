@@ -27,7 +27,7 @@ from source.models.fnn.mlp import MLP
 # Refactored: FileUtils is now DataUtils and lives in data.py
 from source.utils.data import DataUtils, GroundTruthLoader
 # Refactored: Dummy data creation is now in a dedicated helper file
-from source.utils.models import EmbeddingLoader, EmbeddingProcessor
+from source.utils.post import EmbeddingLoader, EmbeddingProcessor
 from source.utils.results import EvaluationReporter
 
 # Configure GPU memory growth at the start
