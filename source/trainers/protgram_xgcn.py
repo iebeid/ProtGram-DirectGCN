@@ -296,11 +296,15 @@ class ProtGramXGCNTrainer:
             random.shuffle(node_partitions)
             epoch_loss = 0.0
             for node_idx_batch in tqdm(node_partitions, desc=f"  Epoch {epoch}", leave=False, disable=not self.config.DEBUG_VERBOSE):
+                # --- DEFINITIVE FIX: Pass the homophily/heterophily matrices to the subgraph creator ---
                 subgraph_data = full_data.graph_obj.create_subgraph_data_for_model(
                     model_type=model.__class__.__name__.lower(),
                     full_features=full_data.x,
                     full_labels=full_data.y,
-                    node_subset=torch.tensor(node_idx_batch, dtype=torch.long)
+                    node_subset=torch.tensor(node_idx_batch, dtype=torch.long),
+                    # Pass the pre-calculated matrices from the full data object
+                    A_homo_norm=getattr(full_data, 'A_homo_norm', None),
+                    A_hetero_norm=getattr(full_data, 'A_hetero_norm', None)
                 ).to(self.device)
 
                 optimizer.zero_grad()

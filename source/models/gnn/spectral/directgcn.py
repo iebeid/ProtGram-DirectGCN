@@ -287,11 +287,10 @@ class DirectGCN(nn.Module):
             h_res = h
             gcn_layer, res_layer, norm_layer = self.convs[i], self.res_projs[i], self.layer_norms[i]
             # Pass the entire data object to the layer
-            gcn_output = gcn_layer(h_res, data)
-            residual_output = res_layer(h_res)
-            h = F.leaky_relu(gcn_output + residual_output)
-            # --- DEFINITIVE FIX: Apply LayerNorm to stabilize activations ---
-            h = norm_layer(h)
+            h_pre_act = gcn_layer(h_res, data) + res_layer(h_res)
+            # --- DEFINITIVE FIX: Apply LayerNorm BEFORE activation to prevent NaN loss ---
+            h_norm = norm_layer(h_pre_act)
+            h = F.leaky_relu(h_norm)
             h = F.dropout(h, p=self.dropout, training=self.training)
 
         final_embed_for_task = h
