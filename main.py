@@ -55,7 +55,8 @@ from source.trainers.protgram_xgcn import ProtGramXGCNTrainer
 from source.trainers.lstm import LSTMBasedEmbedder
 from source.trainers.transformers import TransformerEmbedder
 from source.trainers.word2vec import Word2VecEmbedder
-from source.utils.data import DataUtils, FastaUtils, ModelProcessor
+from source.utils.data import DataUtils, FastaUtils
+from source.utils.models import ModelProcessor
 from source.testers.unit_tests import run_all_tests
 from source.utils.logging import FileLogger
 
