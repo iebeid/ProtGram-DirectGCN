@@ -22,7 +22,7 @@ class DirGNN(nn.Module):
     """
 
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int,
-                 num_layers: int = 2, dropout_rate: float = 0.5, **kwargs):
+                 num_layers: int = 2, dropout_rate: float = 0.5, num_relations: int = 2, **kwargs):
         super().__init__()
         self.convs = nn.ModuleList()
         self.norms = nn.ModuleList()

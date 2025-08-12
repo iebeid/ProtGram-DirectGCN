@@ -31,7 +31,7 @@ class RGCN(nn.Module):
         self.embedding_output = None
 
         if num_layers == 1:
-            self.convs.append(RGCNConv(in_channels, out_channels, num_relations, **kwargs))
+            self.convs.append(RGCNConv(in_channels, out_channels, num_relations=num_relations, **kwargs))
         else:
             self.convs.append(RGCNConv(in_channels, hidden_channels, num_relations, **kwargs))
             for _ in range(num_layers - 2):
