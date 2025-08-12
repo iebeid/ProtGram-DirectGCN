@@ -96,17 +96,17 @@ class Config:
 
     def _setup_pipeline_flags(self):
         """Sets flags to control which parts of the main pipeline are executed."""
-        self.RUN_GCN_PIPELINE = False
+        self.RUN_GCN_PIPELINE = True
         self.RUN_LSTM_PIPELINE = False
         self.RUN_WORD2VEC_PIPELINE = False
-        self.RUN_TRANSFORMER_PIPELINE = True
-        self.RUN_BENCHMARKING_PIPELINE = False
+        self.RUN_TRANSFORMER_PIPELINE = False
+        self.RUN_BENCHMARKING_PIPELINE = True
         self.RUN_NETWORK_EMBEDDING_BENCHMARKING = False
-        self.RUN_MAIN_PPI_EVALUATION = False
-        self.RUN_INTEGRATED_TESTS = False  # Runs all unit, smoke, and verification testers
-        self.RUN_SINGLETON_GCN_EVAL = False # Runs a fast evaluation on the n=1 graph for rapid prototyping
+        self.RUN_MAIN_PPI_EVALUATION = True
+        self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers
+        self.RUN_SINGLETON_GCN_EVAL = True # Runs a fast evaluation on the n=1 graph for rapid prototyping
         self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data
-        self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = 0.05  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
+        self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = None  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
         self.CLEANUP_DUMMY_DATA = True
         self.ENABLE_FILE_LOGGING = True
 
@@ -213,7 +213,7 @@ class Config:
         self.BENCHMARK_CHEBNET_K = 3
         self.BENCHMARK_GNN_LEARNING_RATE = 0.01
         # --- NEW: Dedicated epochs for the GNN benchmark suite ---
-        self.BENCHMARK_GNN_EPOCHS = 50
+        self.BENCHMARK_GNN_EPOCHS = 100
         self.BENCHMARK_RGCN_NUM_RELATIONS = 2
         # --- FIX: Align DirectGCN's benchmark architecture with other GNNs for a fair comparison. ---
         # It will now also be a 2-layer model with 64 hidden channels.
@@ -265,7 +265,7 @@ class Config:
         self.PROTGRAM_USE_POSITIONAL_EMBEDDING: bool = False
 
         # --- ProtGram Training Hyperparameters ---
-        self.PROTGRAM_EPOCHS_PER_LEVEL = 50
+        self.PROTGRAM_EPOCHS_PER_LEVEL = 300
         self.PROTGRAM_LR = 0.001
         self.PROTGRAM_DROPOUT_RATE = 0.5
         self.PROTGRAM_WEIGHT_DECAY = 1e-4 # Standard L2 regularization
@@ -357,7 +357,7 @@ class Config:
 
     def _setup_singleton_eval_params(self):
         """Sets parameters for the rapid, n=1 GCN evaluation."""
-        self.SINGLETON_EVAL_EPOCHS = 50
+        self.SINGLETON_EVAL_EPOCHS = 100
         self.SINGLETON_EVAL_TEST_SPLIT = 0.2
         self.SINGLETON_EVAL_LR = 0.01
         # A list of models to test in the singleton evaluation.
