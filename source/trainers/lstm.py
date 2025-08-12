@@ -20,7 +20,8 @@ from configuration.config import Config
 from source.utils.data import DataUtils, FastaUtils
 from source.models.rnn.lstm import LSTM
 from source.data_builders.lstm import LSTMDataBuilder
-from source.utils.post import EarlyStopper, EmbeddingProcessor
+from source.utils.models import EarlyStopper
+from source.utils.post import EmbeddingProcessor
 
 class LSTMBasedEmbedder:
     """
