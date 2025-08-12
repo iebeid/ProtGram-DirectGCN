@@ -252,7 +252,7 @@ class ProtGramXGCNTrainer:
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.PROTGRAM_LR_SCHEDULER_PATIENCE, factor=self.config.PROTGRAM_LR_SCHEDULER_FACTOR) if self.config.PROTGRAM_USE_LR_SCHEDULER else None
         early_stopper = EarlyStopper(patience=self.config.PROTGRAM_EARLY_STOPPING_PATIENCE, min_delta=self.config.PROTGRAM_EARLY_STOPPING_MIN_DELTA) if self.config.PROTGRAM_USE_EARLY_STOPPING else None
-        scaler = torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
+        scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == 'cuda'))
 
         criterion = F.cross_entropy
         print(f"  Starting full-batch training for up to {epochs} epochs (Task: {task_type})...")
@@ -298,7 +298,7 @@ class ProtGramXGCNTrainer:
         model.to(self.device)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.PROTGRAM_LR_SCHEDULER_PATIENCE, factor=self.config.PROTGRAM_LR_SCHEDULER_FACTOR) if self.config.PROTGRAM_USE_LR_SCHEDULER else None
         early_stopper = EarlyStopper(patience=self.config.PROTGRAM_EARLY_STOPPING_PATIENCE, min_delta=self.config.PROTGRAM_EARLY_STOPPING_MIN_DELTA) if self.config.PROTGRAM_USE_EARLY_STOPPING else None
-        scaler = torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
+        scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == 'cuda'))
         criterion = F.cross_entropy
         print(f"  Starting Cluster-GCN style training for up to {epochs} epochs on {len(node_partitions)} subgraphs (Task: {task_type})...")
 
