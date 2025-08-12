@@ -96,16 +96,16 @@ class Config:
 
     def _setup_pipeline_flags(self):
         """Sets flags to control which parts of the main pipeline are executed."""
-        self.RUN_GCN_PIPELINE = True
-        self.RUN_LSTM_PIPELINE = True
-        self.RUN_WORD2VEC_PIPELINE = True
+        self.RUN_GCN_PIPELINE = False
+        self.RUN_LSTM_PIPELINE = False
+        self.RUN_WORD2VEC_PIPELINE = False
         self.RUN_TRANSFORMER_PIPELINE = True
-        self.RUN_BENCHMARKING_PIPELINE = True
-        self.RUN_NETWORK_EMBEDDING_BENCHMARKING = True
-        self.RUN_MAIN_PPI_EVALUATION = True
+        self.RUN_BENCHMARKING_PIPELINE = False
+        self.RUN_NETWORK_EMBEDDING_BENCHMARKING = False
+        self.RUN_MAIN_PPI_EVALUATION = False
         self.RUN_INTEGRATED_TESTS = False  # Runs all unit, smoke, and verification testers
-        self.RUN_SINGLETON_GCN_EVAL = True # Runs a fast evaluation on the n=1 graph for rapid prototyping
-        self.RUN_DUMMY_TEST = False  # Runs a quick evaluation on dummy data
+        self.RUN_SINGLETON_GCN_EVAL = False # Runs a fast evaluation on the n=1 graph for rapid prototyping
+        self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data
         self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = 0.05  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
         self.CLEANUP_DUMMY_DATA = True
         self.ENABLE_FILE_LOGGING = True
@@ -279,7 +279,7 @@ class Config:
         # --- ProtGram Self-Supervised Tasks ---
         # --- FIX: Use 'community' for n=1 as 'masked_node' is unsolvable with random features ---
         self.PROTGRAM_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
-            1: "community", 2: "community", 3: "next_node", 4: "next_node"
+            1: "community", 2: "next_node", 3: "next_node"
         }
         self.PROTGRAM_DEFAULT_TASK_TYPE: str = "community"
         # --- NEW: Make the homophily threshold a configurable parameter ---
@@ -339,7 +339,7 @@ class Config:
         # Process the full FASTA file in chunks to avoid loading all sequences into memory at once.
         self.TRANSFORMER_CHUNK_SIZE = 10000
         self.TRANSFORMER_POOLING_STRATEGY = 'mean'
-        self.USE_XLA_COMPILATION = False  # Set to False by default for stability
+        self.USE_XLA_COMPILATION = True  # Set to True for faster inference
 
     def _setup_lstm_params(self):
         """Sets parameters for the LSTM embedding pipeline."""

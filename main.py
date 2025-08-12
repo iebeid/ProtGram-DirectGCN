@@ -25,6 +25,12 @@ import tensorflow as tf
 # This should be done early, before TensorFlow allocates any memory.
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
+    # --- NEW: Enable mixed precision for performance ---
+    # This uses float16 for computations on compatible GPUs (Tensor Cores),
+    # which can significantly speed up inference and reduce memory usage.
+    from tensorflow.keras import mixed_precision
+    policy = mixed_precision.Policy('mixed_float16')
+    mixed_precision.set_global_policy(policy)
     try:
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
