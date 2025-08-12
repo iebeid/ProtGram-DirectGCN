@@ -63,26 +63,27 @@ class DirGNN(nn.Module):
         The forward pass for the DirGNN model. The DirGNNConv wrapper handles
         the backward pass internally, so only `edge_index` is needed.
         """
-        # --- FIX: The wrapper only needs the standard edge_index ---
         x, edge_index = data.x, data.edge_index
+        edge_index_backward = getattr(data, 'edge_index_backward', None)
+        if edge_index_backward is None:
+            raise ValueError("DirGNN requires 'edge_index_backward' in the Data object.")
 
-        # Process all but the final layer to generate embeddings.
+        # --- DEFINITIVE FIX: Correctly handle single-layer case and apply final layer ---
+        if len(self.convs) == 1:
+            logits = self.convs0
+            self.embedding_output = logits
+            return logits, self.embedding_output
+
+        # Multi-layer case
         for i, conv in enumerate(self.convs[:-1]):
-            # --- FIX: Pass only x and edge_index to the wrapper ---
-            x = conv(x, edge_index)
+            # Pass both forward and backward edges to the wrapper.
+            x = conv(x, edge_index, edge_index_backward)
             if i < len(self.norms):
-                x = self.norms[i](x)
+                x = self.normsi # Apply norm before activation
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
 
-        # The output of the last hidden layer is the embedding.
         self.embedding_output = x
-        # Apply the final layer to get logits.
-        # --- DEFINITIVE FIX: Use the learned embeddings, not the original features. ---
-        logits = self.convs[-1](self.embedding_output, edge_index)
-
-        # For a single-layer model, the logits are also the embeddings.
-        if len(self.convs) == 1:
-            self.embedding_output = logits
+        logits = self.convs-1
 
         return logits, self.embedding_output

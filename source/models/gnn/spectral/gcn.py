@@ -51,9 +51,10 @@ class GCN(nn.Module):
         # Process all but the final layer to generate embeddings.
         for i, conv in enumerate(self.convs[:-1]):
             x = conv(x, edge_index, edge_weight=edge_weight)
-            x = F.relu(x)
+            # --- DEFINITIVE FIX: Apply LayerNorm BEFORE activation for stability ---
             if i < len(self.norms):
                 x = self.norms[i](x)
+            x = F.relu(x)
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
 
         self.embedding_output = x

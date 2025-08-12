@@ -44,6 +44,7 @@ class GraphSAGE(nn.Module):
         x, edge_index = data.x, data.edge_index
         for i, conv in enumerate(self.convs[:-1]):
             x = conv(x, edge_index)
+            # --- DEFINITIVE FIX: Apply LayerNorm BEFORE activation for stability ---
             if i < len(self.norms):
                 x = self.norms[i](x)
             x = F.relu(x)

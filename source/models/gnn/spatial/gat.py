@@ -61,6 +61,7 @@ class GAT(nn.Module):
         # Multi-layer case
         for i, conv in enumerate(self.convs[:-1]):
             x = conv(x, edge_index)
+            # --- DEFINITIVE FIX: Apply LayerNorm BEFORE activation for stability ---
             if i < len(self.norms):
                 x = self.norms[i](x)
             x = F.elu(x)
