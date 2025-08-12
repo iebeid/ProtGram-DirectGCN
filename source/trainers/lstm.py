@@ -19,7 +19,7 @@ from tqdm.auto import tqdm
 from configuration.config import Config
 from source.utils.data import DataUtils, FastaUtils
 from source.models.rnn.lstm import LSTM
-from source.data_builders.lstm import LstmPytorchDataset
+from source.data_builders.lstm import LSTMDataBuilder
 from source.utils.models import EarlyStopper, EmbeddingProcessor
 
 class LSTMBasedEmbedder:
@@ -84,13 +84,13 @@ class LSTMBasedEmbedder:
         train_text = "".join([seq for _, seq in train_sequences])
         val_text = "".join([seq for _, seq in val_sequences])
 
-        train_dataset = LstmPytorchDataset(
+        train_dataset = LSTMDataBuilder(
             text=train_text,
             seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
             step=self.config.LSTM_TRAIN_STEP,
             char_to_int=self.char_to_int
         )
-        val_dataset = LstmPytorchDataset(
+        val_dataset = LSTMDataBuilder(
             text=val_text,
             seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
             step=self.config.LSTM_TRAIN_STEP,
@@ -111,8 +111,9 @@ class LSTMBasedEmbedder:
             for inputs, targets in tqdm(train_dataloader, desc=f"  Epoch {epoch + 1}/{self.config.LSTM_EPOCHS}", leave=False):
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
                 optimizer.zero_grad()
-                outputs = self.model(inputs)
-                loss = criterion(outputs, targets)
+                # --- FIX: Unpack the tuple returned by the model ---
+                logits, _ = self.model(inputs)
+                loss = criterion(logits, targets)
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.item()
@@ -124,8 +125,9 @@ class LSTMBasedEmbedder:
             with torch.no_grad():
                 for inputs, targets in val_dataloader:
                     inputs, targets = inputs.to(self.device), targets.to(self.device)
-                    outputs = self.model(inputs)
-                    loss = criterion(outputs, targets)
+                    # --- FIX: Unpack the tuple returned by the model ---
+                    logits, _ = self.model(inputs)
+                    loss = criterion(logits, targets)
                     val_loss += loss.item()
             avg_val_loss = val_loss / len(val_dataloader)
             print(f"  Epoch {epoch + 1} finished. Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
@@ -162,35 +164,25 @@ class LSTMBasedEmbedder:
                 batch_ids = [item[0] for item in batch]
                 batch_seqs_text = [item[1] for item in batch]
 
-                tokenized_batch = []
-                original_lengths = []
-                for seq_text in batch_seqs_text:
-                    tokens = [self.char_to_int.get(c) for c in seq_text]
-                    tokens = [t for t in tokens if t is not None]  # Filter out unknown characters
-                    if tokens:
-                        tokenized_batch.append(torch.tensor(tokens, dtype=torch.long))
-                        original_lengths.append(len(tokens))
+                # --- REFACTOR: More efficient tokenization and batching ---
+                tokenized_batch = [
+                    torch.tensor([self.char_to_int[c] for c in seq if c in self.char_to_int], dtype=torch.long)
+                    for seq in batch_seqs_text
+                ]
+                # Filter out any empty sequences that might result from unknown characters
+                valid_indices = [i for i, t in enumerate(tokenized_batch) if len(t) > 0]
+                if not valid_indices: continue
 
-                if not tokenized_batch: continue
+                tokenized_batch = [tokenized_batch[i] for i in valid_indices]
+                batch_ids = [batch_ids[i] for i in valid_indices]
 
                 # Pad sequences for batch processing
                 padded_batch = pad_sequence(tokenized_batch, batch_first=True, padding_value=0).to(self.device)
 
-                # Get hidden states for all time steps
-                embedded = self.model.embedding(padded_batch)
-                all_hidden_states_batch, _ = self.model.lstm(embedded)
-                all_hidden_states_batch = all_hidden_states_batch.cpu().numpy()
-
-                for j in range(len(all_hidden_states_batch)):
-                    original_len = original_lengths[j]
-                    valid_hidden_states = all_hidden_states_batch[j, :original_len, :]
-                    # Use the centralized, configurable pooling function for consistency
-                    pooled_embedding = EmbeddingProcessor.pool_residue_embeddings(
-                        valid_hidden_states,
-                        strategy=self.config.LSTM_POOLING_STRATEGY,
-                        embedding_dim_if_empty=self.config.LSTM_HIDDEN_DIM
-                    )
-                    protein_embeddings[batch_ids[j]] = pooled_embedding.astype(np.float16)
+                # --- REFACTOR: Get embeddings for the whole batch in one efficient forward pass ---
+                _, batch_embeddings = self.model(padded_batch)
+                for j, prot_id in enumerate(batch_ids):
+                    protein_embeddings[prot_id] = batch_embeddings[j].cpu().numpy().astype(np.float16)
 
         output_path = self.config.RESULTS_LSTM_EMBEDDINGS_DIR / "lstm_generated_embeddings.h5"
         DataUtils.write_h5(protein_embeddings, output_path, "Writing LSTM Embeddings")

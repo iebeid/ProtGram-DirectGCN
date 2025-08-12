@@ -27,6 +27,7 @@ from dask.diagnostics import ProgressBar
 from tqdm.auto import tqdm
 
 from configuration.config import Config
+from source.utils.models import EmbeddingProcessor
 
 
 # ==============================================================================
@@ -158,6 +159,65 @@ class DataUtils:
                     id_map[from_id] = to_id
         print(f"  ID mapping loaded with {len(id_map)} entries.")
         return id_map
+
+    def save_final_embeddings(self, embeddings_per_model: Dict[str, Dict[str, np.ndarray]]) -> Dict[str, str]:
+        """Saves final protein embeddings and their PCA versions to H5 files."""
+        output_paths = {}
+        for model_type, embeddings in embeddings_per_model.items():
+            if not embeddings:
+                print(f"  No embeddings generated for model '{model_type}'. Skipping save.")
+                continue
+
+            model_name = f"ProtGram{model_type.capitalize()}"
+            output_dir = self.config.RESULTS_GCN_EMBEDDINGS_DIR
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / f"{model_name}.h5"
+
+            DataUtils.write_h5(embeddings, str(output_path), f"Writing H5 for {model_name}")
+            output_paths[model_name] = str(output_path)
+
+            # Apply PCA and save
+            pca_path = EmbeddingProcessor.apply_pca_to_h5(
+                input_h5_path=output_path,
+                output_dir=output_dir,
+                target_dimension=self.config.PCA_TARGET_DIMENSION,
+                random_seed=self.config.RANDOM_STATE
+            )
+            if str(pca_path) != str(output_path):
+                output_paths[f"{model_name}_pca"] = str(pca_path)
+
+        return output_paths
+
+    def save_embeddings(self, model: torch.nn.Module, data: Data):
+        """Extracts, processes (with PCA), and saves embeddings."""
+        print(f"    Extracting embeddings for {model.__class__.__name__}...")
+        with torch.no_grad():
+            model.eval()
+            _, embeddings = model(data.to(self.device))
+
+        if embeddings is None:
+            print("    Warning: Could not extract embeddings.")
+            return
+
+        embeddings_np = embeddings.cpu().numpy()
+        final_embedding_dim = embeddings_np.shape[1]
+        output_suffix = f"_dim{final_embedding_dim}"
+
+        if self.config.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS and embeddings_np.shape[0] > self.config.BENCHMARK_PCA_TARGET_DIM:
+            print(f"      Applying PCA (target dim: {self.config.BENCHMARK_PCA_TARGET_DIM})...")
+            embeddings_for_pca = {i: emb for i, emb in enumerate(embeddings_np)}
+            pca_embed_dict = EmbeddingProcessor.apply_pca(embeddings_for_pca, self.config.BENCHMARK_PCA_TARGET_DIM, self.config.RANDOM_STATE)
+            if pca_embed_dict:
+                embeddings_np = np.array(list(pca_embed_dict.values()))
+                final_embedding_dim = embeddings_np.shape[1]
+                output_suffix = f"_pca{final_embedding_dim}"
+
+        emb_dict = {str(i): embeddings_np[i] for i in range(embeddings_np.shape[0])}
+        save_path_emb_dir = self.embedding_dir / data.name
+        save_path_emb_dir.mkdir(parents=True, exist_ok=True)
+        h5_path = save_path_emb_dir / f"{model.__class__.__name__}_embeddings{output_suffix}.h5"
+        DataUtils.write_h5(emb_dict, h5_path, f"Writing H5 for {model.__class__.__name__}")
+        print(f"      Saved embeddings to {h5_path}")
 
 
 # ==============================================================================
@@ -410,20 +470,15 @@ class IDMapGenerator:
 
     def _extract_candidate_ids_from_fasta_for_mapping(self) -> Set[str]:
         if not self.fasta_files_for_mapping: return set()
-        candidate_ids = set()
         print(f"Extracting candidate IDs from: {[p.name for p in self.fasta_files_for_mapping]}...")
-        for fasta_file in self.fasta_files_for_mapping:
-            try:
-                with open(fasta_file, 'r', encoding='utf-8', errors='ignore') as f:
-                    for line in tqdm(f, desc=f"Scanning {fasta_file.name}", leave=False):
-                        if line.startswith('>'):
-                            header = line[1:].strip()
-                            parts = header.split('|')
-                            candidate_ids.add(
-                                parts[1].strip() if len(parts) > 1 and parts[1] else header.split()[0].strip())
-            except Exception as e:
-                print(f"ERROR reading FASTA {fasta_file}: {e}")
-        print(f"Found {len(candidate_ids)} unique candidate IDs for API mapping.")
+        # --- REFACTOR: Use the centralized, more robust FastaUtils parser ---
+        # This ensures that ID extraction logic is perfectly consistent across the entire project.
+        candidate_ids = {
+            protein_id
+            for _, (protein_id, _) in tqdm(enumerate(FastaUtils.parse_sequences(self.fasta_files_for_mapping)),
+                                           desc="Scanning FASTA for IDs")
+        }
+        print(f"  Found {len(candidate_ids)} unique candidate IDs for API mapping.")
         return candidate_ids
 
     def _perform_api_mapping(self) -> Dict[str, str]:
@@ -436,13 +491,19 @@ class IDMapGenerator:
             random.seed(self.random_seed_for_mapping)
             ids_to_process = random.sample(all_candidate_ids, self.api_sample_size)
         processed_mappings: Dict[str, str] = {}
+        # --- ANTICIPATORY DEBUGGING: Implement robust API polling with backoff and timeout. ---
+        max_wait_time = 300  # 5 minutes total timeout per batch
+        initial_sleep = 2
         for i in range(0, len(ids_to_process), 500):
             batch_ids = ids_to_process[i:i + 500]
             print(f"\nProcessing batch {i // 500 + 1}/{(len(ids_to_process) + 499) // 500}...")
             try:
                 job_id = self._submit_id_mapping_job(batch_ids, self.api_from_db, self.api_to_db)
+                current_sleep = initial_sleep
+                total_slept = 0
                 while True:
-                    time.sleep(2)
+                    time.sleep(current_sleep)
+                    total_slept += current_sleep
                     status = self._check_job_status(job_id)
                     print(f"  Job {job_id} status: {status}")
                     if status == "FINISHED":
@@ -452,8 +513,10 @@ class IDMapGenerator:
                             to_id = to_data.get("primaryAccession") if isinstance(to_data, dict) else to_data
                             if from_id and to_id: processed_mappings[from_id] = to_id
                         break
-                    elif status not in ["RUNNING", "QUEUED"]:
+                    elif status not in ["RUNNING", "QUEUED"] or total_slept > max_wait_time:
+                        if total_slept > max_wait_time: print(f"  ERROR: Job {job_id} timed out after {max_wait_time}s.")
                         break
+                    current_sleep = min(current_sleep * 2, 30) # Exponential backoff, max 30s sleep
             except Exception as e:
                 print(f"  Error processing batch: {e}. Skipping.")
         return processed_mappings
@@ -664,7 +727,7 @@ def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramG
         data_dict['edge_index'] = torch.cat([edge_index_out, edge_index_in], dim=1)
         data_dict['edge_type'] = torch.cat([edge_type_out, edge_type_in])
 
-    elif model_name_lower == 'tongdigcn':
+    elif model_name_lower == 'dirgnn':
         # TongDiGCN requires separate forward and backward edge indices.
         data_dict['edge_index'] = graph.A_out_w.indices()
         # --- FIX: Add the corresponding edge weights for the forward GCN pass ---

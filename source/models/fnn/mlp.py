@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: models/rnn/mlp.py
+# MODULE: models/fnn/mlp.py
 # PURPOSE: Contains the definition for the Multi-Layer Perceptron (MLP) used
 #          for link prediction in the evaluation trainers.
 # VERSION: 2.1 (Corrected docstrings and path)
@@ -13,7 +13,6 @@ from tensorflow.keras.layers import InputLayer, Dense, Dropout
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.regularizers import l2
-
 
 class MLP:
     """
@@ -71,3 +70,23 @@ class MLP:
             ]
         )
         return model
+
+
+import torch
+import torch.nn.functional as F
+
+class SimpleMLP(torch.nn.Module):
+    """A simple PyTorch MLP for node classification on embeddings."""
+
+    def __init__(self, in_channels: int, hidden_channels: int, out_channels: int, dropout: float):
+        super().__init__()
+        self.lin1 = torch.nn.Linear(in_channels, hidden_channels)
+        self.lin2 = torch.nn.Linear(hidden_channels, out_channels)
+        self.dropout = dropout
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.lin1(x)
+        x = x.relu()
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.lin2(x)
+        return x

@@ -22,8 +22,10 @@ from torch_geometric.transforms import ToUndirected
 from torch_geometric.utils import to_undirected, homophily, add_self_loops, degree
 
 from configuration.config import Config
+# --- FIX: Import DataUtils to use its static methods ---
 from source.benchmarkers.base import BaseBenchmarker
 from source.models.factory import ModelFactory
+from source.data_structures.graph import DirectedGraph
 from source.utils.data import DataUtils
 from source.utils.models import EmbeddingProcessor
 
@@ -33,116 +35,11 @@ class GNNBenchmarker(BaseBenchmarker):
         super().__init__(config, "GNN Benchmarker")
         self.embedding_dir = config.RESULTS_BENCHMARK_EMBEDDINGS_DIR
         self.model_factory = ModelFactory(config, context='benchmark')
+        # --- FIX: Instantiate the correct graph processor class ---
+        self.processor = DirectedGraph()
         print(f"Benchmark embeddings will be saved to: {self.embedding_dir}")
 
-    def _sparse_identity(self, size: int, device: torch.device) -> torch.Tensor:
-        """Creates a sparse identity matrix of given size."""
-        if size <= 0:
-            empty_indices = torch.empty((2, 0), dtype=torch.long, device=device)
-            empty_values = torch.empty(0, dtype=torch.float32, device=device)
-            return torch.sparse_coo_tensor(empty_indices, empty_values, (size, size)).coalesce()
-
-        indices = torch.arange(size, device=device).unsqueeze(0).repeat(2, 1)
-        values = torch.ones(size, device=device, dtype=torch.float32)
-        return torch.sparse_coo_tensor(indices, values, (size, size)).coalesce()
-
-    def _calculate_single_propagation_matrix(self, A_w_torch_sparse: torch.Tensor, num_nodes: int) -> torch.Tensor:
-        """
-        Calculates the propagation matrix mathcal{A} = sqrt(S^2 + K^2 + epsilon) + I
-        This logic is replicated from the main GraphBuilder for benchmark compatibility.
-        """
-        if num_nodes == 0 or (A_w_torch_sparse.is_sparse and A_w_torch_sparse._nnz() == 0):
-            empty_indices = torch.empty((2, 0), dtype=torch.long, device=A_w_torch_sparse.device)
-            empty_values = torch.empty(0, dtype=torch.float32, device=A_w_torch_sparse.device)
-            return torch.sparse_coo_tensor(empty_indices, empty_values, (num_nodes, num_nodes)).coalesce()
-
-        dev = A_w_torch_sparse.device
-        row_sum = torch.sparse.sum(A_w_torch_sparse, dim=1).to_dense()
-        D_inv_diag_vals = torch.zeros_like(row_sum, dtype=torch.float32, device=dev)
-        non_zero_degrees_mask = row_sum != 0
-        if torch.any(non_zero_degrees_mask):
-            D_inv_diag_vals[non_zero_degrees_mask] = 1.0 / row_sum[non_zero_degrees_mask]
-
-        A_w_indices = A_w_torch_sparse.indices()
-        A_w_values = A_w_torch_sparse.values()
-        scaled_values = A_w_values * D_inv_diag_vals[A_w_indices[0]]
-        A_n_sparse = torch.sparse_coo_tensor(A_w_indices, scaled_values, A_w_torch_sparse.size()).coalesce()
-
-        A_n_sq_values = A_n_sparse.values().pow(2)
-        A_n_sq_sparse = torch.sparse_coo_tensor(A_n_sparse.indices(), A_n_sq_values, A_n_sparse.size()).coalesce()
-        A_n_sq_t_sparse = A_n_sq_sparse.t().coalesce()
-        S_sq_plus_K_sq_sparse = (A_n_sq_sparse + A_n_sq_t_sparse).coalesce()
-        S_sq_plus_K_sq_sparse = torch.sparse_coo_tensor(S_sq_plus_K_sq_sparse.indices(), S_sq_plus_K_sq_sparse.values() * 0.5, S_sq_plus_K_sq_sparse.size()).coalesce()
-
-        epsilon_tensor = torch.tensor(1e-9, device=dev, dtype=torch.float32)
-        mathcal_A_base_values = torch.sqrt(S_sq_plus_K_sq_sparse.values() + epsilon_tensor)
-        mathcal_A_base_sparse = torch.sparse_coo_tensor(S_sq_plus_K_sq_sparse.indices(), mathcal_A_base_values, S_sq_plus_K_sq_sparse.size()).coalesce()
-
-        identity_sparse = self._sparse_identity(num_nodes, device=dev)
-        return (mathcal_A_base_sparse + identity_sparse).coalesce()
-
-    def _normalize_symmetric_matrix(self, matrix: torch.Tensor, num_nodes: int) -> torch.Tensor:
-        """Helper to apply GCN normalization to a symmetric matrix.""" # noqa
-        if matrix.numel() == 0 or matrix._nnz() == 0: return matrix
-        edge_index, edge_weight = add_self_loops(matrix.indices(), matrix.values(), fill_value=1.0, num_nodes=num_nodes)
-        row, col = edge_index
-        deg = degree(col, num_nodes, dtype=edge_weight.dtype)
-        deg_inv_sqrt = deg.pow(-0.5)
-        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
-        norm_values = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
-        return torch.sparse_coo_tensor(edge_index, norm_values, matrix.shape).coalesce()
-
-    def _preprocess_for_custom_models(self, data: Data, use_homo_hetero_paths: bool) -> Data:
-        """Prepares a data object with all necessary edge indices for custom models."""
-        base_edge_weight = data.edge_attr if hasattr(data, 'edge_attr') and data.edge_attr is not None else torch.ones(data.edge_index.shape[1], device=data.edge_index.device)
-
-        if use_homo_hetero_paths:
-            edge_index = data.edge_index
-            source_nodes, target_nodes = edge_index[0], edge_index[1]
-            source_labels = data.y[source_nodes]
-            target_labels = data.y[target_nodes]
-            homo_mask = (source_labels == target_labels)
-            hetero_mask = ~homo_mask
-
-            edge_index_out_homo = edge_index[:, homo_mask]
-            edge_weight_out_homo = base_edge_weight[homo_mask]
-            A_out_w_homo = torch.sparse_coo_tensor(edge_index_out_homo, edge_weight_out_homo, (data.num_nodes, data.num_nodes)).coalesce()
-            A_homo_w = (A_out_w_homo + A_out_w_homo.t()).coalesce()
-            data.edge_index_homo_norm, data.edge_weight_homo_norm = self._normalize_symmetric_matrix(A_homo_w, data.num_nodes).coalesce().indices(), self._normalize_symmetric_matrix(A_homo_w, data.num_nodes).coalesce().values()
-
-            edge_index_out_hetero = edge_index[:, hetero_mask]
-            edge_weight_out_hetero = base_edge_weight[hetero_mask]
-            A_out_w_hetero = torch.sparse_coo_tensor(edge_index_out_hetero, edge_weight_out_hetero, (data.num_nodes, data.num_nodes)).coalesce()
-            A_hetero_w = (A_out_w_hetero + A_out_w_hetero.t()).coalesce()
-            data.edge_index_hetero_norm, data.edge_weight_hetero_norm = self._normalize_symmetric_matrix(A_hetero_w, data.num_nodes).coalesce().indices(), self._normalize_symmetric_matrix(A_hetero_w, data.num_nodes).coalesce().values()
-
-        A_out_w_sparse = torch.sparse_coo_tensor(data.edge_index, base_edge_weight, (data.num_nodes, data.num_nodes)).coalesce()
-        A_in_w_sparse = A_out_w_sparse.t().coalesce()
-        A_undir_w = (A_out_w_sparse + A_in_w_sparse).coalesce()
-        A_undirected_norm = self._normalize_symmetric_matrix(A_undir_w, data.num_nodes)
-        data.edge_index_out, data.edge_weight_out = A_out_w_sparse.indices(), A_out_w_sparse.values()
-        data.edge_index_in, data.edge_weight_in = A_in_w_sparse.indices(), A_in_w_sparse.values()
-        data.edge_index_undirected_norm, data.edge_weight_undirected_norm = A_undirected_norm.indices(), A_undirected_norm.values()
-        data.edge_index_backward = data.edge_index_in
-
-        # --- FIX: Assign edge weights to edge_attr for standard GNNs ---
-        # The BaseGNN class expects weights in `edge_attr`. Without this, standard
-        # models (GCN, GAT, etc.) were treating the graph as unweighted.
-        data.edge_attr = data.edge_weight_undirected_norm
-
-        # --- NEW FIX: Ensure the edge_index and edge_attr are consistent for BaseGNN ---
-        # The BaseGNN forward pass uses `data.edge_index`. We must ensure it matches
-        # the `data.edge_attr` we just assigned to prevent shape mismatches.
-        data.edge_index = data.edge_index_undirected_norm
-
-        # --- NEW: Calculate and add the mathcal{A} matrices for DirectGCN ---
-        mathcal_A_out = self._calculate_single_propagation_matrix(A_out_w_sparse, data.num_nodes)
-        mathcal_A_in = self._calculate_single_propagation_matrix(A_in_w_sparse, data.num_nodes)
-        data.edge_index_mathcal_out, data.edge_weight_mathcal_out = mathcal_A_out.indices(), mathcal_A_out.values()
-        data.edge_index_mathcal_in, data.edge_weight_mathcal_in = mathcal_A_in.indices(), mathcal_A_in.values()
-        return data
-
-    def train_and_evaluate(self, model: torch.nn.Module, data: Data) -> Tuple[Dict[str, float], pd.DataFrame]:
+    def _train_and_evaluate(self, model: torch.nn.Module, data: Data) -> Tuple[Dict[str, float], pd.DataFrame]:
         """Handles the training and evaluation loop for a given model and data."""
         model.to(self.device)
         data = data.to(self.device)
@@ -204,40 +101,10 @@ class GNNBenchmarker(BaseBenchmarker):
         print(f"  Finished training. Best Val Acc: {best_val_acc:.4f}, Corresponding Test Acc: {test_acc_at_best_val:.4f}")
 
         if self.config.BENCHMARK_SAVE_EMBEDDINGS:
-            self._save_embeddings(model, data)
+            DataUtils.save_embeddings(model, data, self.config, self.embedding_dir)
 
         return metrics, pd.DataFrame(history)
 
-    def _save_embeddings(self, model: torch.nn.Module, data: Data):
-        """Extracts, processes (with PCA), and saves embeddings."""
-        print(f"    Extracting embeddings for {model.__class__.__name__}...")
-        with torch.no_grad():
-            model.eval()
-            _, embeddings = model(data.to(self.device))
-
-        if embeddings is None:
-            print("    Warning: Could not extract embeddings.")
-            return
-
-        embeddings_np = embeddings.cpu().numpy()
-        final_embedding_dim = embeddings_np.shape[1]
-        output_suffix = f"_dim{final_embedding_dim}"
-
-        if self.config.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS and embeddings_np.shape[0] > self.config.BENCHMARK_PCA_TARGET_DIM:
-            print(f"      Applying PCA (target dim: {self.config.BENCHMARK_PCA_TARGET_DIM})...")
-            embeddings_for_pca = {i: emb for i, emb in enumerate(embeddings_np)}
-            pca_embed_dict = EmbeddingProcessor.apply_pca(embeddings_for_pca, self.config.BENCHMARK_PCA_TARGET_DIM, self.config.RANDOM_STATE)
-            if pca_embed_dict:
-                embeddings_np = np.array(list(pca_embed_dict.values()))
-                final_embedding_dim = embeddings_np.shape[1]
-                output_suffix = f"_pca{final_embedding_dim}"
-
-        emb_dict = {str(i): embeddings_np[i] for i in range(embeddings_np.shape[0])}
-        save_path_emb_dir = self.embedding_dir / data.name
-        save_path_emb_dir.mkdir(parents=True, exist_ok=True)
-        h5_path = save_path_emb_dir / f"{model.__class__.__name__}_embeddings{output_suffix}.h5"
-        DataUtils.write_h5(emb_dict, h5_path, f"Writing H5 for {model.__class__.__name__}")
-        print(f"      Saved embeddings to {h5_path}")
 
     def _run_on_dataset_variant(self, dataset: Any, variant_name: str) -> List[Dict]:
         """Runs all configured models on a single dataset variant."""
@@ -292,8 +159,8 @@ class GNNBenchmarker(BaseBenchmarker):
         is_heterophilic = homophily_ratio < 0.6
         print(f"  Dataset Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
 
-        # Preprocess data once for all custom models based on the dynamic decision
-        data = self._preprocess_for_custom_models(data, use_homo_hetero_paths=is_heterophilic)
+        # --- FIX: Use the instantiated processor to preprocess the data, resolving the AttributeError ---
+        data = self.processor._preprocess_for_custom_models(data, use_homo_hetero_paths=is_heterophilic)
 
         if is_heterophilic:
             print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.")
@@ -306,8 +173,8 @@ class GNNBenchmarker(BaseBenchmarker):
             with mlflow.start_run(run_name=f"{model_name}_on_{variant_name}", nested=True):
                 try:
                     mlflow.set_tag("model_name", model_name)
-                    mlflow.set_tag("dataset_name", variant_name)
-                    mlflow.log_param("epochs", self.config.EVAL_EPOCHS) # --- FIX: Use config for LR ---
+                    mlflow.set_tag("dataset_name", variant_name) # --- FIX: Log the correct epoch parameter ---
+                    mlflow.log_param("epochs", self.config.BENCHMARK_GNN_EPOCHS)
                     mlflow.log_param("learning_rate", self.config.BENCHMARK_GNN_LEARNING_RATE)
                     mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
@@ -320,7 +187,7 @@ class GNNBenchmarker(BaseBenchmarker):
                         print("  Model Architecture:")
                         print(model)
 
-                    metrics, history_df = self.train_and_evaluate(model, data) #FIX Expected target size [120, 5], got [120] for every data except karate
+                    metrics, history_df = self._train_and_evaluate(model, data) #FIX Expected target size [120, 5], got [120] for every data except karate
                     result_row = {"dataset": variant_name, "model": model_name, "error": None}
                     result_row.update(metrics)
                     results.append(result_row)
@@ -359,9 +226,6 @@ class GNNBenchmarker(BaseBenchmarker):
 
             # --- Save summary for the current dataset ---
             if dataset_results:
-                summary_df = pd.DataFrame(dataset_results)
-                summary_path = self.output_dir / f"benchmark_summary_{dataset_name}.csv"
-                # DataUtils.save_dataframe_to_csv(summary_df, str(summary_path)) # No longer needed, main.py handles summary
                 all_results.extend(dataset_results)
 
         # --- Save a final, grand summary of all results ---

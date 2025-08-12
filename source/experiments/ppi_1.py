@@ -14,9 +14,10 @@ from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
-
+import h5py
 import mlflow
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score, roc_curve
 from sklearn.model_selection import StratifiedKFold
@@ -26,7 +27,6 @@ from source.models.fnn.mlp import MLP
 # Refactored: FileUtils is now DataUtils and lives in data.py
 from source.utils.data import DataUtils, GroundTruthLoader
 # Refactored: Dummy data creation is now in a dedicated helper file
-from source.utils.dummy import create_dummy_data_for_ppi_eval
 from source.utils.models import EmbeddingLoader, EmbeddingProcessor
 from source.utils.results import EvaluationReporter
 
@@ -141,21 +141,20 @@ class PPIPipeline:
                             callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=self.config.EARLY_STOPPING_PATIENCE, restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else [])
         print("    Model training finished.")
 
-        # --- NEW: Configurable SHAP Interpretability ---
-        # Generate SHAP summary plot for the first fold of the main embedding, if configured.
-        is_main_embedding = (embedding_name == self.config.EVAL_MAIN_EMBEDDING_FOR_STATS)
-        if self.config.EVAL_GENERATE_SHAP_SUMMARY and fold_num == 0 and is_main_embedding:
-            print(f"    Generating SHAP summary for main model '{embedding_name}' on fold {fold_num + 1}...")
-            # Sample background data from the training set for the explainer
-            # Taking 10 batches should be more than enough background data.
-            train_features_for_shap = np.vstack([x for x, y in train_ds.take(10)])
-            reporter = EvaluationReporter(str(self.config.RESULTS_EVALUATION_DIR), self.config.EVAL_K_VALUES_FOR_TABLE)
-            reporter.generate_shap_summary(
-                model=model,
-                background_data=train_features_for_shap,
-                model_name=embedding_name,  # Use the actual embedding name
-                fold_num=fold_num + 1  # Use the actual fold number (1-based for display)
-            )
+        # --- ANTICIPATORY DEBUGGING: Make slow/heavy analysis optional and robust. ---
+        # Generate SHAP summary plot only for the first fold of the main embedding, if configured.
+        try:
+            is_main_embedding = (embedding_name == self.config.EVAL_MAIN_EMBEDDING_FOR_STATS)
+            if self.config.EVAL_GENERATE_SHAP_SUMMARY and fold_num == 0 and is_main_embedding:
+                print(f"    Generating SHAP summary for main model '{embedding_name}' on fold {fold_num + 1}...")
+                train_features_for_shap = np.vstack([x for x, y in train_ds.take(10)])
+                reporter = EvaluationReporter(str(self.config.RESULTS_EVALUATION_DIR), self.config.EVAL_K_VALUES_FOR_TABLE)
+                reporter.generate_shap_summary(
+                    model=model, background_data=train_features_for_shap,
+                    model_name=embedding_name, fold_num=fold_num + 1
+                )
+        except Exception as e_shap:
+            print(f"    WARNING: SHAP summary generation failed with error: {e_shap}")
 
         # --- Evaluate Model ---
         print("    Evaluating model on validation set...")
@@ -228,7 +227,7 @@ class PPIPipeline:
             fold_start_time = time.monotonic()
             print(f"\n  --- Fold {fold_num + 1}/{self.config.EVAL_N_FOLDS} for {embedding_name} ---")
 
-            # FIX: Add exception handling for individual folds to make the pipeline more robust.
+            # --- ANTICIPATORY DEBUGGING: Add exception handling for individual folds to make the pipeline more robust. ---
             try:
                 train_pairs_fold = [all_pairs_for_cv[i] for i in train_idx]
                 val_pairs_fold = [all_pairs_for_cv[i] for i in val_idx]
@@ -249,17 +248,13 @@ class PPIPipeline:
                 print(f"    Fold {fold_num + 1} completed in {time.monotonic() - fold_start_time:.2f}s.")
             except Exception as e:
                 print(f"    ❌ ERROR in Fold {fold_num + 1} for {embedding_name}: {e}")
-                # --- NEW: Add verbose traceback logging for easier debugging ---
-                if self.config.DEBUG_VERBOSE:
-                    import traceback
-                    traceback.print_exc()
-                # Log the failure for this fold if using MLflow
+                import traceback
+                traceback.print_exc()
                 if self.config.USE_MLFLOW:
                     with mlflow.start_run(run_name=f"Fold_{fold_num + 1}_FAILED", nested=True):
                         mlflow.set_tag("status", "FAILED")
                         mlflow.log_param("error", str(e))
-                # --- FIX: Use a predefined, consistent set of keys for failed folds ---
-                # This prevents silent failures from skewing the final average metrics.
+                # Use a predefined, consistent set of keys for failed folds to prevent silent failures from skewing the final average metrics.
                 nan_metrics = {key: np.nan for key in expected_metric_keys}
                 fold_metrics_list.append(nan_metrics)
 
@@ -285,10 +280,41 @@ class PPIPipeline:
         DataUtils.print_header(f"PPI EVALUATION PIPELINE ({run_type})")
 
         if use_dummy_data:
-            pos_fp, neg_fp, emb_configs = create_dummy_data_for_ppi_eval(
-                base_dir=self.config.BASE_OUTPUT_DIR, num_proteins=50,
-                embedding_dim=16, num_pos=100, num_neg=100
-            )
+            num_proteins = 50,
+            embedding_dim = 16
+            num_pos = 100
+            num_neg = 100
+
+            dummy_data_dir = self.config.BASE_OUTPUT_DIR / "dummy_data_temp"
+            if dummy_data_dir.exists():
+                shutil.rmtree(dummy_data_dir)
+            dummy_data_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Creating dummy data in: {dummy_data_dir} (Proteins: {num_proteins}, Dim: {embedding_dim}, Pos: {num_pos}, Neg: {num_neg})")
+
+            protein_ids = [f"DUMMY_P{i:04d}" for i in range(num_proteins)]
+
+            # Create dummy embeddings
+            dummy_emb_file = dummy_data_dir / "dummy_embeddings.h5"
+            with h5py.File(dummy_emb_file, 'w') as hf:
+                for pid in protein_ids:
+                    hf.create_dataset(pid, data=np.random.rand(embedding_dim).astype(np.float16))
+            print(f"  Dummy embeddings saved to: {dummy_emb_file}")
+
+            # Create dummy positive interactions
+            pos_fp = dummy_data_dir / "dummy_pos.csv"
+            pos_pairs = pd.DataFrame([random.sample(protein_ids, 2) for _ in range(num_pos)], columns=['p1', 'p2'])
+            pos_pairs.to_csv(pos_fp, header=False, index=False)
+            print(f"  Dummy positive interactions saved to: {pos_fp}")
+
+            # Create dummy negative interactions
+            neg_fp = dummy_data_dir / "dummy_neg.csv"
+            neg_pairs = pd.DataFrame([random.sample(protein_ids, 2) for _ in range(num_neg)], columns=['p1', 'p2'])
+            neg_pairs.to_csv(neg_fp, header=False, index=False)
+            print(f"  Dummy negative interactions saved to: {neg_fp}")
+
+            dummy_emb_config = [{"path": str(dummy_emb_file), "name": "DummyEmb"}]
+
+
         else:
             emb_configs = getattr(self.config, 'LP_EMBEDDING_FILES_TO_EVALUATE', [])
             pos_fp = self.config.POS_INTERACTIONS_PATH
@@ -353,6 +379,11 @@ class PPIPipeline:
                         if mlflow_active and run and results:
                             metrics_to_log = {k: v for k, v in results.items() if isinstance(v, (int, float, np.number))}
                             mlflow.log_metrics(metrics_to_log)
+                            # --- FIX: Plot the training history that was collected for the first fold ---
+                            if self.config.PLOT_TRAINING_HISTORY and results.get('history_dict_fold1'):
+                                history_plot_path = reporter.plot_training_history(results['history_dict_fold1'], emb_name)
+                                if history_plot_path:
+                                    mlflow.log_artifact(str(history_plot_path), "training_plots")
                 except Exception as e:
                     print(f"UNEXPECTED ERROR during processing for {emb_name}: {e}")
                     import traceback

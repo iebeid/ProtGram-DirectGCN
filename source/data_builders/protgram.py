@@ -12,7 +12,6 @@ import sys
 import time
 from functools import partial
 from pathlib import Path
-from typing import Optional
 from typing import Tuple, Iterator
 
 import dask.bag as db
@@ -22,11 +21,11 @@ import pyarrow
 import pyarrow.parquet as pq
 
 from configuration.config import Config
-from source.data_builders.graph import DirectedNgramGraph
+from source.data_structures.graph import DirectedNgramGraph
 from source.utils.data import DataUtils, FastaUtils, ProtgramDaskHelpers
 
 
-class ProtGramBuilder:
+class ProtGramDataBuilder:
     def __init__(self, config: Config):
         self.config = config
         self.protein_sequence_files = [str(p) for p in config.SEQUENCE_FILE_PATHS]
@@ -40,16 +39,12 @@ class ProtGramBuilder:
             f"GraphBuilder initialized: n_max={self.n_max}, configured_workers={self.num_workers_config}, output_dir='{self.output_dir}'")
         DataUtils.print_header(f"GraphBuilder Initialized (Output: {self.output_dir})")
 
-    def run(self, run_singleton_eval: bool = True) -> None:
+    def run(self) -> None:
         """
         Main execution function for the graph builder.
 
         This method orchestrates the entire graph construction process, from
         reading sequences to building and saving the final graph objects for each n-gram level.
-
-        Note: The `run_singleton_eval` parameter is maintained for API compatibility with the main
-        pipeline orchestrator but is no longer used within this class, as evaluation logic has
-        been moved to the respective trainer modules.
 
         Returns:
             None
@@ -103,21 +98,14 @@ class ProtGramBuilder:
                 if first_sequence:
                     first_sequence = False
 
-        try:
-            sequence_stream_list = list(get_preprocessed_sequence_stream())
-            if not sequence_stream_list:
-                print("ERROR: No sequences found in the FASTA file. Cannot proceed.")
-                return
-            print(f"  Loaded {len(sequence_stream_list)} sequences from FASTA.")
-        except FileNotFoundError:
-            print(f"ERROR: One or more FASTA files not found in {self.protein_sequence_files}")
-            return
-        except (MemoryError, ValueError) as e_mem_seq_list:
-            print(f"ERROR: Memory error creating sequence list from FASTA: {e_mem_seq_list}.")
-            return
+        # --- FIX: Do not load the entire FASTA file into a list in memory. ---
+        # Pass the generator directly to Dask for lazy, scalable processing.
+        sequence_generator = get_preprocessed_sequence_stream()
+        # The FastaUtils.parse_sequences handles file not found errors internally.
+        # An empty generator will be handled gracefully by Dask and downstream logic.
 
         num_partitions_for_bag = effective_dask_workers if effective_dask_workers > 1 else 1
-        raw_sequence_bag_with_flag = db.from_sequence(sequence_stream_list, npartitions=num_partitions_for_bag)
+        raw_sequence_bag_with_flag = db.from_sequence(sequence_generator, npartitions=num_partitions_for_bag)
         preprocessed_sequence_bag_unpersisted = raw_sequence_bag_with_flag.starmap(
             ProtgramDaskHelpers._preprocess_sequence_tuple_for_bag)
 
@@ -218,7 +206,6 @@ class ProtGramBuilder:
             # --- FIX: Prevent Dask race condition by pre-creating the directory ---
             # This ensures the directory exists before any worker tries to write to it.
             os.makedirs(temp_edge_output_dir, exist_ok=True)
-
             scheduler_for_to_textfiles = 'sync'
             print(
                 f"    Writing edge strings to directory: {temp_edge_output_dir} using Dask scheduler: '{scheduler_for_to_textfiles}'...")
@@ -227,8 +214,7 @@ class ProtGramBuilder:
                 all_edges_str_bag_flattened.to_textfiles(
                     os.path.join(temp_edge_output_dir, 'part-*.txt'),
                     compute=True,
-                    scheduler=scheduler_for_to_textfiles,
-                    num_workers=None
+                    scheduler=scheduler_for_to_textfiles
                 )
                 print(f"    Edge parts saved to directory {temp_edge_output_dir}.")
             except Exception as e_write_edges:
@@ -276,8 +262,8 @@ class ProtGramBuilder:
             try:
                 edge_parts_glob = os.path.join(edge_parts_dir, 'part-*.txt')
                 if os.path.exists(edge_parts_dir) and any(Path(edge_parts_dir).glob('part-*.txt')):
-                    ddf = dd.read_csv(edge_parts_glob, sep=' ', header=None, names=['source', 'target'], dtype=int,
-                                      on_bad_lines='skip', blocksize='128MB')
+                    # --- FIX: Warn on bad lines instead of skipping silently to aid debugging. ---
+                    ddf = dd.read_csv(edge_parts_glob, sep=' ', header=None, names=['source', 'target'], dtype=int, on_bad_lines='warn', blocksize='128MB')
                     print(f"    Dask DataFrame created for n={n} from part-files with {ddf.npartitions} partitions.")
                     weighted_ddf_series = ddf.groupby(['source', 'target']).size()
                     weighted_ddf = weighted_ddf_series.to_frame(name='weight').reset_index()

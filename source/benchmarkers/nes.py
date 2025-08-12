@@ -22,31 +22,7 @@ from torch_geometric.nn import Node2Vec
 from configuration.config import Config
 from source.benchmarkers.base import BaseBenchmarker
 from source.utils.data import DataUtils
-
-
-class SimpleMLP(torch.nn.Module):
-    """A simple PyTorch MLP for node classification on embeddings."""
-
-    def __init__(self, in_channels: int, hidden_channels: int, out_channels: int, num_layers: int = 2, dropout: float = 0.5):
-        super().__init__()
-        self.layers = torch.nn.ModuleList()
-        if num_layers == 1:
-            self.layers.append(torch.nn.Linear(in_channels, out_channels))
-        else:
-            self.layers.append(torch.nn.Linear(in_channels, hidden_channels))
-            for _ in range(num_layers - 2):
-                self.layers.append(torch.nn.Linear(hidden_channels, hidden_channels))
-            self.layers.append(torch.nn.Linear(hidden_channels, out_channels))
-        self.dropout = dropout
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        for i, layer in enumerate(self.layers[:-1]):
-            x = layer(x)
-            x = F.relu(x)
-            x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.layers[-1](x)
-        return x
-
+from source.models.fnn.mlp import SimpleMLP
 
 class NetworkEmbeddingBenchmarker(BaseBenchmarker):
     def __init__(self, config: Config):
@@ -141,7 +117,7 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
             sparse=True,
         ).to(self.device)
 
-        # --- DEFINITIVE FIX for hidden prompt and reproducibility: Set num_workers=0 ---
+        # --- ANTICIPATORY DEBUGGING: Set num_workers=0 to prevent hangs. ---
         # Using multiple worker processes (num_workers > 0) can cause two issues:
         # 1. The main script hangs before an input() prompt, waiting for background processes.
         # 2. It introduces non-determinism unless a specific `worker_init_fn` is used.
@@ -163,15 +139,21 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
             embeddings = node2vec_model()
 
         # 3. Train and evaluate an MLP on the embeddings
-        metrics = self._train_and_evaluate_mlp(embeddings, data)
+        metrics = self._train_and_evaluate_mlp(embeddings, data) # This call is now correct
         print(f"  ✅ Best Val Acc: {metrics.get('best_val_accuracy', -1):.4f}, Test Accuracy for {model_name} on {dataset_name}: {metrics.get('Accuracy', -1):.4f}")
+
+        # --- ANTICIPATORY DEBUGGING: Explicitly delete large torch objects and collect garbage. ---
+        # This helps prevent the loader from hanging in the background before the main script
+        # prompts for user input, which can happen if resources are not released.
+        del node2vec_model, loader, optimizer, embeddings
+        # --- NEW: Add garbage collection to be thorough ---
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         result_row = {"dataset": dataset_name, "model": model_name, "error": None}
         result_row.update(metrics)
-
-        # --- FIX: Explicitly delete large torch objects to release memory and resources ---
-        # This helps prevent the loader from hanging in the background before the main script prompts for user input.
-        del node2vec_model, loader, optimizer, embeddings
 
         return result_row
 

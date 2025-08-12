@@ -5,8 +5,6 @@
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
-from typing import Dict, List, Any, Optional
-
 import numpy as np
 import torch
 import pandas as pd
@@ -14,12 +12,11 @@ import torch.nn.functional as F
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
 from torch_geometric.utils import homophily
-from torch_geometric.data import Data
 from tqdm.auto import tqdm
 
 from configuration.config import Config
-from source.data_builders.graph import DirectedNgramGraph
-from source.data_builders.xgcn import XGCNDataset
+from source.data_structures.graph import DirectedNgramGraph
+from source.data_builders.xgcn import XGCNDataBuilder
 from source.utils.data import DataUtils, prepare_pyg_data_from_protgram_graph
 from source.models.factory import ModelFactory
 
@@ -34,7 +31,7 @@ class SingletonXGCNTrainer:
         self.config = config
         self.graph = graph_obj
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.label_generator = XGCNDataset(config)
+        self.label_generator = XGCNDataBuilder(config)
         # --- NEW: Centralized model creation ---
         self.model_factory = ModelFactory(config, context='singleton')
         # --- NEW: Set seeds for reproducibility ---
@@ -73,8 +70,8 @@ class SingletonXGCNTrainer:
         else:
             print("  Homophily calculation skipped for non-classification task (e.g., masked_node).")
 
-        # 2. Create initial random features
-        # --- FIX: Use correct PROTGRAM_ prefixed config variables ---
+        # 2. Create initial random features, consistent with the main ProtGram pipeline.
+        print(f"  Using random features for initial features (dim={self.config.PROTGRAM_1GRAM_INIT_DIM}).")
         initial_features = torch.randn((self.graph.number_of_nodes, self.config.PROTGRAM_1GRAM_INIT_DIM))
 
         # 3. Create train/test splits for nodes
@@ -117,14 +114,11 @@ class SingletonXGCNTrainer:
 
             model.to(self.device)
             optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
-            # --- FIX: Use the centralized, correct data preparation utility ---
+            # Use the centralized, correct data preparation utility
             data_for_model = prepare_pyg_data_from_protgram_graph(
                 model_type=model_name, graph=self.graph, features=initial_features, labels=y_for_stratify,
                 use_homo_hetero_paths=use_homo_hetero_for_this_model
             )
-            data_for_model.train_mask = train_mask
-            data_for_model.test_mask = test_mask
-            data_for_model = data_for_model.to(self.device)
             # Training Loop
             for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
                 model.train()
@@ -135,11 +129,8 @@ class SingletonXGCNTrainer:
                     masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
                         self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=test_mask
                     )
-                    # --- FIX: Print log message here instead of in the generator ---
-                    if epoch == 1:  # Print only on the first epoch
-                        print(f"  Created Masked Node Prediction task: Masked {len(masked_indices)} out of {self.graph.number_of_nodes} nodes.")
-
-                    # For masked_node, the 'labels' (y) are not used in the loss calculation itself.
+                    if epoch == 0:  # Print only on the first epoch
+                        print(f"  Created Masked Node Prediction task for training: Masked {len(masked_indices)} nodes.")
                     epoch_data = prepare_pyg_data_from_protgram_graph(
                         model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
                         use_homo_hetero_paths=use_homo_hetero_for_this_model
@@ -147,6 +138,8 @@ class SingletonXGCNTrainer:
                     logits, _ = model(epoch_data)
                     loss = F.cross_entropy(logits[masked_indices], original_node_ids.to(self.device))
                 else:
+                    data_for_model.train_mask = train_mask
+                    data_for_model = data_for_model.to(self.device)
                     logits, _ = model(data_for_model)
                     if data_for_model.train_mask.sum() > 0:
                         loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask].long())
@@ -166,19 +159,20 @@ class SingletonXGCNTrainer:
                     masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
                         self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=train_mask # Mask only from test set
                     )
-                    # This part runs only once per model, so no need to check epoch
-                    print(f"  Created Masked Node Prediction task for evaluation: Masked {len(masked_indices)} nodes.")
-
+                    # --- NEW: Add log message for evaluation mask ---
+                    print(f"  Created Masked Node Prediction task for evaluation: Masked {len(masked_indices)} test nodes.")
                     eval_data = prepare_pyg_data_from_protgram_graph(
                         model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
                         use_homo_hetero_paths=use_homo_hetero_for_this_model
                     ).to(self.device)
                     logits, _ = model(eval_data)
                     preds = logits[masked_indices].argmax(dim=-1)
-                    y_true = original_node_ids.cpu().numpy()
+                    y_true = original_node_ids.cpu().numpy() # These are the true node indices
                     y_pred = preds.cpu().numpy()
             else: # Standard classification evaluation
                 with torch.no_grad():
+                    data_for_model.test_mask = test_mask
+                    data_for_model = data_for_model.to(self.device)
                     logits, _ = model(data_for_model)
                     preds = logits.argmax(dim=-1)
                     y_true = data_for_model.y[data_for_model.test_mask].cpu().numpy()

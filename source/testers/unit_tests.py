@@ -26,7 +26,7 @@ import mlflow
 # --- Local Application Imports ---
 from configuration.config import Config
 from source.benchmarkers.gnns import GNNBenchmarker
-from source.data_builders.protgram import ProtGramBuilder
+from source.data_builders.protgram import ProtGramDataBuilder
 from source.experiments.ppi_1 import PPIPipeline
 from source.models.fnn.mlp import MLP
 from source.trainers.transformers import TransformerEmbedder
@@ -493,7 +493,7 @@ def run_graph_builder_full_test():
     print(f"  GraphBuilder output will be within: {config.BASE_OUTPUT_DIR.name}")
 
     try:
-        graph_builder_instance = ProtGramBuilder(config)
+        graph_builder_instance = ProtGramDataBuilder(config)
         graph_builder_instance.run()
         print(f"--- GraphBuilder run() method completed ---")
         for n_val_check in range(1, config.GCN_NGRAM_MAX_N + 1):
@@ -556,7 +556,7 @@ class TestGraphBuilderSmoke(unittest.TestCase):
             print(f"  Outputting to: {config.BASE_OUTPUT_DIR.name}")
             print(f"  N_max: {config.GCN_NGRAM_MAX_N}, Workers: {config.GRAPH_BUILDER_WORKERS}")
 
-            graph_builder = ProtGramBuilder(config)
+            graph_builder = ProtGramDataBuilder(config)
             graph_builder.run()
 
             expected_graph_file = config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{config.GCN_NGRAM_MAX_N}.pkl"
@@ -580,21 +580,20 @@ def test_word2vec_pipeline_run():
     DataUtils.print_header("Word2Vec Pipeline Smoke Test")
     print("=" * 80)
     config = Config()
-    base_test_dir = tempfile.mkdtemp()
-    dummy_fasta_path = _create_dummy_fasta_for_testing(os.path.join(base_test_dir, "input"), "w2v_test.fasta")
+    base_test_dir = Path(tempfile.mkdtemp())
+    dummy_fasta_path = _create_dummy_fasta_for_testing(str(base_test_dir / "input"), "w2v_test.fasta")
 
-    # Store original paths and settings
-    original_fasta_paths = config.SEQUENCE_FILE_PATHS
-    original_w2v_output_dir = config.RESULTS_W2V_EMBEDDINGS_DIR
+    # Store and override the base output directory for full isolation
+    original_base_output_dir = config.BASE_OUTPUT_DIR
     original_epochs = config.W2V_EPOCHS
-
-    # Override with temporary test settings
-    config.SEQUENCE_FILE_PATHS = [Path(dummy_fasta_path)]
-    config.RESULTS_W2V_EMBEDDINGS_DIR = Path(base_test_dir) / "test_w2v_embeddings"
-    config.W2V_EPOCHS = 1
-    config.APPLY_PCA_TO_W2V = False  # Keep it fast for a smoke test
+    config.BASE_OUTPUT_DIR = base_test_dir
+    config._setup_paths()  # Re-initialize all paths based on the new temporary base
 
     try:
+        # Override with temporary test settings
+        config.SEQUENCE_FILE_PATHS = [Path(dummy_fasta_path)]
+        config.W2V_EPOCHS = 1
+
         embedder = Word2VecEmbedder(config)
         embedder.run()
         print("\n  Word2VecEmbedder smoke test ran successfully.")
@@ -602,10 +601,10 @@ def test_word2vec_pipeline_run():
         print(f"\n  Word2VecEmbedder smoke test FAILED: {e}")
         raise
     finally:
-        # Restore original settings
-        config.SEQUENCE_FILE_PATHS = original_fasta_paths
-        config.RESULTS_W2V_EMBEDDINGS_DIR = original_w2v_output_dir
+        # Restore original config values
+        config.BASE_OUTPUT_DIR = original_base_output_dir
         config.W2V_EPOCHS = original_epochs
+        config._setup_paths()  # Restore original paths
         # Clean up temporary files
         if os.path.exists(base_test_dir):
             shutil.rmtree(base_test_dir)
@@ -617,23 +616,19 @@ def test_transformer_embedder_pipeline_run():
     DataUtils.print_header("Transformer Embedder Pipeline Smoke Test")
     print("=" * 80)
     config = Config()
-    base_test_dir = tempfile.mkdtemp()
-    # FIX: The input directory for the test should be where the dummy FASTA is, not the output dir.
-    dummy_input_dir = Path(base_test_dir) / "input"
-    dummy_input_dir.mkdir()
-    _create_dummy_fasta_for_testing(str(dummy_input_dir), "transformer_test.fasta", num_seqs=2)
+    base_test_dir = Path(tempfile.mkdtemp())
+    dummy_fasta_path = _create_dummy_fasta_for_testing(str(base_test_dir / "input"), "transformer_test.fasta", num_seqs=2)
 
-    # Store original paths and settings
-    original_sequence_paths = config.SEQUENCE_FILE_PATHS
-    original_transformer_output_dir = config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR
-
-    # Override with temporary test settings
-    config.SEQUENCE_FILE_PATHS = [dummy_input_dir / "transformer_test.fasta"]
-    config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = Path(base_test_dir) / "test_transformer_embeddings"
-    config.APPLY_PCA_TO_TRANSFORMER = False
-    config.TRANSFORMER_BASE_BATCH_SIZE = 1
+    # Store and override the base output directory for full isolation
+    original_base_output_dir = config.BASE_OUTPUT_DIR
+    config.BASE_OUTPUT_DIR = base_test_dir
+    config._setup_paths()  # Re-initialize all paths based on the new temporary base
 
     try:
+        # Override with temporary test settings
+        config.SEQUENCE_FILE_PATHS = [dummy_fasta_path]
+        config.TRANSFORMER_BASE_BATCH_SIZE = 1
+
         # FIX: Add meaningful logging to the MLflow run context.
         with mlflow.start_run(run_name="Transformer_Embedder_SMOKE_TEST") as run:
             mlflow.set_tag("test_type", "smoke_test")
@@ -659,9 +654,9 @@ def test_transformer_embedder_pipeline_run():
         traceback.print_exc()
         raise
     finally:
-        # Restore original settings
-        config.SEQUENCE_FILE_PATHS = original_sequence_paths
-        config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR = original_transformer_output_dir
+        # Restore original config values
+        config.BASE_OUTPUT_DIR = original_base_output_dir
+        config._setup_paths()  # Restore original paths
         # Clean up temporary files
         if os.path.exists(base_test_dir):
             shutil.rmtree(base_test_dir)
@@ -673,25 +668,21 @@ def test_gnn_benchmarker_run():
     DataUtils.print_header("GNN Benchmarker Smoke Test")
     print("=" * 80)
     config = Config()
+    base_test_dir = Path(tempfile.mkdtemp())
+
+    # Store and override the base output directory for full isolation
+    original_base_output_dir = config.BASE_OUTPUT_DIR
     original_datasets = config.BENCHMARK_NODE_CLASSIFICATION_DATASETS
-    config.BENCHMARK_NODE_CLASSIFICATION_DATASETS = ["KarateClub"]
-    original_epochs = config.EVAL_EPOCHS
-    config.EVAL_EPOCHS = 1
-    config.BENCHMARK_SAVE_EMBEDDINGS = False
-    config.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS = False
-
-    test_benchmark_output_dir = Path(config.BASE_OUTPUT_DIR) / "test_gnn_benchmark_results"
-    if os.path.exists(test_benchmark_output_dir): shutil.rmtree(test_benchmark_output_dir)
-    # --- FIX: The directory must be created before it can be used ---
-    test_benchmark_output_dir.mkdir(parents=True, exist_ok=True)
-    # FIX: Use and restore the correct config variable name
-    original_benchmark_output_dir = config.RESULTS_BENCHMARKING_DIR
-    config.RESULTS_BENCHMARKING_DIR = test_benchmark_output_dir
-
-    pyg_dataset_root = Path(config.BASE_DATA_DIR) / "standard_datasets_pyg"
-    karate_specific_path = pyg_dataset_root / "KarateClub"
+    original_epochs = config.BENCHMARK_GNN_EPOCHS
+    config.BASE_OUTPUT_DIR = base_test_dir
+    config._setup_paths()  # Re-initialize all paths based on the new temporary base
 
     try:
+        # Override with temporary test settings
+        config.BENCHMARK_NODE_CLASSIFICATION_DATASETS = ["KarateClub"]
+        config.BENCHMARK_GNN_EPOCHS = 2
+        config.BENCHMARK_SAVE_EMBEDDINGS = False
+
         # FIX: Wrap the test in its own MLflow run to manage context properly.
         with mlflow.start_run(run_name="GNN_Benchmark_SMOKE_TEST"):
             benchmarker = GNNBenchmarker(config)
@@ -701,12 +692,14 @@ def test_gnn_benchmarker_run():
         print(f"\n  GNNBenchmarker smoke test FAILED: {e}")
         raise
     finally:
+        # Restore original config values
+        config.BASE_OUTPUT_DIR = original_base_output_dir
         config.BENCHMARK_NODE_CLASSIFICATION_DATASETS = original_datasets
-        config.EVAL_EPOCHS = original_epochs
-        # FIX: Restore the correct config variable
-        config.RESULTS_BENCHMARKING_DIR = original_benchmark_output_dir
-        if os.path.exists(test_benchmark_output_dir): shutil.rmtree(test_benchmark_output_dir)
-        if os.path.exists(karate_specific_path): shutil.rmtree(karate_specific_path)
+        config.BENCHMARK_GNN_EPOCHS = original_epochs
+        config._setup_paths()  # Restore original paths
+        # Clean up the entire temporary directory
+        if os.path.exists(base_test_dir):
+            shutil.rmtree(base_test_dir)
     print("--- GNN Benchmarker Smoke Test Complete ---")
 
 
@@ -715,20 +708,20 @@ def test_ppi_pipeline_run():
     DataUtils.print_header("PPI Pipeline (Dummy Run) Smoke Test")
     print("=" * 80)
     config = Config()
-    original_dummy_flag = config.RUN_DUMMY_TEST
-    config.RUN_DUMMY_TEST = True
-    original_epochs = config.EVAL_EPOCHS
-    config.EVAL_EPOCHS = 1
-    original_folds = config.EVAL_N_FOLDS
-    config.EVAL_N_FOLDS = 2
+    base_test_dir = Path(tempfile.mkdtemp())
 
-    test_ppi_output_dir = Path(config.BASE_OUTPUT_DIR) / "test_ppi_eval_results"
-    if os.path.exists(test_ppi_output_dir): shutil.rmtree(test_ppi_output_dir)
-    # FIX: Use and restore the correct config variable name
-    original_eval_results_dir = config.RESULTS_EVALUATION_DIR
-    config.RESULTS_EVALUATION_DIR = test_ppi_output_dir
+    # Store and override the base output directory for full isolation
+    original_base_output_dir = config.BASE_OUTPUT_DIR
+    original_epochs = config.EVAL_EPOCHS
+    original_folds = config.EVAL_N_FOLDS
+    config.BASE_OUTPUT_DIR = base_test_dir
+    config._setup_paths()  # Re-initialize all paths based on the new temporary base
 
     try:
+        # Override with temporary test settings
+        config.EVAL_EPOCHS = 1
+        config.EVAL_N_FOLDS = 2
+
         # FIX: Wrap the test in its own MLflow run and pass the parent_run_id
         # to ensure the inner runs are correctly nested and closed.
         with mlflow.start_run(run_name="PPI_Pipeline_SMOKE_TEST") as parent_run:
@@ -741,15 +734,14 @@ def test_ppi_pipeline_run():
         traceback.print_exc()
         raise
     finally:
-        config.RUN_DUMMY_TEST = original_dummy_flag
+        # Restore original config values
+        config.BASE_OUTPUT_DIR = original_base_output_dir
         config.EVAL_EPOCHS = original_epochs
         config.EVAL_N_FOLDS = original_folds
-        # FIX: Restore the correct config variable
-        config.RESULTS_EVALUATION_DIR = original_eval_results_dir
-        # --- FIX: The dummy data is created inside the temporary test directory, so we clean that. ---
-        if os.path.exists(test_ppi_output_dir) and config.CLEANUP_DUMMY_DATA:
-            print(f"  Cleaning up temporary PPI test directory: {test_ppi_output_dir}")
-            shutil.rmtree(test_ppi_output_dir)
+        config._setup_paths()  # Restore original paths
+        # Clean up the entire temporary directory
+        if os.path.exists(base_test_dir):
+            shutil.rmtree(base_test_dir)
     print("--- PPI Pipeline (Dummy Run) Smoke Test Complete ---")
 
 

@@ -8,7 +8,6 @@
 import collections
 import copy
 import gc
-import json
 import math
 import random
 import traceback
@@ -26,14 +25,13 @@ from torch_geometric.data import Data
 from torch_geometric.utils import homophily
 from torch_geometric.utils import to_networkx
 from tqdm.auto import tqdm
+from functools import partial
 
 from configuration.config import Config
-from source.data_builders.graph import DirectedNgramGraph
-from source.data_builders.xgcn import XGCNDataset
+from source.data_structures.graph import DirectedNgramGraph
+from source.data_builders.xgcn import XGCNDataBuilder
 from source.experiments.ppi_1 import PPIPipeline
-from source.models.gnn.spectral.directgcn import DirectGCN
-from source.models.gnn.spectral.rgcn import RGCN
-from source.models.gnn.spectral.tongidigcn import TongDiGCN
+from source.models.factory import ModelFactory
 from source.utils.data import DataUtils, IDMapGenerator, FastaUtils, prepare_pyg_data_from_protgram_graph
 from source.utils.models import EmbeddingProcessor, EarlyStopper
 from source.utils.results import EvaluationReporter
@@ -48,7 +46,9 @@ class ProtGramXGCNTrainer:
     def __init__(self, config: Config):
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.label_generator = XGCNDataset(config)
+        self.label_generator = XGCNDataBuilder(config)
+        # --- NEW: Use the centralized model factory ---
+        self.model_factory = ModelFactory(config, context='protgram')
         print(f"Using device: {self.device}")
         self._loaded_graphs: Dict[int, DirectedNgramGraph] = {}
         # --- NEW: Set seeds for reproducibility of model initialization and training ---
@@ -167,7 +167,8 @@ class ProtGramXGCNTrainer:
             if feature_result is None: continue
             initial_features, hierarchical_attention = feature_result
 
-            if hierarchical_attention:
+            # --- ANTICIPATORY DEBUGGING: Only store attention if it's actually generated and logging is enabled. ---
+            if hierarchical_attention and self.config.PROTGRAM_LOG_ATTENTION_WEIGHTS:
                 hierarchical_attention_per_level[n] = hierarchical_attention
 
             task_type = self.config.PROTGRAM_TASK_TYPES_PER_LEVEL.get(n, self.config.PROTGRAM_DEFAULT_TASK_TYPE)
@@ -175,30 +176,45 @@ class ProtGramXGCNTrainer:
 
             # --- NEW: Dynamic Architecture Selection for DirectGCN ---
             # Calculate homophily to decide if specialized paths should be used for this level.
+            # --- FIX: Initialize variables for the new functional approach ---
+            A_homo_norm, A_hetero_norm = None, None
             use_homo_hetero_paths_for_level = False
             if model_type == 'directgcn' and labels is not None:
                 # --- FIX: Only calculate homophily and split edges if labels are available ---
                 # This prevents crashes when using tasks like 'masked_node' which don't have static labels.
-                homophily_ratio = homophily(graph_obj.A_undirected_norm_sparse.indices(), labels, method='edge')
-                is_heterophilic = homophily_ratio < 0.6  # Standard threshold
+                homophily_ratio = homophily(graph_obj.A_undirected_norm_sparse.indices(), labels,
+                                            method='edge')
+                # --- ANTICIPATORY DEBUGGING: Use the configurable threshold instead of a hardcoded value. ---
+                is_heterophilic = homophily_ratio < self.config.GCN_HETEROPHILY_THRESHOLD
                 print(f"  Graph n={n} Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
                 if is_heterophilic:
                     print(f"  -> Enabling specialized homophily/heterophily paths for DirectGCN at n={n}.")
-                    # --- DEFINITIVE FIX: Set the flag AND call the method to create the edge splits ---
+                    # --- ANTICIPATORY DEBUGGING: Call the functional version and store the results. ---
                     use_homo_hetero_paths_for_level = True
-                    graph_obj.split_edges_by_homophily(labels)
+                    split_result = graph_obj.split_edges_by_homophily(labels)
+                    if split_result:
+                        A_homo_norm, A_hetero_norm = split_result
 
-            model = self._build_model(model_type, n, initial_features.shape[1], num_classes_for_task, graph_obj, use_homo_hetero_paths_for_level)
+            # --- REFACTOR: Use the centralized ModelFactory ---
+            model = self.model_factory.create_model(
+                model_name=model_type, in_channels=initial_features.shape[1],
+                num_classes=num_classes_for_task, graph_obj=graph_obj,
+                use_homo_hetero_paths=use_homo_hetero_paths_for_level, n_val=n
+            )
             if model is None: continue
 
-            data = Data(x=initial_features, y=labels, graph_obj=graph_obj)
+            # --- ANTICIPATORY DEBUGGING: Pass the newly created matrices to the data object ---
+            data = Data(x=initial_features, y=labels, graph_obj=graph_obj,
+                        A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm)
             optimizer = optim.Adam(model.parameters(), lr=self.config.PROTGRAM_LR, weight_decay=self.config.PROTGRAM_WEIGHT_DECAY)
 
             self._train_single_level(model, graph_obj, data, optimizer, use_homo_hetero_paths_for_level)
 
             # --- FIX: Pass the trainer's data prep function to the extractor to avoid duplicated logic ---
+            # Also pass the newly created matrices to the data preparation function.
             prepare_func = partial(prepare_pyg_data_from_protgram_graph,
-                                   use_homo_hetero_paths=use_homo_hetero_paths_for_level)
+                                   use_homo_hetero_paths=use_homo_hetero_paths_for_level,
+                                   A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm)
             ngram_embeddings_per_level[n] = EmbeddingProcessor.extract_gcn_node_embeddings(
                 model, data, graph_obj, self.config, self.device,
                 prepare_data_func=prepare_func,
@@ -213,40 +229,13 @@ class ProtGramXGCNTrainer:
 
         return ngram_embeddings_per_level, hierarchical_attention_per_level
 
-    def _build_model(self, model_type: str, n_val: int, in_channels: int, num_classes: int, graph_obj: DirectedNgramGraph, use_homo_hetero_paths: bool) -> Optional[nn.Module]:
-        """Model factory for creating different GNN architectures."""
-        if num_classes <= 0:
-            num_classes = 1
-
-        if model_type == 'directgcn':
-            layer_dims = [in_channels] + self.config.DIRECTGCN_HIDDEN_LAYER_DIMS
-            return DirectGCN(
-                layer_dims=layer_dims, num_graph_nodes=graph_obj.number_of_nodes,
-                task_num_output_classes=num_classes,
-                n_gram_len=n_val,
-                use_homo_hetero_paths=use_homo_hetero_paths,
-                one_gram_dim=self.config.PROTGRAM_1GRAM_INIT_DIM, max_pe_len=self.config.PROTGRAM_MAX_PE_LEN,
-                dropout=self.config.PROTGRAM_DROPOUT_RATE, gating_mode=self.config.PROTGRAM_GATING_COEFF_MODE
-            )
-        elif model_type == 'rgcn':
-            return RGCN(in_channels=in_channels, hidden_channels=self.config.PROTGRAM_GNN_HIDDEN_CHANNELS,
-                        out_channels=num_classes, num_relations=2,
-                        num_layers=self.config.PROTGRAM_GNN_NUM_LAYERS, dropout_rate=self.config.PROTGRAM_DROPOUT_RATE)
-        elif model_type == 'tongdigcn':
-            return TongDiGCN(in_channels=in_channels, hidden_channels=self.config.PROTGRAM_GNN_HIDDEN_CHANNELS,
-                             out_channels=num_classes, num_layers=self.config.PROTGRAM_GNN_NUM_LAYERS,
-                             dropout_rate=self.config.PROTGRAM_DROPOUT_RATE)
-        else:
-            print(f"  ERROR: Unknown model type '{model_type}' for ProtGram training.")
-            return None
-
     def _train_single_level(self, model: nn.Module, graph_obj: DirectedNgramGraph, data: Data, optimizer: torch.optim.Optimizer, use_homo_hetero_paths: bool):
         """Orchestrates the training for a single level, choosing between full-batch and clustered training."""
         task_type = self.config.PROTGRAM_TASK_TYPES_PER_LEVEL.get(graph_obj.n_value, self.config.PROTGRAM_DEFAULT_TASK_TYPE)
 
         if self.config.PROTGRAM_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES:
             node_partitions = self._partition_graph(graph_obj)
-            self._train_single_level_clustered(model, data, node_partitions, optimizer, self.config.PROTGRAM_EPOCHS_PER_LEVEL, task_type, use_homo_hetero_paths)
+            self._train_single_level_clustered(model, data, node_partitions, optimizer, self.config.PROTGRAM_EPOCHS_PER_LEVEL, task_type)
         else:
             self._train_single_level_full_batch(model, data, optimizer, self.config.PROTGRAM_EPOCHS_PER_LEVEL, task_type, use_homo_hetero_paths)
 
@@ -255,7 +244,7 @@ class ProtGramXGCNTrainer:
         """Full-batch training logic for a single GNN level."""
         model.train()
         model.to(self.device)
-        # --- FIX: Use the centralized data preparation utility ---
+        # --- FIX: Use the centralized data preparation utility --- # noqa
         full_data_gpu = prepare_pyg_data_from_protgram_graph(
             model_type=model.__class__.__name__.lower(), graph=data.graph_obj,
             features=data.x, labels=data.y, use_homo_hetero_paths=use_homo_hetero_paths
@@ -302,8 +291,8 @@ class ProtGramXGCNTrainer:
                 print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
                 break
 
-    def _train_single_level_clustered(self, model: nn.Module, full_data: Data, node_partitions: List[List[int]],
-                                      optimizer: torch.optim.Optimizer, epochs: int, task_type: str):
+    # --- FIX: Add the 'use_homo_hetero_paths' parameter to prevent a TypeError ---
+    def _train_single_level_clustered(self, model: nn.Module, full_data: Data, node_partitions: List[List[int]], optimizer: torch.optim.Optimizer, epochs: int, task_type: str):
         """Clustered training logic for a single GNN level."""
         model.train()
         model.to(self.device)
@@ -432,52 +421,7 @@ class ProtGramXGCNTrainer:
             strategy=self.config.PROTGRAM_PROTEIN_POOLING_STRATEGY
         )
 
-    def _save_final_embeddings(self, embeddings_per_model: Dict[str, Dict[str, np.ndarray]]) -> Dict[str, str]:
-        """Saves final protein embeddings and their PCA versions to H5 files."""
-        output_paths = {}
-        for model_type, embeddings in embeddings_per_model.items():
-            if not embeddings:
-                print(f"  No embeddings generated for model '{model_type}'. Skipping save.")
-                continue
 
-            model_name = f"ProtGram{model_type.capitalize()}"
-            output_dir = self.config.RESULTS_GCN_EMBEDDINGS_DIR
-            output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / f"{model_name}.h5"
-
-            DataUtils.write_h5(embeddings, str(output_path), f"Writing H5 for {model_name}")
-            output_paths[model_name] = str(output_path)
-
-            # Apply PCA and save
-            pca_path = EmbeddingProcessor.apply_pca_to_h5(
-                input_h5_path=output_path,
-                output_dir=output_dir,
-                target_dimension=self.config.PCA_TARGET_DIMENSION,
-                random_seed=self.config.RANDOM_STATE
-            )
-            if str(pca_path) != str(output_path):
-                output_paths[f"{model_name}_pca"] = str(pca_path)
-
-        return output_paths
-
-    def _save_and_visualize_attention(self, attention_data: Dict[str, Dict[str, Any]]):
-        """Saves attention weights to JSON and generates plots."""
-        DataUtils.print_header("Saving and Visualizing Attention Weights")
-        reporter = EvaluationReporter(str(self.config.RESULTS_EVALUATION_DIR), self.config.EVAL_K_VALUES_FOR_TABLE)
-
-        for model_type, data in attention_data.items():
-            model_name = f"ProtGram{model_type.capitalize()}"
-            print(f"  Processing attention for {model_name}...")
-
-            if data.get("hierarchical"):
-                hier_path = self.config.RESULTS_EVALUATION_DIR / f"attention_hierarchical_{model_name}.json"
-                DataUtils.save_json(data["hierarchical"], str(hier_path))
-                reporter.generate_hierarchical_attention_plot(hier_path, model_name)
-
-            if data.get("protein_pooling"):
-                pool_path = self.config.RESULTS_EVALUATION_DIR / f"attention_pooling_{model_name}.json"
-                DataUtils.save_json(data["protein_pooling"], str(pool_path))
-                reporter.generate_pooling_attention_plot(pool_path, model_name)
 
     def _run_sanity_check_ppi(self, embedding_path: str):
         """Runs a quick, small-scale PPI evaluation as a sanity check."""

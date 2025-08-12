@@ -19,6 +19,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from scipy.stats import wilcoxon, pearsonr
+from source.utils.data import DataUtils
+
 
 # Conditionally import SHAP to avoid making it a hard dependency
 try:
@@ -244,8 +246,10 @@ class EvaluationReporter:
         which are the dimensions of the concatenated protein embeddings, not the
         n-grams themselves.
         """
+        # --- NEW: Check if SHAP is installed before proceeding ---
         if shap is None:
-            print("  SHAP library not installed. Skipping interpretability plot.")
+            print("  SHAP library not installed. Skipping SHAP summary generation.")
+            print("  To enable, please install it: pip install shap")
             return None
 
         plot_filename = self.plots_output_dir / f"shap_summary_{model_name.replace(' ', '_')}_Fold{fold_num}.png"
@@ -253,16 +257,20 @@ class EvaluationReporter:
 
         try:
             # SHAP works best with a sample of the background data
-            background_sample = shap.sample(background_data, 100)
-            explainer = shap.KernelExplainer(model.predict, background_sample)
-            shap_values = explainer.shap_values(background_sample)
+            background_sample = shap.sample(background_data, 100)  # Use a sample of 100 for the background
+
+            # --- REFACTOR: Use DeepExplainer for TensorFlow models ---
+            # DeepExplainer is significantly faster and optimized for deep learning models.
+            explainer = shap.DeepExplainer(model, background_sample)
+            shap_values = explainer.shap_values(background_sample)  # Explain the same sample
 
             # For a single-output model, shap_values is a list with one array.
             if isinstance(shap_values, list):
                 shap_values = shap_values[0]
 
             plt.figure()
-            shap.summary_plot(shap_values, background_sample, show=False, plot_type="bar")
+            # --- NEW: Limit the number of features displayed for clarity ---
+            shap.summary_plot(shap_values, background_sample, show=False, plot_type="bar", max_display=20)
             plt.title(f"SHAP Feature Importance\n({model_name} - Fold {fold_num})")
             plt.tight_layout()
             plt.savefig(plot_filename)

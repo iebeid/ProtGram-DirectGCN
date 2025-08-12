@@ -22,9 +22,7 @@ from tqdm.auto import tqdm
 from .data import DataUtils
 
 if TYPE_CHECKING:
-    from gensim.models import Word2Vec
-    from configuration.config import Config
-    from source.data_builders.graph import DirectedNgramGraph
+    pass
 
 
 class EarlyStopper:
@@ -254,10 +252,19 @@ class EmbeddingProcessor:
             if residue_embeddings.shape[0] > 1:
                 mean_vec = np.mean(residue_embeddings, axis=0, keepdims=True)
                 attention_scores = np.dot(residue_embeddings, mean_vec.T).flatten()
-                attention_weights = np.exp(attention_scores) / np.sum(np.exp(attention_scores))
+                # --- FIX: Use numerically stable softmax (subtract max score) ---
+                # This prevents overflow and is consistent with other attention implementations in this file.
+                exp_scores = np.exp(attention_scores - np.max(attention_scores))
+                attention_weights = exp_scores / np.sum(exp_scores)
                 return np.dot(attention_weights, residue_embeddings)
             return np.mean(residue_embeddings, axis=0) # Fallback for single-residue sequences
         return np.mean(residue_embeddings, axis=0)
+
+
+
+
+
+
 
     @staticmethod
     def pool_ngram_embeddings_for_protein_fast(protein_sequences: List[Tuple[str, str]], n_val: int,
@@ -320,9 +327,6 @@ class EmbeddingProcessor:
             return pooled_embeddings, {}
 
         elif strategy == 'attention':
-            # --- HYBRID METHOD for Attention ---
-            # We use an index to speed up the process, separating the slow n-gram lookup
-            # from the actual attention calculation.
             print("    Using hybrid method for attention pooling (pre-indexing n-grams).")
 
             # --- FIX: Initialize with zero-vectors to prevent KeyErrors for proteins with no n-grams ---
@@ -374,11 +378,7 @@ class EmbeddingProcessor:
 
                 pooled_embeddings[prot_id] = pooled_emb.astype(ngram_embeddings.dtype)
             return pooled_embeddings, attention_weights_log
-        else:
-            raise ValueError(f"Unknown pooling strategy: '{strategy}'")
-
-        print(f"  Pooling complete. Generated {len(pooled_embeddings)} protein embeddings.") # This line is now unreachable but kept for safety
-        return pooled_embeddings, {}
+        raise ValueError(f"Unknown pooling strategy: '{strategy}'")
 
     @staticmethod
     def extract_gcn_node_embeddings(model: nn.Module,

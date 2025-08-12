@@ -96,9 +96,18 @@ class Word2VecEmbedder:
 
         output_h5_path = self.config.RESULTS_W2V_EMBEDDINGS_DIR / f"word2vec_dim{self.config.W2V_VECTOR_SIZE}_{self.config.W2V_POOLING_STRATEGY}.h5"
         DataUtils.write_h5(protein_embeddings, output_h5_path, "Writing Word2Vec H5 File")
-        print(f"\nSUCCESS: Word2Vec embeddings saved to: {output_h5_path}")
+
+        # --- NEW: Apply PCA for consistency with other embedding pipelines ---
+        final_path = EmbeddingProcessor.apply_pca_to_h5(
+            input_h5_path=output_h5_path,
+            output_dir=self.config.RESULTS_W2V_EMBEDDINGS_DIR,
+            target_dimension=self.config.PCA_TARGET_DIMENSION,
+            random_seed=self.config.RANDOM_STATE
+        )
+
+        print(f"\nSUCCESS: Word2Vec embeddings processing complete. Final file: {final_path}")
 
         del w2v_model, corpus, protein_embeddings
         gc.collect()
         DataUtils.print_header("Word2Vec Embedding PIPELINE STEP FINISHED")
-        return str(output_h5_path)
+        return str(final_path)

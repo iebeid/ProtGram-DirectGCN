@@ -189,7 +189,7 @@ class Config:
         ]
         # List of GNN models to run in the benchmark suite.
         # Options: "GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "TongDiGCN", "DirectGCN"
-        self.BENCHMARK_GNN_MODELS_TO_RUN: List[str] = ["GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "TongDiGCN", "DirectGCN"]
+        self.BENCHMARK_GNN_MODELS_TO_RUN: List[str] = ["GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "DirGNN", "DirectGCN"]
         self.BENCHMARK_SAVE_EMBEDDINGS = True
         self.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS = True
         self.BENCHMARK_TEST_ON_UNDIRECTED = True
@@ -215,15 +215,16 @@ class Config:
         # --- NEW: Dedicated epochs for the GNN benchmark suite ---
         self.BENCHMARK_GNN_EPOCHS = 300
         self.BENCHMARK_RGCN_NUM_RELATIONS = 2
-        # --- NEW: Dedicated architecture for the benchmark DirectGCN model ---
-        self.BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS = [512, 256, 128, 64]
+        # --- FIX: Align DirectGCN's benchmark architecture with other GNNs for a fair comparison. ---
+        # It will now also be a 2-layer model with 64 hidden channels.
+        self.BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS = [self.BENCHMARK_GNN_HIDDEN_CHANNELS] * self.BENCHMARK_GNN_NUM_LAYERS
         # --- NEW: Dedicated initial feature dimension for benchmark models ---
         self.BENCHMARK_GNN_INIT_DIM = 64
 
     def _setup_gcn_params(self):
         """Sets parameters for the main ProtGram-DirectGCN pipeline."""
-        # --- ProtGram Graph Building ---
-        self.PROTGRAM_NGRAM_MAX_N = 4
+        # --- ProtGram Graph Building --- #FIXME: This parameter is not used anywhere.
+        self.PROTGRAM_NGRAM_MAX_N = 3
         # --- FIX: Safely handle os.cpu_count() returning None ---
         cpu_cores = os.cpu_count()
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
@@ -262,7 +263,7 @@ class Config:
         self.PROTGRAM_GATING_COEFF_MODE = "vector"
 
         # --- ProtGram Training Hyperparameters ---
-        self.PROTGRAM_EPOCHS_PER_LEVEL = 300
+        self.PROTGRAM_EPOCHS_PER_LEVEL = 50
         self.PROTGRAM_LR = 0.001
         self.PROTGRAM_DROPOUT_RATE = 0.5
         self.PROTGRAM_WEIGHT_DECAY = 1e-4 # Standard L2 regularization
@@ -274,10 +275,13 @@ class Config:
         self.PROTGRAM_EARLY_STOPPING_MIN_DELTA = 1e-5
 
         # --- ProtGram Self-Supervised Tasks ---
+        # --- FIX: Use 'community' for n=1 as 'masked_node' is unsolvable with random features ---
         self.PROTGRAM_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
-            1: "masked_node", 2: "masked_node", 3: "next_node", 4: "next_node"
+            1: "community", 2: "community", 3: "next_node", 4: "next_node"
         }
-        self.PROTGRAM_DEFAULT_TASK_TYPE: str = "masked_node"
+        self.PROTGRAM_DEFAULT_TASK_TYPE: str = "community"
+        # --- NEW: Make the homophily threshold a configurable parameter ---
+        self.GCN_HETEROPHILY_THRESHOLD: float = 0.6
         self.PROTGRAM_CLOSEST_AA_K_HOPS: int = 3
         self.PROTGRAM_MASKED_NODE_FRACTION: float = 0.15  # Fraction of nodes to mask for the masked_node task
 
@@ -319,7 +323,8 @@ class Config:
         # --- FIX: Safely handle os.cpu_count() returning None ---
         cpu_cores = os.cpu_count()
         self.W2V_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
-        self.W2V_POOLING_STRATEGY = 'mean'
+        self.W2V_POOLING_STRATEGY = 'mean' # Options: 'mean', 'sum', 'max'
+        self.APPLY_PCA_TO_W2V = True # Apply PCA to match other embedding dimensions
 
     def _setup_transformer_params(self):
         """Sets parameters for the Transformer (e.g., ProtBERT) pipeline."""
@@ -348,12 +353,12 @@ class Config:
 
     def _setup_singleton_eval_params(self):
         """Sets parameters for the rapid, n=1 GCN evaluation."""
-        self.SINGLETON_EVAL_EPOCHS = 500
+        self.SINGLETON_EVAL_EPOCHS = 50
         self.SINGLETON_EVAL_TEST_SPLIT = 0.2
         self.SINGLETON_EVAL_LR = 0.01
         # A list of models to test in the singleton evaluation.
         # Options: "GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "TongDiGCN", "DirectGCN"
-        self.SINGLETON_EVAL_MODELS_TO_RUN: List[str] = ["DirectGCN", "GCN", "RGCN", "TongDiGCN"]
+        self.SINGLETON_EVAL_MODELS_TO_RUN: List[str] = ["DirectGCN", "GCN", "RGCN", "DirGNN"]
         # --- NEW: Dedicated architecture parameters for the singleton evaluation ---
         self.SINGLETON_GNN_HIDDEN_CHANNELS = 64
         self.SINGLETON_GNN_NUM_LAYERS = 2
@@ -362,8 +367,9 @@ class Config:
         self.SINGLETON_GAT_DROPOUT_RATE = 0.5
         self.SINGLETON_CHEBNET_K = 3
         self.SINGLETON_RGCN_NUM_RELATIONS = 2
-        # --- NEW: Dedicated architecture for the singleton DirectGCN model ---
-        self.SINGLETON_DIRECTGCN_HIDDEN_LAYER_DIMS = [512, 256, 128, 64]
+        # --- FIX: Align DirectGCN's singleton architecture with other GNNs for a fair comparison. ---
+        # It will now also be a 2-layer model with 64 hidden channels.
+        self.SINGLETON_DIRECTGCN_HIDDEN_LAYER_DIMS = [self.SINGLETON_GNN_HIDDEN_CHANNELS] * self.SINGLETON_GNN_NUM_LAYERS
 
     def _setup_evaluation_params(self):
         """Sets parameters for the final PPI evaluation pipeline."""

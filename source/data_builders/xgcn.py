@@ -18,11 +18,10 @@ from tqdm.auto import tqdm
 from source.utils.data import FastaUtils
 
 if TYPE_CHECKING:
-    from configuration.config import Config
-    from source.data_builders.graph import DirectedNgramGraph
+    pass
 
 
-class XGCNDataset:
+class XGCNDataBuilder:
     """A class dedicated to generating labels for self-supervised tasks on graphs."""
 
     def __init__(self, config: 'Config'):

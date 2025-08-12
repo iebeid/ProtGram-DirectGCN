@@ -10,12 +10,11 @@ from typing import Optional, Dict, Any
 import torch.nn as nn
 
 from configuration.config import Config
-from source.data_builders.graph import DirectedNgramGraph
 from source.models.gnn.spectral.chebnet import ChebNet
 from source.models.gnn.spectral.directgcn import DirectGCN
 from source.models.gnn.spectral.gcn import GCN
 from source.models.gnn.spectral.rgcn import RGCN
-from source.models.gnn.spectral.tongidigcn import TongDiGCN
+from source.models.gnn.spectral.dirgnn import DirGNN
 from source.models.gnn.spatial.gat import GAT
 from source.models.gnn.spatial.gin import GIN
 from source.models.gnn.spatial.graphsage import GraphSAGE
@@ -93,7 +92,7 @@ class ModelFactory:
         if name_lower == 'gcn': return GCN(**model_params)
         if name_lower == 'graphsage': return GraphSAGE(**model_params)
         if name_lower == 'gin': return GIN(**model_params)
-        if name_lower == 'tongdigcn': return TongDiGCN(**model_params)
+        if name_lower == 'dirgnn': return DirGNN(**model_params)
         if name_lower == 'gat':
             return GAT(**model_params, heads=params['gat_heads'])
         if name_lower == 'chebnet':

@@ -40,16 +40,19 @@ class GCN(nn.Module):
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
         x, edge_index, edge_weight = data.x, data.edge_index, getattr(data, 'edge_attr', None)
 
-        for i, conv in enumerate(self.convs):
-            x = conv(x, edge_index, edge_weight=edge_weight)
-            if i < len(self.convs) - 1:
-                # The output of the last hidden layer is the embedding
-                self.embedding_output = x
-                x = F.relu(x)
-                x = F.dropout(x, p=self.dropout_rate, training=self.training)
-
-        # If single layer, embedding is the output
+        # For a single-layer model, the logits are also the embeddings.
         if len(self.convs) == 1:
-            self.embedding_output = x
+            logits = self.convs[0](x, edge_index, edge_weight=edge_weight)
+            self.embedding_output = logits
+            return logits, self.embedding_output
 
-        return x, self.embedding_output
+        # Process all but the final layer to generate embeddings.
+        for conv in self.convs[:-1]:
+            x = conv(x, edge_index, edge_weight=edge_weight)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout_rate, training=self.training)
+
+        self.embedding_output = x
+        logits = self.convs[-1](self.embedding_output, edge_index, edge_weight)
+
+        return logits, self.embedding_output

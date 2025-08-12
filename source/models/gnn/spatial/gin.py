@@ -81,11 +81,10 @@ class GIN(nn.Module):
         """
         x, edge_index = data.x, data.edge_index
 
-        # Handle the single-layer case
+        # --- FIX: Correctly handle the single-layer case ---
         if len(self.convs) == 1:
             logits = self.convs[0](x, edge_index)
-            # For a single-layer model, the logits are also the embeddings.
-            self.embedding_output = logits.clone() # Keep a detached copy
+            self.embedding_output = logits
             return logits, self.embedding_output
 
         # Process all but the final layer
@@ -94,10 +93,7 @@ class GIN(nn.Module):
             x = F.relu(x)  # Activation is applied *after* the GINConv
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
 
-        # The output of the last hidden layer is the embedding
-        self.embedding_output = x.clone() # Keep a detached copy
-
-        # Apply the final layer to get logits
+        self.embedding_output = x
         logits = self.convs[-1](self.embedding_output, edge_index)
 
         return logits, self.embedding_output

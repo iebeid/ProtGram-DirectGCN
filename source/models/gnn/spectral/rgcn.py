@@ -48,14 +48,12 @@ class RGCN(nn.Module):
 
         # Handle single-layer case
         if len(self.convs) == 1:
-            # --- FIX: Corrected a typo that would crash single-layer models. ---
-            # The original code had `self.convs0` which is invalid syntax.
+            # --- FIX: Corrected a typo that would crash single-layer models (`self.convs0`). ---
             logits = self.convs[0](x, edge_index, edge_type)
             self.embedding_output = logits
             return logits, self.embedding_output
 
         # Multi-layer case
-        # --- FIX: Correctly separate embedding generation from final logit calculation ---
         # Process all but the final layer
         for conv in self.convs[:-1]:
             x = conv(x, edge_index, edge_type)

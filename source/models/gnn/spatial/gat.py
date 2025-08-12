@@ -50,6 +50,13 @@ class GAT(nn.Module):
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
         x, edge_index = data.x, data.edge_index
 
+        # For a single-layer model, the logits are also the embeddings.
+        if len(self.convs) == 1:
+            logits = self.convs[0](x, edge_index)
+            self.embedding_output = logits
+            return logits, self.embedding_output
+
+        # Multi-layer case
         for conv in self.convs[:-1]:
             x = conv(x, edge_index)
             x = F.elu(x)

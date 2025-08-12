@@ -41,7 +41,7 @@ tf.get_logger().setLevel('WARNING')
 
 from configuration.config import Config
 from configuration.data import setup_data
-from source.data_builders.protgram import ProtGramBuilder
+from source.data_builders.protgram import ProtGramDataBuilder
 from source.benchmarkers.gnns import GNNBenchmarker
 from source.benchmarkers.nes import NetworkEmbeddingBenchmarker
 from source.experiments.ppi_1 import PPIPipeline
@@ -181,6 +181,14 @@ def _display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
         print("No benchmark results were generated to aggregate.")
         return
 
+    # --- FIX: Ensure the full table is always displayed without truncation ---
+    # This prevents pandas from hiding columns or rows in a wide/long summary.
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', 200)  # Set a generous width for the console
+    pd.set_option('display.max_colwidth', None)
+    # --- END FIX ---
+
     try:
         # Concatenate all collected DataFrames
         final_summary_df = pd.concat(all_results, ignore_index=True)
@@ -210,7 +218,7 @@ def _display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
         # This order reflects a logical grouping (e.g., standard GNNs, custom GNNs, NE models)
         model_order = [
             "GAT", "GraphSAGE", "GIN", "ChebNet", "Node2Vec", "GCN",
-            "RGCN", "TongDiGCN", "DirectGCN"
+            "RGCN", "DirGNN", "DirectGCN"
         ]
 
         final_summary_df['dataset_group'] = final_summary_df['dataset'].apply(get_group_name)
@@ -261,13 +269,13 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
         singleton_config = copy.deepcopy(config)
         singleton_config.PROTGRAM_NGRAM_MAX_N = 1
         # This will build the n=1 graph or skip if it already exists.
-        ProtGramBuilder(singleton_config).run()
+        ProtGramDataBuilder(singleton_config).run()
 
         # Now, explicitly load the graph and run the evaluation.
         n1_graph_path = singleton_config.RESULTS_GRAPH_OBJECTS_DIR / "ngram_graph_n1.pkl"
         if n1_graph_path.exists():
             print("  n=1 graph found. Proceeding with singleton evaluation...")
-            from source.data_builders.graph import DirectedNgramGraph
+            from source.data_structures.graph import DirectedNgramGraph
             from source.trainers.singleton_xgcn import SingletonXGCNTrainer
             n1_graph: DirectedNgramGraph = DataUtils.load_object(str(n1_graph_path))
             if n1_graph:
@@ -385,7 +393,7 @@ def main():
                         # If the user proceeds, we must now build the FULL set of graphs (n=1 to 3)
                         # before running the main embedding pipelines.
                         DataUtils.print_header("Building all n-gram graphs for the main pipeline")
-                        ProtGramBuilder(config).run(run_singleton_eval=False)  # Re-run, but skip the now-redundant eval
+                        ProtGramDataBuilder(config).run()  # Re-run, which will skip any existing graphs.
 
                         generated_embedding_files = _run_main_embedding_pipelines(config)
                         final_evaluation_list = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_embedding_files

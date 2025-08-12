@@ -63,6 +63,9 @@ class DirectGCNLayer(MessagePassing):
         self.bias_shared_in = nn.Parameter(torch.Tensor(out_channels))
         self.bias_shared_out = nn.Parameter(torch.Tensor(out_channels))
         self.bias_shared_undir = nn.Parameter(torch.Tensor(out_channels))
+        if self.use_homo_hetero_paths:
+            self.bias_shared_homo = nn.Parameter(torch.Tensor(out_channels))
+            self.bias_shared_hetero = nn.Parameter(torch.Tensor(out_channels))
 
         # --- Hierarchical Learnable Gating Coefficients ---
         if self.gating_mode in ['vector', 'node_gate_vector'] and self.num_nodes > 0:
@@ -98,7 +101,7 @@ class DirectGCNLayer(MessagePassing):
 
         # Always initialize these
         layers_to_init.extend([self.lin_undirected, self.lin_shared, self.proj_in, self.proj_out, self.proj_undir])
-        biases_to_init.extend([self.bias_undirected, self.bias_shared_in, self.bias_shared_out, self.bias_shared_undir])
+        biases_to_init.extend([self.bias_undirected, self.bias_shared_in, self.bias_shared_out, self.bias_shared_undir, self.bias_shared_homo, self.bias_shared_hetero])
         # --- NEW: Add new layers to the initialization lists ---
         if self.use_homo_hetero_paths:
             layers_to_init.extend([self.lin_homo, self.lin_hetero, self.proj_homo, self.proj_hetero])
@@ -113,24 +116,24 @@ class DirectGCNLayer(MessagePassing):
             nn.init.zeros_(bias)
 
         if self.gating_mode in ['vector', 'node_gate_vector'] and hasattr(self, 'C_in_vec'):
-            nn.init.ones_(self.C_in_vec)
-            nn.init.ones_(self.C_out_vec)
-            nn.init.ones_(self.C_undirected_vec)
+            nn.init.xavier_uniform_(self.C_in_vec)
+            nn.init.xavier_uniform_(self.C_out_vec)
+            nn.init.xavier_uniform_(self.C_undirected_vec)
             # --- NEW: Initialize new gating vectors ---
             if self.use_homo_hetero_paths:
-                nn.init.ones_(self.C_homo_vec)
-                nn.init.ones_(self.C_hetero_vec)
+                nn.init.xavier_uniform_(self.C_homo_vec)
+                nn.init.xavier_uniform_(self.C_hetero_vec)
         elif self.gating_mode == 'scalar':
-            nn.init.ones_(self.C_in)
-            nn.init.ones_(self.C_out)
-            nn.init.ones_(self.C_undirected)
+            nn.init.xavier_uniform_(self.C_in)
+            nn.init.xavier_uniform_(self.C_out)
+            nn.init.xavier_uniform_(self.C_undirected)
             # --- NEW: Initialize new gating scalars ---
             if self.use_homo_hetero_paths:
-                nn.init.ones_(self.C_homo)
-                nn.init.ones_(self.C_hetero)
+                nn.init.xavier_uniform_(self.C_homo)
+                nn.init.xavier_uniform_(self.C_hetero)
 
         if self.constant is not None:
-            # --- FIX: Initialize bias-like constant to zeros for stability ---
+            # --- FIX: Initialize bias-like constant to zeros for better stability ---
             nn.init.zeros_(self.constant)
 
     def forward(self, x: torch.Tensor, data: Data) -> torch.Tensor:
@@ -156,8 +159,8 @@ class DirectGCNLayer(MessagePassing):
             h_homo = self.propagate(data.edge_index_homo_norm, x=self.lin_homo(x), edge_weight=data.edge_weight_homo_norm) + self.bias_homo
             h_hetero = self.propagate(data.edge_index_hetero_norm, x=self.lin_hetero(x), edge_weight=data.edge_weight_hetero_norm) + self.bias_hetero
             # Note: using bias_shared_undir for both as they are undirected views
-            path_combinations.append(self.proj_homo(torch.cat([h_homo, h_shared + self.bias_shared_undir], dim=-1)))
-            path_combinations.append(self.proj_hetero(torch.cat([h_hetero, h_shared + self.bias_shared_undir], dim=-1)))
+            path_combinations.append(self.proj_homo(torch.cat([h_homo, h_shared + self.bias_shared_homo], dim=-1)))
+            path_combinations.append(self.proj_hetero(torch.cat([h_hetero, h_shared + self.bias_shared_hetero], dim=-1)))
 
         # --- 3. Get Gating Coefficients and combine paths ---
         if self.gating_mode == 'none':
@@ -291,7 +294,7 @@ class DirectGCN(nn.Module):
 
         final_embed_for_task = h
         self.embedding_output = final_embed_for_task  # For consistency with other models
-        logits = self.decoder_fc(final_embed_for_task)
+        logits = self.decoder_fc(self.embedding_output)
         final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
-        # --- BUG FIX: Return the L2-normalized embeddings, not the raw pre-normalized ones ---
-        return logits, final_normalized_embeddings
+        # --- BUG FIX: Return the L2-normalized embeddings, not the raw pre-normalized ones. ---
+        return logits, final_normalized_embeddings.detach()

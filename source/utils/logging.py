@@ -2,7 +2,7 @@
 # MODULE: utils/logging.py
 # PURPOSE: Provides a class-based utility to redirect stdout/stderr to a log file.
 # VERSION: 2.0 (Corrected path handling and context management)
-# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import sys

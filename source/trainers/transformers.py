@@ -8,12 +8,14 @@
 
 import gc
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import List, Dict, Mapping, Optional, Tuple
 
 import numpy as np
 import tensorflow as tf
 from tqdm.auto import tqdm
+import mlflow
 from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
 
 from configuration.config import Config
@@ -175,51 +177,71 @@ class TransformerEmbedder:
         self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
         generated_paths = {}
 
-        if tf.config.list_physical_devices('GPU'):
-            print("  TensorFlow: GPU available.")
-        else:
-            print("  TensorFlow: No GPU detected. Using CPU.")
+        # --- NEW: Create a parent MLflow run for the entire Transformer pipeline ---
+        mlflow_active = self.config.USE_MLFLOW
+        run_context = mlflow.start_run(run_name="Transformer_Embedding_Pipeline") if mlflow_active else nullcontext()
 
-        id_map = DataUtils.get_id_mapping(self.config)
-
-        # Initialize a dictionary to hold the aggregated embeddings for each model.
-        final_embeddings_per_model = {
-            model_config['name']: {} for model_config in self.config.TRANSFORMER_MODELS_TO_RUN
-        }
-
-        # --- Main Efficient Loop ---
-        # This loop reads the FASTA file only ONCE.
-        chunk_size = getattr(self.config, 'TRANSFORMER_CHUNK_SIZE', 10000)
-        sequence_iterator = FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS)
-        chunk_num = 0
-        while True:
-            chunk_num += 1
-            # Read one chunk of sequences into memory
-            chunk = [item for _, item in zip(range(chunk_size), sequence_iterator)]
-            if not chunk:
-                break
-
-            DataUtils.print_header(f"Processing Sequence Chunk {chunk_num} ({len(chunk)} sequences)")
-
-            # Iterate through each configured model and process the SAME chunk
-            for model_config_item in self.config.TRANSFORMER_MODELS_TO_RUN:
-                model_name = model_config_item['name']
-                chunk_embeddings = self._generate_embeddings_for_single_model(model_config_item, chunk, id_map)
-                if chunk_embeddings:
-                    final_embeddings_per_model[model_name].update(chunk_embeddings)
-
-        # --- Save final results after all chunks have been processed ---
-        DataUtils.print_header("Saving All Transformer Embeddings")
-        for model_name, embeddings_dict in final_embeddings_per_model.items():
-            if embeddings_dict:
-                embedding_dim = next(iter(embeddings_dict.values())).shape[0]
-                output_filename = f"{model_name}_{self.config.TRANSFORMER_POOLING_STRATEGY}_dim{embedding_dim}.h5"
-                output_path = self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR / output_filename
-                print(f"  Saving final aggregated embeddings for {model_name}...")
-                DataUtils.write_h5(embeddings_dict, output_path, f"Writing H5 for {model_name}")
-                generated_paths[model_name] = output_path
+        with run_context:
+            if tf.config.list_physical_devices('GPU'):
+                print("  TensorFlow: GPU available.")
             else:
-                print(f"  No embeddings were generated for {model_name}. Skipping save.")
+                print("  TensorFlow: No GPU detected. Using CPU.")
+
+            id_map = DataUtils.get_id_mapping(self.config)
+
+            # Initialize a dictionary to hold the aggregated embeddings for each model.
+            final_embeddings_per_model = {
+                model_config['name']: {} for model_config in self.config.TRANSFORMER_MODELS_TO_RUN
+            }
+
+            # --- Main Efficient Loop ---
+            # This loop reads the FASTA file only ONCE.
+            chunk_size = getattr(self.config, 'TRANSFORMER_CHUNK_SIZE', 10000)
+            sequence_iterator = FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS)
+            chunk_num = 0
+            while True:
+                chunk_num += 1
+                # Read one chunk of sequences into memory
+                chunk = [item for _, item in zip(range(chunk_size), sequence_iterator)]
+                if not chunk:
+                    break
+
+                DataUtils.print_header(f"Processing Sequence Chunk {chunk_num} ({len(chunk)} sequences)")
+
+                # Iterate through each configured model and process the SAME chunk
+                for model_config_item in self.config.TRANSFORMER_MODELS_TO_RUN:
+                    model_name = model_config_item['name']
+                    chunk_embeddings = self._generate_embeddings_for_single_model(model_config_item, chunk, id_map)
+                    if chunk_embeddings:
+                        final_embeddings_per_model[model_name].update(chunk_embeddings)
+
+            # --- Save final results after all chunks have been processed ---
+            DataUtils.print_header("Saving All Transformer Embeddings")
+            model_configs_by_name = {mc['name']: mc for mc in self.config.TRANSFORMER_MODELS_TO_RUN}
+            for model_name, embeddings_dict in final_embeddings_per_model.items():
+                if embeddings_dict:
+                    # --- NEW: Create a nested MLflow run for this specific model ---
+                    nested_run_context = mlflow.start_run(run_name=model_name, nested=True) if mlflow_active else nullcontext()
+                    with nested_run_context:
+                        model_config = model_configs_by_name.get(model_name)
+                        if mlflow_active and model_config:
+                            mlflow.log_params({
+                                "hf_id": model_config['hf_id'],
+                                "is_t5": model_config['is_t5'],
+                                "pooling_strategy": self.config.TRANSFORMER_POOLING_STRATEGY
+                            })
+
+                        embedding_dim = next(iter(embeddings_dict.values())).shape[0]
+                        output_filename = f"{model_name}_{self.config.TRANSFORMER_POOLING_STRATEGY}_dim{embedding_dim}.h5"
+                        output_path = self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR / output_filename
+                        print(f"  Saving final aggregated embeddings for {model_name}...")
+                        DataUtils.write_h5(embeddings_dict, output_path, f"Writing H5 for {model_name}")
+                        generated_paths[model_name] = output_path
+
+                        if mlflow_active:
+                            mlflow.log_artifact(str(output_path), "final_embeddings")
+                else:
+                    print(f"  No embeddings were generated for {model_name}. Skipping save.")
 
         DataUtils.print_header("Transformer Embedding PIPELINE STEP FINISHED")
         return generated_paths
