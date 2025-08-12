@@ -132,10 +132,13 @@ class DirectedGraph:
 
         dev = A_w_torch_sparse.device
         row_sum = torch.sparse.sum(A_w_torch_sparse, dim=1).to_dense()
-        D_inv_diag_vals = torch.zeros_like(row_sum, dtype=torch.float32, device=dev)
-        non_zero_degrees_mask = row_sum != 0
+        # --- FIX: Add clamping for numerical stability, mirroring the main graph class ---
+        # This prevents division by tiny numbers on sparse graphs, which can cause NaNs or performance drops.
+        row_sum_clamped = torch.clamp(row_sum, min=1e-9)
+        D_inv_diag_vals = torch.zeros_like(row_sum_clamped, dtype=torch.float32, device=dev)
+        non_zero_degrees_mask = row_sum_clamped != 0
         if torch.any(non_zero_degrees_mask):
-            D_inv_diag_vals[non_zero_degrees_mask] = 1.0 / row_sum[non_zero_degrees_mask]
+            D_inv_diag_vals[non_zero_degrees_mask] = 1.0 / row_sum_clamped[non_zero_degrees_mask]
 
         A_w_indices = A_w_torch_sparse.indices()
         A_w_values = A_w_torch_sparse.values()

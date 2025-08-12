@@ -403,7 +403,10 @@ class EmbeddingProcessor:
                     model_type=model.__class__.__name__.lower(),
                     full_features=full_data.x,
                     full_labels=full_data.y,
-                    node_subset=nodes_tensor
+                    node_subset=nodes_tensor,
+                    # --- DEFINITIVE FIX: Pass the homophily/heterophily matrices to the subgraph creator ---
+                    A_homo_norm=getattr(full_data, 'A_homo_norm', None),
+                    A_hetero_norm=getattr(full_data, 'A_hetero_norm', None)
                 ).to(device)
 
                 with torch.no_grad():
