@@ -455,7 +455,7 @@ class EmbeddingProcessor:
         hierarchical_attention_log: Dict[str, Dict[str, float]] = {}
         initial_features = np.zeros((num_nodes, embedding_dim), dtype=np.float32)
 
-        for node_idx, ngram_str in tqdm(graph_obj.nodes.items(), desc=f"  Initializing n={n_val} features", leave=False):
+        for node_idx, ngram_str in tqdm(graph_obj.idx_to_node.items(), desc=f"  Initializing n={n_val} features", leave=False):
             # An n-gram has two (n-1)-gram parents
             parent1_str = ngram_str[:-1]
             parent2_str = ngram_str[1:]
