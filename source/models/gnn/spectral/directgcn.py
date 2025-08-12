@@ -101,11 +101,13 @@ class DirectGCNLayer(MessagePassing):
 
         # Always initialize these
         layers_to_init.extend([self.lin_undirected, self.lin_shared, self.proj_in, self.proj_out, self.proj_undir])
-        biases_to_init.extend([self.bias_undirected, self.bias_shared_in, self.bias_shared_out, self.bias_shared_undir, self.bias_shared_homo, self.bias_shared_hetero])
+        # --- FIX: Move conditional bias initializations into the conditional block ---
+        biases_to_init.extend([self.bias_undirected, self.bias_shared_in, self.bias_shared_out, self.bias_shared_undir])
         # --- NEW: Add new layers to the initialization lists ---
         if self.use_homo_hetero_paths:
             layers_to_init.extend([self.lin_homo, self.lin_hetero, self.proj_homo, self.proj_hetero])
-            biases_to_init.extend([self.bias_homo, self.bias_hetero])
+            # --- FIX: Add the corresponding biases here ---
+            biases_to_init.extend([self.bias_homo, self.bias_hetero, self.bias_shared_homo, self.bias_shared_hetero])
 
         for lin in layers_to_init:
             nn.init.xavier_uniform_(lin.weight)
