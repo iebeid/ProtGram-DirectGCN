@@ -18,9 +18,6 @@ from sklearn.preprocessing import StandardScaler
 from torch_geometric.data import Data
 from tqdm.auto import tqdm
 
-# Local imports are safe here as this is a core utility module
-from .data import DataUtils
-
 if TYPE_CHECKING:
     pass
 
@@ -169,6 +166,9 @@ class EmbeddingProcessor:
         Returns:
             Path: The path to the newly created HDF5 file, or the original path on failure.
         """
+        # --- DEFINITIVE FIX: Use a local import to break the circular dependency with data.py ---
+        from .data import DataUtils
+
         print(f"Applying PCA to file: '{input_h5_path.name}'. Target dimension: {target_dimension}")
         output_dir.mkdir(parents=True, exist_ok=True)
         # --- FIX: Use a more robust and specific suffix for PCA files ---
