@@ -53,19 +53,16 @@ class DirGNN(nn.Module):
         The forward pass for the DirGNN model.
         """
         x, edge_index = data.x, data.edge_index
-        edge_index_backward = getattr(data, 'edge_index_backward', None)
-        if edge_index_backward is None:
-            raise ValueError("DirGNN requires 'edge_index_backward' in the Data object.")
 
         for i in range(len(self.convs) - 1):
-            # --- FIX: Pass the backward edge index as a keyword argument to match the expected API ---
-            x = self.convs[i](x, edge_index, edge_index_bar=edge_index_backward)
+            # --- FIX: Simplify the call. The DirGNNConv layer handles directionality internally. ---
+            x = self.convs[i](x, edge_index)
             if i < len(self.norms):
                 x = self.norms[i](x)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
 
         self.embedding_output = x
-        logits = self.convs[-1](x, edge_index, edge_index_bar=edge_index_backward)
+        logits = self.convs[-1](self.embedding_output, edge_index)
 
         return logits, self.embedding_output

@@ -160,6 +160,11 @@ echo "INFO: If validation fails, you may be prompted to run the setup again."
 # that were installed by Conda. This resolves the "Cannot dlopen" errors at runtime.
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 
+# --- NEW FIX for HDF5 File Locking Issues ---
+# On some network filesystems (like NFS), file locking can cause errors.
+# This environment variable disables it for the HDF5 library.
+export HDF5_USE_FILE_LOCKING=FALSE
+
 # --- DEFINITIVE FIX for Reproducibility: Configure CUDA workspace ---
 # This environment variable is required by `torch.use_deterministic_algorithms(True)`
 # to ensure that operations like `index_add` (used by PyG's scatter_add) are deterministic.
