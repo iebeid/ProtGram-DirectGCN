@@ -690,7 +690,9 @@ class ProtgramDaskHelpers:
                     yield f"{source_id} {target_id}"
 
 def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramGraph', features: torch.Tensor,
-                                         labels: Optional[torch.Tensor], use_homo_hetero_paths: bool) -> Data:
+                                         labels: Optional[torch.Tensor], use_homo_hetero_paths: bool,
+                                         A_homo_norm: Optional[torch.Tensor] = None,
+                                         A_hetero_norm: Optional[torch.Tensor] = None) -> Data:
     """
     A centralized utility to prepare a PyG Data object from a DirectedNgramGraph,
     tailored to the specific model's needs. This eliminates duplicated logic
@@ -711,11 +713,11 @@ def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramG
             'edge_weight_mathcal_out': graph.mathcal_A_out.values()
         })
         # Conditionally add the NORMALIZED homophily/heterophily paths.
-        if use_homo_hetero_paths and graph.A_homo_w is not None and graph.A_hetero_w is not None:
+        if use_homo_hetero_paths and A_homo_norm is not None and A_hetero_norm is not None:
             print("  Preparing data with normalized homophily/heterophily paths...")
             data_dict.update({
-                'edge_index_homo_norm': graph.A_homo_norm.indices(), 'edge_weight_homo_norm': graph.A_homo_norm.values(),
-                'edge_index_hetero_norm': graph.A_hetero_norm.indices(), 'edge_weight_hetero_norm': graph.A_hetero_norm.values()
+                'edge_index_homo_norm': A_homo_norm.indices(), 'edge_weight_homo_norm': A_homo_norm.values(),
+                'edge_index_hetero_norm': A_hetero_norm.indices(), 'edge_weight_hetero_norm': A_hetero_norm.values()
             })
 
     elif model_name_lower == 'rgcn':

@@ -99,10 +99,13 @@ class SingletonXGCNTrainer:
             print(f"\n--- Evaluating Singleton Model: {model_name} ---")
 
             # Determine if this model run should use the specialized paths
+            A_homo_norm, A_hetero_norm = None, None
             use_homo_hetero_for_this_model = is_heterophilic if model_name.lower() == 'directgcn' else False
             if use_homo_hetero_for_this_model and labels is not None:
                 print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.")
-                self.graph.split_edges_by_homophily(labels)
+                split_result = self.graph.split_edges_by_homophily(labels)
+                if split_result:
+                    A_homo_norm, A_hetero_norm = split_result
 
             model = self.model_factory.create_model(
                 model_name=model_name, in_channels=initial_features.shape[1], num_classes=num_classes,
@@ -117,7 +120,8 @@ class SingletonXGCNTrainer:
             # Use the centralized, correct data preparation utility
             data_for_model = prepare_pyg_data_from_protgram_graph(
                 model_type=model_name, graph=self.graph, features=initial_features, labels=y_for_stratify,
-                use_homo_hetero_paths=use_homo_hetero_for_this_model
+                use_homo_hetero_paths=use_homo_hetero_for_this_model,
+                A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
             )
             # Training Loop
             for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
@@ -133,7 +137,8 @@ class SingletonXGCNTrainer:
                         print(f"  Created Masked Node Prediction task for training: Masked {len(masked_indices)} nodes.")
                     epoch_data = prepare_pyg_data_from_protgram_graph(
                         model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
-                        use_homo_hetero_paths=use_homo_hetero_for_this_model
+                        use_homo_hetero_paths=use_homo_hetero_for_this_model,
+                        A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
                     ).to(self.device)
                     logits, _ = model(epoch_data)
                     loss = F.cross_entropy(logits[masked_indices], original_node_ids.to(self.device))
@@ -163,7 +168,8 @@ class SingletonXGCNTrainer:
                     print(f"  Created Masked Node Prediction task for evaluation: Masked {len(masked_indices)} test nodes.")
                     eval_data = prepare_pyg_data_from_protgram_graph(
                         model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
-                        use_homo_hetero_paths=use_homo_hetero_for_this_model
+                        use_homo_hetero_paths=use_homo_hetero_for_this_model,
+                        A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
                     ).to(self.device)
                     logits, _ = model(eval_data)
                     preds = logits[masked_indices].argmax(dim=-1)
