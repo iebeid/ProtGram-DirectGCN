@@ -98,24 +98,24 @@ class TransformerEmbedder:
             else:
                 raise e # Re-raise other OSErrors (e.g., network issues)
 
-            inference_func = self._get_model_inference_function(
-                model, hf_id, is_t5, self.config.USE_XLA_COMPILATION)
+        inference_func = self._get_model_inference_function(
+            model, hf_id, is_t5, self.config.USE_XLA_COMPILATION)
 
-            if hasattr(model.config, 'hidden_size'):
-                embedding_dim = model.config.hidden_size
-            elif hasattr(model.config, 'd_model'):
-                embedding_dim = model.config.d_model
-            else:
-                embedding_dim = 0
-                print("  Warning: Could not determine embedding dimension from model config.")
+        if hasattr(model.config, 'hidden_size'):
+            embedding_dim = model.config.hidden_size
+        elif hasattr(model.config, 'd_model'):
+            embedding_dim = model.config.d_model
+        else:
+            embedding_dim = 0
+            print("  Warning: Could not determine embedding dimension from model config.")
 
-            print(f"  Model and tokenizer loaded in {time.time() - model_load_start_time:.2f}s. Embedding dim: {embedding_dim}")
-            return model, tokenizer, inference_func, embedding_dim
+        print(f"  Model and tokenizer loaded in {time.time() - model_load_start_time:.2f}s. Embedding dim: {embedding_dim}")
+        return model, tokenizer, inference_func, embedding_dim
 
-        except Exception as e:
-            print(f"\nFATAL ERROR during model loading for {model_name}: {e}")
-            traceback.print_exc()
-            return None, None, None, 0
+    except Exception as e:
+        print(f"\nFATAL ERROR during model loading for {model_name}: {e}")
+        traceback.print_exc()
+        return None, None, None, 0
 
     def run(self) -> Dict[str, Path]:
         """
