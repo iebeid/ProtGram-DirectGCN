@@ -2,8 +2,8 @@
 # MODULE: trainers/transformers.py
 # PURPOSE: Generates per-protein embeddings using pre-trained Transformer
 #          models from Hugging Face.
-# VERSION: 5.0 (Refactored for efficiency and correctness)
-# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
+# VERSION: 6.0 (Definitively fixed model loading logic and syntax)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import gc
@@ -11,12 +11,11 @@ import time
 import traceback
 from contextlib import nullcontext
 from pathlib import Path
-from typing import List, Dict, Mapping, Optional, Tuple, Any
+from typing import Dict, Optional, Tuple, Any
 
-import numpy as np
+import mlflow
 import tensorflow as tf
 from tqdm.auto import tqdm
-import mlflow
 from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
 
 from configuration.config import Config
@@ -35,7 +34,6 @@ class TransformerEmbedder:
         is_esm_model = 'esm' in hf_id.lower()
         print(f"  Creating inference function (is_t5={is_t5}, is_esm={is_esm_model}, use_xla={use_xla})...")
 
-        # --- FIX: Add reduce_retracing=True to prevent excessive and slow re-compilations for variable sequence lengths ---
         @tf.function(reduce_retracing=True)
         def model_call(inputs_dict_tf):
             if is_t5:
@@ -71,7 +69,7 @@ class TransformerEmbedder:
     def _load_transformer_model(self, model_config_item: Dict) -> Tuple[Optional[tf.keras.Model], Optional[Any], Optional[tf.types.experimental.GenericFunction], int]:
         """
         Loads a single transformer model, tokenizer, and creates an inference function.
-        This helper centralizes the model loading logic.
+        This helper centralizes the model loading logic with robust error handling.
         """
         model_name = model_config_item["name"]
         hf_id = model_config_item["hf_id"]
@@ -81,41 +79,46 @@ class TransformerEmbedder:
         model_load_start_time = time.time()
 
         try:
+            # Load tokenizer first
             tokenizer_class = T5Tokenizer if is_t5 else AutoTokenizer
             tokenizer = tokenizer_class.from_pretrained(hf_id)
 
-        # --- DEFINITIVE FIX for model loading and memory issues ---
-        # First, try to load the native TensorFlow model. This is the most memory-efficient.
-        try:
-            print("  Attempting to load native TensorFlow weights...")
-            model = TFAutoModel.from_pretrained(hf_id)
-        except OSError as e:
-            # If native TF weights are not found, the library helpfully tells us to use `from_pt=True`.
-            if "from_pt=True" in str(e):
-                print("  Native TF weights not found. Falling back to loading from PyTorch weights (`from_pt=True`).")
-                print("  NOTE: This can be memory-intensive for large models and may fail on systems with limited RAM.")
-                model = TFAutoModel.from_pretrained(hf_id, from_pt=True)
+            # Now, load the model with the robust try-except logic
+            model = None
+            try:
+                print("  Attempting to load native TensorFlow weights...")
+                model = TFAutoModel.from_pretrained(hf_id)
+            except OSError as e:
+                if "from_pt=True" in str(e):
+                    print("  Native TF weights not found. Falling back to loading from PyTorch weights (`from_pt=True`).")
+                    print("  NOTE: This can be memory-intensive for large models and may fail on systems with limited RAM.")
+                    model = TFAutoModel.from_pretrained(hf_id, from_pt=True)
+                else:
+                    raise e  # Re-raise other OSErrors
+
+            if model is None:
+                raise RuntimeError("Model could not be loaded either from TF native or PyTorch weights.")
+
+            # If model loading was successful, proceed
+            inference_func = self._get_model_inference_function(
+                model, hf_id, is_t5, self.config.USE_XLA_COMPILATION)
+
+            if hasattr(model.config, 'hidden_size'):
+                embedding_dim = model.config.hidden_size
+            elif hasattr(model.config, 'd_model'):
+                embedding_dim = model.config.d_model
             else:
-                raise e # Re-raise other OSErrors (e.g., network issues)
+                embedding_dim = 0
+                print("  Warning: Could not determine embedding dimension from model config.")
 
-        inference_func = self._get_model_inference_function(
-            model, hf_id, is_t5, self.config.USE_XLA_COMPILATION)
+            print(f"  Model and tokenizer loaded in {time.time() - model_load_start_time:.2f}s. Embedding dim: {embedding_dim}")
+            return model, tokenizer, inference_func, embedding_dim
 
-        if hasattr(model.config, 'hidden_size'):
-            embedding_dim = model.config.hidden_size
-        elif hasattr(model.config, 'd_model'):
-            embedding_dim = model.config.d_model
-        else:
-            embedding_dim = 0
-            print("  Warning: Could not determine embedding dimension from model config.")
-
-        print(f"  Model and tokenizer loaded in {time.time() - model_load_start_time:.2f}s. Embedding dim: {embedding_dim}")
-        return model, tokenizer, inference_func, embedding_dim
-
-    except Exception as e:
-        print(f"\nFATAL ERROR during model loading for {model_name}: {e}")
-        traceback.print_exc()
-        return None, None, None, 0
+        except Exception as e:
+            # This is the single, outer catch-all for any failure in the loading process.
+            print(f"\nFATAL ERROR during model loading for {model_name}: {e}")
+            traceback.print_exc()
+            return None, None, None, 0
 
     def run(self) -> Dict[str, Path]:
         """
