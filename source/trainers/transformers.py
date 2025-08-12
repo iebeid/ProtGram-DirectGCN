@@ -83,7 +83,7 @@ class TransformerEmbedder:
         try:
             tokenizer_class = T5Tokenizer if is_t5 else AutoTokenizer
             tokenizer = tokenizer_class.from_pretrained(hf_id)
-            model = TFAutoModel.from_pretrained(hf_id, from_pt=True)
+            model = TFAutoModel.from_pretrained(hf_id)
 
             inference_func = self._get_model_inference_function(
                 model, hf_id, is_t5, self.config.USE_XLA_COMPILATION)
