@@ -31,7 +31,7 @@ from source.experiments.ppi_1 import PPIPipeline
 from source.models.fnn.mlp import MLP
 from source.trainers.transformers import TransformerEmbedder
 from source.trainers.word2vec import Word2VecEmbedder
-from source.utils.data import DataUtils, IDMapGenerator
+from source.utils.data import DataUtils, IDMapGenerator, ModelProcessor
 from source.utils.post import EmbeddingLoader
 from source.utils.results import EvaluationReporter
 
@@ -623,6 +623,15 @@ def test_transformer_embedder_pipeline_run():
     original_base_output_dir = config.BASE_OUTPUT_DIR
     config.BASE_OUTPUT_DIR = base_test_dir
     config._setup_paths()  # Re-initialize all paths based on the new temporary base
+
+    # --- FIX: Make the test self-sufficient by running the model conversion first ---
+    # This ensures the test doesn't depend on a prior run of the main pipeline.
+    # We point the model output to a temporary directory for isolation.
+    temp_model_dir = base_test_dir / "models"
+    config.DATA_MODELS_DIR = temp_model_dir
+    print(f"  Smoke Test: Pre-converting models to temporary directory: {temp_model_dir}")
+    for model_cfg in config.TRANSFORMER_MODELS_TO_RUN:
+        ModelProcessor.convert_and_save_model(model_cfg['hf_id'], temp_model_dir)
 
     try:
         # Override with temporary test settings
