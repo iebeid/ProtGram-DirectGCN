@@ -702,12 +702,13 @@ class ProtgramDaskHelpers:
         data_dict: Dict[str, Any] = {'x': features, 'y': labels, 'graph_obj': graph}
         model_name_lower = model_type.lower()
 
-        # --- Definitive Fix for "Zeroes" Issue ---
-        # 1. Start with a safe, normalized, undirected graph as the default for all standard models.
-        #    This is the expected input for models like GCN, GAT, GraphSAGE, etc.
-        print(f"  Preparing data for '{model_type}' using undirected normalized graph as a baseline.")
-        data_dict['edge_index'] = graph.A_undirected_norm_sparse.indices()
-        data_dict['edge_attr'] = graph.A_undirected_norm_sparse.values()
+        # --- Definitive Fix for "Zeroes" Issue: Prevent Double-Normalization ---
+        # 1. Provide the RAW, un-normalized, undirected graph as the baseline. The models
+        #    themselves (GCN, GAT, etc.) are configured to perform normalization internally.
+        print(f"  Preparing data for '{model_type}' using RAW undirected graph as a baseline.")
+        A_undir_w = (graph.A_out_w + graph.A_in_w).coalesce()
+        data_dict['edge_index'] = A_undir_w.indices()
+        data_dict['edge_attr'] = A_undir_w.values()
 
         # 2. Overwrite the default only for specialized models that require different graph structures.
         if model_name_lower == 'directgcn':

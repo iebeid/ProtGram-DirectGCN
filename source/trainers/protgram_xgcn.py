@@ -235,7 +235,9 @@ class ProtGramXGCNTrainer:
         # --- FIX: Use the centralized data preparation utility --- # noqa
         full_data_gpu = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
             model_type=model.__class__.__name__.lower(), graph=data.graph_obj,
-            features=data.x, labels=data.y, use_homo_hetero_paths=use_homo_hetero_paths
+            features=data.x, labels=data.y, use_homo_hetero_paths=use_homo_hetero_paths,
+            A_homo_norm=getattr(data, 'A_homo_norm', None),
+            A_hetero_norm=getattr(data, 'A_hetero_norm', None)
         ).to(self.device)
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.PROTGRAM_LR_SCHEDULER_PATIENCE, factor=self.config.PROTGRAM_LR_SCHEDULER_FACTOR) if self.config.PROTGRAM_USE_LR_SCHEDULER else None
