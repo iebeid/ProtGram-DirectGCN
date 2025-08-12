@@ -58,14 +58,14 @@ class DirGNN(nn.Module):
             raise ValueError("DirGNN requires 'edge_index_backward' in the Data object.")
 
         for i in range(len(self.convs) - 1):
-            # --- DEFINITIVE FIX: Remove unexpected edge_weight argument ---
-            x = self.convs[i](x, edge_index, edge_index_backward)
+            # --- FIX: Pass the backward edge index as a keyword argument to match the expected API ---
+            x = self.convs[i](x, edge_index, edge_index_bar=edge_index_backward)
             if i < len(self.norms):
                 x = self.norms[i](x)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
 
         self.embedding_output = x
-        logits = self.convs[-1](x, edge_index, edge_index_backward)
+        logits = self.convs[-1](x, edge_index, edge_index_bar=edge_index_backward)
 
         return logits, self.embedding_output

@@ -748,5 +748,7 @@ class ProtgramDaskHelpers:
             print("    -> Overwriting baseline graph for DirGNN with raw directed edges.")
             data_dict['edge_index'] = graph.A_out_w.indices()
             data_dict['edge_attr'] = graph.A_out_w.values()
+            # DirGNN also needs the backward edges for its internal logic.
+            data_dict['edge_index_backward'] = graph.A_in_w.indices()
 
         return Data.from_dict(data_dict)
