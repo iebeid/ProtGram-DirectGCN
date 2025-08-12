@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: main.py
 # PURPOSE: Pipeline entry point
-# VERSION: 8.0 (Updated summary table format and non-interactive prompt handling)
+# VERSION: 8.1 (Completed subprocess logic for automated model conversion)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -56,7 +56,6 @@ from source.trainers.lstm import LSTMBasedEmbedder
 from source.trainers.transformers import TransformerEmbedder
 from source.trainers.word2vec import Word2VecEmbedder
 from source.utils.data import DataUtils, FastaUtils
-from source.utils.models import ModelProcessor
 from source.testers.unit_tests import run_all_tests
 from source.utils.logging import FileLogger
 
@@ -324,6 +323,8 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
 
 def main():
     script_start_time = time.monotonic()
+    # Define project_root here to make the script self-contained
+    project_root = Path(__file__).parent.resolve()
     base_config = Config()
     # --- NEW: Set all random seeds at the very beginning of the run ---
     # This is the primary fix for ensuring run-to-run reproducibility.
@@ -374,6 +375,40 @@ def main():
                     return
 
                 print(f"\nFound {len(files_to_process)} dataset(s) to process for the main pipeline.")
+
+                # --- NEW: Pre-convert Transformer models by launching a separate, isolated process ---
+                if base_config.RUN_TRANSFORMER_PIPELINE:
+                    DataUtils.print_header("Verifying Transformer Model Availability")
+                    from huggingface_hub import model_info
+                    for model_cfg in base_config.TRANSFORMER_MODELS_TO_RUN:
+                        model_id = model_cfg['hf_id']
+                        local_path = base_config.DATA_MODELS_DIR / model_id
+                        if not (local_path.exists() and (local_path / "tf_model.h5").exists()):
+                            try:
+                                info = model_info(model_id)
+                                # A robust check for PyTorch-only models
+                                is_pytorch_only = "tensorflow" not in info.tags and "tf" not in info.tags
+                                if is_pytorch_only:
+                                    print(f"\n--- ACTION: Model '{model_id}' is PyTorch-only and requires conversion. ---")
+                                    print("  This is a one-time, memory-intensive step.")
+                                    print("  Launching conversion in a separate, isolated process to prevent OOM errors...")
+                                    # The conversion script is the models.py utility itself.
+                                    conversion_script_path = project_root / "source" / "utils" / "models.py"
+                                    try:
+                                        # Run the conversion script as a separate process.
+                                        # This is critical to isolate its memory usage from the main pipeline.
+                                        subprocess.run(
+                                            [sys.executable, str(conversion_script_path), model_id],
+                                            check=True, text=True, capture_output=False # Stream output directly
+                                        )
+                                        print(f"  ✅ Conversion process for '{model_id}' completed successfully.")
+                                    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                                        print(f"  ❌ ERROR: The conversion process for '{model_id}' failed: {e}")
+                                        print("       The main pipeline will continue, but may fail when trying to load this model.")
+                            except Exception as e:
+                                print(f"  Warning: Could not verify model '{model_id}' on Hugging Face Hub: {e}")
+                # --- END NEW ---
+
                 for fasta_file_path in files_to_process:
                     # --- FIX: Create a dataset-specific config to prevent overwriting results ---
                     config = copy.deepcopy(base_config)
@@ -422,16 +457,6 @@ def main():
             DataUtils.print_header(f"Full Orchestration Finished in {time.monotonic() - script_start_time:.2f} seconds.")
 
             # Launch MLflow UI at the very end
-            # --- NEW: Pre-convert Transformer models if necessary ---
-            if base_config.RUN_TRANSFORMER_PIPELINE:
-                DataUtils.print_header("Pre-converting Transformer Models (if necessary)")
-                for model_config in base_config.TRANSFORMER_MODELS_TO_RUN:
-                    ModelProcessor.convert_and_save_model(
-                        model_id=model_config['hf_id'],
-                        output_base_dir=base_config.DATA_MODELS_DIR
-                    )
-            # --- END NEW ---
-
             _launch_mlflow_ui(base_config)
 
         except Exception as e:
