@@ -279,8 +279,8 @@ class PPIPipeline:
         run_type = "DUMMY EVALUATION" if use_dummy_data else "MAIN EVALUATION"
         DataUtils.print_header(f"PPI EVALUATION PIPELINE ({run_type})")
 
-        if use_dummy_data:
-            num_proteins = 50,
+        if use_dummy_data: # noqa
+            num_proteins = 50
             embedding_dim = 16
             num_pos = 100
             num_neg = 100
