@@ -107,7 +107,7 @@ class ProtGramDataBuilder:
         num_partitions_for_bag = effective_dask_workers if effective_dask_workers > 1 else 1
         raw_sequence_bag_with_flag = db.from_sequence(sequence_generator, npartitions=num_partitions_for_bag)
         preprocessed_sequence_bag_unpersisted = raw_sequence_bag_with_flag.starmap(
-            ProtgramDaskHelpers._preprocess_sequence_tuple_for_bag)
+            ProtgramDaskHelpers.preprocess_sequence_tuple_for_bag)
 
         final_preprocessed_input_bag = preprocessed_sequence_bag_unpersisted
         if dask_scheduler_general != 'sync':
