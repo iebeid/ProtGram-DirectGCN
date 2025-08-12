@@ -167,35 +167,26 @@ class ProtGramXGCNTrainer:
             if feature_result is None: continue
             initial_features, hierarchical_attention = feature_result
 
-            # --- ANTICIPATORY DEBUGGING: Only store attention if it's actually generated and logging is enabled. ---
             if hierarchical_attention and self.config.PROTGRAM_LOG_ATTENTION_WEIGHTS:
                 hierarchical_attention_per_level[n] = hierarchical_attention
 
             task_type = self.config.PROTGRAM_TASK_TYPES_PER_LEVEL.get(n, self.config.PROTGRAM_DEFAULT_TASK_TYPE)
             labels, num_classes_for_task = self.label_generator.generate_task_labels(graph_obj, task_type)
 
-            # --- NEW: Dynamic Architecture Selection for DirectGCN ---
-            # Calculate homophily to decide if specialized paths should be used for this level.
-            # --- FIX: Initialize variables for the new functional approach ---
             A_homo_norm, A_hetero_norm = None, None
             use_homo_hetero_paths_for_level = False
             if model_type == 'directgcn' and labels is not None:
-                # --- FIX: Only calculate homophily and split edges if labels are available ---
-                # This prevents crashes when using tasks like 'masked_node' which don't have static labels.
                 homophily_ratio = homophily(graph_obj.A_undirected_norm_sparse.indices(), labels,
                                             method='edge')
-                # --- ANTICIPATORY DEBUGGING: Use the configurable threshold instead of a hardcoded value. ---
                 is_heterophilic = homophily_ratio < self.config.GCN_HETEROPHILY_THRESHOLD
                 print(f"  Graph n={n} Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
                 if is_heterophilic:
                     print(f"  -> Enabling specialized homophily/heterophily paths for DirectGCN at n={n}.")
-                    # --- ANTICIPATORY DEBUGGING: Call the functional version and store the results. ---
                     use_homo_hetero_paths_for_level = True
                     split_result = graph_obj.split_edges_by_homophily(labels)
                     if split_result:
                         A_homo_norm, A_hetero_norm = split_result
 
-            # --- REFACTOR: Use the centralized ModelFactory ---
             model = self.model_factory.create_model(
                 model_name=model_type, in_channels=initial_features.shape[1],
                 num_classes=num_classes_for_task, graph_obj=graph_obj,
@@ -203,15 +194,12 @@ class ProtGramXGCNTrainer:
             )
             if model is None: continue
 
-            # --- ANTICIPATORY DEBUGGING: Pass the newly created matrices to the data object ---
             data = Data(x=initial_features, y=labels, graph_obj=graph_obj,
                         A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm)
             optimizer = optim.Adam(model.parameters(), lr=self.config.PROTGRAM_LR, weight_decay=self.config.PROTGRAM_WEIGHT_DECAY)
 
             self._train_single_level(model, graph_obj, data, optimizer, use_homo_hetero_paths_for_level)
 
-            # --- FIX: Pass the trainer's data prep function to the extractor to avoid duplicated logic ---
-            # Also pass the newly created matrices to the data preparation function.
             prepare_func = partial(ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph,
                                    use_homo_hetero_paths=use_homo_hetero_paths_for_level,
                                    A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm)
