@@ -11,7 +11,7 @@ import time
 import traceback
 from contextlib import nullcontext
 from pathlib import Path
-from typing import List, Dict, Mapping, Optional, Tuple
+from typing import List, Dict, Mapping, Optional, Tuple, Any
 
 import numpy as np
 import tensorflow as tf
@@ -147,7 +147,9 @@ class TransformerEmbedder:
 
                     # --- Inner Loop: Iterate through DATA CHUNKS ---
                     sequence_iterator = FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS)
+                    chunk_num = 0
                     while True:
+                        chunk_num += 1
                         chunk = [item for _, item in zip(range(self.config.TRANSFORMER_CHUNK_SIZE), sequence_iterator)]
                         if not chunk:
                             break
