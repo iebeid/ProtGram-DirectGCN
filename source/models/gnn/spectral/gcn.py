@@ -1,8 +1,8 @@
 # ==============================================================================
 # MODULE: models/gnn/gcn.py
 # PURPOSE: A standard implementation of the Graph Convolutional Network (GCN).
-# VERSION: 6.0 (Disabled redundant self-loops in GCNConv)
-# AUTHOR: Islam Ebeid
+# VERSION: 7.0 (Enabled self-loops to handle raw adjacency matrices)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 from typing import Tuple
 
@@ -30,15 +30,16 @@ class GCN(nn.Module):
         if num_layers <= 0:
             raise ValueError("num_layers must be positive")
 
-        # --- DEFINITIVE FIX: Disable automatic self-loops in the GCNConv layers ---
-        # The graph data is already pre-processed with self-loops during normalization,
-        # so we set add_self_loops=False to prevent them from being added twice.
-        kwargs['add_self_loops'] = False
+        # --- DEFINITIVE FIX: Enable automatic self-loops in the GCNConv layers ---
+        # This allows the layer to correctly normalize the raw, un-normalized graph
+        # representation that it will now receive, which is crucial for heterophilic graphs.
+        kwargs['add_self_loops'] = True
 
         if num_layers == 1:
             self.convs.append(GCNConv(in_channels, out_channels, **kwargs))
         else:
             self.convs.append(GCNConv(in_channels, hidden_channels, **kwargs))
+            self.norms.append(nn.LayerNorm(hidden_channels))
             for _ in range(num_layers - 2):
                 self.convs.append(GCNConv(hidden_channels, hidden_channels, **kwargs))
                 self.norms.append(nn.LayerNorm(hidden_channels))
