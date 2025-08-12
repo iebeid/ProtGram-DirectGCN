@@ -35,7 +35,8 @@ class TransformerEmbedder:
         is_esm_model = 'esm' in hf_id.lower()
         print(f"  Creating inference function (is_t5={is_t5}, is_esm={is_esm_model}, use_xla={use_xla})...")
 
-        @tf.function
+        # --- FIX: Add reduce_retracing=True to prevent excessive and slow re-compilations for variable sequence lengths ---
+        @tf.function(reduce_retracing=True)
         def model_call(inputs_dict_tf):
             if is_t5:
                 num_seqs = tf.shape(inputs_dict_tf['input_ids'])[0]
