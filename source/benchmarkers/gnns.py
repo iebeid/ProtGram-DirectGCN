@@ -25,9 +25,8 @@ from configuration.config import Config
 # --- FIX: Import DataUtils to use its static methods ---
 from source.benchmarkers.base import BaseBenchmarker
 from source.models.factory import ModelFactory
-from source.data_structures.graph import DirectedGraph
-from source.utils.data import DataUtils
-from source.utils.models import EmbeddingProcessor
+from source.data_structures.graph import DirectedGraph, DirectedNgramGraph
+from source.utils.data import DataUtils, EmbeddingProcessor
 
 
 class GNNBenchmarker(BaseBenchmarker):
@@ -35,7 +34,7 @@ class GNNBenchmarker(BaseBenchmarker):
         super().__init__(config, "GNN Benchmarker")
         self.embedding_dir = config.RESULTS_BENCHMARK_EMBEDDINGS_DIR
         self.model_factory = ModelFactory(config, context='benchmark')
-        # --- FIX: Instantiate the correct graph processor class ---
+        # --- FIX: Instantiate the correct graph processor class --- #noqa
         self.processor = DirectedGraph()
         print(f"Benchmark embeddings will be saved to: {self.embedding_dir}")
 

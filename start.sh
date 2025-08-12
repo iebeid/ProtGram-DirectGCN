@@ -60,6 +60,9 @@ if [ -d "data" ]; then
     echo "INFO: 'data' directory backed up to '$TEMP_BACKUP_PATH'."
 fi
 
+# --- NEW: Robust self-update check using file hashes ---
+OLD_HASH=$(git hash-object start.sh 2>/dev/null || echo "untracked")
+
 # --- Stash local changes, pull, and restore stash ---
 echo "INFO: Stashing any local changes to prevent conflicts..."
 git stash push -m "start.sh-autostash-$(date +%s)" > /dev/null 2>&1 || true
@@ -68,11 +71,10 @@ git pull --rebase
 echo "INFO: Restoring any stashed local changes..."
 git stash pop > /dev/null 2>&1 || echo "INFO: No local changes to restore."
 
-# --- NEW: Handle self-update ---
-# Check if the start.sh script itself was updated by the pull.
-# If so, re-execute it to ensure the latest logic is used.
-# This will cause the script to restart from the top, which is safe.
-if (git diff --name-only HEAD@{1} HEAD | grep -q "start.sh"); then
+# --- Self-update check (continued) ---
+NEW_HASH=$(git hash-object start.sh 2>/dev/null || echo "untracked")
+
+if [ "$OLD_HASH" != "$NEW_HASH" ]; then
     echo "INFO: The start.sh script has been updated. Re-executing with the new version..."
     # Restore data before re-executing to avoid issues on the next run's backup step.
     if [ "$DATA_DIR_EXISTS" = true ]; then
