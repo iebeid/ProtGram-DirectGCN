@@ -1,8 +1,8 @@
 # ==============================================================================
 # MODULE: models/gnn/spectral/dirgnn.py
-# PURPOSE: Implements the Dir-GNN model by manually handling the forward and
-#          backward convolutions for maximum compatibility.
-# VERSION: 8.0 (Definitively fixed TypeError by removing DirGNNConv wrapper)
+# PURPOSE: Implements the Dir-GNN model from "Edge Directionality Improves
+#          Learning on Heterophilic Graphs" using the official PyG wrapper.
+# VERSION: 9.0 (Corrected to align with the official PyG DirGNNConv implementation)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -12,62 +12,59 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.data import Data
-from torch_geometric.nn import GCNConv
+from torch_geometric.nn import DirGNNConv, GCNConv
 
 
 class DirGNN(nn.Module):
     """
     An implementation of the Dir-GNN model from the paper "Edge Directionality
-    Improves Learning on Heterophilic Graphs". This version manually implements
-    the core logic to avoid library version issues with the DirGNNConv wrapper.
+    Improves Learning on Heterophilic Graphs", corrected to align with the
+    official torch_geometric implementation.
     """
 
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int,
                  num_layers: int = 2, dropout_rate: float = 0.5, alpha: float = 0.5, **kwargs):
         super().__init__()
-        # We will now use the base GCNConv layers directly
         self.convs = nn.ModuleList()
         self.norms = nn.ModuleList()
         self.dropout_rate = dropout_rate
-        self.alpha = alpha  # Store alpha for the forward pass
         self.embedding_output = None
 
         if num_layers <= 0:
             raise ValueError("num_layers must be positive")
 
-        # Define the stack of GCN layers
+        # --- DEFINITIVE FIX: Use the DirGNNConv wrapper exactly as designed ---
+        # The wrapper takes a standard GNN layer (like GCNConv) and handles the
+        # forward and backward message passing internally.
         if num_layers == 1:
-            self.convs.append(GCNConv(in_channels, out_channels))
+            # For a single layer, we don't concatenate and use a single head for the output.
+            base_conv = GCNConv(in_channels, out_channels, add_self_loops=False)
+            self.convs.append(DirGNNConv(conv=base_conv, alpha=alpha, root_weight=True))
         else:
-            self.convs.append(GCNConv(in_channels, hidden_channels))
+            # Input layer
+            base_conv_in = GCNConv(in_channels, hidden_channels, add_self_loops=False)
+            self.convs.append(DirGNNConv(conv=base_conv_in, alpha=alpha, root_weight=True))
             self.norms.append(nn.LayerNorm(hidden_channels))
 
+            # Hidden layers
             for _ in range(num_layers - 2):
-                self.convs.append(GCNConv(hidden_channels, hidden_channels))
+                base_conv_hidden = GCNConv(hidden_channels, hidden_channels, add_self_loops=False)
+                self.convs.append(DirGNNConv(conv=base_conv_hidden, alpha=alpha, root_weight=True))
                 self.norms.append(nn.LayerNorm(hidden_channels))
 
-            self.convs.append(GCNConv(hidden_channels, out_channels))
+            # Output layer
+            base_conv_out = GCNConv(hidden_channels, out_channels, add_self_loops=False)
+            self.convs.append(DirGNNConv(conv=base_conv_out, alpha=alpha, root_weight=True))
 
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        The forward pass for the DirGNN model with manual forward/backward logic.
+        The forward pass for the DirGNN model. It now only requires x and edge_index.
         """
         x, edge_index = data.x, data.edge_index
-        # DirGNN requires the backward edges. We can get these from 'edge_index_in'
-        # if pre-calculated, or simply by flipping the forward edges.
-        edge_index_backward = getattr(data, 'edge_index_in', None)
-        if edge_index_backward is None:
-            edge_index_backward = getattr(data, 'edge_index_backward', edge_index.flip(0))
 
         # Loop through intermediate layers
         for i in range(len(self.convs) - 1):
-            conv = self.convs[i]
-            # --- Manually perform the forward and backward convolutions ---
-            x_forward = conv(x, edge_index)
-            x_backward = conv(x, edge_index_backward)
-            # --- Combine them using the alpha parameter ---
-            x = (1 - self.alpha) * x_forward + self.alpha * x_backward
-
+            x = self.convs[i](x, edge_index)
             if i < len(self.norms):
                 x = self.norms[i](x)
             x = F.relu(x)
@@ -77,9 +74,6 @@ class DirGNN(nn.Module):
         self.embedding_output = x
 
         # Apply the final layer to get the output logits
-        final_conv = self.convs[-1]
-        x_forward_final = final_conv(self.embedding_output, edge_index)
-        x_backward_final = final_conv(self.embedding_output, edge_index_backward)
-        logits = (1 - self.alpha) * x_forward_final + self.alpha * x_backward_final
+        logits = self.convs[-1](self.embedding_output, edge_index)
 
         return logits, self.embedding_output

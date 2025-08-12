@@ -702,8 +702,7 @@ def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramG
     model_name_lower = model_type.lower()
 
     if model_name_lower == 'directgcn':
-        # --- FIX: Pass the correctly processed matrices to the model ---
-        # The undirected path, and the specialized mathcal_A for directed paths.
+        # DirectGCN uses multiple, specific graph views
         data_dict.update({
             'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
             'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values(),
@@ -712,7 +711,6 @@ def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramG
             'edge_index_mathcal_out': graph.mathcal_A_out.indices(),
             'edge_weight_mathcal_out': graph.mathcal_A_out.values()
         })
-        # Conditionally add the NORMALIZED homophily/heterophily paths.
         if use_homo_hetero_paths and A_homo_norm is not None and A_hetero_norm is not None:
             print("  Preparing data with normalized homophily/heterophily paths...")
             data_dict.update({
@@ -731,9 +729,8 @@ def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramG
         data_dict['edge_type'] = torch.cat([edge_type_out, edge_type_in])
 
     elif model_name_lower == 'dirgnn':
-        # TongDiGCN requires separate forward and backward edge indices.
+        # DirGNN uses the raw forward edges and requires the backward edges to be passed separately.
         data_dict['edge_index'] = graph.A_out_w.indices()
-        # --- FIX: Add the corresponding edge weights for the forward GCN pass ---
         data_dict['edge_attr'] = graph.A_out_w.values()
         data_dict['edge_index_backward'] = graph.A_in_w.indices()
 
