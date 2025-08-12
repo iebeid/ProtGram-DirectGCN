@@ -331,7 +331,9 @@ class Config:
     def _setup_transformer_params(self):
         """Sets parameters for the Transformer (e.g., ProtBERT) pipeline."""
         self.TRANSFORMER_MODELS_TO_RUN = [
-            {"name": "ProtBERT", "hf_id": "Rostlab/prot_bert", "is_t5": False, "batch_size_multiplier": 1.0},
+            # --- DIAGNOSTIC STEP: Temporarily disable the large ProtBERT model to test for memory issues. ---
+            # If the pipeline succeeds with only ESM2, the previous crash was due to RAM limitations.
+            # {"name": "ProtBERT", "hf_id": "Rostlab/prot_bert", "is_t5": False, "batch_size_multiplier": 1.0},
             {"name": "ESM2", "hf_id": "facebook/esm2_t6_8M_UR50D", "is_t5": False, "batch_size_multiplier": 1.0}
         ]
         self.TRANSFORMER_MAX_LENGTH = 1024

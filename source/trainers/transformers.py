@@ -83,10 +83,7 @@ class TransformerEmbedder:
         try:
             tokenizer_class = T5Tokenizer if is_t5 else AutoTokenizer
             tokenizer = tokenizer_class.from_pretrained(hf_id)
-            # --- FIX: Use low_cpu_mem_usage to prevent Out-of-Memory errors on large models ---
-            # This loads the model in a memory-efficient way, which is critical for large
-            # models like ProtBERT on systems with limited RAM.
-            model = TFAutoModel.from_pretrained(hf_id, from_pt=True, low_cpu_mem_usage=True)
+            model = TFAutoModel.from_pretrained(hf_id, from_pt=True)
 
             inference_func = self._get_model_inference_function(
                 model, hf_id, is_t5, self.config.USE_XLA_COMPILATION)
