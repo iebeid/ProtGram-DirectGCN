@@ -91,7 +91,29 @@ class ProtGramXGCNTrainer:
 
         # --- FIX: Only save/visualize attention if enabled in the config ---
         if self.config.PROTGRAM_LOG_ATTENTION_WEIGHTS:
-            self._save_and_visualize_attention(all_attention_data_per_model)
+            # --- FIX: Call the correct utility methods from EvaluationReporter ---
+            # The _save_and_visualize_attention method was removed in a refactor.
+            # This block correctly re-implements the logic using the existing utilities.
+            DataUtils.print_header("Saving and Visualizing Attention Weights")
+            reporter = EvaluationReporter(
+                base_output_dir=str(self.config.RESULTS_EVALUATION_DIR),
+                k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE
+            )
+            attention_dir = self.config.RESULTS_EVALUATION_DIR / "attention_weights"
+            attention_dir.mkdir(parents=True, exist_ok=True)
+
+            for model_name, attention_data in all_attention_data_per_model.items():
+                print(f"  Processing attention for model: {model_name}")
+                hierarchical_data = attention_data.get("hierarchical")
+                if hierarchical_data:
+                    hierarchical_json_path = attention_dir / f"hierarchical_attention_{model_name}.json"
+                    DataUtils.save_json(hierarchical_data, hierarchical_json_path)
+                    reporter.generate_hierarchical_attention_plot(hierarchical_json_path, model_name)
+                pooling_data = attention_data.get("protein_pooling")
+                if pooling_data:
+                    pooling_json_path = attention_dir / f"pooling_attention_{model_name}.json"
+                    DataUtils.save_json(pooling_data, pooling_json_path)
+                    reporter.generate_pooling_attention_plot(pooling_json_path, model_name)
 
         if self.config.PROTGRAM_RUN_SANITY_CHECK_PPI:
             main_model_name_raw = self.config.PROTGRAM_MODELS_TO_TRAIN[0]
