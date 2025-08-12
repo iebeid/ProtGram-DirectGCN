@@ -307,7 +307,7 @@ class PPIPipeline:
             print(f"  Dummy positive interactions saved to: {pos_fp}")
 
             # Create dummy negative interactions
-            neg_fp = dummy_data_dir / "dummy_neg.csv"
+            neg_fp = dummy_data_dir / "dummy_neg.csv" # noqa
             neg_pairs = pd.DataFrame([random.sample(protein_ids, 2) for _ in range(num_neg)], columns=['p1', 'p2'])
             neg_pairs.to_csv(neg_fp, header=False, index=False)
             print(f"  Dummy negative interactions saved to: {neg_fp}")
@@ -315,6 +315,8 @@ class PPIPipeline:
             dummy_emb_config = [{"path": str(dummy_emb_file), "name": "DummyEmb"}]
 
 
+            # --- FIX: Assign the dummy config to the main variable used by the pipeline ---
+            emb_configs = dummy_emb_config
         else:
             emb_configs = getattr(self.config, 'LP_EMBEDDING_FILES_TO_EVALUATE', [])
             pos_fp = self.config.POS_INTERACTIONS_PATH
