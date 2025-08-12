@@ -1,8 +1,8 @@
 # ==============================================================================
 # MODULE: trainers/singleton_xgcn.py
 # PURPOSE: A lightweight trainer for rapid evaluation of various GNNs on the n=1 graph.
-# VERSION: 5.0 (Definitively fixed data preparation for heterophilic graphs)
-# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
+# VERSION: 3.1 (Fixed device placement issue for training masks)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 import numpy as np
@@ -38,6 +38,9 @@ class SingletonXGCNTrainer:
     def run(self) -> pd.DataFrame:
         """
         Executes the entire training and evaluation workflow for the n=1 graph.
+
+        Returns:
+            A pandas DataFrame of performance metrics.
         """
         if not self.graph or self.graph.number_of_nodes == 0:
             print("  Singleton Trainer: Graph is empty or invalid. Cannot proceed.")
@@ -54,14 +57,15 @@ class SingletonXGCNTrainer:
         y_for_stratify = torch.zeros(self.graph.number_of_nodes, dtype=torch.long)
         if labels is not None:
             y_for_stratify = labels
-            # --- DEFINITIVE FIX: Calculate homophily on the raw directed edges for accuracy ---
-            homophily_ratio = homophily(self.graph.A_out_w.indices(), y_for_stratify, method='edge')
-            is_heterophilic = homophily_ratio < self.config.GCN_HETEROPHILY_THRESHOLD
+            homophily_ratio = homophily(self.graph.A_undirected_norm_sparse.indices(), y_for_stratify, method='edge')
+            is_heterophilic = homophily_ratio < 0.6
             print(f"  Singleton Graph (n=1) Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
         else:
-            print("  Homophily calculation skipped for non-classification task.")
+            print("  Homophily calculation skipped for non-classification task (e.g., masked_node).")
 
+        print(f"  Using random features for initial features (dim={self.config.PROTGRAM_1GRAM_INIT_DIM}).")
         initial_features = torch.randn((self.graph.number_of_nodes, self.config.PROTGRAM_1GRAM_INIT_DIM))
+
         node_indices = np.arange(self.graph.number_of_nodes)
         try:
             train_idx, test_idx = train_test_split(
@@ -70,8 +74,7 @@ class SingletonXGCNTrainer:
             )
         except ValueError:
             train_idx, test_idx = train_test_split(
-                node_indices, test_size=self.config.SINGLETON_EVAL_TEST_SPLIT,
-                random_state=self.config.RANDOM_STATE
+                node_indices, test_size=self.config.SINGLETON_EVAL_TEST_SPLIT, random_state=self.config.RANDOM_STATE
             )
 
         train_mask = torch.zeros(self.graph.number_of_nodes, dtype=torch.bool).scatter_(0, torch.from_numpy(train_idx), 1)
@@ -86,7 +89,8 @@ class SingletonXGCNTrainer:
             if use_homo_hetero_for_this_model and labels is not None:
                 print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.")
                 split_result = self.graph.split_edges_by_homophily(labels)
-                if split_result: A_homo_norm, A_hetero_norm = split_result
+                if split_result:
+                    A_homo_norm, A_hetero_norm = split_result
 
             model = self.model_factory.create_model(
                 model_name=model_name, in_channels=initial_features.shape[1], num_classes=num_classes,
@@ -97,7 +101,6 @@ class SingletonXGCNTrainer:
 
             model.to(self.device)
             optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
-
             data_for_model = prepare_pyg_data_from_protgram_graph(
                 model_type=model_name, graph=self.graph, features=initial_features, labels=y_for_stratify,
                 use_homo_hetero_paths=use_homo_hetero_for_this_model,
@@ -106,29 +109,58 @@ class SingletonXGCNTrainer:
             data_for_model.train_mask = train_mask
             data_for_model.test_mask = test_mask
 
-            # Training Loop
+            # --- DEFINITIVE FIX: Move data to device *after* masks are assigned ---
+            data_for_model = data_for_model.to(self.device)
+
             for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
                 model.train()
                 optimizer.zero_grad()
-                data_for_model = data_for_model.to(self.device)
-                logits, _ = model(data_for_model)
-                if data_for_model.train_mask.sum() > 0:
-                    loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask].long())
+
+                if task_type == 'masked_node':
+                    # This logic remains correct as it creates a new data object on the correct device
+                    masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
+                        self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=test_mask
+                    )
+                    epoch_data = prepare_pyg_data_from_protgram_graph(
+                        model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
+                        use_homo_hetero_paths=use_homo_hetero_for_this_model,
+                        A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
+                    ).to(self.device)
+                    logits, _ = model(epoch_data)
+                    loss = F.cross_entropy(logits[masked_indices], original_node_ids.to(self.device))
                 else:
-                    loss = torch.tensor(0.0, device=self.device)
+                    logits, _ = model(data_for_model)
+                    if data_for_model.train_mask.sum() > 0:
+                        loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask].long())
+                    else:
+                        loss = torch.tensor(0.0, device=self.device)
 
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
 
-            # Evaluation
             model.eval()
-            with torch.no_grad():
-                logits, _ = model(data_for_model)
-                preds = logits.argmax(dim=-1)
-                y_true = data_for_model.y[data_for_model.test_mask].cpu().numpy()
-                y_pred = preds[data_for_model.test_mask].cpu().numpy()
-
+            if task_type == 'masked_node':
+                with torch.no_grad():
+                    masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
+                        self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=train_mask
+                    )
+                    eval_data = prepare_pyg_data_from_protgram_graph(
+                        model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
+                        use_homo_hetero_paths=use_homo_hetero_for_this_model,
+                        A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
+                    ).to(self.device)
+                    logits, _ = model(eval_data)
+                    preds = logits[masked_indices].argmax(dim=-1)
+                    y_true = original_node_ids.cpu().numpy()
+                    y_pred = preds.cpu().numpy()
+            else:
+                with torch.no_grad():
+                    logits, _ = model(data_for_model)
+                    preds = logits.argmax(dim=-1)
+                    y_true = data_for_model.y[data_for_model.test_mask].cpu().numpy()
+                    y_pred = preds[data_for_model.test_mask].cpu().numpy()
+            
             if len(y_true) > 0:
                 metrics = {
                     "Model": model_name,
@@ -140,5 +172,4 @@ class SingletonXGCNTrainer:
                 all_results.append(metrics)
             else:
                 print(f"  Skipping metrics for {model_name} as there was no data in the test set to evaluate.")
-
         return pd.DataFrame(all_results)
