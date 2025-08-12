@@ -534,3 +534,62 @@ class EmbeddingProcessor:
         # is no longer necessary and leads to incomplete evaluation.
         if batch_features:
             yield np.array(batch_features, dtype=np.float16), np.array(batch_labels, dtype=np.int32)
+
+
+# ==============================================================================
+# NEW: Model Conversion Utilities
+# ==============================================================================
+class ModelProcessor:
+    """
+    A utility class for handling model format conversions.
+    """
+
+    @staticmethod
+    def convert_and_save_model(model_id: str, output_base_dir: Path):
+        """
+        Converts a PyTorch model from Hugging Face to TensorFlow format and saves it locally.
+        This is a memory-intensive, one-time operation to prevent OOM errors in the main pipeline.
+        It checks for existence before running the conversion.
+        """
+        # --- Local import to avoid circular dependency at module level ---
+        from transformers import AutoTokenizer, TFAutoModel
+        import traceback
+
+        print(f"--- Checking for local pre-converted model: {model_id} ---")
+
+        output_path = output_base_dir / model_id
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # Check if the model is already converted and saved
+        if (output_path / "tf_model.h5").exists() and (output_path / "config.json").exists():
+            print(f"  ✅ TensorFlow model already exists locally. Skipping conversion.")
+            return
+
+        print(f"  Local model not found. Starting conversion process...")
+        print(f"  Output will be saved to: {output_path}")
+
+        try:
+            # Check if the model requires conversion in the first place
+            try:
+                print("  Attempting to download native TensorFlow weights directly...")
+                model = TFAutoModel.from_pretrained(model_id)
+                tokenizer = AutoTokenizer.from_pretrained(model_id)
+                print("  Native TF weights found. Saving them locally...")
+            except OSError as e:
+                if "from_pt=True" in str(e):
+                    print("  Native TF weights not found. Converting from PyTorch...")
+                    print("  !!! THIS STEP IS MEMORY-INTENSIVE AND MAY TAKE A WHILE !!!")
+                    model = TFAutoModel.from_pretrained(model_id, from_pt=True)
+                    tokenizer = AutoTokenizer.from_pretrained(model_id)
+                    print("  Model converted to TensorFlow in memory.")
+                else:
+                    raise e
+
+            print("\n  Saving model and tokenizer to disk...")
+            model.save_pretrained(output_path)
+            tokenizer.save_pretrained(output_path)
+            print(f"\n--- SUCCESS: Model is now available locally at: {output_path} ---")
+
+        except Exception as e:
+            print(f"\n--- ❌ An error occurred during model conversion/saving for '{model_id}': {e} ---")
+            traceback.print_exc()

@@ -79,25 +79,23 @@ class TransformerEmbedder:
         model_load_start_time = time.time()
 
         try:
-            # Load tokenizer first
-            tokenizer_class = T5Tokenizer if is_t5 else AutoTokenizer
-            tokenizer = tokenizer_class.from_pretrained(hf_id)
-
-            # Now, load the model with the robust try-except logic
-            model = None
-            try:
-                print("  Attempting to load native TensorFlow weights...")
+            # The pre-conversion step in main.py ensures that if a model *can* be local, it *will* be.
+            local_model_path = self.config.DATA_MODELS_DIR / hf_id
+            if local_model_path.exists() and (local_model_path / "tf_model.h5").exists():
+                print(f"  Found locally pre-converted TensorFlow model at: {local_model_path}")
+                print("  Loading from local path (fast and memory-efficient)...")
+                tokenizer = AutoTokenizer.from_pretrained(local_model_path)
+                model = TFAutoModel.from_pretrained(local_model_path)
+            else:
+                # If not local, it must be a native TF model on the Hub.
+                # The OSError for from_pt=True will now be caught here if the pre-conversion failed or was skipped.
+                print("  No local model found. Attempting to download native TF model from Hugging Face Hub...")
+                tokenizer_class = T5Tokenizer if is_t5 else AutoTokenizer
+                tokenizer = tokenizer_class.from_pretrained(hf_id)
                 model = TFAutoModel.from_pretrained(hf_id)
-            except OSError as e:
-                if "from_pt=True" in str(e):
-                    print("  Native TF weights not found. Falling back to loading from PyTorch weights (`from_pt=True`).")
-                    print("  NOTE: This can be memory-intensive for large models and may fail on systems with limited RAM.")
-                    model = TFAutoModel.from_pretrained(hf_id, from_pt=True)
-                else:
-                    raise e  # Re-raise other OSErrors
 
-            if model is None:
-                raise RuntimeError("Model could not be loaded either from TF native or PyTorch weights.")
+            if model is None or tokenizer is None:
+                raise RuntimeError("Model or tokenizer could not be loaded. The pre-conversion step may have failed.")
 
             # If model loading was successful, proceed
             inference_func = self._get_model_inference_function(

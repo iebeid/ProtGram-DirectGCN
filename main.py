@@ -55,7 +55,7 @@ from source.trainers.protgram_xgcn import ProtGramXGCNTrainer
 from source.trainers.lstm import LSTMBasedEmbedder
 from source.trainers.transformers import TransformerEmbedder
 from source.trainers.word2vec import Word2VecEmbedder
-from source.utils.data import DataUtils, FastaUtils
+from source.utils.data import DataUtils, FastaUtils, ModelProcessor
 from source.testers.unit_tests import run_all_tests
 from source.utils.logging import FileLogger
 
@@ -421,6 +421,16 @@ def main():
             DataUtils.print_header(f"Full Orchestration Finished in {time.monotonic() - script_start_time:.2f} seconds.")
 
             # Launch MLflow UI at the very end
+            # --- NEW: Pre-convert Transformer models if necessary ---
+            if base_config.RUN_TRANSFORMER_PIPELINE:
+                DataUtils.print_header("Pre-converting Transformer Models (if necessary)")
+                for model_config in base_config.TRANSFORMER_MODELS_TO_RUN:
+                    ModelProcessor.convert_and_save_model(
+                        model_id=model_config['hf_id'],
+                        output_base_dir=base_config.DATA_MODELS_DIR
+                    )
+            # --- END NEW ---
+
             _launch_mlflow_ui(base_config)
 
         except Exception as e:
