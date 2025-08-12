@@ -213,7 +213,7 @@ class DirectGCN(nn.Module):
     def __init__(self, layer_dims: List[int], num_graph_nodes: Optional[int], task_num_output_classes: int,
                  n_gram_len: int, use_homo_hetero_paths: bool,
                  one_gram_dim: int, max_pe_len: int, dropout: float, gating_mode: str,
-                 l2_eps: float = 1e-12):
+                 l2_eps: float = 1e-12, disable_pe: bool = False):
         super().__init__()
         self.n_gram_len = n_gram_len
         self.one_gram_dim = one_gram_dim
@@ -221,6 +221,7 @@ class DirectGCN(nn.Module):
         self.l2_eps = l2_eps
         self.embedding_output = None
         self.use_homo_hetero_paths = use_homo_hetero_paths
+        self.disable_pe = disable_pe
 
         self.pe_layer = None
         if one_gram_dim > 0 and max_pe_len > 0:
@@ -252,7 +253,8 @@ class DirectGCN(nn.Module):
 
     def _apply_pe(self, x: torch.Tensor) -> torch.Tensor:
         """Applies positional embeddings to the input features if applicable."""
-        if self.pe_layer is None: return x
+        if self.disable_pe or (self.pe_layer is None):
+            return x
         # --- FIX: Only apply PE when n > 1 to avoid applying it to random features in benchmarks ---
         if self.n_gram_len > 1 and self.one_gram_dim > 0 and x.shape[1] == self.n_gram_len * self.one_gram_dim:
             x_with_pe = x.clone()

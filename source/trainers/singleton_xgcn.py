@@ -65,6 +65,12 @@ class SingletonXGCNTrainer:
 
         print(f"  Using random features for initial features (dim={self.config.PROTGRAM_1GRAM_INIT_DIM}).")
         initial_features = torch.randn((self.graph.number_of_nodes, self.config.PROTGRAM_1GRAM_INIT_DIM))
+        # --- NEW: Apply BatchNorm for consistency with the main pipeline's feature handling ---
+        # This ensures that the model is always tested under similar input conditions,
+        # even though the random features for n=1 are already somewhat normalized.
+        bn = torch.nn.BatchNorm1d(initial_features.shape[1]).to(self.device)
+        # Move features to device for normalization, the rest of the function expects it there.
+        initial_features = bn(initial_features.to(self.device))
 
         node_indices = np.arange(self.graph.number_of_nodes)
         try:

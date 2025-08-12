@@ -261,6 +261,8 @@ class Config:
         # 'node_gate_vector': A learnable *vector* per path, per node, per layer for element-wise gating. Most expressive.
         # 'none': No gating, paths are simply added.
         self.PROTGRAM_GATING_COEFF_MODE = "vector"
+        # NEW: Control whether to add positional embeddings in the DirectGCN model.
+        self.PROTGRAM_USE_POSITIONAL_EMBEDDING: bool = False
 
         # --- ProtGram Training Hyperparameters ---
         self.PROTGRAM_EPOCHS_PER_LEVEL = 50

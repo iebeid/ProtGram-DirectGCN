@@ -167,6 +167,9 @@ class ProtGramXGCNTrainer:
             if feature_result is None: continue
             initial_features, hierarchical_attention = feature_result
 
+            bn = torch.nn.BatchNorm1d(initial_features.shape[1]).to(self.device)
+            initial_features = bn(initial_features.to(self.device)).cpu()
+
             if hierarchical_attention and self.config.PROTGRAM_LOG_ATTENTION_WEIGHTS:
                 hierarchical_attention_per_level[n] = hierarchical_attention
 

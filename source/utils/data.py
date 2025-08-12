@@ -173,18 +173,19 @@ class DataUtils:
             output_dir.mkdir(parents=True, exist_ok=True)
             output_path = output_dir / f"{model_name}.h5"
 
-            DataUtils.write_h5(embeddings, str(output_path), f"Writing H5 for {model_name}")
+            # --- FIX: Pass the Path object directly, not its string representation ---
+            DataUtils.write_h5(embeddings, output_path, f"Writing H5 for {model_name}")
             output_paths[model_name] = str(output_path)
 
-            # Apply PCA and save
-            pca_path = EmbeddingProcessor.apply_pca_to_h5(
-                input_h5_path=output_path,
-                output_dir=output_dir,
-                target_dimension=self.config.PCA_TARGET_DIMENSION,
-                random_seed=self.config.RANDOM_STATE
-            )
-            if str(pca_path) != str(output_path):
-                output_paths[f"{model_name}_pca"] = str(pca_path)
+        # Apply PCA and save
+        pca_path = EmbeddingProcessor.apply_pca_to_h5(
+            input_h5_path=output_path,
+            output_dir=output_dir,
+            target_dimension=self.config.PCA_TARGET_DIMENSION,
+            random_seed=self.config.RANDOM_STATE
+        )
+        if str(pca_path) != str(output_path):
+            output_paths[f"{model_name}_pca"] = str(pca_path)
 
         return output_paths
 

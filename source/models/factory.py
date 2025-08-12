@@ -117,7 +117,8 @@ class ModelFactory:
                              task_num_output_classes=num_classes, n_gram_len=kwargs.get('n_val', 1),
                              use_homo_hetero_paths=kwargs.get('use_homo_hetero_paths', False),
                              one_gram_dim=self.config.PROTGRAM_1GRAM_INIT_DIM, max_pe_len=self.config.PROTGRAM_MAX_PE_LEN,
-                             dropout=self.config.PROTGRAM_DROPOUT_RATE, gating_mode=self.config.PROTGRAM_GATING_COEFF_MODE)
+                             dropout=self.config.PROTGRAM_DROPOUT_RATE, gating_mode=self.config.PROTGRAM_GATING_COEFF_MODE,
+                             disable_pe=not self.config.PROTGRAM_USE_POSITIONAL_EMBEDDING)
 
         print(f"  ERROR: Unknown model type '{model_name}' requested from factory.")
         return None
