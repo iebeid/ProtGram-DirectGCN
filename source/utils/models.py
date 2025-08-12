@@ -7,11 +7,15 @@
 # ==============================================================================
 
 import traceback
-from pathlib import Path
 from typing import TYPE_CHECKING
 import argparse
 import sys
 from pathlib import Path
+
+# --- FIX: Add the project root to the Python path to allow relative imports ---
+# This must be done BEFORE any local modules (like 'configuration') are imported.
+project_root = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(project_root))
 
 from configuration.config import Config
 # --- Local import to avoid circular dependency at module level ---
@@ -91,15 +95,6 @@ class ModelProcessor:
         except Exception as e:
             print(f"\n--- ❌ An error occurred during model conversion/saving for '{model_id}': {e} ---")
             traceback.print_exc()
-
-
-
-
-# Add the project root to the Python path to allow importing from 'source'
-project_root = Path(__file__).parent.parent.resolve()
-sys.path.insert(0, str(project_root))
-
-
 
 
 def main():
