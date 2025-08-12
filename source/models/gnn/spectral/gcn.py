@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: models/gnn/gcn.py
 # PURPOSE: A standard implementation of the Graph Convolutional Network (GCN).
-# VERSION: 5.0 (Refactored to be a standalone nn.Module for architectural correctness)
+# VERSION: 6.0 (Disabled redundant self-loops in GCNConv)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 from typing import Tuple
@@ -30,6 +30,11 @@ class GCN(nn.Module):
         if num_layers <= 0:
             raise ValueError("num_layers must be positive")
 
+        # --- DEFINITIVE FIX: Disable automatic self-loops in the GCNConv layers ---
+        # The graph data is already pre-processed with self-loops during normalization,
+        # so we set add_self_loops=False to prevent them from being added twice.
+        kwargs['add_self_loops'] = False
+
         if num_layers == 1:
             self.convs.append(GCNConv(in_channels, out_channels, **kwargs))
         else:
@@ -42,16 +47,13 @@ class GCN(nn.Module):
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
         x, edge_index, edge_weight = data.x, data.edge_index, getattr(data, 'edge_attr', None)
 
-        # For a single-layer model, the logits are also the embeddings.
         if len(self.convs) == 1:
             logits = self.convs[0](x, edge_index, edge_weight=edge_weight)
             self.embedding_output = logits
             return logits, self.embedding_output
 
-        # Process all but the final layer to generate embeddings.
         for i, conv in enumerate(self.convs[:-1]):
             x = conv(x, edge_index, edge_weight=edge_weight)
-            # --- DEFINITIVE FIX: Apply LayerNorm BEFORE activation for stability ---
             if i < len(self.norms):
                 x = self.norms[i](x)
             x = F.relu(x)
