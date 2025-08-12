@@ -31,7 +31,8 @@ from source.experiments.ppi_1 import PPIPipeline
 from source.models.fnn.mlp import MLP
 from source.trainers.transformers import TransformerEmbedder
 from source.trainers.word2vec import Word2VecEmbedder
-from source.utils.data import DataUtils, IDMapGenerator, ModelProcessor
+from source.utils.data import DataUtils, IDMapGenerator
+from source.utils.models import ModelProcessor
 from source.utils.post import EmbeddingLoader
 from source.utils.results import EvaluationReporter
 
