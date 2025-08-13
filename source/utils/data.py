@@ -127,13 +127,20 @@ class DataUtils:
             print(f"Error saving DataFrame to {output_path}: {e}")
 
     @staticmethod
-    def save_json(data: Dict, filepath: Union[str, Path]):
+    def save_json(data: Dict, filepath: Union[str, Path], json_lines: bool = False):
         """Saves a dictionary to a JSON file with pretty printing."""
         filepath = Path(filepath)
         try:
             filepath.parent.mkdir(parents=True, exist_ok=True)
             with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=4, sort_keys=True)
+                if json_lines:
+                    # Write one JSON object per line for large, streamable files.
+                    for key, value in data.items():
+                        json.dump({key: value}, f)
+                        f.write('\n')
+                else:
+                    # Write a single, pretty-printed JSON object.
+                    json.dump(data, f, indent=4, sort_keys=True)
             print(f"  JSON data saved to {filepath.name}")
         except Exception as e:
             print(f"  ERROR: Could not save JSON to {filepath.name}: {e}")

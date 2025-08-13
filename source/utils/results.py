@@ -294,14 +294,17 @@ class EvaluationReporter:
         print(f"  Generating pooling attention plot for {model_name} from {attention_json_path.name}...")
 
         try:
+            # --- DEFINITIVE FIX for OOM Crash: Read only the first line of the JSONL file ---
+            # This avoids loading the entire (potentially massive) attention log into memory.
             with open(attention_json_path, 'r') as f:
-                attention_data = json.load(f)
+                first_line = f.readline()
+                if not first_line:
+                    print("  No attention data found in file.")
+                    return None
+                # The first line contains the entire JSON object for the first protein.
+                attention_data = json.loads(first_line)
         except (json.JSONDecodeError, IOError) as e:
             print(f"  Error reading attention JSON file: {e}")
-            return None
-
-        if not attention_data:
-            print("  No attention data found in file.")
             return None
 
         # Select a sample protein to visualize (e.g., the first one)
