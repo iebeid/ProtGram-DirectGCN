@@ -253,15 +253,13 @@ class ProtGramDataBuilder:
                 if os.path.exists(edge_parts_dir) and any(Path(edge_parts_dir).glob('part-*.txt')):
                     # --- FIX: Warn on bad lines instead of skipping silently to aid debugging. ---
                     ddf = dd.read_csv(edge_parts_glob, sep=' ', header=None, names=['source', 'target'], dtype=int, on_bad_lines='warn', blocksize='128MB')
-                    print(f"    Dask DataFrame created for n={n} from part-files with {ddf.npartitions} partitions.")
-                    # --- DEFINITIVE FIX for Multi-Index Error: Perform groupby directly. ---
+                    print(f"    Dask DataFrame created for n={n} from part-files with {ddf.npartitions} partitions.") # --- DEFINITIVE FIX for Multi-Index Error: Perform groupby directly. ---
                     # The set_index call is not supported for multi-column indexes in Dask.
                     # The groupby operation itself will trigger the necessary shuffle, and to_parquet handles the memory.
                     print(f"    Aggregating edge weights...")
                     weighted_ddf = ddf.groupby(['source', 'target']).size().to_frame('weight')
-                    # 3. Write the final result directly to a Parquet file.
-                    weighted_ddf.to_parquet(temp_edge_file_path, engine='pyarrow', write_index=True, compute=True,
-                                            scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
+                    # Write the final result directly to a Parquet file.
+                    weighted_ddf.to_parquet(temp_edge_file_path, engine='pyarrow', write_index=True)
                     print(f"    Finished computing aggregated weighted edges for n={n}.")
                 else:
                     print(f"  ℹ️ Info: Edge parts directory for n={n} is empty or not found.")
