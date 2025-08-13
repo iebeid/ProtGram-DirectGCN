@@ -52,18 +52,29 @@ class ProtGramDataBuilder:
         overall_start_time = time.monotonic()
         DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs")
 
-        # --- Check if all final graph objects already exist ---
-        all_graphs_exist = True
+        # --- DEFINITIVE FIX: Validate existing graphs, don't just check for existence. ---
+        # This prevents using a corrupted (e.g., edgeless) graph from a previous failed run.
+        all_graphs_exist_and_are_valid = True
         for n in range(1, self.n_max + 1):
             expected_graph_file = os.path.join(self.output_dir, f"ngram_graph_n{n}.pkl")
             if not os.path.exists(expected_graph_file):
-                all_graphs_exist = False
+                all_graphs_exist_and_are_valid = False
                 print(f"  Info: Graph file for n={n} not found. Will proceed with full build.")
                 break
+            else:
+                # If the file exists, load and validate it.
+                print(f"  Validating existing graph file for n={n}...")
+                graph_obj = DataUtils.load_object(expected_graph_file)
+                if graph_obj is None or not hasattr(graph_obj, 'number_of_edges') or graph_obj.number_of_edges == 0:
+                    print(f"  - Validation FAILED for n={n}: Graph is empty or corrupt. Forcing rebuild.")
+                    all_graphs_exist_and_are_valid = False
+                    os.remove(expected_graph_file)  # Clean up the bad file
+                    break
+                print(f"  - Validation PASSED for n={n} (Nodes: {graph_obj.number_of_nodes}, Edges: {graph_obj.number_of_edges}).")
 
-        if all_graphs_exist:
-            print("\nAll required n-gram graph objects already exist in the output directory.")
-            DataUtils.print_header(f"N-gram Graph Building SKIPPED (Files exist)")
+        if all_graphs_exist_and_are_valid:
+            print("\nAll required n-gram graph objects already exist and are valid.")
+            DataUtils.print_header(f"N-gram Graph Building SKIPPED (Files exist and are valid)")
             return
         # --- END Check ---
 
