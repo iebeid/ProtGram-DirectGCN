@@ -270,11 +270,11 @@ class ProtGramXGCNTrainer:
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.PROTGRAM_LR_SCHEDULER_PATIENCE, factor=self.config.PROTGRAM_LR_SCHEDULER_FACTOR) if self.config.PROTGRAM_USE_LR_SCHEDULER else None
         early_stopper = EarlyStopper(patience=self.config.PROTGRAM_EARLY_STOPPING_PATIENCE, min_delta=self.config.PROTGRAM_EARLY_STOPPING_MIN_DELTA) if self.config.PROTGRAM_USE_EARLY_STOPPING else None
 
-        # --- DEFINITIVE FIX for NaN Loss: Disable mixed-precision for the unstable n=1 graph ---
-        # The n=1 graph is small and uses random features, which can cause float16 overflow with AMP.
-        # Forcing float32 for n=1 provides stability, while n>1 can use AMP for performance.
-        n_val = data.graph_obj.n_value
-        use_amp = (self.device.type == 'cuda') and (n_val > 1)
+        # --- DEFINITIVE FIX for NaN Loss: Disable mixed-precision for ALL levels. ---
+        # While AMP provides a speedup, it has proven to be numerically unstable
+        # for this specific architecture, causing intermittent NaN loss values, especially
+        # for n>1 graphs. Forcing float32 provides stability.
+        use_amp = False
         scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
         criterion = F.cross_entropy
@@ -321,7 +321,11 @@ class ProtGramXGCNTrainer:
         model.to(self.device)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=self.config.PROTGRAM_LR_SCHEDULER_PATIENCE, factor=self.config.PROTGRAM_LR_SCHEDULER_FACTOR) if self.config.PROTGRAM_USE_LR_SCHEDULER else None
         early_stopper = EarlyStopper(patience=self.config.PROTGRAM_EARLY_STOPPING_PATIENCE, min_delta=self.config.PROTGRAM_EARLY_STOPPING_MIN_DELTA) if self.config.PROTGRAM_USE_EARLY_STOPPING else None
-        scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == 'cuda'))
+        # --- DEFINITIVE FIX for NaN Loss: Disable mixed-precision for ALL levels. ---
+        # While AMP provides a speedup, it has proven to be numerically unstable
+        # for this specific architecture. Forcing float32 provides stability.
+        use_amp = False
+        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
         criterion = F.cross_entropy
         print(f"  Starting Cluster-GCN style training for up to {epochs} epochs on {len(node_partitions)} subgraphs (Task: {task_type})...")
 
@@ -341,7 +345,7 @@ class ProtGramXGCNTrainer:
                 ).to(self.device)
 
                 optimizer.zero_grad()
-                with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
+                with torch.amp.autocast(device_type=self.device.type, enabled=use_amp):
                     # --- DEFINITIVE FIX: Implement masked_node logic for clustered training ---
                     if task_type == 'masked_node':
                         num_subgraph_nodes = subgraph_data.num_nodes
