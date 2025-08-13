@@ -259,7 +259,7 @@ class ProtGramDataBuilder:
                     print(f"    Aggregating edge weights...")
                     weighted_ddf = ddf.groupby(['source', 'target']).size().to_frame('weight')
                     # Write the final result directly to a Parquet file.
-                    weighted_ddf.to_parquet(temp_edge_file_path, engine='pyarrow', write_index=True)
+                    weighted_ddf.to_parquet(temp_edge_file_path, engine='pyarrow', write_index=True, compute=True)
                     print(f"    Finished computing aggregated weighted edges for n={n}.")
                 else:
                     print(f"  ℹ️ Info: Edge parts directory for n={n} is empty or not found.")
