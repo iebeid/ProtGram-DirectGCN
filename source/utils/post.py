@@ -301,38 +301,32 @@ class EmbeddingProcessor:
             return pooled_embeddings, {}
 
         elif strategy == 'attention':
-            print("    Using hybrid method for attention pooling (pre-indexing n-grams).")
+            # --- DEFINITIVE FIX for OOM Crash: Use a memory-efficient streaming approach for attention. ---
+            # Instead of building a giant index of all n-gram occurrences for all proteins in memory,
+            # this approach processes one protein at a time. This keeps memory usage low and constant,
+            # bounded by the requirements of the single longest protein, not the entire dataset.
+            print("    Using memory-efficient streaming method for attention pooling.")
 
-            # --- FIX: Initialize with zero-vectors to prevent KeyErrors for proteins with no n-grams ---
             embedding_dim = ngram_embeddings.shape[1]
-            pooled_embeddings = {p_data[0]: np.zeros(embedding_dim, dtype=ngram_embeddings.dtype)
-                                 for p_data in protein_sequences}
+            pooled_embeddings = {}
             attention_weights_log = {}
 
             # Create a reverse map from index to n-gram string for logging
             idx_to_ngram_map = {v: k for k, v in ngram_map.items()}
-            # Step 1: Pre-build the protein -> [n-gram indices] mapping.
-            num_proteins = len(protein_sequences)
-            protein_ids_ordered = [p_data[0] for p_data in protein_sequences]
-            protein_to_ngram_indices = [[] for _ in range(num_proteins)]
-            for prot_idx, (_, seq) in enumerate(tqdm(protein_sequences, desc="    Building protein->n-gram index")):
+
+            for prot_id, seq in tqdm(protein_sequences, desc="    Calculating Attention per Protein"):
+                ngram_indices_for_this_protein = []
                 if len(seq) >= n_val:
                     for i in range(len(seq) - n_val + 1):
                         ngram_idx = ngram_map.get("".join(seq[i:i + n_val]))
                         if ngram_idx is not None:
-                            protein_to_ngram_indices[prot_idx].append(ngram_idx)
+                            ngram_indices_for_this_protein.append(ngram_idx)
 
-            # Step 2: Iterate through the pre-built index to calculate attention.
-            for prot_idx, ngram_indices in enumerate(tqdm(protein_to_ngram_indices, desc="    Calculating Attention")):
-                if not ngram_indices: continue
-
-                prot_id = protein_ids_ordered[prot_idx]
-                protein_ngrams_arr = ngram_embeddings[ngram_indices].astype(np.float32)
-
-                # --- FIX: Handle cases where no valid n-grams were found for a protein ---
-                if protein_ngrams_arr.shape[0] == 0:
-                    # This protein had no n-grams with embeddings, so we skip it.
+                if not ngram_indices_for_this_protein:
+                    pooled_embeddings[prot_id] = np.zeros(embedding_dim, dtype=ngram_embeddings.dtype)
                     continue
+
+                protein_ngrams_arr = ngram_embeddings[ngram_indices_for_this_protein].astype(np.float32)
 
                 if protein_ngrams_arr.shape[0] > 1:
                     mean_vec = np.mean(protein_ngrams_arr, axis=0, keepdims=True)
@@ -340,15 +334,17 @@ class EmbeddingProcessor:
                     exp_scores = np.exp(attention_scores - np.max(attention_scores))
                     attention_weights = exp_scores / np.sum(exp_scores)
                     pooled_emb = np.dot(attention_weights, protein_ngrams_arr)  # Log the weights by their n-gram STRING
+
                     attention_weights_log[prot_id] = {
                         idx_to_ngram_map.get(idx, str(idx)): float(weight)
-                        for idx, weight in zip(ngram_indices, attention_weights)
+                        for idx, weight in zip(ngram_indices_for_this_protein, attention_weights)
                     }
                 elif protein_ngrams_arr.shape[0] == 1:
                     pooled_emb = protein_ngrams_arr[0]
                     # Attention for a single item is 1.0, log with its string representation
-                    attention_weights_log[prot_id] = {idx_to_ngram_map.get(ngram_indices[0], str(ngram_indices[0])): 1.0}
+                    attention_weights_log[prot_id] = {idx_to_ngram_map.get(ngram_indices_for_this_protein[0], str(ngram_indices_for_this_protein[0])): 1.0}
                 else:
+                    pooled_emb = np.zeros(embedding_dim, dtype=np.float32)
                     continue
 
                 pooled_embeddings[prot_id] = pooled_emb.astype(ngram_embeddings.dtype)

@@ -120,14 +120,23 @@ def _get_fasta_files_to_process(config: Config, temp_dir: Path) -> List[Path]:
 
         for original_path in config.ORIGINAL_SEQUENCE_FILE_PATHS:
             # More efficient: Read all sequences into memory once, then sample.
-            all_sequences = list(FastaUtils.parse_sequences([original_path]))
-            if not all_sequences:
+            # --- DEFINITIVE FIX for Memory Crash: Use Reservoir Sampling for large files ---
+            # This avoids loading the entire FASTA file into memory for downsampling.
+            print(f"  Counting sequences in {original_path.name} for sampling...")
+            with open(original_path, 'r', encoding='utf-8', errors='ignore') as f:
+                total_sequences = sum(1 for line in f if line.startswith('>'))
+
+            if total_sequences == 0:
                 print(f"  - WARNING: No sequences found in {original_path.name}. Skipping.")
                 continue
 
-            sample_size = int(len(all_sequences) * config.SEQUENCE_DOWNSAMPLE_FRACTION)
-            print(f"  - Sampling {sample_size} of {len(all_sequences)} sequences from {original_path.name}")
-            sampled_sequences = random.sample(all_sequences, sample_size)
+            sample_size = int(total_sequences * config.SEQUENCE_DOWNSAMPLE_FRACTION)
+            print(
+                f"  - Sampling {sample_size} of {total_sequences} sequences from {original_path.name} using memory-efficient reservoir sampling...")
+
+            # Create a fresh iterator and sample from it
+            sequence_iterator = FastaUtils.parse_sequences([original_path])
+            sampled_sequences = DataUtils.reservoir_sample(sequence_iterator, sample_size, config.RANDOM_STATE)
 
             temp_fasta_path = temp_dir / f"{original_path.stem}_sampled.fasta"
             with open(temp_fasta_path, "w") as f:

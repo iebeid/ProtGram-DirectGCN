@@ -57,6 +57,39 @@ class DataUtils:
         print(f"  Seeds set to {seed} for reproducibility. PyTorch CUDA deterministic mode is ON.")
 
     @staticmethod
+    def reservoir_sample(iterator: Iterator[Any], k: int, random_seed: Optional[int] = None) -> List[Any]:
+        """
+        Performs reservoir sampling on a potentially very large iterator.
+        This allows taking a random sample without loading the entire iterator into memory.
+        """
+        if random_seed is not None:
+            random.seed(random_seed)
+
+        reservoir = []
+        for i, item in enumerate(iterator):
+            if i < k:
+                reservoir.append(item)
+            else:
+                j = random.randint(0, i)
+                if j < k:
+                    reservoir[j] = item
+        return reservoir
+
+    @staticmethod
+    def log_graph_statistics(graph_object: 'DirectedNgramGraph', n_val: int):
+        """Logs key statistics for a given graph object."""
+        print(f"    --- Graph Statistics for n={n_val} ---")
+        num_nodes = graph_object.number_of_nodes
+        num_edges = graph_object.number_of_edges
+        print(f"      Nodes: {num_nodes}")
+        print(f"      Edges (unique weighted): {num_edges}")
+        if num_nodes > 1:
+            possible_edges_no_self_loops = num_nodes * (num_nodes - 1)
+            density = num_edges / possible_edges_no_self_loops if possible_edges_no_self_loops > 0 else 0
+            print(f"      Density (E / N(N-1)): {density:.4f}")
+        print(f"    --- End of Graph Statistics for n={n_val} ---\n")
+
+    @staticmethod
     def print_header(title: str):
         border = "=" * (len(title) + 6)
         print(f"\n{border}\n### {title} ###\n{border}\n")
@@ -685,6 +718,16 @@ class ProtgramDaskHelpers:
                 if source_id is not None and target_id is not None:
                     # Yield a string representation for easy writing to text files
                     yield f"{source_id} {target_id}"
+
+    @staticmethod
+    def extract_edge_ngram_pairs(seq_tuple: Tuple[str, str], n_val: int) -> Iterator[Tuple[str, str]]:
+        """Extracts n-gram transition pairs (source_ngram, target_ngram) from a single processed sequence."""
+        _, processed_seq_text = seq_tuple
+        if len(processed_seq_text) >= n_val + 1:
+            for i in range(len(processed_seq_text) - n_val):
+                source_ngram = processed_seq_text[i:i + n_val]
+                target_ngram = processed_seq_text[i + 1:i + 1 + n_val]
+                yield source_ngram, target_ngram
 
     @staticmethod
     def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramGraph', features: torch.Tensor,
