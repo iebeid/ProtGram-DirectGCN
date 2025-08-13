@@ -217,15 +217,11 @@ class GNNBenchmarker(BaseBenchmarker):
                     mlflow.log_param("learning_rate", self.config.BENCHMARK_GNN_LEARNING_RATE)
                     mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
-                        data_for_model.edge_index = torch.cat([edge_index_out, edge_index_in], dim=1)
-                        edge_type_out = torch.zeros(edge_index_out.size(1), dtype=torch.long, device=edge_index_out.device)
-                        edge_type_in = torch.ones(edge_index_in.size(1), dtype=torch.long, device=edge_index_in.device)
-                        data_for_model.edge_type = torch.cat([edge_type_out, edge_type_in])
-                        if 'edge_attr' in data_for_model: del data_for_model.edge_attr
-                    elif model_name_lower == 'dirgnn':
-                        print("    -> Using raw directed edges for DirGNN.")
-                        data_for_model.edge_index = data.A_out_w.indices()
-                        data_for_model.edge_attr = data.A_out_w.values()
+                    data_for_model = self._prepare_data_for_model(
+                        model_name=model_name,
+                        data=data,
+                        is_heterophilic=is_heterophilic
+                    )
 
                     model = self.model_factory.create_model(
                         model_name=model_name, in_channels=data_for_model.num_features, num_classes=num_classes,
