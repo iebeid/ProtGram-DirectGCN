@@ -286,13 +286,10 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
         # --- DEFINITIVE FIX: Isolate graph building in a subprocess ---
         # This prevents memory/GPU context conflicts between Dask and TensorFlow/PyTorch.
         # We create a temporary config where only the n=1 graph is built.
-        singleton_config.PROTGRAM_NGRAM_MAX_N = 1 # Override for this run
+        singleton_config.PROTGRAM_NGRAM_MAX_N = 1  # Override for this run
         build_script_path = singleton_config.BASE_SOURCE_DIR / "data_builders" / "build_graphs.py"
-        # The build_graphs.py script will read the main config, so we don't need to pass it.
-        # This is a temporary measure for the singleton run; the main loop will handle the full build.
-        # Note: This approach is simplified for the singleton case. A more robust implementation
-        # might pass a serialized config path to the subprocess.
-        subprocess.run([sys.executable, str(build_script_path)], check=True)
+        current_fasta_path = str(fasta_file_path)
+        subprocess.run([sys.executable, str(build_script_path), "--fasta_path", current_fasta_path], check=True)
 
         # Now, explicitly load the graph and run the evaluation.
         n1_graph_path = singleton_config.RESULTS_GRAPH_OBJECTS_DIR / "ngram_graph_n1.pkl"
@@ -453,9 +450,9 @@ def main():
                         # before running the main embedding pipelines.
                         DataUtils.print_header("Building all n-gram graphs for the main pipeline via isolated process")
                         build_script_path = config.BASE_SOURCE_DIR / "data_builders" / "build_graphs.py"
-                        # The subprocess inherits the environment and runs the build script.
-                        subprocess.run([sys.executable, str(build_script_path)], check=True)
-
+                        # Pass the correct fasta file path for this iteration.
+                        current_fasta_path = str(fasta_file_path)
+                        subprocess.run([sys.executable, str(build_script_path), "--fasta_path", current_fasta_path], check=True)
                         generated_embedding_files = _run_main_embedding_pipelines(config)
                         final_evaluation_list = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_embedding_files
                         config.LP_EMBEDDING_FILES_TO_EVALUATE = final_evaluation_list

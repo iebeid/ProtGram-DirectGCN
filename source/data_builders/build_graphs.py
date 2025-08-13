@@ -7,6 +7,7 @@
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -22,13 +23,26 @@ from source.data_builders.protgram import ProtGramDataBuilder
 def main():
     """
     Initializes the config and runs the appropriate graph builder.
+    Accepts an optional FASTA file path to override the config, which is
+    critical when this script is called as a subprocess.
     """
+    parser = argparse.ArgumentParser(description="Run the ProtGram graph builder.")
+    parser.add_argument(
+        "--fasta_path",
+        type=str,
+        help="Optional path to a specific FASTA file to process, overriding the config."
+    )
+    args = parser.parse_args()
+
     config = Config()
+    if args.fasta_path:
+        print(f"  [build_graphs.py] Overriding config with FASTA path from command line: {args.fasta_path}")
+        config.SEQUENCE_FILE_PATHS = [Path(args.fasta_path)]
+
     if config.USE_FAST_GRAPH_BUILDER:
         FastProtGramDataBuilder(config).run()
     else:
         ProtGramDataBuilder(config).run()
-
 
 if __name__ == "__main__":
     main()

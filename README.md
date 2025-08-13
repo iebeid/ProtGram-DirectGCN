@@ -138,6 +138,50 @@ Then, run the `start.sh` script.
 
 ---
 
+## Understanding the Interactive Prompts
+
+The setup and execution scripts (`reset.sh` and `start.sh`) will occasionally prompt you for input. This section explains what each prompt means.
+
+### During `reset.sh` (One-Time Setup)
+
+1.  **"This script needs to install system-level build tools... Is it OK to proceed? (y/n)"**
+    -   **What it means:** The script needs to install essential compilers and tools (like `g++`, `cmake`) required to build some Python packages from source.
+    -   **Your choice:** You should almost always choose **`y`** (yes). Choose `n` only if you are an advanced user and are certain these tools are already installed and correctly configured on your system.
+
+2.  **"Are you experiencing Git LFS budget errors... (y/n)"**
+    -   **What it means:** Git LFS (Large File Storage) is used for large data files. GitHub provides a limited amount of free LFS bandwidth per month. If you have used up your quota, a normal `git clone` will fail.
+    -   **Your choice:**
+        -   Choose **`n`** (no) if you are unsure or have not seen any LFS errors. This is the standard option.
+        -   Choose **`y`** (yes) only if the script has previously failed with an LFS error. This will download the repository *without* the large data files, and you will be prompted to place them manually.
+
+3.  **"Do you want to restore this data into the newly cloned repository? (y/n)"**
+    -   **What it means:** The `reset.sh` script is destructive. To prevent data loss, it backs up your existing `data` directory before deleting the old project folder. This prompt asks if you want to move that backup into the new, clean repository.
+    -   **Your choice:** You should almost always choose **`y`** (yes) to keep your data.
+
+4.  **"Once the 'data' directory is in place, press [Enter] to continue..."**
+    -   **What it means:** This prompt only appears if you answered 'y' to the Git LFS question. It pauses the script to give you time to manually download the `data` directory from the GitHub website and place it in the project folder.
+    -   **Your choice:** Once you have placed the `data` directory, press **Enter** to continue the installation.
+
+### During `start.sh` (Every Run)
+
+1.  **"Skip 'git lfs pull'? (y/n)"**
+    -   **What it means:** This script runs every time you start the pipeline. To save time, it asks if you want to skip re-downloading the large data files managed by Git LFS.
+    -   **Your choice:**
+        -   Choose **`y`** (yes) if you know your data files (like `positive_interactions.csv`) are already up-to-date. This is a common choice for subsequent runs.
+        -   Choose **`n`** (no) if you want to ensure you have the absolute latest version of the data files from the repository.
+
+2.  **"Pause for manual data upload? (y/n)"**
+    -   **What it means:** This is a convenience pause. It allows you to add or update files in the `data` directory that are not tracked by Git (e.g., a very large FASTA file you downloaded from an FTP site).
+    -   **Your choice:**
+        -   Choose **`n`** (no) if you have no files to add. This is the standard option.
+        -   Choose **`y`** (yes) if you need to copy a new data file into the `data` directory before the pipeline starts. The script will wait for you to press Enter.
+
+3.  **"Multiple FASTA files found. Please choose one..."**
+    -   **What it means:** The pipeline has detected more than one sequence file (e.g., `uniprot_sprot.fasta` and `uniref50.fasta`) in your `data/sequences` directory. It needs to know which one to process for the current run.
+    -   **Your choice:** Enter the number corresponding to the FASTA file you wish to use for this specific pipeline execution.
+
+---
+
 ## Configuration Guide (`configuration/config.py`)
 
 The pipeline's behavior is controlled by the `configuration/config.py` file. Below are the key parameters you can adjust, grouped by function.
