@@ -214,7 +214,9 @@ class DirectedGraph:
         data.A_out_w = A_out_w_sparse
         data.A_in_w = A_in_w_sparse
         A_undir_w = (A_out_w_sparse + A_in_w_sparse).coalesce()
+        # --- DEFINITIVE FIX: Attach the sparse tensor itself, not just its components ---
         A_undirected_norm = self._normalize_symmetric_matrix(A_undir_w, data.num_nodes)
+        data.A_undirected_norm_sparse = A_undirected_norm
         data.edge_index_out, data.edge_weight_out = A_out_w_sparse.indices(), A_out_w_sparse.values()
         data.edge_index_in, data.edge_weight_in = A_in_w_sparse.indices(), A_in_w_sparse.values()
         data.edge_index_undirected_norm, data.edge_weight_undirected_norm = A_undirected_norm.indices(), A_undirected_norm.values()

@@ -689,14 +689,21 @@ class ProtgramDaskHelpers:
     @staticmethod
     def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramGraph', features: torch.Tensor,
                                              labels: Optional[torch.Tensor], use_homo_hetero_paths: bool,
-                                             A_homo_norm: Optional[torch.Tensor] = None,
-                                             A_hetero_norm: Optional[torch.Tensor] = None) -> Data:
+                                             A_homo_norm: Optional[torch.Tensor] = None, A_hetero_norm: Optional[torch.Tensor] = None,
+                                             train_mask: Optional[torch.Tensor] = None,
+                                             val_mask: Optional[torch.Tensor] = None,
+                                             test_mask: Optional[torch.Tensor] = None) -> Data:
         """
         A centralized utility to prepare a PyG Data object from a DirectedNgramGraph,
         tailored to the specific model's needs. This eliminates duplicated logic
         and ensures each model receives the correct graph representation.
         """
-        data_dict: Dict[str, Any] = {'x': features, 'y': labels, 'graph_obj': graph}
+        # --- DEFINITIVE FIX: Pass the masks through to the new Data object ---
+        # This was the root cause of the AttributeError in the GNN benchmarker.
+        data_dict: Dict[str, Any] = {
+            'x': features, 'y': labels, 'graph_obj': graph,
+            'train_mask': train_mask, 'val_mask': val_mask, 'test_mask': test_mask
+        }
         model_name_lower = model_type.lower()
 
         # --- Definitive Fix for "Zeroes" Issue: Prevent Double-Normalization ---

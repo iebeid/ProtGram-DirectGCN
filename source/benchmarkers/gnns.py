@@ -153,8 +153,9 @@ class GNNBenchmarker(BaseBenchmarker):
         # This allows the model to adapt to the dataset's characteristics.
         homophily_ratio = homophily(data.edge_index, data.y, method='edge')
         # A common threshold is 0.6. Below this, the graph is considered heterophilic.
-        is_heterophilic = homophily_ratio < 0.6
+        is_heterophilic = homophily_ratio < self.config.GCN_HETEROPHILY_THRESHOLD
         print(f"  Dataset Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
+
 
 
         results = []
@@ -180,8 +181,9 @@ class GNNBenchmarker(BaseBenchmarker):
                     data_for_model = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
                         model_type=model_name, graph=temp_graph_obj, features=data.x, labels=data.y,
                         use_homo_hetero_paths=is_heterophilic,
-                        A_homo_norm=getattr(temp_graph_obj, 'edge_index_homo_norm', None),
-                        A_hetero_norm=getattr(temp_graph_obj, 'edge_index_hetero_norm', None)
+                        A_homo_norm=getattr(temp_graph_obj, 'A_homo_norm', None),
+                        A_hetero_norm=getattr(temp_graph_obj, 'A_hetero_norm', None),
+                        train_mask=data.train_mask, val_mask=data.val_mask, test_mask=data.test_mask
                     )
 
                     model = self.model_factory.create_model(

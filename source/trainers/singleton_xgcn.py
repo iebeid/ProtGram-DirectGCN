@@ -107,16 +107,12 @@ class SingletonXGCNTrainer:
 
             model.to(self.device)
             optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
+            # --- DEFINITIVE FIX: Pass the masks during data object creation ---
             data_for_model = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
                 model_type=model_name, graph=self.graph, features=initial_features, labels=y_for_stratify,
-                use_homo_hetero_paths=use_homo_hetero_for_this_model,
-                A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
-            )
-            data_for_model.train_mask = train_mask
-            data_for_model.test_mask = test_mask
-
-            # --- DEFINITIVE FIX: Move data to device *after* masks are assigned ---
-            data_for_model = data_for_model.to(self.device)
+                use_homo_hetero_paths=use_homo_hetero_for_this_model, A_homo_norm=A_homo_norm,
+                A_hetero_norm=A_hetero_norm, train_mask=train_mask, test_mask=test_mask
+            ).to(self.device)
 
             for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
                 model.train()
