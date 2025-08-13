@@ -100,14 +100,14 @@ class Config:
         self.RUN_LSTM_PIPELINE = False
         self.RUN_WORD2VEC_PIPELINE = False
         self.RUN_TRANSFORMER_PIPELINE = False
-        self.RUN_BENCHMARKING_PIPELINE = True
+        self.RUN_BENCHMARKING_PIPELINE = False
         self.RUN_NETWORK_EMBEDDING_BENCHMARKING = False
         self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_INTEGRATED_TESTS = False  # Runs all unit, smoke, and verification testers
-        self.RUN_SINGLETON_GCN_EVAL = True # Runs a fast evaluation on the n=1 graph for rapid prototyping
-        self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data
+        self.RUN_SINGLETON_GCN_EVAL = False # Runs a fast evaluation on the n=1 graph for rapid prototyping
+        self.RUN_DUMMY_TEST = False  # Runs a quick evaluation on dummy data
         self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = 0.9  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
-        self.CLEANUP_DUMMY_DATA = True
+        self.CLEANUP_DUMMY_DATA = False
         self.ENABLE_FILE_LOGGING = True
 
     def _setup_data_sources(self):
