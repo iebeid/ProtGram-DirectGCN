@@ -254,12 +254,9 @@ class ProtGramDataBuilder:
                     # --- FIX: Warn on bad lines instead of skipping silently to aid debugging. ---
                     ddf = dd.read_csv(edge_parts_glob, sep=' ', header=None, names=['source', 'target'], dtype=int, on_bad_lines='warn', blocksize='128MB')
                     print(f"    Dask DataFrame created for n={n} from part-files with {ddf.npartitions} partitions.")
-                    # --- DEFINITIVE FIX for OOM Killer: Use a disk-based shuffle before aggregation ---
-                    # 1. Set the index to the columns we want to group by. This forces Dask
-                    #    to shuffle the data on disk, which is memory-efficient.
-                    print(f"    Shuffling data on disk for aggregation (this may take a while for large graphs)...")
-                    ddf = ddf.set_index(['source', 'target'], shuffle='disk')
-                    # 2. Now that the data is sorted/partitioned, the groupby is much more memory-efficient.
+                    # --- DEFINITIVE FIX for Multi-Index Error: Perform groupby directly. ---
+                    # The set_index call is not supported for multi-column indexes in Dask.
+                    # The groupby operation itself will trigger the necessary shuffle, and to_parquet handles the memory.
                     print(f"    Aggregating edge weights...")
                     weighted_ddf = ddf.groupby(['source', 'target']).size().to_frame('weight')
                     # 3. Write the final result directly to a Parquet file.
