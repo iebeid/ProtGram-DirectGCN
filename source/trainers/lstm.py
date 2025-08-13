@@ -79,20 +79,18 @@ class LSTMBasedEmbedder:
         # More memory efficient: create a single text corpus and split it.
         # FIX: Split the list of sequences, not a list containing one giant string,
         # to prevent a ValueError from train_test_split when n_samples=1.
-        train_sequences, val_sequences = train_test_split(
+        train_seq_data, val_seq_data = train_test_split(
             self.sequences, test_size=0.1, random_state=self.config.RANDOM_STATE
         )
-        train_text = "".join([seq for _, seq in train_sequences])
-        val_text = "".join([seq for _, seq in val_sequences])
 
         train_dataset = LSTMDataBuilder(
-            text=train_text,
+            sequences=[seq for _, seq in train_seq_data],
             seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
             step=self.config.LSTM_TRAIN_STEP,
             char_to_int=self.char_to_int
         )
         val_dataset = LSTMDataBuilder(
-            text=val_text,
+            sequences=[seq for _, seq in val_seq_data],
             seq_len=self.config.LSTM_TRAIN_SEQ_LEN,
             step=self.config.LSTM_TRAIN_STEP,
             char_to_int=self.char_to_int

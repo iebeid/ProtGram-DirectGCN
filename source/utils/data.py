@@ -243,21 +243,12 @@ class DataUtils:
 
         embeddings_np = embeddings.cpu().numpy()
         final_embedding_dim = embeddings_np.shape[1]
-        output_suffix = f"_dim{final_embedding_dim}"
-
-        if config.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS and embeddings_np.shape[0] > config.BENCHMARK_PCA_TARGET_DIM:
-            print(f"      Applying PCA (target dim: {config.BENCHMARK_PCA_TARGET_DIM})...")
-            embeddings_for_pca = {i: emb for i, emb in enumerate(embeddings_np)}
-            pca_embed_dict = EmbeddingProcessor.apply_pca(embeddings_for_pca, config.BENCHMARK_PCA_TARGET_DIM, config.RANDOM_STATE)
-            if pca_embed_dict:
-                embeddings_np = np.array(list(pca_embed_dict.values()))
-                final_embedding_dim = embeddings_np.shape[1]
-                output_suffix = f"_pca{final_embedding_dim}"
+        output_suffix = f"dim{final_embedding_dim}"
 
         emb_dict = {str(i): embeddings_np[i] for i in range(embeddings_np.shape[0])}
         save_path_emb_dir = embedding_dir / data.name
         save_path_emb_dir.mkdir(parents=True, exist_ok=True)
-        h5_path = save_path_emb_dir / f"{model.__class__.__name__}_embeddings{output_suffix}.h5"
+        h5_path = save_path_emb_dir / f"{model.__class__.__name__}_embeddings_{output_suffix}.h5"
         DataUtils.write_h5(emb_dict, h5_path, f"Writing H5 for {model.__class__.__name__}")
         print(f"      Saved embeddings to {h5_path}")
 

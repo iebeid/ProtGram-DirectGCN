@@ -25,7 +25,6 @@ from configuration.config import Config
 # --- FIX: Import DataUtils to use its static methods ---
 from source.benchmarkers.base import BaseBenchmarker
 from source.models.factory import ModelFactory
-from source.data_structures.graph import DirectedGraph, DirectedNgramGraph
 from source.utils.data import DataUtils, ProtgramDaskHelpers
 
 
@@ -44,6 +43,11 @@ class GNNBenchmarker(BaseBenchmarker):
 
         best_val_acc = -1
         test_acc_at_best_val = -1
+        # --- DEFINITIVE FIX for UnboundLocalError ---
+        # Initialize metrics to a default value before the loop.
+        f1_at_best_val = -1.0
+        precision_at_best_val = -1.0
+        recall_at_best_val = -1.0
         history = {'epoch': [], 'loss': [], 'val_acc': [], 'test_acc': []}
 
         train_mask = self._get_1d_mask(data.train_mask)
@@ -102,6 +106,50 @@ class GNNBenchmarker(BaseBenchmarker):
 
         return metrics, pd.DataFrame(history)
 
+    def _prepare_data_for_model(self, model_name: str, data: Data, is_heterophilic: bool) -> Data:
+        """
+        A just-in-time data preparation utility. It creates a model-specific
+        data object with the correct graph representations.
+        """
+        from source.data_structures.graph import DirectedGraph # Local import for helper methods
+        graph_helper = DirectedGraph()
+
+        # Start with a fresh clone of the original data
+        data_for_model = data.clone()
+        model_name_lower = model_name.lower()
+
+        # --- Base representation: Raw undirected graph ---
+        # Most models (GCN, GAT, etc.) will use this and apply their own normalization.
+        base_edge_weight = data.edge_attr if hasattr(data, 'edge_attr') and data.edge_attr is not None else torch.ones(data.edge_index.shape[1], device=data.edge_index.device)
+        A_out_w_sparse = torch.sparse_coo_tensor(data.edge_index, base_edge_weight, (data.num_nodes, data.num_nodes)).coalesce()
+        A_undir_w = (A_out_w_sparse + A_out_w_sparse.t()).coalesce()
+        data_for_model.edge_index = A_undir_w.indices()
+        data_for_model.edge_attr = A_undir_w.values()
+
+        # --- Model-specific overrides ---
+        if model_name_lower == 'directgcn':
+            print("    -> Preparing specialized matrices for DirectGCN...")
+            # This model needs multiple, pre-calculated graph views.
+            data_for_model = graph_helper._preprocess_for_custom_models(data, use_homo_hetero_paths=is_heterophilic)
+
+        elif model_name_lower == 'rgcn':
+            print("    -> Preparing directed edge format for RGCN.")
+            edge_index_out = A_out_w_sparse.indices()
+            edge_index_in = A_out_w_sparse.t().coalesce().indices()
+            data_for_model.edge_index = torch.cat([edge_index_out, edge_index_in], dim=1)
+            edge_type_out = torch.zeros(edge_index_out.size(1), dtype=torch.long, device=edge_index_out.device)
+            edge_type_in = torch.ones(edge_index_in.size(1), dtype=torch.long, device=edge_index_in.device)
+            data_for_model.edge_type = torch.cat([edge_type_out, edge_type_in])
+            if 'edge_attr' in data_for_model:
+                del data_for_model.edge_attr
+
+        elif model_name_lower == 'dirgnn':
+            print("    -> Preparing raw directed edge format for DirGNN.")
+            data_for_model.edge_index = A_out_w_sparse.indices()
+            data_for_model.edge_attr = A_out_w_sparse.values()
+            data_for_model.edge_index_backward = A_out_w_sparse.t().coalesce().indices()
+
+        return data_for_model
 
     def _run_on_dataset_variant(self, dataset: Any, variant_name: str) -> List[Dict]:
         """Runs all configured models on a single dataset variant."""
@@ -156,12 +204,6 @@ class GNNBenchmarker(BaseBenchmarker):
         is_heterophilic = homophily_ratio < self.config.GCN_HETEROPHILY_THRESHOLD
         print(f"  Dataset Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
 
-        # --- DEFINITIVE FIX for AttributeError: ---
-        # 1. Pre-process the data object ONCE to add all possible graph views.
-        #    This ensures that all attributes (train_mask, name, A_out_w, etc.) are preserved on the same object.
-        temp_graph_processor = DirectedGraph()
-        data = temp_graph_processor._preprocess_for_custom_models(data, use_homo_hetero_paths=is_heterophilic)
-
         results = []
         for model_name in self.config.BENCHMARK_GNN_MODELS_TO_RUN:
             print(f"\n--- Benchmarking Model: {model_name} on Dataset: {variant_name} ---")
@@ -175,13 +217,6 @@ class GNNBenchmarker(BaseBenchmarker):
                     mlflow.log_param("learning_rate", self.config.BENCHMARK_GNN_LEARNING_RATE)
                     mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
-                    # 2. Create a model-specific copy of the data object to avoid side-effects.
-                    data_for_model = data.clone()
-                    model_name_lower = model_name.lower()
-                    print(f"  Preparing data for '{model_name}'...")
-                    if model_name_lower == 'rgcn':
-                        print("    -> Using specific directed edge format for RGCN.")
-                        edge_index_out, edge_index_in = data.A_out_w.indices(), data.A_in_w.indices()
                         data_for_model.edge_index = torch.cat([edge_index_out, edge_index_in], dim=1)
                         edge_type_out = torch.zeros(edge_index_out.size(1), dtype=torch.long, device=edge_index_out.device)
                         edge_type_in = torch.ones(edge_index_in.size(1), dtype=torch.long, device=edge_index_in.device)

@@ -45,10 +45,12 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
         test_mask = self._get_1d_mask(data.test_mask)
 
         best_val_acc = -1
-        test_acc_at_best_val = -1
-        f1_at_best_val = -1
-        precision_at_best_val = -1
-        recall_at_best_val = -1
+        # --- DEFINITIVE FIX for UnboundLocalError ---
+        # Initialize metrics to a default value before the loop.
+        test_acc_at_best_val = -1.0
+        f1_at_best_val = -1.0
+        precision_at_best_val = -1.0
+        recall_at_best_val = -1.0
 
         for epoch in range(1, 201):  # A fixed number of epochs for the MLP classifier
             mlp.train()

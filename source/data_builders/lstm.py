@@ -29,24 +29,26 @@ class LSTMDataBuilder(Dataset):
     This replaces the Keras-based LstmCorpusGenerator.
     """
 
-    def __init__(self, text: str, seq_len: int, step: int, char_to_int: Dict[str, int]):
-        self.text = text
+    def __init__(self, sequences: List[str], seq_len: int, step: int, char_to_int: Dict[str, int]):
+        self.sequences = sequences
         self.seq_len = seq_len
         self.step = step
         self.char_to_int = char_to_int
-        # --- REFINEMENT: Use max(0, ...) to handle edge cases more concisely. ---
-        # This correctly calculates the number of sequences and ensures it's never negative
-        # if the text is shorter than the sequence length, removing the need for an if/else block.
-        self.num_sequences = max(0, (len(self.text) - self.seq_len - 1) // self.step + 1)
-        print(f"  [PyTorch Dataset] Corpus has {len(text):,} characters, creating {self.num_sequences:,} samples.")
+        # --- DEFINITIVE FIX: Generate samples from each sequence individually ---
+        self.samples = []
+        for seq in self.sequences:
+            if len(seq) > self.seq_len:
+                for i in range(0, len(seq) - self.seq_len, self.step):
+                    input_seq_text = seq[i: i + self.seq_len]
+                    target_char = seq[i + self.seq_len]
+                    self.samples.append((input_seq_text, target_char))
+        print(f"  [PyTorch Dataset] Created {len(self.samples):,} samples from {len(self.sequences)} sequences.")
 
     def __len__(self) -> int:
-        return self.num_sequences
+        return len(self.samples)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        start_pos = idx * self.step
-        input_seq_text = self.text[start_pos: start_pos + self.seq_len]
-        target_char = self.text[start_pos + self.seq_len]
+        input_seq_text, target_char = self.samples[idx]
 
         input_seq = torch.tensor([self.char_to_int[c] for c in input_seq_text], dtype=torch.long)
         target = torch.tensor(self.char_to_int[target_char], dtype=torch.long)

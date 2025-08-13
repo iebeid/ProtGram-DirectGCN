@@ -344,12 +344,19 @@ class EvaluationReporter:
         print(f"  Generating hierarchical attention plot for {model_name} from {attention_json_path.name}...")
 
         try:
+            # --- DEFINITIVE FIX for OOM Crash: Read the JSONL file line-by-line ---
+            attention_data = {}
             with open(attention_json_path, 'r') as f:
-                # Load keys as strings, then convert numeric keys to int for sorting
-                attention_data_str_keys = json.load(f)
-                attention_data = {int(k): v for k, v in attention_data_str_keys.items()}
-        except (json.JSONDecodeError, IOError, ValueError) as e:
-            print(f"  Error reading or parsing attention JSON file: {e}")
+                for line in f:
+                    if line.strip():
+                        # Each line is a JSON object like {"2": {...}}
+                        line_data = json.loads(line)
+                        # The key is the n-gram level (as a string)
+                        level_key_str = next(iter(line_data))
+                        level_data = line_data[level_key_str]
+                        attention_data[int(level_key_str)] = level_data
+        except (json.JSONDecodeError, IOError, ValueError, StopIteration) as e:
+            print(f"  Error reading or parsing attention JSONL file: {e}")
             return None
 
         if not attention_data:

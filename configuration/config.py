@@ -97,11 +97,11 @@ class Config:
     def _setup_pipeline_flags(self):
         """Sets flags to control which parts of the main pipeline are executed."""
         self.RUN_GCN_PIPELINE = True
-        self.RUN_LSTM_PIPELINE = False
-        self.RUN_WORD2VEC_PIPELINE = False
-        self.RUN_TRANSFORMER_PIPELINE = False
+        self.RUN_LSTM_PIPELINE = True
+        self.RUN_WORD2VEC_PIPELINE = True
+        self.RUN_TRANSFORMER_PIPELINE = True
         self.RUN_BENCHMARKING_PIPELINE = True
-        self.RUN_NETWORK_EMBEDDING_BENCHMARKING = False
+        self.RUN_NETWORK_EMBEDDING_BENCHMARKING = True
         self.RUN_MAIN_PPI_EVALUATION = True
         self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers
         self.RUN_SINGLETON_GCN_EVAL = True # Runs a fast evaluation on the n=1 graph for rapid prototyping
@@ -190,8 +190,7 @@ class Config:
         # List of GNN models to run in the benchmark suite.
         # Options: "GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "TongDiGCN", "DirectGCN"
         self.BENCHMARK_GNN_MODELS_TO_RUN: List[str] = ["GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "DirGNN", "DirectGCN"]
-        self.BENCHMARK_SAVE_EMBEDDINGS = True
-        self.BENCHMARK_APPLY_PCA_TO_EMBEDDINGS = True
+        self.BENCHMARK_SAVE_EMBEDDINGS = True # Controls if benchmarker saves embeddings to disk
         self.BENCHMARK_TEST_ON_UNDIRECTED = True
         self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8}
         self.BENCHMARK_PCA_TARGET_DIM = 64
@@ -264,7 +263,7 @@ class Config:
         # 'none': No gating, paths are simply added.
         self.PROTGRAM_GATING_COEFF_MODE = "vector"
         # NEW: Control whether to add positional embeddings in the DirectGCN model.
-        self.PROTGRAM_USE_POSITIONAL_EMBEDDING: bool = False
+        self.PROTGRAM_USE_POSITIONAL_EMBEDDING: bool = True
 
         # --- ProtGram Training Hyperparameters ---
         self.PROTGRAM_EPOCHS_PER_LEVEL = 500
@@ -400,7 +399,7 @@ class Config:
         self.EVAL_MLP_DROPOUT2_RATE = 0.4
         self.EVAL_MLP_L2_REG = 1e-5
         self.EVAL_BATCH_SIZE = 2048
-        self.EVAL_EPOCHS = 20
+        self.EVAL_EPOCHS = 10
         self.EVAL_LEARNING_RATE = 0.001
 
         # Reporting

@@ -111,7 +111,8 @@ class ProtGramXGCNTrainer:
                 hierarchical_data = attention_data.get("hierarchical")
                 if hierarchical_data:
                     hierarchical_json_path = attention_dir / f"hierarchical_attention_{model_name}.json"
-                    DataUtils.save_json(hierarchical_data, hierarchical_json_path, json_lines=False)
+                    # --- DEFINITIVE FIX for OOM Crash: Save as JSONL for scalable reading ---
+                    DataUtils.save_json(hierarchical_data, hierarchical_json_path, json_lines=True)
                     reporter.generate_hierarchical_attention_plot(hierarchical_json_path, model_name)
                 pooling_data = attention_data.get("protein_pooling")
                 if pooling_data:
@@ -453,8 +454,6 @@ class ProtGramXGCNTrainer:
             ngram_embeddings=final_level_embeddings,
             strategy=self.config.PROTGRAM_PROTEIN_POOLING_STRATEGY
         )
-
-
 
     def _run_sanity_check_ppi(self, embedding_path: str):
         """Runs a quick, small-scale PPI evaluation as a sanity check."""
