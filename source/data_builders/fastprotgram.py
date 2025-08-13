@@ -130,27 +130,28 @@ class FastProtGramDataBuilder:
             # for extremely large vocabularies, this could still be a bottleneck, but it's
             # far more efficient than passing a dict to each task.
             ngram_map_ddf = ngram_map_ddf.persist()
-            print(f"    Unique n-gram map for n={n} created and saved to disk.")
+            # --- DEFINITIVE FIX for OOM Crash: Compute the map once and use it directly ---
+            # This avoids expensive, memory-intensive merge/join operations on string columns.
+            ngram_to_id_map = ngram_map_ddf.compute().set_index('ngram')['id'].to_dict()
+            print(f"    Unique n-gram map for n={n} (size: {len(ngram_to_id_map)}) computed and loaded into memory.")
 
             # 2. Generate edge pairs (source_ngram, target_ngram)
-            print(f"  [n={n}] Generating edge pairs...")
-            extract_edge_ngrams_partial = partial(ProtgramDaskHelpers.extract_edge_ngram_pairs, n_val=n)
-            edge_pairs_bag = final_preprocessed_input_bag.map(extract_edge_ngrams_partial).flatten()
-            edge_pairs_ddf = edge_pairs_bag.to_dataframe(columns=['source_ngram', 'target_ngram'])
+            print(f"  [n={n}] Generating edge pairs and mapping to IDs simultaneously...")
+            # This new helper function yields integer pairs directly, which is far more memory-efficient.
+            extract_edges_partial = partial(
+                ProtgramDaskHelpers.extract_edges_from_sequence_tuple,
+                n_val=n,
+                ngram_to_id_map=ngram_to_id_map
+            )
+            # The bag now contains strings like "source_id target_id"
+            edge_id_str_bag = final_preprocessed_input_bag.map(extract_edges_partial).flatten()
 
-            # 3. Map n-grams to IDs using parallel merges (joins)
-            print(f"  [n={n}] Mapping edge n-grams to IDs via parallel merge...")
-            # Merge for source IDs
-            merged_source = dd.merge(edge_pairs_ddf, ngram_map_ddf, left_on='source_ngram', right_on='ngram', how='inner')
-            merged_source = merged_source.rename(columns={'id': 'source'}).drop(columns=['ngram', 'source_ngram'])
-
-            # Merge for target IDs
-            merged_final = dd.merge(merged_source, ngram_map_ddf, left_on='target_ngram', right_on='ngram', how='inner')
-            merged_final = merged_final.rename(columns={'id': 'target'}).drop(columns=['ngram', 'target_ngram'])
+            # 3. Convert the bag of ID strings to a DataFrame of integers
+            edge_id_ddf = edge_id_str_bag.str.split(' ', expand=True).astype(int).to_dask_dataframe(columns=['source', 'target'])
 
             # 4. Aggregate edge weights
             print(f"  [n={n}] Aggregating edge weights...")
-            weighted_edges_ddf = merged_final.groupby(['source', 'target']).size().to_frame('weight')
+            weighted_edges_ddf = edge_id_ddf.groupby(['source', 'target']).size().to_frame('weight')
 
             # 5. Save the final aggregated edges to disk
             temp_edge_file_path = os.path.join(self.temp_dir, f"aggregated_edges_n{n}.parquet")
@@ -158,7 +159,7 @@ class FastProtGramDataBuilder:
             weighted_edges_ddf.to_parquet(temp_edge_file_path, engine='pyarrow', write_index=True, overwrite=True)
 
             print(f"  Level n={n} processing finished in {time.monotonic() - level_start_time:.2f}s.")
-            del ngrams_bag, ngrams_ddf, ngram_map_ddf, edge_pairs_bag, edge_pairs_ddf, merged_source, merged_final, weighted_edges_ddf
+            del ngrams_bag, ngrams_ddf, ngram_map_ddf, edge_id_str_bag, edge_id_ddf, weighted_edges_ddf, ngram_to_id_map
             gc.collect()
 
         # --- Phase 2: Build and save final graph objects ---
