@@ -156,7 +156,11 @@ class GNNBenchmarker(BaseBenchmarker):
         is_heterophilic = homophily_ratio < self.config.GCN_HETEROPHILY_THRESHOLD
         print(f"  Dataset Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
 
-
+        # --- DEFINITIVE FIX for AttributeError: ---
+        # 1. Pre-process the data object ONCE to add all possible graph views.
+        #    This ensures that all attributes (train_mask, name, A_out_w, etc.) are preserved on the same object.
+        temp_graph_processor = DirectedGraph()
+        data = temp_graph_processor._preprocess_for_custom_models(data, use_homo_hetero_paths=is_heterophilic)
 
         results = []
         for model_name in self.config.BENCHMARK_GNN_MODELS_TO_RUN:
@@ -171,30 +175,33 @@ class GNNBenchmarker(BaseBenchmarker):
                     mlflow.log_param("learning_rate", self.config.BENCHMARK_GNN_LEARNING_RATE)
                     mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
-                    # --- DEFINITIVE FIX for Zero-Loss Issue: Prepare data specifically for each model ---
-                    # This ensures standard models get a raw graph and custom models get their
-                    # required specialized graph representations, preventing double-normalization.
-                    # The DirectedGraph class is only needed to create the base sparse matrices.
-                    temp_graph_processor = DirectedGraph()
-                    temp_graph_obj = temp_graph_processor._preprocess_for_custom_models(data, use_homo_hetero_paths=is_heterophilic)
-
-                    data_for_model = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
-                        model_type=model_name, graph=temp_graph_obj, features=data.x, labels=data.y,
-                        use_homo_hetero_paths=is_heterophilic,
-                        A_homo_norm=getattr(temp_graph_obj, 'A_homo_norm', None),
-                        A_hetero_norm=getattr(temp_graph_obj, 'A_hetero_norm', None),
-                        train_mask=data.train_mask, val_mask=data.val_mask, test_mask=data.test_mask
-                    )
+                    # 2. Create a model-specific copy of the data object to avoid side-effects.
+                    data_for_model = data.clone()
+                    model_name_lower = model_name.lower()
+                    print(f"  Preparing data for '{model_name}'...")
+                    if model_name_lower == 'rgcn':
+                        print("    -> Using specific directed edge format for RGCN.")
+                        edge_index_out, edge_index_in = data.A_out_w.indices(), data.A_in_w.indices()
+                        data_for_model.edge_index = torch.cat([edge_index_out, edge_index_in], dim=1)
+                        edge_type_out = torch.zeros(edge_index_out.size(1), dtype=torch.long, device=edge_index_out.device)
+                        edge_type_in = torch.ones(edge_index_in.size(1), dtype=torch.long, device=edge_index_in.device)
+                        data_for_model.edge_type = torch.cat([edge_type_out, edge_type_in])
+                        if 'edge_attr' in data_for_model: del data_for_model.edge_attr
+                    elif model_name_lower == 'dirgnn':
+                        print("    -> Using raw directed edges for DirGNN.")
+                        data_for_model.edge_index = data.A_out_w.indices()
+                        data_for_model.edge_attr = data.A_out_w.values()
 
                     model = self.model_factory.create_model(
-                        model_name=model_name, in_channels=data.num_features, num_classes=num_classes,
-                        graph_obj=temp_graph_obj, use_homo_hetero_paths=is_heterophilic
+                        model_name=model_name, in_channels=data_for_model.num_features, num_classes=num_classes,
+                        graph_obj=data_for_model, use_homo_hetero_paths=is_heterophilic
                     )
 
                     if self.config.DEBUG_VERBOSE:
                         print("  Model Architecture:")
                         print(model)
 
+                    # 3. Pass the correctly prepared data object to the trainer.
                     metrics, history_df = self._train_and_evaluate(model, data_for_model)
                     result_row = {"dataset": variant_name, "model": model_name, "error": None}
                     result_row.update(metrics)

@@ -248,41 +248,28 @@ class ProtGramDataBuilder:
             print(f"  Loading and aggregating raw edges for n={n} using Dask DataFrame from parts...")
             weighted_edge_df_computed = pd.DataFrame(columns=['source', 'target', 'weight'])
             try:
+                temp_edge_file_path = os.path.join(self.temp_dir, f"aggregated_edges_n{n}.parquet")
                 edge_parts_glob = os.path.join(edge_parts_dir, 'part-*.txt')
                 if os.path.exists(edge_parts_dir) and any(Path(edge_parts_dir).glob('part-*.txt')):
                     # --- FIX: Warn on bad lines instead of skipping silently to aid debugging. ---
                     ddf = dd.read_csv(edge_parts_glob, sep=' ', header=None, names=['source', 'target'], dtype=int, on_bad_lines='warn', blocksize='128MB')
                     print(f"    Dask DataFrame created for n={n} from part-files with {ddf.npartitions} partitions.")
-                    weighted_ddf_series = ddf.groupby(['source', 'target']).size()
-                    weighted_ddf = weighted_ddf_series.to_frame(name='weight').reset_index()
-                    print(f"    Computing aggregated weighted edges for n={n}...")
-                    weighted_edge_df_computed = weighted_ddf.compute(scheduler=dask_scheduler_general,
-                                                                     num_workers=effective_dask_workers)
+                    # --- DEFINITIVE FIX for OOM Killer: Use a disk-based shuffle before aggregation ---
+                    # 1. Set the index to the columns we want to group by. This forces Dask
+                    #    to shuffle the data on disk, which is memory-efficient.
+                    print(f"    Shuffling data on disk for aggregation (this may take a while for large graphs)...")
+                    ddf = ddf.set_index(['source', 'target'], shuffle='disk')
+                    # 2. Now that the data is sorted/partitioned, the groupby is much more memory-efficient.
+                    print(f"    Aggregating edge weights...")
+                    weighted_ddf = ddf.groupby(['source', 'target']).size().to_frame('weight')
+                    # 3. Write the final result directly to a Parquet file.
+                    weighted_ddf.to_parquet(temp_edge_file_path, engine='pyarrow', write_index=True, compute=True,
+                                            scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
                     print(f"    Finished computing aggregated weighted edges for n={n}.")
                 else:
                     print(f"  ℹ️ Info: Edge parts directory for n={n} is empty or not found.")
             except Exception as e_ddf:
                 print(f"  ❌ Error: Dask DataFrame processing error for edges n={n}: {e_ddf}. Assuming no edges.")
-
-            # --- MEMORY OPTIMIZATION: Save to file to break memory chain ---
-            temp_edge_file_path = os.path.join(self.temp_dir, f'aggregated_edges_n{n}.parquet')
-            if not weighted_edge_df_computed.empty:
-                print(
-                    f"  Aggregated raw transitions into {len(weighted_edge_df_computed)} unique weighted edges for n={n}.")
-                print(f"  Saving aggregated edges to temporary file: {os.path.basename(temp_edge_file_path)}")
-                try:
-                    weighted_edge_df_computed.to_parquet(temp_edge_file_path, index=False)
-                except Exception as e:
-                    print(
-                        f"  ❌ Error saving temporary aggregated edge file: {e}. Skipping graph creation for n={n}.")
-                    continue
-            else:
-                if os.path.exists(temp_edge_file_path):
-                    os.remove(temp_edge_file_path)
-                print(f"  ℹ️ Info: No unique edges found for n={n}.")
-
-            del weighted_edge_df_computed
-            gc.collect()
 
             print(f"  Instantiating DirectedNgramGraph object for n={n} from file...")
             graph_object = DirectedNgramGraph(
