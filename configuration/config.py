@@ -106,7 +106,7 @@ class Config:
         self.RUN_INTEGRATED_TESTS = False  # Runs all unit, smoke, and verification testers
         self.RUN_SINGLETON_GCN_EVAL = True # Runs a fast evaluation on the n=1 graph for rapid prototyping
         self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data
-        self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = 0.05  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
+        self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = 0.9  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
         self.CLEANUP_DUMMY_DATA = True
         self.ENABLE_FILE_LOGGING = True
 
