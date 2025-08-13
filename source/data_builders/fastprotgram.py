@@ -146,10 +146,22 @@ class FastProtGramDataBuilder:
             # The bag now contains strings like "source_id target_id"
             edge_id_str_bag = final_preprocessed_input_bag.map(extract_edges_partial).flatten()
 
-            # 3. Convert the bag of ID strings to a DataFrame of integers
-            # --- DEFINITIVE FIX for AttributeError: Use .map() to process items in the bag before converting to a DataFrame ---
-            # This correctly splits each string and converts to int within the Dask Bag paradigm.
-            edge_id_ddf = edge_id_str_bag.map(lambda s: [int(x) for x in s.split()]).to_dataframe(columns=['source', 'target'])
+            # --- DEFINITIVE FIX for Scalability & Stability: Use Parquet for intermediate storage ---
+            # Instead of a complex in-memory conversion or inefficient text files, we use Dask's
+            # optimized to_parquet/read_parquet workflow. This is both memory-safe and fast.
+            temp_edge_parts_dir = os.path.join(self.temp_dir, f"edge_parts_n{n}")
+            if os.path.exists(temp_edge_parts_dir):
+                shutil.rmtree(temp_edge_parts_dir)
+
+            # Map the bag of strings to a bag of dictionaries, the required format for to_parquet
+            edge_id_dict_bag = edge_id_str_bag.map(
+                lambda s: {'source': int(s.split()[0]), 'target': int(s.split()[1])}
+            )
+            # Write the bag of dictionaries to a Parquet dataset.
+            edge_id_dict_bag.to_parquet(temp_edge_parts_dir, compute=True, engine='pyarrow')
+
+            # Read the Parquet dataset back into a Dask DataFrame.
+            edge_id_ddf = dd.read_parquet(temp_edge_parts_dir, engine='pyarrow')
 
             # 4. Aggregate edge weights
             print(f"  [n={n}] Aggregating edge weights...")
@@ -161,7 +173,9 @@ class FastProtGramDataBuilder:
             weighted_edges_ddf.to_parquet(temp_edge_file_path, engine='pyarrow', write_index=True, overwrite=True)
 
             print(f"  Level n={n} processing finished in {time.monotonic() - level_start_time:.2f}s.")
-            del ngrams_bag, ngrams_ddf, ngram_map_ddf, edge_id_str_bag, edge_id_ddf, weighted_edges_ddf, ngram_to_id_map
+            # Clean up the intermediate text files
+            shutil.rmtree(temp_edge_parts_dir)
+            del ngrams_bag, ngrams_ddf, ngram_map_ddf, edge_id_str_bag, edge_id_dict_bag, edge_id_ddf, weighted_edges_ddf, ngram_to_id_map, temp_edge_parts_dir
             gc.collect()
 
         # --- Phase 2: Build and save final graph objects ---
