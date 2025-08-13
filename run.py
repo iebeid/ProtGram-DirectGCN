@@ -45,14 +45,16 @@ def is_environment_valid(project_root: Path) -> bool:
         )
         # Create a set for faster lookups
         installed_packages = {pkg['name'] for pkg in json.loads(result.stdout)}
+        installed_packages_lower = {k.lower(): v for k, v in installed_packages.items()}
 
         # 2. Parse the required packages from the environment.yml file
         # We use a simple parser to avoid depending on PyYAML before it's installed.
         with open(env_file, 'r') as f:
             lines = f.readlines()
 
-        required_packages = set()
+        required_packages: Dict[str, str] = {}
         in_dependencies_section = False
+        in_pip_section = False
         for line in lines:
             if line.startswith("dependencies:"):
                 in_dependencies_section = True
@@ -60,9 +62,8 @@ def is_environment_valid(project_root: Path) -> bool:
             if not in_dependencies_section:
                 continue
 
-            line = line.strip()
-            # Skip comments, metadata, and empty lines
-            if not line or line.startswith(('#', 'name:', 'channels:', 'prefix:')):
+            line_stripped = line.strip()
+            if not line_stripped or line_stripped.startswith(('#', 'name:', 'channels:', 'prefix:
                 continue
 
             # The actual package spec starts after the YAML list marker '- '

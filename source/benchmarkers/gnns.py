@@ -26,8 +26,7 @@ from configuration.config import Config
 from source.benchmarkers.base import BaseBenchmarker
 from source.models.factory import ModelFactory
 from source.data_structures.graph import DirectedGraph, DirectedNgramGraph
-from source.utils.post import EmbeddingProcessor
-from source.utils.data import DataUtils
+from source.utils.data import DataUtils, ProtgramDaskHelpers
 
 
 class GNNBenchmarker(BaseBenchmarker):
@@ -35,8 +34,6 @@ class GNNBenchmarker(BaseBenchmarker):
         super().__init__(config, "GNN Benchmarker")
         self.embedding_dir = config.RESULTS_BENCHMARK_EMBEDDINGS_DIR
         self.model_factory = ModelFactory(config, context='benchmark')
-        # --- FIX: Instantiate the correct graph processor class --- #noqa
-        self.processor = DirectedGraph()
         print(f"Benchmark embeddings will be saved to: {self.embedding_dir}")
 
     def _train_and_evaluate(self, model: torch.nn.Module, data: Data) -> Tuple[Dict[str, float], pd.DataFrame]:
@@ -159,11 +156,6 @@ class GNNBenchmarker(BaseBenchmarker):
         is_heterophilic = homophily_ratio < 0.6
         print(f"  Dataset Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
 
-        # --- FIX: Use the instantiated processor to preprocess the data, resolving the AttributeError ---
-        data = self.processor._preprocess_for_custom_models(data, use_homo_hetero_paths=is_heterophilic)
-
-        if is_heterophilic:
-            print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.")
 
         results = []
         for model_name in self.config.BENCHMARK_GNN_MODELS_TO_RUN:
@@ -178,16 +170,30 @@ class GNNBenchmarker(BaseBenchmarker):
                     mlflow.log_param("learning_rate", self.config.BENCHMARK_GNN_LEARNING_RATE)
                     mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
+                    # --- DEFINITIVE FIX for Zero-Loss Issue: Prepare data specifically for each model ---
+                    # This ensures standard models get a raw graph and custom models get their
+                    # required specialized graph representations, preventing double-normalization.
+                    # The DirectedGraph class is only needed to create the base sparse matrices.
+                    temp_graph_processor = DirectedGraph()
+                    temp_graph_obj = temp_graph_processor._preprocess_for_custom_models(data, use_homo_hetero_paths=is_heterophilic)
+
+                    data_for_model = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
+                        model_type=model_name, graph=temp_graph_obj, features=data.x, labels=data.y,
+                        use_homo_hetero_paths=is_heterophilic,
+                        A_homo_norm=getattr(temp_graph_obj, 'edge_index_homo_norm', None),
+                        A_hetero_norm=getattr(temp_graph_obj, 'edge_index_hetero_norm', None)
+                    )
+
                     model = self.model_factory.create_model(
                         model_name=model_name, in_channels=data.num_features, num_classes=num_classes,
-                        graph_obj=data, use_homo_hetero_paths=is_heterophilic
+                        graph_obj=temp_graph_obj, use_homo_hetero_paths=is_heterophilic
                     )
 
                     if self.config.DEBUG_VERBOSE:
                         print("  Model Architecture:")
                         print(model)
 
-                    metrics, history_df = self._train_and_evaluate(model, data)
+                    metrics, history_df = self._train_and_evaluate(model, data_for_model)
                     result_row = {"dataset": variant_name, "model": model_name, "error": None}
                     result_row.update(metrics)
                     results.append(result_row)

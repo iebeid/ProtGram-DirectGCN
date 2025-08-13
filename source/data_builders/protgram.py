@@ -109,21 +109,9 @@ class ProtGramDataBuilder:
         preprocessed_sequence_bag_unpersisted = raw_sequence_bag_with_flag.starmap(
             ProtgramDaskHelpers.preprocess_sequence_tuple_for_bag)
 
+        # --- DEFINITIVE FIX for OOM Killer: Do NOT persist the bag for large datasets. ---
+        # This streams the data from disk for each n-gram level, trading speed for memory stability.
         final_preprocessed_input_bag = preprocessed_sequence_bag_unpersisted
-        if dask_scheduler_general != 'sync':
-            print("  Persisting preprocessed_sequence_bag in Dask memory...")
-            final_preprocessed_input_bag = preprocessed_sequence_bag_unpersisted.persist(
-                scheduler=dask_scheduler_general, num_workers=effective_dask_workers
-            )
-            try:
-                persisted_bag_count = final_preprocessed_input_bag.count().compute(
-                    scheduler=dask_scheduler_general, num_workers=effective_dask_workers)
-                print(f"  DEBUG: Count of items in persisted preprocessed_sequence_bag: {persisted_bag_count}")
-            except Exception as e_count:
-                print(f"  DEBUG: Error counting persisted bag items: {e_count}")
-            print(f"  Preprocessed bag persisted. Type: {type(final_preprocessed_input_bag)}")
-        else:
-            print("  Using unpersisted preprocessed_sequence_bag for synchronous execution.")
 
         original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
         if dask_scheduler_general != 'sync':

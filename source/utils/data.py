@@ -256,25 +256,21 @@ class FastaUtils:
         An efficient FASTA parser that reads one or more FASTA files, yielding
         an ID and sequence for each record.
         """
-        for path_str in fasta_filepaths:
+        # --- DEFINITIVE FIX for Progress Tracking: Use Bio.SeqIO and tqdm ---
+        # This provides a robust parser and a clear progress bar for large files.
+        for path_str in tqdm(fasta_filepaths, desc="Parsing FASTA files", leave=False, unit="file"):
             normalized_path = Path(path_str)
-            protein_id: Optional[str] = None
-            sequence_parts: List[str] = []
             try:
+                # First, get the total number of records for the progress bar
                 with open(normalized_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line: continue
-                        if line.startswith('>'):
-                            if protein_id and sequence_parts:
-                                yield protein_id, "".join(sequence_parts)
-                            header = line[1:]
-                            protein_id = FastaUtils.extract_id_from_header(header)
-                            sequence_parts = []
-                        elif protein_id is not None:
-                            sequence_parts.append(line.upper())
-                if protein_id and sequence_parts:
-                    yield protein_id, "".join(sequence_parts)
+                    num_records = sum(1 for line in f if line.startswith('>'))
+
+                # Now, parse the file with a progress bar
+                with open(normalized_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    for record in tqdm(SeqIO.parse(f, "fasta"), total=num_records, desc=f"  - {normalized_path.name}", leave=False, unit="seq"):
+                        protein_id = FastaUtils.extract_id_from_header(record.description)
+                        yield protein_id, str(record.seq).upper()
+
             except FileNotFoundError:
                 print(f"Error: FASTA file not found at {normalized_path}")
             except Exception as e:
