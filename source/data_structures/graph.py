@@ -229,6 +229,9 @@ class DirectedGraph:
         mathcal_A_in = self._calculate_single_propagation_matrix(A_in_w_sparse, data.num_nodes)
         data.edge_index_mathcal_out, data.edge_weight_mathcal_out = mathcal_A_out.indices(), mathcal_A_out.values()
         data.edge_index_mathcal_in, data.edge_weight_mathcal_in = mathcal_A_in.indices(), mathcal_A_in.values()
+        # --- DEFINITIVE FIX: Attach the full sparse tensors for downstream access ---
+        data.mathcal_A_out = mathcal_A_out
+        data.mathcal_A_in = mathcal_A_in
         return data
 
 
