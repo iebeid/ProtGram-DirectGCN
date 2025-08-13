@@ -66,6 +66,9 @@ class ProtGramXGCNTrainer:
         all_attention_data_per_model: Dict[str, Dict[str, Any]] = {}
         id_map = self._load_id_map()
 
+        # --- ANTICIPATORY DEBUGGING: Parse sequences once to avoid redundant I/O ---
+        protein_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
+
         context = id_map if isinstance(id_map, IDMapGenerator) else nullcontext(id_map)
 
         with context as mapper:
@@ -74,7 +77,7 @@ class ProtGramXGCNTrainer:
                 ngram_embeddings_per_level, hierarchical_attention = self._train_gnns_hierarchically(model_type)
 
                 final_protein_embeddings, protein_pooling_attention = self._pool_to_protein_level(
-                    ngram_embeddings_per_level,
+                    ngram_embeddings_per_level, protein_sequences,
                     level_ngram_to_idx=self._get_level_ngram_maps()
                 )
 
@@ -432,6 +435,7 @@ class ProtGramXGCNTrainer:
         return {n: graph.get_node_to_idx_map() for n, graph in self._loaded_graphs.items()}
 
     def _pool_to_protein_level(self, ngram_embeddings_per_level: Dict[int, np.ndarray],
+                               protein_sequences: List[Tuple[str, str]],
                                level_ngram_to_idx: Dict[int, Dict[str, int]]) -> Tuple[Dict[str, np.ndarray], Dict[str, Dict[int, float]]]:
         """Pools the final n-gram embeddings to the protein level."""
         final_n = self.config.PROTGRAM_NGRAM_MAX_N
@@ -441,8 +445,6 @@ class ProtGramXGCNTrainer:
         if final_level_embeddings is None or final_level_map is None:
             print("  Final level embeddings or map not found. Cannot perform protein-level pooling.")
             return {}, {}
-
-        protein_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
 
         return EmbeddingProcessor.pool_ngram_embeddings_for_protein_fast(
             protein_sequences=protein_sequences,

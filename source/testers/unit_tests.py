@@ -27,6 +27,7 @@ import mlflow
 from configuration.config import Config
 from source.benchmarkers.gnns import GNNBenchmarker
 from source.data_builders.protgram import ProtGramDataBuilder
+from source.data_builders.fastprotgram import FastProtGramDataBuilder
 from source.experiments.ppi_1 import PPIPipeline
 from source.models.fnn.mlp import MLP
 from source.trainers.transformers import TransformerEmbedder
@@ -494,7 +495,12 @@ def run_graph_builder_full_test():
     print(f"  GraphBuilder output will be within: {config.BASE_OUTPUT_DIR.name}")
 
     try:
-        graph_builder_instance = ProtGramDataBuilder(config)
+        if config.USE_FAST_GRAPH_BUILDER:
+            print("  Using FastProtGramDataBuilder for full test.")
+            graph_builder_instance = FastProtGramDataBuilder(config)
+        else:
+            print("  Using legacy ProtGramDataBuilder for full test.")
+            graph_builder_instance = ProtGramDataBuilder(config)
         graph_builder_instance.run()
         print(f"--- GraphBuilder run() method completed ---")
         for n_val_check in range(1, config.GCN_NGRAM_MAX_N + 1):
@@ -557,7 +563,12 @@ class TestGraphBuilderSmoke(unittest.TestCase):
             print(f"  Outputting to: {config.BASE_OUTPUT_DIR.name}")
             print(f"  N_max: {config.GCN_NGRAM_MAX_N}, Workers: {config.GRAPH_BUILDER_WORKERS}")
 
-            graph_builder = ProtGramDataBuilder(config)
+            if config.USE_FAST_GRAPH_BUILDER:
+                print("  Using FastProtGramDataBuilder for smoke test.")
+                graph_builder = FastProtGramDataBuilder(config)
+            else:
+                print("  Using legacy ProtGramDataBuilder for smoke test.")
+                graph_builder = ProtGramDataBuilder(config)
             graph_builder.run()
 
             expected_graph_file = config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{config.GCN_NGRAM_MAX_N}.pkl"

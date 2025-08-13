@@ -470,7 +470,7 @@ class EmbeddingProcessor:
 
     @staticmethod
     def generate_edge_features_batched(interaction_pairs: List[Tuple[str, str, int]],
-                                       protein_embeddings: 'EmbeddingLoader', method: str,
+                                       protein_embeddings: Union[Dict[str, np.ndarray], 'EmbeddingLoader'], method: str,
                                        batch_size: int, embedding_dim: int) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
         """Generates edge features in batches for link prediction. Yields (features_batch, labels_batch)."""
         if not protein_embeddings or embedding_dim <= 0: return

@@ -47,7 +47,8 @@ tf.get_logger().setLevel('WARNING')
 
 from configuration.config import Config
 from configuration.data import setup_data
-from source.data_builders.protgram import ProtGramDataBuilder
+from source.data_builders.fastprotgram import FastProtGramDataBuilder
+from source.data_builders.protgram import ProtGramDataBuilder # Legacy
 from source.benchmarkers.gnns import GNNBenchmarker
 from source.benchmarkers.nes import NetworkEmbeddingBenchmarker
 from source.experiments.ppi_1 import PPIPipeline
@@ -283,8 +284,13 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
         DataUtils.print_header("Ensuring n=1 Graph is Built for Singleton Evaluation")
         singleton_config = copy.deepcopy(config)
         singleton_config.PROTGRAM_NGRAM_MAX_N = 1
-        # This will build the n=1 graph or skip if it already exists.
-        ProtGramDataBuilder(singleton_config).run()
+        # This will build the n=1 graph or skip if it already exists using the configured builder.
+        if config.USE_FAST_GRAPH_BUILDER:
+            print("  Using FastProtGramDataBuilder for singleton graph.")
+            FastProtGramDataBuilder(singleton_config).run()
+        else:
+            print("  Using legacy ProtGramDataBuilder for singleton graph.")
+            ProtGramDataBuilder(singleton_config).run()
 
         # Now, explicitly load the graph and run the evaluation.
         n1_graph_path = singleton_config.RESULTS_GRAPH_OBJECTS_DIR / "ngram_graph_n1.pkl"
@@ -444,7 +450,12 @@ def main():
                         # If the user proceeds, we must now build the FULL set of graphs (n=1 to 3)
                         # before running the main embedding pipelines.
                         DataUtils.print_header("Building all n-gram graphs for the main pipeline")
-                        ProtGramDataBuilder(config).run()  # Re-run, which will skip any existing graphs.
+                        if config.USE_FAST_GRAPH_BUILDER:
+                            print("  Using FastProtGramDataBuilder for main graph build.")
+                            FastProtGramDataBuilder(config).run()
+                        else:
+                            print("  Using legacy ProtGramDataBuilder for main graph build.")
+                            ProtGramDataBuilder(config).run()
 
                         generated_embedding_files = _run_main_embedding_pipelines(config)
                         final_evaluation_list = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_embedding_files

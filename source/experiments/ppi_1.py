@@ -13,7 +13,7 @@ import time
 from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Union
 import h5py
 import mlflow
 import numpy as np
@@ -98,7 +98,7 @@ class PPIPipeline:
             self,
             train_pairs: List[Tuple[str, str, int]],
             val_pairs: List[Tuple[str, str, int]],
-            protein_embeddings: Dict[str, np.ndarray],
+            protein_embeddings: Union[Dict[str, np.ndarray], 'EmbeddingLoader'],
             edge_feature_dim: int,
             embedding_dim: int,
             embedding_name: str,
@@ -188,7 +188,7 @@ class PPIPipeline:
         tf.keras.backend.clear_session()
         return metrics, history.history
 
-    def _run_cv_workflow(self, embedding_name: str, all_pairs_for_cv: List[Tuple[str, str, int]], protein_embeddings: Dict[str, np.ndarray]) -> Dict[str, Any]:
+    def _run_cv_workflow(self, embedding_name: str, all_pairs_for_cv: List[Tuple[str, str, int]], protein_embeddings: Union[Dict[str, np.ndarray], 'EmbeddingLoader']) -> Dict[str, Any]:
         """
         Manages the cross-validation process, including splitting data into folds,
         calling the training/evaluation logic for each fold, and aggregating results.
@@ -214,7 +214,13 @@ class PPIPipeline:
             [f'ndcg_at_{k}' for k in self.config.EVAL_K_VALUES_FOR_TABLE]
         )
 
-        first_valid_emb = next((v for v in protein_embeddings.values() if v is not None and v.size > 0), None)
+        # --- MODIFIED: Get embedding dim safely from dict or loader ---
+        if isinstance(protein_embeddings, dict):
+            first_valid_emb = next((v for v in protein_embeddings.values() if v is not None and v.size > 0), None)
+        else:  # Is an EmbeddingLoader
+            first_key = next(iter(protein_embeddings.get_keys()), None)
+            first_valid_emb = protein_embeddings[first_key] if first_key else None
+
         if first_valid_emb is None:
             aggregated_results['notes'] = "No valid embeddings found for CV."
             return aggregated_results
@@ -363,19 +369,20 @@ class PPIPipeline:
 
                 try:
                     with EmbeddingLoader(emb_path) as protein_embeddings_loader:
-                        print("  Loading required embeddings into memory for CV...")
-                        current_protein_embeddings_dict = {pid: protein_embeddings_loader[pid] for pid in all_required_protein_ids if pid in protein_embeddings_loader}
-
-                        if not current_protein_embeddings_dict:
-                            print(f"  No embeddings loaded into memory for {emb_name}. Skipping CV.")
+                        # --- DEFINITIVE FIX for Scalability: Do NOT load all embeddings into memory. ---
+                        # Instead, we find which pairs can be constructed from the available embeddings
+                        # and pass the lazy loader object directly to the CV workflow.
+                        available_ids = protein_embeddings_loader.get_keys()
+                        if not available_ids:
+                            print(f"  No embeddings found in H5 file for {emb_name}. Skipping CV.")
                             continue
 
-                        pairs_for_cv = [p for p in all_pairs_initial_load if p[0] in current_protein_embeddings_dict and p[1] in current_protein_embeddings_dict]
+                        pairs_for_cv = [p for p in all_pairs_initial_load if p[0] in available_ids and p[1] in available_ids]
                         if not pairs_for_cv:
                             print(f"  No pairs remain after ensuring both proteins have loaded embeddings for {emb_name}. Skipping CV.")
                             continue
 
-                        results = self._run_cv_workflow(emb_name, pairs_for_cv, current_protein_embeddings_dict)
+                        results = self._run_cv_workflow(emb_name, pairs_for_cv, protein_embeddings_loader)
                         all_cv_results_list.append(results)
 
                         if mlflow_active and run and results:
