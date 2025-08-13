@@ -108,11 +108,6 @@ class FastProtGramDataBuilder:
         raw_sequence_bag_with_flag = db.from_sequence(sequence_generator, npartitions=num_partitions_for_bag)
         final_preprocessed_input_bag = raw_sequence_bag_with_flag.starmap(ProtgramDaskHelpers.preprocess_sequence_tuple_for_bag)
 
-        original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
-        if dask_scheduler_general != 'sync':
-            os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-            print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations.")
-
         # --- ARCHITECTURAL REFACTOR: Process all n-gram levels in a scalable Dask pipeline ---
         for n in n_values:
             DataUtils.print_header(f"Processing N-gram Level: n = {n}")
@@ -165,13 +160,6 @@ class FastProtGramDataBuilder:
             print(f"  Level n={n} processing finished in {time.monotonic() - level_start_time:.2f}s.")
             del ngrams_bag, ngrams_ddf, ngram_map_ddf, edge_pairs_bag, edge_pairs_ddf, merged_source, merged_final, weighted_edges_ddf
             gc.collect()
-
-        if dask_scheduler_general != 'sync':
-            if original_cuda_visible_devices is None:
-                if "CUDA_VISIBLE_DEVICES" in os.environ: del os.environ["CUDA_VISIBLE_DEVICES"]
-            else:
-                os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
-            print("  Restored original CUDA_VISIBLE_DEVICES setting for the main process.")
 
         # --- Phase 2: Build and save final graph objects ---
         DataUtils.print_header("Phase 2: Building and saving final graph objects")

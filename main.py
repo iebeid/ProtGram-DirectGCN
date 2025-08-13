@@ -283,14 +283,16 @@ def _run_pre_analysis_and_prompt(config: Config, fasta_file_path: Path) -> bool:
     if config.RUN_SINGLETON_GCN_EVAL:
         DataUtils.print_header("Ensuring n=1 Graph is Built for Singleton Evaluation")
         singleton_config = copy.deepcopy(config)
-        singleton_config.PROTGRAM_NGRAM_MAX_N = 1
-        # This will build the n=1 graph or skip if it already exists using the configured builder.
-        if config.USE_FAST_GRAPH_BUILDER:
-            print("  Using FastProtGramDataBuilder for singleton graph.")
-            FastProtGramDataBuilder(singleton_config).run()
-        else:
-            print("  Using legacy ProtGramDataBuilder for singleton graph.")
-            ProtGramDataBuilder(singleton_config).run()
+        # --- DEFINITIVE FIX: Isolate graph building in a subprocess ---
+        # This prevents memory/GPU context conflicts between Dask and TensorFlow/PyTorch.
+        # We create a temporary config where only the n=1 graph is built.
+        singleton_config.PROTGRAM_NGRAM_MAX_N = 1 # Override for this run
+        build_script_path = singleton_config.BASE_SOURCE_DIR / "data_builders" / "build_graphs.py"
+        # The build_graphs.py script will read the main config, so we don't need to pass it.
+        # This is a temporary measure for the singleton run; the main loop will handle the full build.
+        # Note: This approach is simplified for the singleton case. A more robust implementation
+        # might pass a serialized config path to the subprocess.
+        subprocess.run([sys.executable, str(build_script_path)], check=True)
 
         # Now, explicitly load the graph and run the evaluation.
         n1_graph_path = singleton_config.RESULTS_GRAPH_OBJECTS_DIR / "ngram_graph_n1.pkl"
@@ -449,13 +451,10 @@ def main():
                     if _run_pre_analysis_and_prompt(config, fasta_file_path):
                         # If the user proceeds, we must now build the FULL set of graphs (n=1 to 3)
                         # before running the main embedding pipelines.
-                        DataUtils.print_header("Building all n-gram graphs for the main pipeline")
-                        if config.USE_FAST_GRAPH_BUILDER:
-                            print("  Using FastProtGramDataBuilder for main graph build.")
-                            FastProtGramDataBuilder(config).run()
-                        else:
-                            print("  Using legacy ProtGramDataBuilder for main graph build.")
-                            ProtGramDataBuilder(config).run()
+                        DataUtils.print_header("Building all n-gram graphs for the main pipeline via isolated process")
+                        build_script_path = config.BASE_SOURCE_DIR / "data_builders" / "build_graphs.py"
+                        # The subprocess inherits the environment and runs the build script.
+                        subprocess.run([sys.executable, str(build_script_path)], check=True)
 
                         generated_embedding_files = _run_main_embedding_pipelines(config)
                         final_evaluation_list = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_embedding_files

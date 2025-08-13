@@ -124,11 +124,6 @@ class ProtGramDataBuilder:
         # This streams the data from disk for each n-gram level, trading speed for memory stability.
         final_preprocessed_input_bag = preprocessed_sequence_bag_unpersisted
 
-        original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
-        if dask_scheduler_general != 'sync':
-            os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-            print("  Temporarily set CUDA_VISIBLE_DEVICES=-1 for Dask operations.")
-
         for n_val_loop in n_values:
             DataUtils.print_header(
                 f"Processing N-gram Level n = {n_val_loop} (Dask scheduler general: {dask_scheduler_general})")
@@ -223,13 +218,6 @@ class ProtGramDataBuilder:
             del ngram_to_id_map
             gc.collect()
             print(f"  Level n={n_val_loop} (Phase 1) finished in {time.monotonic() - phase1_level_start_time:.2f}s.")
-
-        if dask_scheduler_general != 'sync':
-            if original_cuda_visible_devices is None:
-                if "CUDA_VISIBLE_DEVICES" in os.environ: del os.environ["CUDA_VISIBLE_DEVICES"]
-            else:
-                os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
-            print("  Restored original CUDA_VISIBLE_DEVICES setting for the main process.")
 
         DataUtils.print_header("Phase 2: Building and saving final graph objects")
         phase2_start_time = time.monotonic()
