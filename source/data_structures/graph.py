@@ -261,10 +261,10 @@ class DirectedNgramGraph(Graph):
             try:
                 # --- FIX: Avoid pd.read_parquet to prevent loading the entire edge file into memory. ---
                 # Instead, iterate over the file in chunks using pyarrow for scalability.
-                import pyarrow.parquet as pq
-                parquet_file = pq.ParquetFile(edge_file_path)
+                import pyarrow.parquet as pq # --- DEFINITIVE FIX: Use ParquetDataset to read a directory of files ---
+                parquet_file = pq.ParquetDataset(edge_file_path)
                 source_chunks, target_chunks, weight_chunks = [], [], []
-                for batch in parquet_file.iter_batches(batch_size=10_000_000):
+                for batch in parquet_file.read_pandas().iterbatches(batch_size=10_000_000):
                     df_chunk = batch.to_pandas()
                     source_chunks.append(df_chunk['source'].to_numpy(dtype=np.int64))
                     target_chunks.append(df_chunk['target'].to_numpy(dtype=np.int64))

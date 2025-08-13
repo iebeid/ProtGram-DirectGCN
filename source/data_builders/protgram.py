@@ -274,8 +274,9 @@ class ProtGramDataBuilder:
                 n_value=n
             )
 
+            # --- DEFINITIVE FIX: Use shutil.rmtree to remove the directory created by Dask ---
             if os.path.exists(temp_edge_file_path):
-                os.remove(temp_edge_file_path)
+                shutil.rmtree(temp_edge_file_path)
             # --- END MEMORY OPTIMIZATION ---
 
             output_path = os.path.join(self.output_dir, f'ngram_graph_n{n}.pkl')
