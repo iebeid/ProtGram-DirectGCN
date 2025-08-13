@@ -208,6 +208,11 @@ class DirectedGraph:
         A_out_w_sparse = torch.sparse_coo_tensor(data.edge_index, base_edge_weight,
                                                  (data.num_nodes, data.num_nodes)).coalesce()
         A_in_w_sparse = A_out_w_sparse.t().coalesce()
+        # --- DEFINITIVE FIX: Attach the sparse tensors themselves to the data object ---
+        # The downstream helper function (`prepare_pyg_data_from_protgram_graph`)
+        # expects these attributes to exist on the object it receives.
+        data.A_out_w = A_out_w_sparse
+        data.A_in_w = A_in_w_sparse
         A_undir_w = (A_out_w_sparse + A_in_w_sparse).coalesce()
         A_undirected_norm = self._normalize_symmetric_matrix(A_undir_w, data.num_nodes)
         data.edge_index_out, data.edge_weight_out = A_out_w_sparse.indices(), A_out_w_sparse.values()
