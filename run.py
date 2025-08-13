@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: run.py
 # PURPOSE: Project entry point and environment setup bootstrapper.
-# VERSION: 3.1 (Corrected YAML parsing in validation logic)
+# VERSION: 3.2 (Corrected version validation logic)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -9,6 +9,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Dict
 
 # --- FIX: Suppress the Hugging Face Tokenizers parallelism warning ---
 # This is a common warning in multiprocessing environments. Setting this environment
@@ -29,7 +30,7 @@ ENVIRONMENT_YML_FILE = "environment.yml"
 def is_environment_valid(project_root: Path) -> bool:
     """
     Checks if the current Conda environment matches the required packages
-    specified in the environment.yml file.
+    and versions specified in the environment.yml file.
     """
     env_file = project_root / "configuration" / ENVIRONMENT_YML_FILE
     if not env_file.exists():
@@ -43,12 +44,10 @@ def is_environment_valid(project_root: Path) -> bool:
             ["conda", "list", "--json"],
             capture_output=True, text=True, check=True, shell=False
         )
-        # Create a set for faster lookups
-        installed_packages = {pkg['name'] for pkg in json.loads(result.stdout)}
-        installed_packages_lower = {k.lower(): v for k, v in installed_packages.items()}
+        # Create a dictionary for faster lookups: { 'package_name': 'version' }
+        installed_packages = {pkg['name'].lower(): pkg['version'] for pkg in json.loads(result.stdout)}
 
         # 2. Parse the required packages from the environment.yml file
-        # We use a simple parser to avoid depending on PyYAML before it's installed.
         with open(env_file, 'r') as f:
             lines = f.readlines()
 
@@ -63,33 +62,34 @@ def is_environment_valid(project_root: Path) -> bool:
                 continue
 
             line_stripped = line.strip()
-            if not line_stripped or line_stripped.startswith(('#', 'name:', 'channels:', 'prefix:
+            # --- DEFINITIVE FIX for SyntaxError: Correctly terminate the string literal ---
+            if not line_stripped or line_stripped.startswith(('#', 'name:', 'channels:', 'prefix:')):
                 continue
 
-            # The actual package spec starts after the YAML list marker '- '
-            package_spec = line
-            if line.startswith('- '):
-                package_spec = line[2:].strip()
-
-            # --- FIX: Skip the 'pip:' section header, which is not a package ---
-            # The previous logic incorrectly identified '- pip:' as a package named 'pip:'.
-            if package_spec == 'pip:':
+            if '- pip:' in line_stripped:
+                in_pip_section = True
                 continue
 
-            # A more robust parser for package names with various version specifiers.
-            package_name = package_spec.split('=')[0].split('>')[0].split('<')[0].strip()
+            package_spec = line_stripped.lstrip('- ').strip()
+            if not package_spec:
+                continue
 
-            # The package name in yml (e.g., scikit-learn) should match conda list output.
-            if package_name:
-                required_packages.add(package_name.lower()) # NEW: Standardize to lowercase
+            # Handle both conda (e.g., 'python=3.11') and pip (e.g., 'transformers==4.41.2') formats
+            parts = package_spec.split('==') if '==' in package_spec else package_spec.split('=')
+            if len(parts) >= 2:
+                name, version = parts[0].strip(), parts[1].strip().strip("'\"")
+                required_packages[name.lower()] = version
 
-        # 3. Check if all required packages are installed (case-insensitively)
-        installed_packages_lower = {pkg.lower() for pkg in installed_packages}
-        missing_packages = required_packages - installed_packages_lower
-
-        if missing_packages:
-            print(f"--- Validation FAILED. Missing required packages: {', '.join(sorted(list(missing_packages)))} ---")
-            return False
+        # 3. Check if all required packages and their versions match
+        for req_name, req_version in required_packages.items():
+            if req_name not in installed_packages:
+                print(f"--- Validation FAILED. Missing required package: {req_name} ---")
+                return False
+            # --- NEW: Check for exact version match ---
+            if installed_packages[req_name] != req_version:
+                print(f"--- Validation FAILED. Version mismatch for '{req_name}'. ---")
+                print(f"    Required: {req_version}, Installed: {installed_packages[req_name]}")
+                return False
 
         print("--- Environment validation PASSED. ---")
         return True
