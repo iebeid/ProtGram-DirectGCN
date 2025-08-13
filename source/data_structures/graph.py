@@ -264,7 +264,7 @@ class DirectedNgramGraph(Graph):
                 import pyarrow.parquet as pq # --- DEFINITIVE FIX: Use ParquetDataset to read a directory of files ---
                 parquet_file = pq.ParquetDataset(edge_file_path)
                 source_chunks, target_chunks, weight_chunks = [], [], []
-                for batch in parquet_file.read_pandas().iterbatches(batch_size=10_000_000):
+                for batch in parquet_file.read().to_batches(max_chunksize=10_000_000):
                     df_chunk = batch.to_pandas()
                     source_chunks.append(df_chunk['source'].to_numpy(dtype=np.int64))
                     target_chunks.append(df_chunk['target'].to_numpy(dtype=np.int64))

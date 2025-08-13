@@ -172,7 +172,7 @@ if __name__ == "__main__":
 
         # STAGE 4: Install remaining pip packages
         "echo '--- Stage 4: Installing remaining pip packages (MLflow, Transformers, PyG) ---'",
-        "pip install --no-cache-dir mlflow gdown 'transformers==4.41.2' 'huggingface-hub==0.21.4' 'safetensors==0.4.3'",
+        "pip install --no-cache-dir mlflow gdown 'transformers==4.41.2' 'safetensors==0.4.3'",
         (f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
          f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION.replace('.', '')}.html"),
 
