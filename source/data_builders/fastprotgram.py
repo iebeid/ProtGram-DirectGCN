@@ -147,7 +147,9 @@ class FastProtGramDataBuilder:
             edge_id_str_bag = final_preprocessed_input_bag.map(extract_edges_partial).flatten()
 
             # 3. Convert the bag of ID strings to a DataFrame of integers
-            edge_id_ddf = edge_id_str_bag.str.split(' ', expand=True).astype(int).to_dask_dataframe(columns=['source', 'target'])
+            # --- DEFINITIVE FIX for AttributeError: Use .map() to process items in the bag before converting to a DataFrame ---
+            # This correctly splits each string and converts to int within the Dask Bag paradigm.
+            edge_id_ddf = edge_id_str_bag.map(lambda s: [int(x) for x in s.split()]).to_dataframe(columns=['source', 'target'])
 
             # 4. Aggregate edge weights
             print(f"  [n={n}] Aggregating edge weights...")
