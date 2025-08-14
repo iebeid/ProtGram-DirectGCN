@@ -118,6 +118,30 @@
 	
 	Finally, some research has moved beyond simple edges to consider higher-order connectivity patterns. MotifNet \cite{monti_motifnet_2018}, uses small, recurring directed subgraphs called motifs to define multiple anisotropic views of the graph, allowing the model to capture more complex structural information. Our $ProtGramDirectGCN$ builds upon the principles of spatial methods by explicitly handling incoming, outgoing, and undirected information channels. However, it introduces a unique hybrid GCN-MLP layer architecture with a gating mechanism, allowing the model to learn the relative importance of each information channel and a shared feature transformation for a more expressive aggregation scheme.
 	
+	\section{Data Preparation}
+	%1- go to https://downloads.thebiogrid.org/BioGRID/Release-Archive/BIOGRID-4.4.248/
+	%2- download the file named BIOGRID-ALL-4.4.248.mitab.zip the mitab format
+	%3- download the id_mapping file from uniprot downloads
+	%4- download the experimental negative interaction files from %https://www.russelllab.org/negatives/
+	%5- extract the uniprotkb to geneid mapping columns from the main uniprot idmapping file and %save them as csv file
+	%6- in the main positive interaction BioGrid interaction file extract the first 2 columns %mapping interactor A to interactor B via geneid
+	%7- import both files as seperate table to a mysql database 
+	%8- write a join sql statment to map the geneid columns from the biogrid 2 column table to %the uniprot corresponding rows in the id mapping table 
+	%9- in the join statment extract the actual ids using substring 
+	%10- now you will have a 2 column table with uniprotkbids for interactor a and interactor b
+	%11- you can save that table as csv called positive_interactions
+	%12- the negative interaction files are already indexed with the uniprotid
+	%13- extract the first 2 column represeting interactor a and interactor b and insert them %into a pre created mysql table
+	%14- repeat for each species file 
+	%15- do a substring select statment to extract the id number only from the resulting cmbined %table 
+	%16- exprot the table as csv file and call it negative_interactions.csv
+	
+	
+	
+	SQL statments 
+	
+	\section{Computational Capacity}
+	
 	
 		\bibliographystyle{Frontiers-Harvard}
 	\bibliography{references}

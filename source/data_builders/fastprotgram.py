@@ -157,8 +157,11 @@ class FastProtGramDataBuilder:
             edge_id_dict_bag = edge_id_str_bag.map(
                 lambda s: {'source': int(s.split()[0]), 'target': int(s.split()[1])}
             )
-            # Write the bag of dictionaries to a Parquet dataset.
-            edge_id_dict_bag.to_parquet(temp_edge_parts_dir, compute=True, engine='pyarrow')
+            # --- DEFINITIVE FIX for AttributeError: Convert Bag to DataFrame before writing. ---
+            # The .to_parquet() method on a Bag can be unreliable. The robust path is
+            # Bag -> DataFrame -> Parquet.
+            edge_id_ddf_from_bag = edge_id_dict_bag.to_dataframe()
+            edge_id_ddf_from_bag.to_parquet(temp_edge_parts_dir, engine='pyarrow', overwrite=True)
 
             # Read the Parquet dataset back into a Dask DataFrame.
             edge_id_ddf = dd.read_parquet(temp_edge_parts_dir, engine='pyarrow')
