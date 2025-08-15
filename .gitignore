@@ -25,7 +25,5 @@ dist/
 # Logs
 *.log
 
-# Ignore all data files, except for the ground truth data and custom models
+# Ignore all data files. Data is managed locally by the pipeline.
 data/*
-!data/ground_truth/
-!data/models/

@@ -96,15 +96,15 @@ class Config:
 
     def _setup_pipeline_flags(self):
         """Sets flags to control which parts of the main pipeline are executed."""
-        self.RUN_GCN_PIPELINE = True
-        self.RUN_LSTM_PIPELINE = True
-        self.RUN_WORD2VEC_PIPELINE = True
-        self.RUN_TRANSFORMER_PIPELINE = True
-        self.RUN_BENCHMARKING_PIPELINE = True
-        self.RUN_NETWORK_EMBEDDING_BENCHMARKING = True
-        self.RUN_MAIN_PPI_EVALUATION = True
+        self.RUN_GCN_PIPELINE = False
+        self.RUN_LSTM_PIPELINE = False
+        self.RUN_WORD2VEC_PIPELINE = False
+        self.RUN_TRANSFORMER_PIPELINE = False
+        self.RUN_BENCHMARKING_PIPELINE = False
+        self.RUN_NETWORK_EMBEDDING_BENCHMARKING = False
+        self.RUN_MAIN_PPI_EVALUATION = False
         self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers
-        self.RUN_SINGLETON_GCN_EVAL = True # Runs a fast evaluation on the n=1 graph for rapid prototyping
+        self.RUN_SINGLETON_GCN_EVAL = False # Runs a fast evaluation on the n=1 graph for rapid prototyping
         self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data
         self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = 0.01  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
         self.CLEANUP_DUMMY_DATA = True
@@ -115,9 +115,12 @@ class Config:
         Defines the data sources for automatic download.
         The key is a unique identifier, and 'path' is the final destination.
         """
+        # --- REFACTOR: Update data sources to pull from primary repositories ---
+        # This removes the dependency on pre-made CSV files in the Git repo.
         self.DATA_SOURCES: Dict[str, Dict] = {
             "UNIPROT_SPROT_FASTA": {
                 "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz",
+                "type": "file",
                 "path": self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta",
                 "post_process": "ungzip",
                 "checksum": None,
@@ -125,41 +128,57 @@ class Config:
             },
             "UNIREF_50_FASTA": {
                 "url": "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz",
+                "type": "file",
                 "path": self.DATA_SEQUENCES_DIR / "uniref50.fasta",
                 "post_process": "ungzip",
                 "checksum": None,
                 "cacheable": True
             },
-            "POS_INTERACTIONS": {
-                # --- FIX: Use direct download link for Google Drive to avoid downloading HTML page ---
-                "url": "https://drive.google.com/uc?id=1vDDdeOVdyu00y5Qux6HRdWtzywj9w7z4",
-                "path": self.DATA_GROUND_TRUTH_DIR / "positive_interactions.csv",
-                "post_process": None,
-                "checksum": None,
-                "cacheable": True
-            },
-            "NEG_INTERACTIONS": {
-                # --- FIX: Use direct download link for Google Drive to avoid downloading HTML page ---
-                "url": "https://drive.google.com/uc?id=1AZJS5_1XLM-GWWDjLWRTQU_5WQRROyrg",
-                "path": self.DATA_GROUND_TRUTH_DIR / "negative_interactions.csv",
-                "post_process": None,
-                "checksum": None,
-                "cacheable": True
+            "BIOGRID_INTERACTIONS": {
+                "url": "https://downloads.thebiogrid.org/BioGRID/Release-Archive/BIOGRID-4.4.248/BIOGRID-ALL-4.4.248.mitab.zip",
+                "type": "file",
+                "path": self.DATA_GROUND_TRUTH_DIR / "BIOGRID-ALL-4.4.248.mitab.txt",
+                "post_process": "unzip", "checksum": None, "cacheable": True
             },
             "PROTT5_MODEL": {
                 "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5",
+                "type": "file",
                 "path": self.DATA_MODELS_DIR / "per-protein.h5",
                 "post_process": None, "checksum": None,
                 "cacheable": True  # This large file will be cached persistently
             },
-            "ID_MAPPING_TSV": {
+            "UNIPROT_ID_MAPPING": {
                 "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping.dat.gz",
+                "type": "file",
                 "path": self.DATA_MAPPINGS_DIR / "idmapping.dat",
                 "post_process": "ungzip",
                 "checksum": None,
                 "cacheable": True  # This large file will be cached persistently
             }
         }
+        # Add all negative interaction sources dynamically
+        neg_urls = [
+            "https://www.russelllab.org/negatives/16169070_neg.mitab.gz", "https://www.russelllab.org/negatives/14605208_neg.mitab.gz",
+            "https://www.russelllab.org/negatives/14704431_neg.mitab.gz", "https://www.russelllab.org/negatives/19123269_neg.mitab.gz",
+            "https://www.russelllab.org/negatives/10688190_neg.mitab.gz", "https://www.russelllab.org/negatives/11283351_neg.mitab.gz",
+            "https://www.russelllab.org/negatives/16267556_neg.mitab.gz", "https://www.russelllab.org/negatives/18509523_neg.mitab.gz",
+            "https://www.russelllab.org/negatives/17615063_neg.mitab.gz", "https://www.russelllab.org/negatives/18000013_neg.mitab.gz"
+        ]
+        for i, url in enumerate(neg_urls):
+            self.DATA_SOURCES[f"NEG_INTERACTIONS_{i+1}"] = {
+                "url": url,
+                "type": "file",
+                "path": self.DATA_GROUND_TRUTH_DIR / f"neg_{i+1}.mitab",
+                "post_process": "ungzip", "checksum": None, "cacheable": True
+            }
+        # Add all benchmark datasets dynamically
+        for name in self.BENCHMARK_NODE_CLASSIFICATION_DATASETS:
+            self.DATA_SOURCES[f"BENCHMARK_{name.upper()}"] = {
+                "type": "pyg_dataset",
+                "name": name,
+                "path": self.DATA_STANDARD_DATASETS_DIR / name,
+                "cacheable": True
+            }
 
     def _link_data_sources_to_attributes(self):
         """
@@ -167,9 +186,14 @@ class Config:
         This ensures a single source of truth for all data paths, removing redundancy.
         """
         # Link specific, named file paths for easy access elsewhere in the code.
-        self.POS_INTERACTIONS_PATH = self.DATA_SOURCES['POS_INTERACTIONS']['path']
-        self.NEG_INTERACTIONS_PATH = self.DATA_SOURCES['NEG_INTERACTIONS']['path']
-        self.ID_MAPPING_PATH = self.DATA_SOURCES['ID_MAPPING_TSV']['path']
+        # --- REFACTOR: Point to the final .parquet files that will be generated ---
+        self.POS_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "positive_interactions.parquet"
+        self.NEG_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "negative_interactions.parquet"
+        self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "id_mapping.parquet"
+        # --- NEW: Paths for the data bundle and manifest ---
+        self.DATA_BUNDLE_PATH = self.PERSISTENT_DATA_CACHE / "data_bundle.tar.gz"
+        self.DATA_MANIFEST_PATH = self.PERSISTENT_DATA_CACHE / "data_manifest.json"
+
         self.PROTT5_MODEL_PATH = self.DATA_SOURCES['PROTT5_MODEL']['path']
 
         # Dynamically build the list of all available FASTA files.
@@ -224,8 +248,6 @@ class Config:
         """Sets parameters for the main ProtGram-DirectGCN pipeline."""
         # --- ProtGram Graph Building ---
         self.PROTGRAM_NGRAM_MAX_N = 3
-        # --- NEW: Choose between the scalable Dask DataFrame builder and the legacy Dask Bag builder ---
-        self.USE_FAST_GRAPH_BUILDER = True
         # --- FIX: Safely handle os.cpu_count() returning None ---
         cpu_cores = os.cpu_count()
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
@@ -235,7 +257,7 @@ class Config:
         # 'file': Uses the large idmapping.dat to create a robust local SQLite DB. Best for production.
         # 'regex': Fast, but relies on standard UniProt headers (e.g., >sp|P12345|...).
         # 'api': Uses the live UniProt API. Slow, for small-scale use only.
-        self.ID_MAPPING_MODE = 'regex'
+        self.ID_MAPPING_MODE = 'file'
         # This value is now set dynamically in main.py based on the input FASTA file
         # to correctly handle different UniRef versions (e.g., UniRef50, UniRef100).
         self.API_MAPPING_FROM_DB: Optional[str] = None
@@ -287,6 +309,14 @@ class Config:
         self.GCN_HETEROPHILY_THRESHOLD: float = 0.6
         self.PROTGRAM_CLOSEST_AA_K_HOPS: int = 3
         self.PROTGRAM_MASKED_NODE_FRACTION: float = 0.15  # Fraction of nodes to mask for the masked_node task
+
+        # --- NEW: FASTA Cleaning Parameters ---
+        # Controls whether to perform on-the-fly cleaning during FASTA parsing.
+        # This can remove sequences with non-standard amino acids or outside length bounds.
+        self.PROTGRAM_CLEAN_FASTA_ON_PARSE = True
+        self.PROTGRAM_FASTA_MIN_LEN = 50  # Minimum sequence length to keep
+        self.PROTGRAM_FASTA_MAX_LEN: Optional[int] = 10000  # Maximum sequence length, None for unlimited
+        self.PROTGRAM_FASTA_ALPHABET = 'protein'  # 'protein' or 'dna'
 
         # --- ProtGram Cluster-GCN Strategy ---
         self.PROTGRAM_USE_CLUSTER_TRAINING = True

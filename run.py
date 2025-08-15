@@ -18,7 +18,7 @@ import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Local imports must come after the environment is validated and potentially set up.
 # We make an exception for Config and FileLogger which are needed for the bootstrapper itself.
-from configuration.config import Config
+from configuration.config import Config # noqa
 from source.utils.logging import FileLogger
 
 # --- Configuration ---
@@ -161,8 +161,29 @@ if __name__ == "__main__":
         else:
             print("--- Environment is already set up and valid. Starting main pipeline... ---")
 
-        # 2. Run the main pipeline script as a separate process.
+        # --- NEW: Data Validation and Restoration Logic ---
+        # This replaces the simple call to setup_data in main.py
+        from configuration.data import DataManager
+        data_manager = DataManager(base_config)
+
+        print("\n--- Verifying local data integrity ---")
+        is_data_valid = data_manager.validate_data_from_manifest()
+
+        if not is_data_valid:
+            print("\n--- Local data is invalid or missing. Attempting to restore from cache... ---")
+            restored_ok = data_manager.restore_data_from_bundle()
+            if not restored_ok:
+                print("\n" + "!" * 80)
+                print("!!! FATAL: Data is missing or corrupt, and could not be restored from cache. !!!")
+                print("!!! Please run the one-time setup script to download and process all data: !!!")
+                print("!!!                                                                          !!!")
+                print("!!!   bash configuration/reset.sh                                            !!!")
+                print("!" * 80)
+                sys.exit(1)
+        else:
+            print("--- Local data is valid. ---")
+
+        # 3. Run the main pipeline script as a separate process.
         # This ensures it runs in the now-validated environment with a clean state.
-        # Its output will also be captured by the logger.
         main_script_path = str(project_root / "main.py")
         run_command([sys.executable, main_script_path])

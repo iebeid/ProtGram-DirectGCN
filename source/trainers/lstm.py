@@ -45,7 +45,6 @@ class LSTMBasedEmbedder:
         Prepares the corpus by loading sequences. Downsampling is now handled
         globally by the main pipeline runner.
         """
-        print("  Preparing LSTM corpus and character mappings...")
         self.sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
 
         if not self.sequences:

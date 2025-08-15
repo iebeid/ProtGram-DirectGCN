@@ -97,96 +97,18 @@ echo -e "\n--- STEP 3: Resetting Project Directory ---"
 cd "$PROJECTS_DIR"
 echo "INFO: Current directory: $(pwd)"
 
-# --- INTERACTIVE CHOICE FOR LFS HANDLING ---
-LFS_ISSUE=false
-read -r -p "Are you experiencing Git LFS budget errors that prevent 'git lfs pull' from working? (y/n): " lfs_response
-if [[ "$lfs_response" == "y" || "$lfs_response" == "Y" ]]; then
-    LFS_ISSUE=true
-fi
-
 # This is a reset script. If the directory exists, it will be destroyed to ensure a clean slate.
 if [ -d "$PROJECT_DIR_NAME" ]; then
     echo "INFO: Existing project directory found. It will be completely removed for a clean reset."
-
-    # --- NEW PHILOSOPHY: The 'data' directory is ALWAYS preserved. ---
-    DATA_BACKUP_PATH="$HOME/data_temp_backup_$(date +%s)"
-    RESTORE_DATA=false
-    if [ -d "$PROJECT_DIR_NAME/data" ]; then
-        echo -e "\nAn existing 'data' directory was found."
-        echo -e "--------------------------------------------------"
-        echo "Current contents of the 'data' directory:"
-        ls -lh "$PROJECT_DIR_NAME/data"
-        echo -e "--------------------------------------------------"
-
-        # Move the data directory to a safe, timestamped backup location
-        mv "$PROJECT_DIR_NAME/data" "$DATA_BACKUP_PATH"
-        echo "INFO: 'data' directory safely moved to '$DATA_BACKUP_PATH'."
-
-        # Ask the user if they want to restore it into the new clone
-        echo -e "\nDo you want to restore this data into the newly cloned repository?"
-        read -r -p "Choose an option [y/n]: " restore_response
-        if [[ "$restore_response" == "y" || "$restore_response" == "Y" ]]; then
-            RESTORE_DATA=true
-            echo "INFO: The data will be restored after the clone."
-        else
-            echo "INFO: The data will NOT be restored. It will remain in '$DATA_BACKUP_PATH' for you to manage manually."
-        fi
-    fi
     rm -rf "$PROJECT_DIR_NAME" # Now it's safe to remove the old project
     echo "SUCCESS: Old project directory removed."
 fi
 
-# Now, clone the repository based on the user's LFS situation.
-if [ "$LFS_ISSUE" = true ]; then
-    # --- CASE 2: LFS PROBLEM (SPARSE CLONE) ---
-    echo "INFO: LFS issue detected. Performing a sparse clone to exclude the 'data' directory."
-    echo "INFO: Cloning repository structure without checking out files..."
-    git clone --filter=blob:none --no-checkout "$REPO_URL"
-    cd "$PROJECT_DIR_NAME"
-    # Manually configure sparse-checkout for maximum compatibility, bypassing the 'set' command.
-    git sparse-checkout init
-    # This writes the patterns directly to the config file, which is more robust.
-    echo "/*" > .git/info/sparse-checkout
-    echo "!data" >> .git/info/sparse-checkout
-    echo "INFO: Checking out branch '$GIT_BRANCH'..."
-    git checkout "$GIT_BRANCH"
-    if [ "$RESTORE_DATA" = true ] && [ -d "$DATA_BACKUP_PATH" ]; then
-        echo "INFO: Restoring backed-up 'data' directory..."
-        mv "$DATA_BACKUP_PATH" "./data"
-        echo "SUCCESS: 'data' directory restored."
-    fi
-else
-    # --- CASE 1: NO LFS PROBLEM (FULL CLONE) ---
-    echo "INFO: No LFS issues. Performing a standard, full clone..."
-    git clone --branch "$GIT_BRANCH" "$REPO_URL"
-    cd "$PROJECT_DIR_NAME"
-    echo "INFO: Downloading LFS data..."
-    git lfs pull
-fi
-
-# --- USER INTERVENTION STEP FOR LFS ISSUES ---
-if [ "$LFS_ISSUE" = true ]; then
-    # Only prompt the user if the data directory wasn't restored from a backup
-    if [ ! -d "data" ]; then
-        echo -e "\n\n\n--- USER ACTION REQUIRED ---"
-        echo "The repository has been set up WITHOUT the 'data' directory to avoid LFS errors."
-        echo "Please manually place your complete 'data' directory into the following location:"
-        echo "  -> $(pwd)"
-        echo "You can download the files from the GitHub repository webpage and create the directory structure."
-        read -p "Once the 'data' directory is in place, press [Enter] to continue the script..."
-
-        if [ ! -d "data" ]; then
-            echo "ERROR: The 'data' directory was not found. Aborting."
-            exit 1
-        fi
-    fi
-    echo "INFO: 'data' directory found. Proceeding with the pipeline."
-fi
-
+# --- Always perform a standard, full clone. Data is not in the repo. ---
+echo "INFO: Performing a standard, full clone..."
+git clone --branch "$GIT_BRANCH" "$REPO_URL"
+cd "$PROJECT_DIR_NAME"
 echo "SUCCESS: Project repository is ready."
-
-# --- Step 4: Run the Main Application ---
-echo -e "\n--- STEP 4: Executing the main application via run.py ---"
 
 # --- CRITICAL FIX: Export the Conda environment's library path. ---
 # This ensures that TensorFlow and other programs can find the CUDA libraries (.so files)
@@ -203,15 +125,24 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 # running Transformer models on the GPU.
 export XLA_FLAGS="--xla_gpu_cuda_data_dir=$CONDA_PREFIX"
 
-# The run.py script will handle the rest of the setup and execution.
-python run.py
+# --- Step 4: Check for cached data bundle and restore, or run full setup ---
+CACHE_DIR="$HOME/.cache/protgram_directgcn"
+DATA_BUNDLE_PATH="$CACHE_DIR/data_bundle.tar.gz"
+DATA_MANIFEST_PATH="$CACHE_DIR/data_manifest.json"
 
-# --- NEW: Final reminder for orphaned data backups ---
-if [ "$RESTORE_DATA" = false ] && [ -d "$DATA_BACKUP_PATH" ]; then
-    echo -e "\n--- REMINDER ---"
-    echo "Your original 'data' directory was not restored and remains in the following location:"
-    echo "  -> $DATA_BACKUP_PATH"
+if [ -f "$DATA_BUNDLE_PATH" ] && [ -f "$DATA_MANIFEST_PATH" ]; then
+    echo -e "\n--- STEP 4: Found existing data bundle in cache. Restoring data... ---"
+    # Call python to restore. The script will exit with an error if restoration fails.
+    python -c "from configuration.config import Config; from configuration.data import DataManager; dm = DataManager(Config()); restored = dm.restore_data_from_bundle(); exit(0) if restored else exit(1)"
+    echo "--- Data restoration from cache complete. ---"
+else
+    echo -e "\n--- STEP 4: No data bundle found in cache. Performing full data download and processing... ---"
+    echo "--- This is a long-running process and will only be done once. ---"
+    # Trigger the full data setup from configuration/data.py
+    python -c "from configuration.config import Config; from configuration.data import setup_data; print('--- Triggering DataManager full setup ---'); setup_data(Config())"
 fi
 
-echo -e "\n--- SCRIPT FINISHED ---"
+echo -e "\n--- RESET SCRIPT FINISHED ---"
+echo "--- The environment and data are now fully set up. ---"
+echo "--- You can now use 'start.sh' for subsequent runs. ---"
 exit 0

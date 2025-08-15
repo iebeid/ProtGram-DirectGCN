@@ -261,7 +261,9 @@ class FastaUtils:
     A collection of utilities for handling FASTA files, including an
     efficient parser and a memory-safe corpus class for sequence processing.
     """
-    AMINO_ACID_ALPHABET = list("ACDEFGHIKLMNPQRSTVWY")
+    # Standard IUPAC amino acid and nucleotide codes for cleaning
+    AMINO_ACID_ALPHABET = "ACDEFGHIKLMNPQRSTVWY"
+    NUCLEOTIDE_ALPHABET = "GATCU"
 
     @staticmethod
     def extract_id_from_header(header: str) -> str:
@@ -282,25 +284,49 @@ class FastaUtils:
         return hid.split()[0]
 
     @staticmethod
-    def parse_sequences(fasta_filepaths: List[Union[str, Path]]) -> Iterator[Tuple[str, str]]:
+    def parse_sequences(fasta_filepaths: List[Union[str, Path]],
+                        perform_cleaning: bool = False,
+                        min_len: int = 1,
+                        max_len: Optional[int] = None,
+                        alphabet_type: str = 'protein') -> Iterator[Tuple[str, str]]:
         """
         An efficient FASTA parser that reads one or more FASTA files, yielding
-        an ID and sequence for each record.
+        an ID and sequence for each record. Includes optional cleaning.
+
+        Args:
+            fasta_filepaths: List of paths to FASTA files.
+            perform_cleaning: If True, applies cleaning filters.
+            min_len: Minimum sequence length to keep (if cleaning).
+            max_len: Maximum sequence length to keep (if cleaning).
+            alphabet_type: 'protein' or 'dna' for validation (if cleaning).
         """
-        # --- DEFINITIVE FIX for Progress Tracking: Use Bio.SeqIO and tqdm ---
-        # This provides a robust parser and a clear progress bar for large files.
+        if perform_cleaning:
+            print("  - Cleaning enabled for FASTA parsing.")
+            if alphabet_type == 'protein':
+                valid_chars = set(FastaUtils.AMINO_ACID_ALPHABET)
+            elif alphabet_type == 'dna':
+                valid_chars = set(FastaUtils.NUCLEOTIDE_ALPHABET)
+            else:
+                raise ValueError("alphabet_type must be 'protein' or 'dna'")
+
         for path_str in tqdm(fasta_filepaths, desc="Parsing FASTA files", leave=False, unit="file"):
             normalized_path = Path(path_str)
             try:
-                # First, get the total number of records for the progress bar
                 with open(normalized_path, 'r', encoding='utf-8', errors='ignore') as f:
                     num_records = sum(1 for line in f if line.startswith('>'))
 
-                # Now, parse the file with a progress bar
                 with open(normalized_path, 'r', encoding='utf-8', errors='ignore') as f:
                     for record in tqdm(SeqIO.parse(f, "fasta"), total=num_records, desc=f"  - {normalized_path.name}", leave=False, unit="seq"):
                         protein_id = FastaUtils.extract_id_from_header(record.description)
-                        yield protein_id, str(record.seq).upper()
+                        sequence = str(record.seq).upper()
+
+                        if perform_cleaning:
+                            if not (min_len <= len(sequence) and (max_len is None or len(sequence) <= max_len)):
+                                continue
+                            if not set(sequence).issubset(valid_chars):
+                                continue
+
+                        yield protein_id, sequence
 
             except FileNotFoundError:
                 print(f"Error: FASTA file not found at {normalized_path}")

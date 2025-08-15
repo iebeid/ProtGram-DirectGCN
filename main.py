@@ -46,9 +46,7 @@ tf.get_logger().setLevel('WARNING')
 # --- END NEW ---
 
 from configuration.config import Config
-from configuration.data import setup_data
-from source.data_builders.fastprotgram import FastProtGramDataBuilder
-from source.data_builders.protgram import ProtGramDataBuilder # Legacy
+from source.data_builders.protgram import ProtGramDataBuilder
 from source.benchmarkers.gnns import GNNBenchmarker
 from source.benchmarkers.nes import NetworkEmbeddingBenchmarker
 from source.experiments.ppi_1 import PPIPipeline
@@ -136,7 +134,13 @@ def _get_fasta_files_to_process(config: Config, temp_dir: Path) -> List[Path]:
                 f"  - Sampling {sample_size} of {total_sequences} sequences from {original_path.name} using memory-efficient reservoir sampling...")
 
             # Create a fresh iterator and sample from it
-            sequence_iterator = FastaUtils.parse_sequences([original_path])
+            sequence_iterator = FastaUtils.parse_sequences(
+                [original_path],
+                perform_cleaning=config.PROTGRAM_CLEAN_FASTA_ON_PARSE,
+                min_len=config.PROTGRAM_FASTA_MIN_LEN,
+                max_len=config.PROTGRAM_FASTA_MAX_LEN,
+                alphabet_type=config.PROTGRAM_FASTA_ALPHABET
+            )
             sampled_sequences = DataUtils.reservoir_sample(sequence_iterator, sample_size, config.RANDOM_STATE)
 
             temp_fasta_path = temp_dir / f"{original_path.stem}_sampled.fasta"
@@ -359,8 +363,6 @@ def main():
 
             if base_config.USE_MLFLOW:
                 mlflow.set_tracking_uri(base_config.MLFLOW_TRACKING_URI)
-
-            setup_data(base_config)
 
             if base_config.RUN_INTEGRATED_TESTS:
                 DataUtils.print_header("Running Integrated Test Suite (Once at Startup)")
