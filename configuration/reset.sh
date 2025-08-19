@@ -111,14 +111,16 @@ cd "$PROJECT_DIR_NAME"
 echo "SUCCESS: Project repository is ready."
 
 # --- NEW STEP: Install Python Dependencies ---
+# This step installs the minimal bootstrap dependencies (like PyYAML) needed to run the data setup scripts.
 echo -e "\n--- STEP 3.5: Installing Python Dependencies ---"
-if [ -f "requirements.txt" ]; then
-    echo "INFO: Found requirements.txt. Installing packages..."
+REQUIREMENTS_FILE="configuration/requirements.txt"
+if [ -f "$REQUIREMENTS_FILE" ]; then
+    echo "INFO: Found bootstrap requirements at '$REQUIREMENTS_FILE'. Installing packages..."
     # Use --no-cache-dir to ensure fresh installs and --upgrade to meet specified versions.
-    pip install --no-cache-dir --upgrade -r requirements.txt
+    pip install --no-cache-dir --upgrade -r "$REQUIREMENTS_FILE"
     echo "SUCCESS: Python dependencies installed."
 else
-    echo "ERROR: requirements.txt not found in the project root. Cannot install dependencies."
+    echo "ERROR: Bootstrap requirements file not found at '$REQUIREMENTS_FILE'. Cannot install dependencies."
     exit 1
 fi
 
