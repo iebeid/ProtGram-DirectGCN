@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Set, Tuple, Union, Any
 
 import dask.dataframe as dd
+import numpy as np
 import pandas as pd
 import requests
 from Bio import SeqIO

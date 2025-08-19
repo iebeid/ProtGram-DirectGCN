@@ -8,7 +8,8 @@
 
 import unittest
 from .gpu import GPUTests
-from .data import DataUtilityTests, GraphBuilderTests
+from .data_utility import DataUtilityTests
+from .graph_utility import GraphBuilderTests
 from .models import ModelBuildTests
 from .reporting import ReportingTests
 from .word2vec import Word2VecPipelineTests
