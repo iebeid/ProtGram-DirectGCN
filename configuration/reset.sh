@@ -88,9 +88,14 @@ echo "SUCCESS: Conda cache cleaned."
 # --- Step 2: Re-create Environment and Activate ---
 echo -e "\n--- STEP 2: Re-creating Conda Environment '$ENV_NAME' ---"
 conda create -n "$ENV_NAME" -c conda-forge python="$PYTHON_VERSION" -y
-conda activate "$ENV_NAME"
-echo "SUCCESS: Environment '$ENV_NAME' created and activated."
-python --version
+# --- DEFINITIVE FIX: Explicitly define paths to the new environment's executables ---
+# 'conda activate' does not work reliably in non-interactive scripts.
+# We must call the executables directly to ensure we are using the correct environment.
+NEW_ENV_PYTHON="$CONDA_BASE/envs/$ENV_NAME/bin/python"
+NEW_ENV_PIP="$CONDA_BASE/envs/$ENV_NAME/bin/pip"
+
+echo "SUCCESS: Environment '$ENV_NAME' created."
+"$NEW_ENV_PYTHON" --version
 
 # --- Step 3: Reset Project Directory ---
 echo -e "\n--- STEP 3: Resetting Project Directory ---"
@@ -116,8 +121,8 @@ echo -e "\n--- STEP 3.5: Installing Python Dependencies ---"
 REQUIREMENTS_FILE="configuration/requirements.txt"
 if [ -f "$REQUIREMENTS_FILE" ]; then
     echo "INFO: Found bootstrap requirements at '$REQUIREMENTS_FILE'. Installing packages..."
-    # Use --no-cache-dir to ensure fresh installs and --upgrade to meet specified versions.
-    pip install --no-cache-dir --upgrade -r "$REQUIREMENTS_FILE"
+    # Use the explicit path to pip from the new environment
+    "$NEW_ENV_PIP" install --no-cache-dir --upgrade -r "$REQUIREMENTS_FILE"
     echo "SUCCESS: Python dependencies installed."
 else
     echo "ERROR: Bootstrap requirements file not found at '$REQUIREMENTS_FILE'. Cannot install dependencies."
@@ -127,7 +132,7 @@ fi
 # --- CRITICAL FIX: Export the Conda environment's library path. ---
 # This ensures that TensorFlow and other programs can find the CUDA libraries (.so files)
 # that were installed by Conda. This resolves the "Cannot dlopen" errors at runtime.
-export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$CONDA_BASE/envs/$ENV_NAME/lib:$LD_LIBRARY_PATH"
 
 # --- DEFINITIVE FIX for Reproducibility: Configure CUDA workspace ---
 # This environment variable is required by `torch.use_deterministic_algorithms(True)`
@@ -137,7 +142,7 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 # --- CRITICAL FIX for XLA/JIT: Point TensorFlow's XLA compiler to the Conda CUDA toolkit. ---
 # This resolves the "libdevice not found" and "JIT compilation failed" errors when
 # running Transformer models on the GPU.
-export XLA_FLAGS="--xla_gpu_cuda_data_dir=$CONDA_PREFIX"
+export XLA_FLAGS="--xla_gpu_cuda_data_dir=$CONDA_BASE/envs/$ENV_NAME"
 
 # --- Step 4: Check for cached data bundle and restore, or run full setup ---
 CACHE_DIR="$HOME/.cache/protgram_directgcn"
@@ -147,13 +152,13 @@ DATA_MANIFEST_PATH="$CACHE_DIR/data_manifest.json"
 if [ -f "$DATA_BUNDLE_PATH" ] && [ -f "$DATA_MANIFEST_PATH" ]; then
     echo -e "\n--- STEP 4: Found existing data bundle in cache. Restoring data... ---"
     # Call python to restore. The script will exit with an error if restoration fails.
-    python -c "from configuration.config import Config; from configuration.data import DataManager; dm = DataManager(Config()); restored = dm.restore_data_from_bundle(); exit(0) if restored else exit(1)"
+    "$NEW_ENV_PYTHON" -c "from configuration.config import Config; from configuration.data import DataManager; dm = DataManager(Config()); restored = dm.restore_data_from_bundle(); exit(0) if restored else exit(1)"
     echo "--- Data restoration from cache complete. ---"
 else
     echo -e "\n--- STEP 4: No data bundle found in cache. Performing full data download and processing... ---"
     echo "--- This is a long-running process and will only be done once. ---"
     # Trigger the full data setup from configuration/manager.py
-    python -c "from configuration.config import Config; from configuration.data import setup_data; print('--- Triggering DataManager full setup ---'); setup_data(Config())"
+    "$NEW_ENV_PYTHON" -c "from configuration.config import Config; from configuration.data import setup_data; print('--- Triggering DataManager full setup ---'); setup_data(Config())"
 fi
 
 echo -e "\n--- RESET SCRIPT FINISHED ---"
