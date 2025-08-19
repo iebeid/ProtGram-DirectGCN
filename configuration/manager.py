@@ -1,29 +1,24 @@
 # ==============================================================================
-# MODULE: configuration/data.py
+# MODULE: configuration/manager.py
 # PURPOSE: Handles the verification and acquisition of all external data files.
 # VERSION: 4.0 (Integrated checksum validation, bundling, and restoration)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
-import os
 import gzip
-import h5py
-import hashlib
 import json
+import os
 import shutil
 import tarfile
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional
 
-import pandas as pd
-import dask.dataframe as dd
-from dask.diagnostics import ProgressBar
 import requests
-from tqdm.auto import tqdm
-
 # --- NEW: Import PyG for benchmark dataset downloading ---
 from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
+from tqdm.auto import tqdm
+
+from processor import DataProcessor
 
 # Conditionally import gdown to avoid making it a hard dependency
 try:
@@ -33,27 +28,10 @@ try:
 except ImportError:
     GDOWN_AVAILABLE = False
 
+
 # Local imports must be inside methods to avoid circular dependencies with Config
 # from configuration.config import Config # Avoid top-level import
 
-
-def _is_file_valid(file_path: Path) -> bool:
-    """
-    Performs a basic integrity check on a file beyond just existence.
-    """
-    return file_path.exists() and file_path.stat().st_size > 100
-
-
-def _calculate_sha256(file_path: Path) -> str:
-    """Calculates the SHA256 checksum of a file."""
-    sha256_hash = hashlib.sha256()
-    try:
-        with open(file_path, "rb") as f:
-            for byte_block in iter(lambda: f.read(4096), b""):
-                sha256_hash.update(byte_block)
-        return sha256_hash.hexdigest()
-    except (IOError, OSError):
-        return ""
 
 class DataManager:
     """
@@ -80,9 +58,9 @@ class DataManager:
         self._download_all_sources()
 
         # 2. Process raw files into final Parquet format
-        self._process_uniprot_mapping()
-        self._process_negative_interactions()
-        self._process_biogrid_interactions()
+        DataProcessor._process_uniprot_mapping()
+        DataProcessor._process_negative_interactions()
+        DataProcessor._process_biogrid_interactions()
 
         # 3. Generate manifest and bundle the final data
         self._generate_manifest_and_bundle()
@@ -120,7 +98,7 @@ class DataManager:
                 all_valid = False
                 continue
 
-            current_checksum = _calculate_sha256(file_path)
+            current_checksum = DataProcessor._calculate_sha256(file_path)
             if current_checksum != properties['sha256']:
                 print(f"  - ❌ INVALID CHECKSUM: {relative_path_str}")
                 all_valid = False
@@ -161,10 +139,14 @@ class DataManager:
         for name in self.config.BENCHMARK_NODE_CLASSIFICATION_DATASETS:
             print(f"  - Ensuring dataset '{name}' is downloaded...")
             try:
-                if name in ['Cora', 'CiteSeer', 'PubMed']: Planetoid(root=str(dataset_root), name=name)
-                elif name in ['Cornell', 'Texas', 'Wisconsin']: WebKB(root=str(dataset_root), name=name)
-                elif name == 'Actor': Actor(root=str(dataset_root))
-                elif name == 'KarateClub': KarateClub()
+                if name in ['Cora', 'CiteSeer', 'PubMed']:
+                    Planetoid(root=str(dataset_root), name=name)
+                elif name in ['Cornell', 'Texas', 'Wisconsin']:
+                    WebKB(root=str(dataset_root), name=name)
+                elif name == 'Actor':
+                    Actor(root=str(dataset_root))
+                elif name == 'KarateClub':
+                    KarateClub()
             except Exception as e:
                 print(f"    - WARNING: Failed to download PyG dataset '{name}': {e}")
 
@@ -177,7 +159,7 @@ class DataManager:
         for key, source_info in self.config.DATA_SOURCES.items():
             # --- NEW: Handle different source types ---
             if source_info.get("type") == "pyg_dataset":
-                continue # These are handled separately
+                continue  # These are handled separately
 
             final_path = Path(source_info['path'])
             is_cacheable = source_info.get('cacheable', False)
@@ -196,11 +178,11 @@ class DataManager:
             if post_process_type:
                 self.files_to_cleanup.append(final_path)
 
-            if _is_file_valid(final_path):
+            if DataProcessor._is_file_valid(final_path):
                 print(f"☑ Found and verified raw file: {final_path.relative_to(self.config.PROJECT_ROOT)}")
                 continue
 
-            if cache_path and _is_file_valid(cache_path):
+            if cache_path and DataProcessor._is_file_valid(cache_path):
                 print(f"☑ Found cached file: {cache_path}. Copying to project directory...")
                 final_path.parent.mkdir(parents=True, exist_ok=True)
                 if final_path.exists() or final_path.is_symlink(): final_path.unlink()
@@ -243,7 +225,7 @@ class DataManager:
                             shutil.copyfileobj(zf, f_out)
 
                 # --- FIX: Corrected caching logic. Just copy to cache if it's not already there. ---
-                if _is_file_valid(final_path) and cache_path and not cache_path.exists():
+                if DataProcessor._is_file_valid(final_path) and cache_path and not cache_path.exists():
                     print(f"  Copying '{final_path.name}' to persistent cache for future use...")
                     shutil.copy(final_path, cache_path)
 
@@ -252,109 +234,6 @@ class DataManager:
 
         # --- NEW: Trigger benchmark dataset download ---
         self._download_benchmark_datasets()
-
-    def _process_uniprot_mapping(self):
-        """Processes the raw UniProt ID mapping file into a filtered Parquet file."""
-        if self.config.ID_MAPPING_PATH.exists():
-            print(f"☑ Found existing processed ID mapping file: {self.config.ID_MAPPING_PATH.name}")
-            return
-
-        print("\n--- Step 2a: Processing UniProt ID Mapping File ---")
-        raw_mapping_path = self.config.DATA_SOURCES['UNIPROT_ID_MAPPING']['path']
-        if not _is_file_valid(raw_mapping_path):
-            print(f"  ERROR: Raw UniProt mapping file not found at {raw_mapping_path}. Cannot proceed.")
-            return
-
-        with ProgressBar():
-            print(f"  Reading {raw_mapping_path.name} and filtering for relevant IDs...")
-            ddf = dd.read_csv(raw_mapping_path, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'],
-                              usecols=[0, 1, 2], dtype={'db': 'category'}, blocksize='128MB')
-
-            relevant_dbs = ['GeneID', 'UniRef100', 'UniRef90', 'UniRef50']
-            filtered_ddf = ddf[ddf['db'].isin(relevant_dbs)].repartition(npartitions=16)
-
-            print(f"  Saving filtered mapping to {self.config.ID_MAPPING_PATH.name}...")
-            filtered_ddf.to_parquet(self.config.ID_MAPPING_PATH, engine='pyarrow', overwrite=True)
-        print("  ✔ UniProt ID mapping processing complete.")
-
-    def _process_negative_interactions(self):
-        """Combines and processes all raw negative interaction files into a single Parquet file."""
-        if self.config.NEG_INTERACTIONS_PATH.exists():
-            print(f"☑ Found existing processed negative interactions file: {self.config.NEG_INTERACTIONS_PATH.name}")
-            return
-
-        print("\n--- Step 2b: Processing Negative Interaction Files ---")
-        neg_files = [v['path'] for k, v in self.config.DATA_SOURCES.items() if k.startswith('NEG_INTERACTIONS')]
-        existing_neg_files = [f for f in neg_files if _is_file_valid(f)]
-
-        if not existing_neg_files:
-            print("  ERROR: No raw negative interaction files found. Cannot proceed.")
-            return
-
-        with ProgressBar():
-            print(f"  Reading {len(existing_neg_files)} negative interaction files...")
-            ddf = dd.read_csv(existing_neg_files, sep='\t', header=None, usecols=[0, 1],
-                              on_bad_lines='warn', blocksize='64MB', dtype=str)
-            ddf.columns = ['p1_raw', 'p2_raw']
-
-            # Extract UniProtKB ID from 'uniprotkb:ID' format
-            ddf['p1'] = ddf['p1_raw'].str.split(':').str[1]
-            ddf['p2'] = ddf['p2_raw'].str.split(':').str[1]
-
-            final_ddf = ddf[['p1', 'p2']].dropna().repartition(npartitions=1)
-            print(f"  Saving processed negative interactions to {self.config.NEG_INTERACTIONS_PATH.name}...")
-            final_ddf.to_parquet(self.config.NEG_INTERACTIONS_PATH, engine='pyarrow', overwrite=True)
-        print("  ✔ Negative interaction processing complete.")
-
-    def _process_biogrid_interactions(self):
-        """Processes BioGRID interactions, mapping GeneIDs to UniProtKB IDs."""
-        if self.config.POS_INTERACTIONS_PATH.exists():
-            print(f"☑ Found existing processed positive interactions file: {self.config.POS_INTERACTIONS_PATH.name}")
-            return
-
-        print("\n--- Step 2c: Processing BioGRID Positive Interactions ---")
-        raw_biogrid_path = self.config.DATA_SOURCES['BIOGRID_INTERACTIONS']['path']
-        id_mapping_path = self.config.ID_MAPPING_PATH
-
-        if not _is_file_valid(raw_biogrid_path) or not id_mapping_path.exists():
-            print("  ERROR: Raw BioGRID file or processed ID mapping file not found. Cannot proceed.")
-            return
-
-        with ProgressBar():
-            print(f"  Reading BioGRID data from {raw_biogrid_path.name}...")
-            biogrid_ddf = dd.read_csv(raw_biogrid_path, sep='\t', header=0, usecols=[0, 1],
-                                      on_bad_lines='warn', blocksize='128MB', dtype=str)
-            biogrid_ddf.columns = ['p1_raw', 'p2_raw']
-
-            # Extract GeneID from 'entrez gene/locuslink:ID' format
-            biogrid_ddf['gene_id_1'] = biogrid_ddf['p1_raw'].str.split(':').str[1]
-            biogrid_ddf['gene_id_2'] = biogrid_ddf['p2_raw'].str.split(':').str[1]
-            biogrid_pairs_ddf = biogrid_ddf[['gene_id_1', 'gene_id_2']].dropna().astype(
-                {'gene_id_1': 'int64', 'gene_id_2': 'int64'})
-
-            print(f"  Reading ID mapping from {id_mapping_path.name}...")
-            mapping_ddf = dd.read_parquet(id_mapping_path)
-            geneid_to_uniprot_map = mapping_ddf[mapping_ddf['db'] == 'GeneID'].drop('db', axis=1)
-            geneid_to_uniprot_map['other_id'] = geneid_to_uniprot_map['other_id'].astype('int64')
-
-            # Persist the smaller mapping table for faster joins
-            geneid_to_uniprot_map = geneid_to_uniprot_map.persist()
-
-            print("  Performing two-way merge to map GeneIDs to UniProtKB IDs...")
-            # Merge for the first protein
-            merged1 = dd.merge(biogrid_pairs_ddf, geneid_to_uniprot_map, left_on='gene_id_1', right_on='other_id',
-                               how='inner')
-            merged1 = merged1.rename(columns={'uniprot_id': 'p1'}).drop(['gene_id_1', 'other_id'], axis=1)
-
-            # Merge for the second protein
-            merged2 = dd.merge(merged1, geneid_to_uniprot_map, left_on='gene_id_2', right_on='other_id', how='inner')
-            merged2 = merged2.rename(columns={'uniprot_id': 'p2'}).drop(['gene_id_2', 'other_id'], axis=1)
-
-            final_ddf = merged2[['p1', 'p2']].drop_duplicates().repartition(npartitions=4)
-
-            print(f"  Saving final mapped positive interactions to {self.config.POS_INTERACTIONS_PATH.name}...")
-            final_ddf.to_parquet(self.config.POS_INTERACTIONS_PATH, engine='pyarrow', overwrite=True)
-        print("  ✔ Positive interaction processing complete.")
 
     def _generate_manifest_and_bundle(self):
         """Generates a checksum manifest and bundles the data directory."""
@@ -373,7 +252,7 @@ class DataManager:
                 relative_path = file_path.relative_to(self.config.PROJECT_ROOT)
                 manifest[relative_path.as_posix()] = {
                     'size': file_path.stat().st_size,
-                    'sha256': _calculate_sha256(file_path)
+                    'sha256': DataProcessor._calculate_sha256(file_path)
                 }
 
         # 3. Save the manifest to the cache

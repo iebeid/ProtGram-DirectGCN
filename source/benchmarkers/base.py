@@ -15,7 +15,7 @@ import torch
 from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 
 from configuration.config import Config
-from source.utils.data import DataUtils
+from source.utils.data.data_utils import DataUtils
 
 
 class BaseBenchmarker(ABC):

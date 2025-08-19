@@ -1,60 +1,291 @@
 # ==============================================================================
 # MODULE: configuration/config.py
-# PURPOSE: Centralized configuration for the entire PPI trainers.
-# VERSION: 2.0 (Centralized more parameters from trainers/benchmarkers)
-# AUTHOR: Islam Ebeid
+# PURPOSE: Centralized configuration loaded from a YAML file.
+# VERSION: 3.4 (Added config validation)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import os
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
+import yaml
+import psutil
+import sys
+from pydantic import BaseModel, Field, ValidationError
 
+
+# ==============================================================================
+# Pydantic Validation Schemas
+# These models define the expected structure and types for config.yaml.
+# They are used for validation only and do not store the configuration state.
+# ==============================================================================
+
+class DataUrls(BaseModel):
+    UNIPROT_SPROT_FASTA: str
+    UNIREF_50_FASTA: str
+    BIOGRID_INTERACTIONS: str
+    PROTT5_MODEL: str
+    UNIPROT_ID_MAPPING: str
+    NEG_INTERACTIONS: List[str]
+
+class ResourceManagementParams(BaseModel):
+    MEMORY_USAGE_STRATEGY: str
+
+class PipelineFlags(BaseModel):
+    RUN_GCN_PIPELINE: bool
+    RUN_LSTM_PIPELINE: bool
+    RUN_WORD2VEC_PIPELINE: bool
+    RUN_TRANSFORMER_PIPELINE: bool
+    RUN_BENCHMARKING_PIPELINE: bool
+    RUN_NETWORK_EMBEDDING_BENCHMARKING: bool
+    RUN_MAIN_PPI_EVALUATION: bool
+    RUN_INTEGRATED_TESTS: bool
+    RUN_SINGLETON_GCN_EVAL: bool
+    RUN_DUMMY_TEST: bool
+    SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    CLEANUP_DUMMY_DATA: bool
+    ENABLE_FILE_LOGGING: bool
+
+class GNNBenchmarkingParams(BaseModel):
+    DATASETS: List[str]
+    GNN_MODELS_TO_RUN: List[str]
+    NE_MODELS_TO_RUN: List[str]
+    SAVE_EMBEDDINGS: bool
+    TEST_ON_UNDIRECTED: bool
+    SPLIT_RATIOS: Dict[str, float]
+    PCA_TARGET_DIM: int = Field(gt=0)
+    NE_EPOCHS: int = Field(gt=0)
+    NE_EMBEDDING_DIM: int = Field(gt=0)
+    NE_WALK_LENGTH: int = Field(gt=0)
+    NE_CONTEXT_SIZE: int = Field(gt=0)
+    GNN_HIDDEN_CHANNELS: int = Field(gt=0)
+    GNN_NUM_LAYERS: int = Field(gt=0)
+    GNN_DROPOUT_RATE: float = Field(ge=0.0, lt=1.0)
+    GAT_HEADS: int = Field(gt=0)
+    GAT_DROPOUT_RATE: float = Field(ge=0.0, lt=1.0)
+    CHEBNET_K: int = Field(gt=0)
+    GNN_LEARNING_RATE: float = Field(gt=0)
+    GNN_EPOCHS: int = Field(gt=0)
+    RGCN_NUM_RELATIONS: int = Field(gt=0)
+    DIRECTGCN_HIDDEN_LAYER_DIMS: List[int]
+    GNN_INIT_DIM: int = Field(gt=0)
+
+class ProtGramGCNParams(BaseModel):
+    PROTGRAM_NGRAM_MAX_N: int = Field(gt=0, lt=5, description="Maximum n-gram size. Kept below 5 for memory efficiency.")
+    ID_MAPPING_MODE: str
+    API_MAPPING_FROM_DB: Optional[str]
+    API_MAPPING_TO_DB: str
+    PROTGRAM_MODELS_TO_TRAIN: List[str]
+    DIRECTGCN_HIDDEN_LAYER_DIMS: List[int]
+    PROTGRAM_1GRAM_INIT_DIM: int = Field(gt=0)
+    PROTGRAM_MAX_PE_LEN: int = Field(gt=0)
+    PROTGRAM_GNN_HIDDEN_CHANNELS: int = Field(gt=0)
+    PROTGRAM_GNN_NUM_LAYERS: int = Field(gt=0)
+    PROTGRAM_GATING_COEFF_MODE: str
+    PROTGRAM_USE_POSITIONAL_EMBEDDING: bool
+    PROTGRAM_EPOCHS_PER_LEVEL: int = Field(gt=0)
+    PROTGRAM_LR: float = Field(gt=0)
+    PROTGRAM_DROPOUT_RATE: float = Field(ge=0.0, lt=1.0)
+    PROTGRAM_WEIGHT_DECAY: float = Field(ge=0.0)
+    PROTGRAM_USE_LR_SCHEDULER: bool
+    PROTGRAM_LR_SCHEDULER_PATIENCE: int = Field(gt=0)
+    PROTGRAM_LR_SCHEDULER_FACTOR: float = Field(gt=0, lt=1.0)
+    PROTGRAM_USE_EARLY_STOPPING: bool
+    PROTGRAM_EARLY_STOPPING_PATIENCE: int = Field(gt=0)
+    PROTGRAM_EARLY_STOPPING_MIN_DELTA: float = Field(ge=0.0)
+    PROTGRAM_GRADIENT_ACCUMULATION_STEPS: int = Field(default=1, ge=1)
+    PROTGRAM_TASK_TYPES_PER_LEVEL: Dict[int, str]
+    PROTGRAM_DEFAULT_TASK_TYPE: str
+    GCN_HETEROPHILY_THRESHOLD: float = Field(ge=0.0, le=1.0)
+    GCN_PROPAGATION_EPSILON: float = Field(gt=0, description="Small value to add for numerical stability in DirectGCN propagation.")
+    PROTGRAM_CLOSEST_AA_K_HOPS: int = Field(gt=0)
+    PROTGRAM_MASKED_NODE_FRACTION: float = Field(gt=0, lt=1.0)
+    PROTGRAM_CLEAN_FASTA_ON_PARSE: bool
+    PROTGRAM_FASTA_MIN_LEN: int = Field(gt=0)
+    PROTGRAM_FASTA_MAX_LEN: int = Field(gt=0)
+    PROTGRAM_FASTA_ALPHABET: str
+    PROTGRAM_USE_CLUSTER_TRAINING: bool
+    PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES: int = Field(gt=0)
+    PROTGRAM_PARTITIONING_METHOD: str
+    PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING: int = Field(default=1, ge=1)
+    PROTGRAM_VALIDATE_COARSENING: bool
+    PROTGRAM_TARGET_NODES_PER_CLUSTER: int = Field(gt=0)
+    PROTGRAM_MIN_CLUSTERS: int = Field(gt=0)
+    PROTGRAM_MAX_CLUSTERS: int = Field(gt=0)
+    PROTGRAM_CLUSTER_GROUP_SIZE: int = Field(default=1, ge=1)
+    PCA_TARGET_DIMENSION: int
+    PROTGRAM_PROTEIN_POOLING_STRATEGY: str
+    PROTGRAM_HIERARCHICAL_POOLING_STRATEGY: str
+    PROTGRAM_LOG_ATTENTION_WEIGHTS: bool
+    PROTGRAM_RUN_SANITY_CHECK_PPI: bool
+    PROTGRAM_SANITY_CHECK_EPOCHS: int = Field(gt=0)
+    PROTGRAM_SANITY_CHECK_TEST_SPLIT: float = Field(gt=0, lt=1.0)
+    PROTGRAM_SANITY_CHECK_SAMPLE_SIZE: int = Field(gt=0)
+
+class Word2VecParams(BaseModel):
+    W2V_VECTOR_SIZE: int = Field(gt=0)
+    W2V_WINDOW: int = Field(gt=0)
+    W2V_MIN_COUNT: int = Field(ge=1)
+    W2V_EPOCHS: int = Field(gt=0)
+    W2V_POOLING_STRATEGY: str
+    APPLY_PCA_TO_W2V: bool
+
+class TransformerParams(BaseModel):
+    MODELS_TO_RUN: List[Dict[str, Any]]
+    MAX_LENGTH: int = Field(gt=0)
+    BASE_BATCH_SIZE: int = Field(gt=0)
+    CHUNK_SIZE: int = Field(gt=0)
+    POOLING_STRATEGY: str
+    USE_XLA_COMPILATION: bool
+
+class LSTMParams(BaseModel):
+    EMBEDDING_DIM: int = Field(gt=0)
+    HIDDEN_DIM: int = Field(gt=0)
+    NUM_LAYERS: int = Field(gt=0)
+    EPOCHS: int = Field(gt=0)
+    BATCH_SIZE: int = Field(gt=0)
+    TRAIN_SEQ_LEN: int = Field(gt=0)
+    TRAIN_STEP: int = Field(gt=0)
+    LEARNING_RATE: float = Field(gt=0)
+    POOLING_STRATEGY: str
+
+class SingletonEvalParams(BaseModel):
+    EPOCHS: int = Field(gt=0)
+    TEST_SPLIT: float = Field(gt=0, lt=1.0)
+    LR: float = Field(gt=0)
+    MODELS_TO_RUN: List[str]
+    GNN_HIDDEN_CHANNELS: int = Field(gt=0)
+    GNN_NUM_LAYERS: int = Field(gt=0)
+    GNN_DROPOUT_RATE: float = Field(ge=0.0, lt=1.0)
+    GAT_HEADS: int = Field(gt=0)
+    GAT_DROPOUT_RATE: float = Field(ge=0.0, lt=1.0)
+    CHEBNET_K: int = Field(gt=0)
+    RGCN_NUM_RELATIONS: int = Field(gt=0)
+    GRADIENT_ACCUMULATION_STEPS: int = Field(default=1, ge=1)
+    DIRECTGCN_HIDDEN_LAYER_DIMS: List[int]
+
+class PPIEvaluationParams(BaseModel):
+    PLOT_TRAINING_HISTORY: bool
+    PERFORM_H5_INTEGRITY_CHECK: bool
+    EVAL_GENERATE_SHAP_SUMMARY: bool
+    EARLY_STOPPING_PATIENCE: int = Field(ge=0)
+    EDGE_EMBEDDING_METHOD: str
+    N_FOLDS: int = Field(gt=1)
+    MLP_DENSE1_UNITS: int = Field(gt=0)
+    MLP_DROPOUT1_RATE: float = Field(ge=0.0, lt=1.0)
+    MLP_DENSE2_UNITS: int = Field(gt=0)
+    MLP_DROPOUT2_RATE: float = Field(ge=0.0, lt=1.0)
+    MLP_L2_REG: float = Field(ge=0.0)
+    BATCH_SIZE: int = Field(gt=0)
+    EPOCHS: int = Field(gt=0)
+    LEARNING_RATE: float = Field(gt=0)
+    K_VALUES_FOR_TABLE: List[int]
+    MAIN_EMBEDDING_FOR_STATS: str
+    STATISTICAL_TEST_ALPHA: float = Field(gt=0, lt=1.0)
+
+class MLflowParams(BaseModel):
+    USE_MLFLOW: bool
+    EXPERIMENT_NAME: str
+    BENCHMARK_EXPERIMENT_NAME: str
+    NE_BENCHMARK_EXPERIMENT_NAME: str
+
+class HPOSearchSpaceItem(BaseModel):
+    type: str
+    low: Optional[float] = None
+    high: Optional[float] = None
+    step: Optional[int] = None
+    choices: Optional[List[Any]] = None
+
+class HPOParams(BaseModel):
+    RUN_HPO: bool
+    HPO_N_TRIALS: int = Field(gt=0)
+    HPO_TARGET_EMBEDDING_MODEL: str
+    HPO_PPI_MLP_SEARCH_SPACE: Dict[str, HPOSearchSpaceItem]
+
+class ValidationSchema(BaseModel):
+    """The root model for validating the entire
+    config.yaml file."""
+    RANDOM_STATE: int
+    resource_management: ResourceManagementParams
+    DEBUG_VERBOSE: bool
+    data_urls: DataUrls
+    pipeline_flags: PipelineFlags
+    gnn_benchmarking: GNNBenchmarkingParams
+    protgram_gcn: ProtGramGCNParams
+    word2vec: Word2VecParams
+    transformer: TransformerParams
+    lstm: LSTMParams
+    singleton_eval: SingletonEvalParams
+    ppi_evaluation: PPIEvaluationParams
+    mlflow: MLflowParams
+    hyperparameter_optimization: HPOParams
 
 class Config:
-    def __init__(self):
-        # --- 1. GENERAL SETTINGS ---
-        self.RANDOM_STATE = 42
-        self.DEBUG_VERBOSE = True
+    def __init__(self, config_path: str = 'configuration/config.yaml'):
+        # --- 0. LOAD YAML CONFIG ---
+        self._config = self._load_yaml_config(config_path)
 
-        # --- 2. PATHS & DIRECTORIES ---
+        # --- 1. GENERAL SETTINGS (from YAML) ---
+        self.RANDOM_STATE: int = self._config['RANDOM_STATE']
+        self.DEBUG_VERBOSE: bool = self._config['DEBUG_VERBOSE']
+
+        # --- 2. PATHS & DIRECTORIES (Dynamically set) ---
         self._setup_paths()
 
-        # --- 3. PIPELINE CONTROL FLAGS ---
+        # --- NEW: Set up resource management parameters ---
+        self._setup_resource_management_params()
+
+        # --- 3. PIPELINE CONTROL FLAGS (from YAML) ---
         self._setup_pipeline_flags()
 
-        # --- 4. DATA SOURCES FOR AUTOMATIC DOWNLOAD ---
-        self._setup_data_sources()
-
-        # --- NEW: 4.5. DYNAMICALLY LINK DATA SOURCES TO ATTRIBUTES ---
-        self._link_data_sources_to_attributes()
-
-        # --- 5. GNN BENCHMARKING PARAMETERS ---
+        # --- 4. GNN BENCHMARKING PARAMETERS (from YAML) ---
         self._setup_benchmarking_params()
 
-        # --- 6. ProtGram-DirectGCN PIPELINE PARAMETERS ---
+        # --- 5. DATA SOURCES (Dynamically set, logic from original file) ---
+        self._setup_data_sources()
+
+        # --- 6. DYNAMICALLY LINK DATA SOURCES (logic from original file) ---
+        self._link_data_sources_to_attributes()
+
+        # --- 7. ProtGram-DirectGCN PIPELINE PARAMETERS (from YAML) ---
         self._setup_gcn_params()
 
-        # --- 7. WORD2VEC PIPELINE PARAMETERS ---
+        # --- 8. WORD2VEC PIPELINE PARAMETERS (from YAML) ---
         self._setup_word2vec_params()
 
-        # --- 8. TRANSFORMER PIPELINE PARAMETERS ---
+        # --- 9. TRANSFORMER PIPELINE PARAMETERS (from YAML) ---
         self._setup_transformer_params()
 
-        # --- 9. LSTM PIPELINE PARAMETERS ---
+        # --- 10. LSTM PIPELINE PARAMETERS (from YAML) ---
         self._setup_lstm_params()
 
-        # --- NEW: 9.5. SINGLETON EVALUATION PARAMETERS ---
+        # --- 11. SINGLETON EVALUATION PARAMETERS (from YAML) ---
         self._setup_singleton_eval_params()
 
-        # --- 10. PPI EVALUATION PARAMETERS ---
+        # --- 12. PPI EVALUATION PARAMETERS (from YAML) ---
         self._setup_evaluation_params()
 
-        # --- 11. MLFLOW & EXPERIMENT TRACKING ---
+        # --- 13. MLFLOW & EXPERIMENT TRACKING (from YAML) ---
         self._setup_mlflow_params()
+
+        # --- 14. HYPERPARAMETER OPTIMIZATION (from YAML) ---
+        self._setup_hpo_params()
+
+        # --- 15. VALIDATE CONFIGURATION ---
+        self._validate_config()
+
+    def _load_yaml_config(self, config_path: str) -> Dict:
+        """Loads the YAML configuration file."""
+        full_path = Path.cwd() / config_path
+        if not full_path.exists():
+            full_path = Path(__file__).parent.parent / config_path
+        if not full_path.exists():
+            raise FileNotFoundError(f"Configuration file not found at: {full_path}")
+        with open(full_path, 'r') as f:
+            return yaml.safe_load(f)
 
     def _setup_paths(self):
         """Sets up all base, data, and results paths for the project."""
-        # Base Paths
         self.PROJECT_ROOT = Path(__file__).parent.parent.resolve()
         self.BASE_CONFIG_DIR = self.PROJECT_ROOT / "configuration"
         self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
@@ -62,15 +293,11 @@ class Config:
         self.BASE_OUTPUT_DIR = self.PROJECT_ROOT / "results"
         self.PERSISTENT_DATA_CACHE = Path.home() / ".cache" / "protgram_directgcn"
         self.LOG_DIR = self.BASE_OUTPUT_DIR / "logs"
-
-        # Data Subdirectories
         self.DATA_SEQUENCES_DIR = self.BASE_DATA_DIR / "sequences"
         self.DATA_GROUND_TRUTH_DIR = self.BASE_DATA_DIR / "ground_truth"
         self.DATA_MODELS_DIR = self.BASE_DATA_DIR / "models"
         self.DATA_MAPPINGS_DIR = self.BASE_DATA_DIR / "mappings"
         self.DATA_STANDARD_DATASETS_DIR = self.BASE_DATA_DIR / "benchmarks"
-
-        # Results Subdirectories
         self.RESULTS_GRAPH_OBJECTS_DIR = self.BASE_OUTPUT_DIR / "graph_objects"
         self.RESULTS_GCN_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "gcn_embeddings"
         self.RESULTS_W2V_EMBEDDINGS_DIR = self.BASE_OUTPUT_DIR / "word2vec_embeddings"
@@ -80,368 +307,287 @@ class Config:
         self.RESULTS_BENCHMARKING_DIR = self.BASE_OUTPUT_DIR / "benchmarking_results"
         self.RESULTS_BENCHMARK_EMBEDDINGS_DIR = self.RESULTS_BENCHMARKING_DIR / "embeddings"
 
-        # --- NEW: Proactively create all necessary directories ---
-        # This makes the configuration self-sufficient and prevents FileNotFoundError
-        # in downstream modules if they are run in isolation.
-        dirs_to_create = [
-            self.LOG_DIR, self.DATA_SEQUENCES_DIR, self.DATA_GROUND_TRUTH_DIR,
-            self.DATA_MODELS_DIR, self.DATA_MAPPINGS_DIR, self.DATA_STANDARD_DATASETS_DIR,
-            self.RESULTS_GRAPH_OBJECTS_DIR, self.RESULTS_GCN_EMBEDDINGS_DIR,
-            self.RESULTS_W2V_EMBEDDINGS_DIR, self.RESULTS_LSTM_EMBEDDINGS_DIR,
-            self.RESULTS_TRANSFORMER_EMBEDDINGS_DIR, self.RESULTS_EVALUATION_DIR,
-            self.RESULTS_BENCHMARKING_DIR, self.RESULTS_BENCHMARK_EMBEDDINGS_DIR
-        ]
-        for directory in dirs_to_create:
-            directory.mkdir(parents=True, exist_ok=True)
+    def _setup_resource_management_params(self):
+        """
+        Sets the memory usage strategy from the config. The actual logic for how
+        to use this strategy is handled by the components that need it (e.g., EmbeddingLoader).
+        """
+        params = self._config.get('resource_management', {})
+        self.MEMORY_USAGE_STRATEGY = params.get('MEMORY_USAGE_STRATEGY', 'dynamic')
 
     def _setup_pipeline_flags(self):
-        """Sets flags to control which parts of the main pipeline are executed."""
-        self.RUN_GCN_PIPELINE = False
-        self.RUN_LSTM_PIPELINE = False
-        self.RUN_WORD2VEC_PIPELINE = False
-        self.RUN_TRANSFORMER_PIPELINE = False
-        self.RUN_BENCHMARKING_PIPELINE = False
-        self.RUN_NETWORK_EMBEDDING_BENCHMARKING = False
-        self.RUN_MAIN_PPI_EVALUATION = False
-        self.RUN_INTEGRATED_TESTS = True  # Runs all unit, smoke, and verification testers
-        self.RUN_SINGLETON_GCN_EVAL = False # Runs a fast evaluation on the n=1 graph for rapid prototyping
-        self.RUN_DUMMY_TEST = True  # Runs a quick evaluation on dummy data
-        self.SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = 0.01  # e.g., 0.1 for 10%. Set to None or >= 1.0 to disable.
-        self.CLEANUP_DUMMY_DATA = True
-        self.ENABLE_FILE_LOGGING = True
+        """Sets flags statically from the YAML config."""
+        flags = self._config['pipeline_flags']
+        self.RUN_GCN_PIPELINE = flags['RUN_GCN_PIPELINE']
+        self.RUN_LSTM_PIPELINE = flags['RUN_LSTM_PIPELINE']
+        self.RUN_WORD2VEC_PIPELINE = flags['RUN_WORD2VEC_PIPELINE']
+        self.RUN_TRANSFORMER_PIPELINE = flags['RUN_TRANSFORMER_PIPELINE']
+        self.RUN_BENCHMARKING_PIPELINE = flags['RUN_BENCHMARKING_PIPELINE']
+        self.RUN_NETWORK_EMBEDDING_BENCHMARKING = flags['RUN_NETWORK_EMBEDDING_BENCHMARKING']
+        self.RUN_MAIN_PPI_EVALUATION = flags['RUN_MAIN_PPI_EVALUATION']
+        self.RUN_INTEGRATED_TESTS = flags['RUN_INTEGRATED_TESTS']
+        self.RUN_SINGLETON_GCN_EVAL = flags['RUN_SINGLETON_GCN_EVAL']
+        self.RUN_DUMMY_TEST = flags['RUN_DUMMY_TEST']
+        self.SEQUENCE_DOWNSAMPLE_FRACTION = flags['SEQUENCE_DOWNSAMPLE_FRACTION']
+        self.CLEANUP_DUMMY_DATA = flags['CLEANUP_DUMMY_DATA']
+        self.ENABLE_FILE_LOGGING = flags['ENABLE_FILE_LOGGING']
+
+    def _setup_benchmarking_params(self):
+        """Sets GNN benchmarking parameters statically from the YAML config."""
+        params = self._config['gnn_benchmarking']
+        self.BENCHMARK_NODE_CLASSIFICATION_DATASETS = params['DATASETS']
+        self.BENCHMARK_GNN_MODELS_TO_RUN = params['GNN_MODELS_TO_RUN']
+        self.BENCHMARK_NE_MODELS_TO_RUN = params['NE_MODELS_TO_RUN']
+        self.BENCHMARK_SAVE_EMBEDDINGS = params['SAVE_EMBEDDINGS']
+        self.BENCHMARK_TEST_ON_UNDIRECTED = params['TEST_ON_UNDIRECTED']
+        self.BENCHMARK_SPLIT_RATIOS = params['SPLIT_RATIOS']
+        self.BENCHMARK_PCA_TARGET_DIM = params['PCA_TARGET_DIM']
+        self.BENCHMARK_NE_EPOCHS = params['NE_EPOCHS']
+        self.BENCHMARK_NE_EMBEDDING_DIM = params['NE_EMBEDDING_DIM']
+        self.BENCHMARK_NE_WALK_LENGTH = params['NE_WALK_LENGTH']
+        self.BENCHMARK_NE_CONTEXT_SIZE = params['NE_CONTEXT_SIZE']
+        self.BENCHMARK_GNN_HIDDEN_CHANNELS = params['GNN_HIDDEN_CHANNELS']
+        self.BENCHMARK_GNN_NUM_LAYERS = params['GNN_NUM_LAYERS']
+        self.BENCHMARK_GNN_DROPOUT_RATE = params['GNN_DROPOUT_RATE']
+        self.BENCHMARK_GAT_HEADS = params['GAT_HEADS']
+        self.BENCHMARK_GAT_DROPOUT_RATE = params['GAT_DROPOUT_RATE']
+        self.BENCHMARK_CHEBNET_K = params['CHEBNET_K']
+        self.BENCHMARK_GNN_LEARNING_RATE = params['GNN_LEARNING_RATE']
+        self.BENCHMARK_GNN_EPOCHS = params['GNN_EPOCHS']
+        self.BENCHMARK_RGCN_NUM_RELATIONS = params['RGCN_NUM_RELATIONS']
+        self.BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS = params['DIRECTGCN_HIDDEN_LAYER_DIMS']
+        self.BENCHMARK_GNN_INIT_DIM = params['GNN_INIT_DIM']
 
     def _setup_data_sources(self):
-        """
-        Defines the data sources for automatic download.
-        The key is a unique identifier, and 'path' is the final destination.
-        """
-        # --- REFACTOR: Update data sources to pull from primary repositories ---
-        # This removes the dependency on pre-made CSV files in the Git repo.
+        """Defines the data sources for automatic download using URLs from YAML config."""
+        urls = self._config['data_urls']
         self.DATA_SOURCES: Dict[str, Dict] = {
             "UNIPROT_SPROT_FASTA": {
-                "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz",
-                "type": "file",
-                "path": self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta",
-                "post_process": "ungzip",
-                "checksum": None,
-                "cacheable": True
+                "url": urls['UNIPROT_SPROT_FASTA'],
+                "type": "file", "path": self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta",
+                "post_process": "ungzip", "checksum": None, "cacheable": True
             },
             "UNIREF_50_FASTA": {
-                "url": "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz",
-                "type": "file",
-                "path": self.DATA_SEQUENCES_DIR / "uniref50.fasta",
-                "post_process": "ungzip",
-                "checksum": None,
-                "cacheable": True
+                "url": urls['UNIREF_50_FASTA'],
+                "type": "file", "path": self.DATA_SEQUENCES_DIR / "uniref50.fasta",
+                "post_process": "ungzip", "checksum": None, "cacheable": True
             },
             "BIOGRID_INTERACTIONS": {
-                "url": "https://downloads.thebiogrid.org/BioGRID/Release-Archive/BIOGRID-4.4.248/BIOGRID-ALL-4.4.248.mitab.zip",
-                "type": "file",
-                "path": self.DATA_GROUND_TRUTH_DIR / "BIOGRID-ALL-4.4.248.mitab.txt",
+                "url": urls['BIOGRID_INTERACTIONS'],
+                "type": "file", "path": self.DATA_GROUND_TRUTH_DIR / "BIOGRID-ALL-4.4.248.mitab.txt",
                 "post_process": "unzip", "checksum": None, "cacheable": True
             },
             "PROTT5_MODEL": {
-                "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5",
-                "type": "file",
-                "path": self.DATA_MODELS_DIR / "per-protein.h5",
-                "post_process": None, "checksum": None,
-                "cacheable": True  # This large file will be cached persistently
+                "url": urls['PROTT5_MODEL'],
+                "type": "file", "path": self.DATA_MODELS_DIR / "per-protein.h5",
+                "post_process": None, "checksum": None, "cacheable": True
             },
             "UNIPROT_ID_MAPPING": {
-                "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping.dat.gz",
-                "type": "file",
-                "path": self.DATA_MAPPINGS_DIR / "idmapping.dat",
-                "post_process": "ungzip",
-                "checksum": None,
-                "cacheable": True  # This large file will be cached persistently
-            }
-        }
-        # Add all negative interaction sources dynamically
-        neg_urls = [
-            "https://www.russelllab.org/negatives/16169070_neg.mitab.gz", "https://www.russelllab.org/negatives/14605208_neg.mitab.gz",
-            "https://www.russelllab.org/negatives/14704431_neg.mitab.gz", "https://www.russelllab.org/negatives/19123269_neg.mitab.gz",
-            "https://www.russelllab.org/negatives/10688190_neg.mitab.gz", "https://www.russelllab.org/negatives/11283351_neg.mitab.gz",
-            "https://www.russelllab.org/negatives/16267556_neg.mitab.gz", "https://www.russelllab.org/negatives/18509523_neg.mitab.gz",
-            "https://www.russelllab.org/negatives/17615063_neg.mitab.gz", "https://www.russelllab.org/negatives/18000013_neg.mitab.gz"
-        ]
-        for i, url in enumerate(neg_urls):
-            self.DATA_SOURCES[f"NEG_INTERACTIONS_{i+1}"] = {
-                "url": url,
-                "type": "file",
-                "path": self.DATA_GROUND_TRUTH_DIR / f"neg_{i+1}.mitab",
+                "url": urls['UNIPROT_ID_MAPPING'],
+                "type": "file", "path": self.DATA_MAPPINGS_DIR / "idmapping.dat",
                 "post_process": "ungzip", "checksum": None, "cacheable": True
             }
-        # Add all benchmark datasets dynamically
+        }
+        neg_urls = urls['NEG_INTERACTIONS']
+        for i, url in enumerate(neg_urls):
+            self.DATA_SOURCES[f"NEG_INTERACTIONS_{i + 1}"] = {
+                "url": url, "type": "file", "path": self.DATA_GROUND_TRUTH_DIR / f"neg_{i + 1}.mitab",
+                "post_process": "ungzip", "checksum": None, "cacheable": True
+            }
+
         for name in self.BENCHMARK_NODE_CLASSIFICATION_DATASETS:
             self.DATA_SOURCES[f"BENCHMARK_{name.upper()}"] = {
-                "type": "pyg_dataset",
-                "name": name,
-                "path": self.DATA_STANDARD_DATASETS_DIR / name,
-                "cacheable": True
+                "type": "pyg_dataset", "name": name,
+                "path": self.DATA_STANDARD_DATASETS_DIR / name, "cacheable": True
             }
 
     def _link_data_sources_to_attributes(self):
-        """
-        Dynamically creates key file path attributes from DATA_SOURCES.
-        This ensures a single source of truth for all data paths, removing redundancy.
-        """
-        # Link specific, named file paths for easy access elsewhere in the code.
-        # --- REFACTOR: Point to the final .parquet files that will be generated ---
+        """Dynamically creates key file path attributes."""
         self.POS_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "positive_interactions.parquet"
         self.NEG_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "negative_interactions.parquet"
         self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "id_mapping.parquet"
-        # --- NEW: Paths for the data bundle and manifest ---
         self.DATA_BUNDLE_PATH = self.PERSISTENT_DATA_CACHE / "data_bundle.tar.gz"
         self.DATA_MANIFEST_PATH = self.PERSISTENT_DATA_CACHE / "data_manifest.json"
-
         self.PROTT5_MODEL_PATH = self.DATA_SOURCES['PROTT5_MODEL']['path']
 
-        # Dynamically build the list of all available FASTA files.
         self.ORIGINAL_SEQUENCE_FILE_PATHS = [
-            Path(source_info['path'])
-            for key, source_info in self.DATA_SOURCES.items()
+            Path(source_info['path']) for _, source_info in self.DATA_SOURCES.items()
             if 'path' in source_info and str(source_info['path']).endswith(('.fasta', '.fa'))
         ]
-        # This is the "working" list of paths, which can be modified for downsampling during a run.
         self.SEQUENCE_FILE_PATHS = self.ORIGINAL_SEQUENCE_FILE_PATHS.copy()
 
-    def _setup_benchmarking_params(self):
-        """Sets parameters for the GNN benchmarking suite."""
-        self.BENCHMARK_NODE_CLASSIFICATION_DATASETS = [
-            "KarateClub", "Cora", "CiteSeer", "PubMed",
-            "Cornell", "Texas", "Wisconsin"
-        ]
-        # List of GNN models to run in the benchmark suite.
-        # Options: "GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "TongDiGCN", "DirectGCN"
-        self.BENCHMARK_GNN_MODELS_TO_RUN: List[str] = ["GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "DirGNN", "DirectGCN"]
-        self.BENCHMARK_SAVE_EMBEDDINGS = True # Controls if benchmarker saves embeddings to disk
-        self.BENCHMARK_TEST_ON_UNDIRECTED = True
-        self.BENCHMARK_SPLIT_RATIOS: Dict[str, float] = {"train": 0.1, "val": 0.1, "test": 0.8}
-        self.BENCHMARK_PCA_TARGET_DIM = 64
-        self.BENCHMARK_NE_MODELS_TO_RUN = ["Node2Vec"]
-        # Number of epochs for the network embedding benchmark (Node2Vec, etc.)
-        self.BENCHMARK_NE_EPOCHS = 5
-        self.BENCHMARK_NE_EMBEDDING_DIM = 128
-        self.BENCHMARK_NE_WALK_LENGTH = 20
-        self.BENCHMARK_NE_CONTEXT_SIZE = 10
-
-        # --- GNN Architecture for Benchmarking ---
-        # These parameters control the architecture of GNNs used in the standard
-        # node classification benchmarks (Cora, PubMed, etc.).
-        self.BENCHMARK_GNN_HIDDEN_CHANNELS = 64
-        self.BENCHMARK_GNN_NUM_LAYERS = 2
-        self.BENCHMARK_GNN_DROPOUT_RATE = 0.5
-        self.BENCHMARK_GAT_HEADS = 2
-        self.BENCHMARK_GAT_DROPOUT_RATE = 0.5  # GAT often benefits from higher dropout
-        self.BENCHMARK_CHEBNET_K = 3
-        self.BENCHMARK_GNN_LEARNING_RATE = 0.01
-        # --- NEW: Dedicated epochs for the GNN benchmark suite ---
-        self.BENCHMARK_GNN_EPOCHS = 100
-        self.BENCHMARK_RGCN_NUM_RELATIONS = 2
-        # --- FIX: Align DirectGCN's benchmark architecture with other GNNs for a fair comparison. ---
-        # It will now also be a 2-layer model with 64 hidden channels.
-        self.BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS = [self.BENCHMARK_GNN_HIDDEN_CHANNELS] * self.BENCHMARK_GNN_NUM_LAYERS
-        # --- NEW: Dedicated initial feature dimension for benchmark models ---
-        self.BENCHMARK_GNN_INIT_DIM = 64
-
-    def _setup_gcn_params(self):
-        """Sets parameters for the main ProtGram-DirectGCN pipeline."""
-        # --- ProtGram Graph Building ---
-        self.PROTGRAM_NGRAM_MAX_N = 3
-        # --- FIX: Safely handle os.cpu_count() returning None ---
-        cpu_cores = os.cpu_count()
-        self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
-
-        # ID Mapping
-        # Options: 'file' (recommended), 'regex', 'api', 'none'.
-        # 'file': Uses the large idmapping.dat to create a robust local SQLite DB. Best for production.
-        # 'regex': Fast, but relies on standard UniProt headers (e.g., >sp|P12345|...).
-        # 'api': Uses the live UniProt API. Slow, for small-scale use only.
-        self.ID_MAPPING_MODE = 'file'
-        # This value is now set dynamically in main.py based on the input FASTA file
-        # to correctly handle different UniRef versions (e.g., UniRef50, UniRef100).
-        self.API_MAPPING_FROM_DB: Optional[str] = None
-        self.API_MAPPING_TO_DB = "UniProtKB"
-
-        # Model Selection for ProtGram
-        # Options: 'directgcn', 'rgcn', 'tongdigcn'
-        # 'rgcn' treats in/out edges as 2 relations.
-        self.PROTGRAM_MODELS_TO_TRAIN = ['directgcn']
-
-        # --- ProtGram Model Architecture ---
-        # Defines the architecture of the DirectGCN model. The length of the list determines
-        # the model's depth, and each value specifies the output dimension of a GCN layer.
-        # The final value is the dimension of the output node embeddings.
-        self.DIRECTGCN_HIDDEN_LAYER_DIMS = [512, 256, 128, 64]
-        self.PROTGRAM_1GRAM_INIT_DIM = 512
-        self.PROTGRAM_MAX_PE_LEN = 512 # Max length for positional embeddings
-        # --- NEW: Architecture for other GNNs in the ProtGram pipeline ---
-        self.PROTGRAM_GNN_HIDDEN_CHANNELS = 64
-        self.PROTGRAM_GNN_NUM_LAYERS = 2
-        # Gating mode for DirectGCN.
-        # 'scalar': One learnable scalar per path, per layer (shared by all nodes).
-        # 'vector': One learnable scalar per path, per node, per layer (more expressive).
-        # 'node_gate_vector': A learnable *vector* per path, per node, per layer for element-wise gating. Most expressive.
-        # 'none': No gating, paths are simply added.
-        self.PROTGRAM_GATING_COEFF_MODE = "vector"
-        # NEW: Control whether to add positional embeddings in the DirectGCN model.
-        self.PROTGRAM_USE_POSITIONAL_EMBEDDING: bool = True
-
-        # --- ProtGram Training Hyperparameters ---
-        self.PROTGRAM_EPOCHS_PER_LEVEL = 500
-        self.PROTGRAM_LR = 0.005
-        self.PROTGRAM_DROPOUT_RATE = 0.5
-        self.PROTGRAM_WEIGHT_DECAY = 1e-4 # Standard L2 regularization
-        self.PROTGRAM_USE_LR_SCHEDULER = True
-        self.PROTGRAM_LR_SCHEDULER_PATIENCE = 10
-        self.PROTGRAM_LR_SCHEDULER_FACTOR = 0.5
-        self.PROTGRAM_USE_EARLY_STOPPING = True
-        self.PROTGRAM_EARLY_STOPPING_PATIENCE = 50
-        self.PROTGRAM_EARLY_STOPPING_MIN_DELTA = 1e-5
-
-        # --- ProtGram Self-Supervised Tasks ---
-        # --- FIX: Use 'community' for n=1 as 'masked_node' is unsolvable with random features ---
-        self.PROTGRAM_TASK_TYPES_PER_LEVEL: Dict[int, str] = {
-            1: "community", 2: "next_node", 3: "next_node"
-        }
-        self.PROTGRAM_DEFAULT_TASK_TYPE: str = "community"
-        # --- NEW: Make the homophily threshold a configurable parameter ---
-        self.GCN_HETEROPHILY_THRESHOLD: float = 0.6
-        self.PROTGRAM_CLOSEST_AA_K_HOPS: int = 3
-        self.PROTGRAM_MASKED_NODE_FRACTION: float = 0.15  # Fraction of nodes to mask for the masked_node task
-
-        # --- NEW: FASTA Cleaning Parameters ---
-        # Controls whether to perform on-the-fly cleaning during FASTA parsing.
-        # This can remove sequences with non-standard amino acids or outside length bounds.
-        self.PROTGRAM_CLEAN_FASTA_ON_PARSE = True
-        self.PROTGRAM_FASTA_MIN_LEN = 50  # Minimum sequence length to keep
-        self.PROTGRAM_FASTA_MAX_LEN: Optional[int] = 10000  # Maximum sequence length, None for unlimited
-        self.PROTGRAM_FASTA_ALPHABET = 'protein'  # 'protein' or 'dna'
-
-        # --- ProtGram Cluster-GCN Strategy ---
-        self.PROTGRAM_USE_CLUSTER_TRAINING = True
-        self.PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES = 5000
-        self.PROTGRAM_TARGET_NODES_PER_CLUSTER = 2000
-        self.PROTGRAM_MIN_CLUSTERS = 2
-        self.PROTGRAM_MAX_CLUSTERS = 500
-
-        # --- ProtGram Post-Processing ---
-        # --- FIX: Safely handle os.cpu_count() returning None ---
-        self.POOLING_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
-        self.PCA_TARGET_DIMENSION = 64
-        # NEW: Protein-level pooling strategy
-        # Strategy for pooling final n-gram embeddings to create a single protein embedding.
-        # Options: 'mean' (fast), 'sum', 'max', 'attention' (slower, more expressive)
-        self.PROTGRAM_PROTEIN_POOLING_STRATEGY = 'attention'
-        # NEW: Hierarchical pooling strategy
-        # Strategy for pooling (n-1)-gram embeddings to initialize n-gram features for n>1.
-        # Options: 'mean', 'attention'
-        self.PROTGRAM_HIERARCHICAL_POOLING_STRATEGY = 'attention'
-        # NEW: Control whether to log potentially large attention files.
-        # Set to True to generate attention plots, False to save memory/time.
-        self.PROTGRAM_LOG_ATTENTION_WEIGHTS = True
-
-        # --- ProtGram Sanity Check ---
-        self.PROTGRAM_RUN_SANITY_CHECK_PPI = True
-        self.PROTGRAM_SANITY_CHECK_EPOCHS = 5
-        self.PROTGRAM_SANITY_CHECK_TEST_SPLIT = 0.2
-        self.PROTGRAM_SANITY_CHECK_SAMPLE_SIZE = 2000
-
-    def _setup_word2vec_params(self):
-        """Sets parameters for the Word2Vec pipeline."""
-        self.W2V_VECTOR_SIZE = 100
-        self.W2V_WINDOW = 5
-        self.W2V_MIN_COUNT = 1
-        self.W2V_EPOCHS = 5
-        # --- FIX: Safely handle os.cpu_count() returning None ---
-        cpu_cores = os.cpu_count()
-        self.W2V_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
-        self.W2V_POOLING_STRATEGY = 'mean' # Options: 'mean', 'sum', 'max'
-        self.APPLY_PCA_TO_W2V = True # Apply PCA to match other embedding dimensions
-
-    def _setup_transformer_params(self):
-        """Sets parameters for the Transformer (e.g., ProtBERT) pipeline."""
-        self.TRANSFORMER_MODELS_TO_RUN = [
-            # --- DIAGNOSTIC STEP: Temporarily disable the large ProtBERT model to test for memory issues. ---
-            # If the pipeline succeeds with only ESM2, the previous crash was due to RAM limitations.
-            {"name": "ProtBERT", "hf_id": "Rostlab/prot_bert", "is_t5": False, "batch_size_multiplier": 1.0},
-            {"name": "ESM2", "hf_id": "facebook/esm2_t6_8M_UR50D", "is_t5": False, "batch_size_multiplier": 1.0}
-        ]
-        self.TRANSFORMER_MAX_LENGTH = 1024
-        self.TRANSFORMER_BASE_BATCH_SIZE = 16
-        # Process the full FASTA file in chunks to avoid loading all sequences into memory at once.
-        self.TRANSFORMER_CHUNK_SIZE = 10000
-        self.TRANSFORMER_POOLING_STRATEGY = 'mean'
-        self.USE_XLA_COMPILATION = True  # Set to True for faster inference
-
-    def _setup_lstm_params(self):
-        """Sets parameters for the LSTM embedding pipeline."""
-        self.LSTM_EMBEDDING_DIM = 100
-        self.LSTM_HIDDEN_DIM = 256
-        self.LSTM_NUM_LAYERS = 2
-        self.LSTM_EPOCHS = 5
-        self.LSTM_BATCH_SIZE = 64
-        self.LSTM_TRAIN_SEQ_LEN = 50
-        self.LSTM_TRAIN_STEP = 50
-        self.LSTM_LEARNING_RATE = 0.001
-        self.LSTM_POOLING_STRATEGY = 'mean'
-
-    def _setup_singleton_eval_params(self):
-        """Sets parameters for the rapid, n=1 GCN evaluation."""
-        self.SINGLETON_EVAL_EPOCHS = 100
-        self.SINGLETON_EVAL_TEST_SPLIT = 0.2
-        self.SINGLETON_EVAL_LR = 0.01
-        # A list of models to test in the singleton evaluation.
-        # Options: "GCN", "GAT", "GraphSAGE", "GIN", "ChebNet", "RGCN", "TongDiGCN", "DirectGCN"
-        self.SINGLETON_EVAL_MODELS_TO_RUN: List[str] = ["DirectGCN", "GCN", "RGCN", "DirGNN"]
-        # --- NEW: Dedicated architecture parameters for the singleton evaluation ---
-        self.SINGLETON_GNN_HIDDEN_CHANNELS = 64
-        self.SINGLETON_GNN_NUM_LAYERS = 2
-        self.SINGLETON_GNN_DROPOUT_RATE = 0.5
-        self.SINGLETON_GAT_HEADS = 2
-        self.SINGLETON_GAT_DROPOUT_RATE = 0.5
-        self.SINGLETON_CHEBNET_K = 3
-        self.SINGLETON_RGCN_NUM_RELATIONS = 2
-        # --- FIX: Align DirectGCN's singleton architecture with other GNNs for a fair comparison. ---
-        # It will now also be a 2-layer model with 64 hidden channels.
-        self.SINGLETON_DIRECTGCN_HIDDEN_LAYER_DIMS = [self.SINGLETON_GNN_HIDDEN_CHANNELS] * self.SINGLETON_GNN_NUM_LAYERS
-
-    def _setup_evaluation_params(self):
-        """Sets parameters for the final PPI evaluation pipeline."""
-        # General
-        self.PLOT_TRAINING_HISTORY = True
-        self.PERFORM_H5_INTEGRITY_CHECK = True
-        self.EVAL_GENERATE_SHAP_SUMMARY = True
-        self.EARLY_STOPPING_PATIENCE = 10 # For the MLP classifier
-
-        # List of pre-existing or external embedding files to include in evaluation.
-        # Embeddings generated during the pipeline run will be added automatically.
         self.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE = [
             {"name": "ProtT5", "path": self.PROTT5_MODEL_PATH},
         ]
 
-        # MLP Architecture & Training
-        self.EVAL_EDGE_EMBEDDING_METHOD = 'concatenate'
-        self.EVAL_N_FOLDS = 3
-        self.EVAL_MLP_DENSE1_UNITS = 128
-        self.EVAL_MLP_DROPOUT1_RATE = 0.4
-        self.EVAL_MLP_DENSE2_UNITS = 64
-        self.EVAL_MLP_DROPOUT2_RATE = 0.4
-        self.EVAL_MLP_L2_REG = 1e-5
-        self.EVAL_BATCH_SIZE = 2048
-        self.EVAL_EPOCHS = 10
-        self.EVAL_LEARNING_RATE = 0.001
+    def _setup_gcn_params(self):
+        """Sets ProtGram-GCN parameters statically from the YAML config."""
+        params = self._config['protgram_gcn']
+        cpu_cores = os.cpu_count()
+        self.PROTGRAM_NGRAM_MAX_N = params['PROTGRAM_NGRAM_MAX_N']
+        self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1
+        self.ID_MAPPING_MODE = params['ID_MAPPING_MODE']
+        self.API_MAPPING_FROM_DB = params['API_MAPPING_FROM_DB']
+        self.API_MAPPING_TO_DB = params['API_MAPPING_TO_DB']
+        self.PROTGRAM_MODELS_TO_TRAIN = params['PROTGRAM_MODELS_TO_TRAIN']
+        self.DIRECTGCN_HIDDEN_LAYER_DIMS = params['DIRECTGCN_HIDDEN_LAYER_DIMS']
+        self.PROTGRAM_1GRAM_INIT_DIM = params['PROTGRAM_1GRAM_INIT_DIM']
+        self.PROTGRAM_MAX_PE_LEN = params['PROTGRAM_MAX_PE_LEN']
+        self.PROTGRAM_GNN_HIDDEN_CHANNELS = params['PROTGRAM_GNN_HIDDEN_CHANNELS']
+        self.PROTGRAM_GNN_NUM_LAYERS = params['PROTGRAM_GNN_NUM_LAYERS']
+        self.PROTGRAM_GATING_COEFF_MODE = params['PROTGRAM_GATING_COEFF_MODE']
+        self.PROTGRAM_USE_POSITIONAL_EMBEDDING = params['PROTGRAM_USE_POSITIONAL_EMBEDDING']
+        self.PROTGRAM_EPOCHS_PER_LEVEL = params['PROTGRAM_EPOCHS_PER_LEVEL']
+        self.PROTGRAM_LR = params['PROTGRAM_LR']
+        self.PROTGRAM_DROPOUT_RATE = params['PROTGRAM_DROPOUT_RATE']
+        self.PROTGRAM_WEIGHT_DECAY = params['PROTGRAM_WEIGHT_DECAY']
+        self.PROTGRAM_USE_LR_SCHEDULER = params['PROTGRAM_USE_LR_SCHEDULER']
+        self.PROTGRAM_LR_SCHEDULER_PATIENCE = params['PROTGRAM_LR_SCHEDULER_PATIENCE']
+        self.PROTGRAM_LR_SCHEDULER_FACTOR = params['PROTGRAM_LR_SCHEDULER_FACTOR']
+        self.PROTGRAM_USE_EARLY_STOPPING = params['PROTGRAM_USE_EARLY_STOPPING']
+        self.PROTGRAM_EARLY_STOPPING_PATIENCE = params['PROTGRAM_EARLY_STOPPING_PATIENCE']
+        self.PROTGRAM_EARLY_STOPPING_MIN_DELTA = params['PROTGRAM_EARLY_STOPPING_MIN_DELTA']
+        self.PROTGRAM_GRADIENT_ACCUMULATION_STEPS = params.get('PROTGRAM_GRADIENT_ACCUMULATION_STEPS', 1)
+        self.PROTGRAM_TASK_TYPES_PER_LEVEL = params['PROTGRAM_TASK_TYPES_PER_LEVEL']
+        self.PROTGRAM_DEFAULT_TASK_TYPE = params['PROTGRAM_DEFAULT_TASK_TYPE']
+        self.GCN_HETEROPHILY_THRESHOLD = params['GCN_HETEROPHILY_THRESHOLD']
+        self.GCN_PROPAGATION_EPSILON = params['GCN_PROPAGATION_EPSILON']
+        self.PROTGRAM_CLOSEST_AA_K_HOPS = params['PROTGRAM_CLOSEST_AA_K_HOPS']
+        self.PROTGRAM_MASKED_NODE_FRACTION = params['PROTGRAM_MASKED_NODE_FRACTION']
+        self.PROTGRAM_CLEAN_FASTA_ON_PARSE = params['PROTGRAM_CLEAN_FASTA_ON_PARSE']
+        self.PROTGRAM_FASTA_MIN_LEN = params['PROTGRAM_FASTA_MIN_LEN']
+        self.PROTGRAM_FASTA_MAX_LEN = params['PROTGRAM_FASTA_MAX_LEN']
+        self.PROTGRAM_FASTA_ALPHABET = params['PROTGRAM_FASTA_ALPHABET']
+        self.PROTGRAM_USE_CLUSTER_TRAINING = params['PROTGRAM_USE_CLUSTER_TRAINING']
+        self.PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES = params['PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES']
+        self.PROTGRAM_PARTITIONING_METHOD = params.get('PROTGRAM_PARTITIONING_METHOD', 'louvain')
+        self.PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING = params.get('PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING', 1)
+        self.PROTGRAM_VALIDATE_COARSENING = params.get('PROTGRAM_VALIDATE_COARSENING', False)
+        self.PROTGRAM_TARGET_NODES_PER_CLUSTER = params['PROTGRAM_TARGET_NODES_PER_CLUSTER']
+        self.PROTGRAM_MIN_CLUSTERS = params['PROTGRAM_MIN_CLUSTERS']
+        self.PROTGRAM_MAX_CLUSTERS = params['PROTGRAM_MAX_CLUSTERS']
+        self.PROTGRAM_CLUSTER_GROUP_SIZE = params.get('PROTGRAM_CLUSTER_GROUP_SIZE', 1)
+        self.POOLING_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1
+        self.PCA_TARGET_DIMENSION = params['PCA_TARGET_DIMENSION']
+        self.PROTGRAM_PROTEIN_POOLING_STRATEGY = params['PROTGRAM_PROTEIN_POOLING_STRATEGY']
+        self.PROTGRAM_HIERARCHICAL_POOLING_STRATEGY = params['PROTGRAM_HIERARCHICAL_POOLING_STRATEGY']
+        self.PROTGRAM_LOG_ATTENTION_WEIGHTS = params['PROTGRAM_LOG_ATTENTION_WEIGHTS']
+        self.PROTGRAM_RUN_SANITY_CHECK_PPI = params['PROTGRAM_RUN_SANITY_CHECK_PPI']
+        self.PROTGRAM_SANITY_CHECK_EPOCHS = params['PROTGRAM_SANITY_CHECK_EPOCHS']
+        self.PROTGRAM_SANITY_CHECK_TEST_SPLIT = params['PROTGRAM_SANITY_CHECK_TEST_SPLIT']
+        self.PROTGRAM_SANITY_CHECK_SAMPLE_SIZE = params['PROTGRAM_SANITY_CHECK_SAMPLE_SIZE']
 
-        # Reporting
-        self.EVAL_K_VALUES_FOR_TABLE = [50, 100]
-        self.EVAL_MAIN_EMBEDDING_FOR_STATS = "ProtGramDirectgcn"
-        self.EVAL_STATISTICAL_TEST_ALPHA = 0.05
+    def _setup_word2vec_params(self):
+        """Sets Word2Vec parameters statically from the YAML config."""
+        params = self._config['word2vec']
+        cpu_cores = os.cpu_count()
+        self.W2V_VECTOR_SIZE = params['W2V_VECTOR_SIZE']
+        self.W2V_WINDOW = params['W2V_WINDOW']
+        self.W2V_MIN_COUNT = params['W2V_MIN_COUNT']
+        self.W2V_EPOCHS = params['W2V_EPOCHS']
+        self.W2V_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
+        self.W2V_POOLING_STRATEGY = params['W2V_POOLING_STRATEGY']
+        self.APPLY_PCA_TO_W2V = params['APPLY_PCA_TO_W2V']
+
+    def _setup_transformer_params(self):
+        """Sets Transformer parameters statically from the YAML config."""
+        params = self._config['transformer']
+        self.TRANSFORMER_MODELS_TO_RUN = params['MODELS_TO_RUN']
+        self.TRANSFORMER_MAX_LENGTH = params['MAX_LENGTH']
+        self.TRANSFORMER_BASE_BATCH_SIZE = params['BASE_BATCH_SIZE']
+        self.TRANSFORMER_CHUNK_SIZE = params['CHUNK_SIZE']
+        self.TRANSFORMER_POOLING_STRATEGY = params['POOLING_STRATEGY']
+        self.USE_XLA_COMPILATION = params['USE_XLA_COMPILATION']
+
+    def _setup_lstm_params(self):
+        """Sets LSTM parameters statically from the YAML config."""
+        params = self._config['lstm']
+        self.LSTM_EMBEDDING_DIM = params['EMBEDDING_DIM']
+        self.LSTM_HIDDEN_DIM = params['HIDDEN_DIM']
+        self.LSTM_NUM_LAYERS = params['NUM_LAYERS']
+        self.LSTM_EPOCHS = params['EPOCHS']
+        self.LSTM_BATCH_SIZE = params['BATCH_SIZE']
+        self.LSTM_TRAIN_SEQ_LEN = params['TRAIN_SEQ_LEN']
+        self.LSTM_TRAIN_STEP = params['TRAIN_STEP']
+        self.LSTM_LEARNING_RATE = params['LEARNING_RATE']
+        self.LSTM_POOLING_STRATEGY = params['POOLING_STRATEGY']
+
+    def _setup_singleton_eval_params(self):
+        """Sets Singleton evaluation parameters statically from the YAML config."""
+        params = self._config['singleton_eval']
+        self.SINGLETON_EVAL_EPOCHS = params['EPOCHS']
+        self.SINGLETON_EVAL_TEST_SPLIT = params['TEST_SPLIT']
+        self.SINGLETON_EVAL_LR = params['LR']
+        self.SINGLETON_EVAL_MODELS_TO_RUN = params['MODELS_TO_RUN']
+        self.SINGLETON_GNN_HIDDEN_CHANNELS = params['GNN_HIDDEN_CHANNELS']
+        self.SINGLETON_GNN_NUM_LAYERS = params['GNN_NUM_LAYERS']
+        self.SINGLETON_GNN_DROPOUT_RATE = params['GNN_DROPOUT_RATE']
+        self.SINGLETON_GAT_HEADS = params['GAT_HEADS']
+        self.SINGLETON_GAT_DROPOUT_RATE = params['GAT_DROPOUT_RATE']
+        self.SINGLETON_CHEBNET_K = params['CHEBNET_K']
+        self.SINGLETON_RGCN_NUM_RELATIONS = params['RGCN_NUM_RELATIONS']
+        self.SINGLETON_EVAL_GRADIENT_ACCUMULATION_STEPS = params.get('GRADIENT_ACCUMULATION_STEPS', 1)
+        self.SINGLETON_DIRECTGCN_HIDDEN_LAYER_DIMS = params['DIRECTGCN_HIDDEN_LAYER_DIMS']
+
+    def _setup_evaluation_params(self):
+        """Sets PPI evaluation parameters statically from the YAML config."""
+        params = self._config['ppi_evaluation']
+        self.PLOT_TRAINING_HISTORY = params['PLOT_TRAINING_HISTORY']
+        self.PERFORM_H5_INTEGRITY_CHECK = params['PERFORM_H5_INTEGRITY_CHECK']
+        self.EVAL_GENERATE_SHAP_SUMMARY = params['EVAL_GENERATE_SHAP_SUMMARY']
+        self.EARLY_STOPPING_PATIENCE = params['EARLY_STOPPING_PATIENCE']
+        self.EVAL_EDGE_EMBEDDING_METHOD = params['EDGE_EMBEDDING_METHOD']
+        self.EVAL_N_FOLDS = params['N_FOLDS']
+        self.EVAL_MLP_DENSE1_UNITS = params['MLP_DENSE1_UNITS']
+        self.EVAL_MLP_DROPOUT1_RATE = params['MLP_DROPOUT1_RATE']
+        self.EVAL_MLP_DENSE2_UNITS = params['MLP_DENSE2_UNITS']
+        self.EVAL_MLP_DROPOUT2_RATE = params['MLP_DROPOUT2_RATE']
+        self.EVAL_MLP_L2_REG = params['MLP_L2_REG']
+        self.EVAL_BATCH_SIZE = params['BATCH_SIZE']
+        self.EVAL_EPOCHS = params['EPOCHS']
+        self.EVAL_LEARNING_RATE = params['LEARNING_RATE']
+        self.EVAL_K_VALUES_FOR_TABLE = params['K_VALUES_FOR_TABLE']
+        self.EVAL_MAIN_EMBEDDING_FOR_STATS = params['MAIN_EMBEDDING_FOR_STATS']
+        self.EVAL_STATISTICAL_TEST_ALPHA = params['STATISTICAL_TEST_ALPHA']
 
     def _setup_mlflow_params(self):
-        """Sets parameters for MLflow experiment tracking."""
-        self.USE_MLFLOW = True
+        """Sets MLflow parameters statically from the YAML config."""
+        params = self._config['mlflow']
+        self.USE_MLFLOW = params['USE_MLFLOW']
         mlruns_path = self.BASE_OUTPUT_DIR / "mlruns"
-        self.MLFLOW_TRACKING_URI = mlruns_path.as_uri()  # Use as_uri() for proper file URI scheme.
-        self.MLFLOW_EXPERIMENT_NAME = "PPI-Link-Prediction"
-        self.MLFLOW_BENCHMARK_EXPERIMENT_NAME = "GNN-Benchmarking"
-        self.MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME = "Network_Embedding_Benchmarking"
+        self.MLFLOW_TRACKING_URI = mlruns_path.as_uri()
+        self.MLFLOW_EXPERIMENT_NAME = params['EXPERIMENT_NAME']
+        self.MLFLOW_BENCHMARK_EXPERIMENT_NAME = params['BENCHMARK_EXPERIMENT_NAME']
+        self.MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME = params['NE_BENCHMARK_EXPERIMENT_NAME']
+
+    def _setup_hpo_params(self):
+        """Sets HPO parameters statically from the YAML config."""
+        params = self._config.get('hyperparameter_optimization', {})
+        self.RUN_HPO = params.get('RUN_HPO', False)
+        self.HPO_N_TRIALS = params.get('HPO_N_TRIALS', 50)
+        self.HPO_TARGET_EMBEDDING_MODEL = params.get('HPO_TARGET_EMBEDDING_MODEL', '')
+        self.HPO_PPI_MLP_SEARCH_SPACE = params.get('HPO_PPI_MLP_SEARCH_SPACE', {})
+
+    def _validate_config(self):
+        """
+        Performs validation of the entire configuration using Pydantic schemas.
+        This provides clear, structured error messages if the config is invalid.
+        """
+        print("--- Validating configuration parameters using Pydantic schema... ---")
+        try:
+            # Pass the raw loaded dictionary to the Pydantic model for validation.
+            # Add the new HPO section to the dictionary being validated.
+            config_to_validate = self._config.copy()
+            config_to_validate['hyperparameter_optimization'] = self._config.get('hyperparameter_optimization', {})
+            ValidationSchema.model_validate(config_to_validate)
+            print("  ✅ Configuration is valid.")
+        except ValidationError as e:
+            # --- DEFINITIVE FIX: Provide clear, actionable error messages and exit ---
+            print("\n" + "="*80)
+            print("--- ❌ CONFIGURATION ERROR ---")
+            print("  Your 'config.yaml' file has one or more errors:")
+            # Pydantic provides a nicely formatted error message.
+            print(e)
+            print("="*80)
+            print("\n--- Please correct the configuration file and try again. ---")
+            sys.exit(1)  # Exit with an error code

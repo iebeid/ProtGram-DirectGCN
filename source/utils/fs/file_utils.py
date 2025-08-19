@@ -1,0 +1,183 @@
+# ==============================================================================
+# MODULE: utils/data/file_utils.py
+# PURPOSE: Contains all file I/O and related utilities.
+# VERSION: 1.0 (Created by refactoring from data_utils.py)
+# AUTHOR: Islam Ebeid
+# ==============================================================================
+
+import os
+import hashlib
+import json
+import pickle
+import random
+from pathlib import Path
+from typing import Dict, Optional, Union, Any
+
+import h5py
+import numpy as np
+import pandas as pd
+import torch
+from torch_geometric.data import Data
+from tqdm.auto import tqdm
+from source.utils.fs.file_system_manager import fs_manager
+
+
+# ==============================================================================
+# 1. General Data Utilities (Moved from embedding_loader.py)
+# ==============================================================================
+class FileUtils:
+    """A collection of static methods for file operations."""
+
+    @staticmethod
+    def save_object(obj: any, uri: Union[str, Path]):
+        """Saves a Python object to a file in any fsspec-supported location."""
+        fs, path = fs_manager.get_fs_and_path(str(uri))
+        try:
+            parent_dir = os.path.dirname(path)
+            if parent_dir: fs.makedirs(parent_dir, exist_ok=True)
+            with fs.open(path, 'wb') as f:
+                pickle.dump(obj, f)
+            print(f"  Object saved to {uri}")
+        except Exception as e:
+            print(f"  ERROR: Error saving object to {uri}: {e}")
+
+    @staticmethod
+    def load_object(uri: Union[str, Path]) -> Optional[any]:
+        """Loads a pickled Python object from any fsspec-supported location."""
+        fs, path = fs_manager.get_fs_and_path(str(uri))
+        if not fs.exists(path):
+            return None
+        try:
+            with fs.open(path, 'rb') as f:
+                return pickle.load(f)
+        except (pickle.UnpicklingError, EOFError, AttributeError, ImportError, IndexError) as e:
+            print(f"  ERROR: File '{os.path.basename(path)}' is corrupted or cannot be unpickled.")
+            print(f"  Details: {e.__class__.__name__}: {e}")
+            return None
+        except Exception as e:
+            print(f"  ERROR: An unexpected error occurred while loading object from {uri}: {e}")
+            return None
+
+    @staticmethod
+    def save_dataframe_to_csv(df: pd.DataFrame, uri: Union[str, Path], index: bool = False):
+        """Saves a Pandas DataFrame to a CSV file in any fsspec-supported location."""
+        fs, path = fs_manager.get_fs_and_path(str(uri))
+        try:
+            parent_dir = os.path.dirname(path)
+            if parent_dir: fs.makedirs(parent_dir, exist_ok=True)
+            with fs.open(path, 'w', encoding='utf-8') as f:
+                df.to_csv(f, index=index)
+            print(f"DataFrame saved to: {uri}")
+        except Exception as e:
+            print(f"  ERROR: Error saving DataFrame to {uri}: {e}")
+
+    @staticmethod
+    def save_json(data: Dict, uri: Union[str, Path], json_lines: bool = False):
+        """Saves a dictionary to a JSON file, with an option for JSONL format."""
+        fs, path = fs_manager.get_fs_and_path(str(uri))
+        try:
+            parent_dir = os.path.dirname(path)
+            if parent_dir: fs.makedirs(parent_dir, exist_ok=True)
+            with fs.open(path, 'w', encoding='utf-8') as f:
+                if json_lines:
+                    for key, value in data.items():
+                        json.dump({key: value}, f)
+                        f.write('\n')
+                else:
+                    # Write a single, pretty-printed JSON object.
+                    json.dump(data, f, indent=4, sort_keys=True)
+            print(f"  JSON data saved to {uri}")
+        except Exception as e:
+            print(f"  ERROR: Could not save JSON to {uri}: {e}")
+
+    @staticmethod
+    def write_h5(embeddings_dict: Dict, uri: Union[str, Path], desc: str):
+        """Helper function to write a dictionary of embeddings to an HDF5 file in any fsspec-supported location."""
+        fs, path = fs_manager.get_fs_and_path(str(uri))
+        try:
+            parent_dir = os.path.dirname(path)
+            if parent_dir: fs.makedirs(parent_dir, exist_ok=True)
+            with fs.open(path, 'wb') as f:
+                with h5py.File(f, 'w') as hf:
+                    for key, value in tqdm(embeddings_dict.items(), desc=f"  {desc}"):
+                        if value is not None and value.size > 0:
+                            # --- NEW: Add chunking and compression for better I/O performance and smaller file size ---
+                            hf.create_dataset(key, data=value, chunks=True, compression="gzip")
+        except Exception as e:
+            print(f"  ERROR: Could not write HDF5 file to {uri}: {e}")
+
+    @staticmethod
+    def check_h5_embeddings_integrity(uri: Union[str, Path], num_samples_to_check: int = 5):
+        """Performs a basic integrity check on an HDF5 embedding file from any fsspec-supported location."""
+        fs, path = fs_manager.get_fs_and_path(str(uri))
+        FileUtils.print_header(f"--- Checking HDF5 file: {uri} ---")
+
+        if not fs.exists(path):
+            print(f"  ERROR: File at '{uri}' does not exist.")
+            return
+
+        try:
+            with fs.open(path, 'rb') as f:
+                with h5py.File(f, 'r') as hf:
+                    keys = list(hf.keys())
+                    if not keys:
+                        print("  HDF5 check: File is empty.")
+                        return
+                    print(f"Found {len(keys)} total embeddings. Inspecting up to {num_samples_to_check} samples:")
+                    sample_keys = random.sample(keys, min(len(keys), num_samples_to_check))
+                    for i, key in enumerate(sample_keys):
+                        dataset = hf.get(key)
+                        if not isinstance(dataset, h5py.Dataset): continue
+                        emb = dataset[:]
+                        print(f"    - Sample {i + 1}: Key='{key}', Shape={emb.shape}, DType={emb.dtype}")
+                        if np.isnan(emb).any(): print("      - WARNING: Embedding contains NaN values.")
+                        if np.isinf(emb).any(): print("      - WARNING: Embedding contains Inf values.")
+        except Exception as e:
+            print(f"  ERROR: An error occurred while checking HDF5 file '{uri}': {e}")
+
+    @staticmethod
+    def calculate_sha256(uri: Union[str, Path]) -> str:
+        """Calculates the SHA256 checksum of a file from any fsspec-supported location."""
+        fs, path = fs_manager.get_fs_and_path(str(uri))
+        sha256_hash = hashlib.sha256()
+        try:
+            if not fs.exists(path):
+                return ""
+            with fs.open(path, "rb") as f:
+                for byte_block in iter(lambda: f.read(4096), b""):
+                    sha256_hash.update(byte_block)
+            return sha256_hash.hexdigest()
+        except (IOError, OSError) as e:
+            print(f"  Warning: Could not calculate checksum for {uri}: {e}")
+            return ""
+
+    @staticmethod
+    def print_header(title: str):
+        """Prints a standardized header to the console."""
+        border = "=" * (len(title) + 6)
+        print(f"\n{border}\n### {title} ###\n{border}\n")
+
+    @staticmethod
+    def save_embeddings(model: torch.nn.Module, data: Data, embedding_dir_uri: str, device: torch.device):
+        """Extracts and saves GNN node embeddings to an H5 file in any fsspec-supported location."""
+        print(f"    Extracting embeddings for {model.__class__.__name__}...")
+        with torch.no_grad():
+            model.eval()
+            _, embeddings = model(data.to(device))
+        if embeddings is None:
+            print("    Warning: Could not extract embeddings.")
+            return
+
+        embeddings_np = embeddings.cpu().numpy()
+        emb_dict = {str(i): embeddings_np[i] for i in range(embeddings_np.shape[0])}
+
+        # Construct the full URI for the output file
+        dataset_name = getattr(data, 'name', 'unknown_dataset')
+        model_name = model.__class__.__name__
+        emb_dim = embeddings_np.shape[1]
+
+        h5_filename = f"{model_name}_embeddings_dim{emb_dim}.h5"
+        full_h5_uri = os.path.join(embedding_dir_uri, dataset_name, h5_filename)
+
+        FileUtils.write_h5(emb_dict, full_h5_uri, f"Writing H5 for {model_name}")
+        print(f"      Saved embeddings to {full_h5_uri}")

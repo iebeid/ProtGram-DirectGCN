@@ -8,17 +8,18 @@
 import gc
 import os
 import time
-from contextlib import nullcontext
-from typing import Dict, Optional, Union, Mapping
+from typing import Dict, Optional, Mapping
 
-import h5py
 import numpy as np
 from gensim.models import Word2Vec
 from tqdm.auto import tqdm
 
 from configuration.config import Config
-from source.utils.data import FastaUtils, DataUtils, IDMapGenerator
-from source.utils.post import EmbeddingProcessor
+from source.utils.data.data_utils import DataUtils
+from source.utils.data.fasta_utils import FastaUtils
+from source.utils.data.id_mapper import IDMapGenerator
+from source.utils.fs.file_utils import FileUtils
+from source.utils.post.embedding_processor import EmbeddingProcessor
 
 
 class Word2VecEmbedder:
@@ -34,12 +35,9 @@ class Word2VecEmbedder:
         DataUtils.print_header("PIPELINE STEP: Training Word2Vec & Generating Embeddings")
         self.config.RESULTS_W2V_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
 
-        id_mapper = self._load_id_map()
+        id_mapper_obj = self._load_id_map()
 
-        # Use a context manager if the mapper is the on-disk SQLite version
-        context = id_mapper if isinstance(id_mapper, IDMapGenerator) else nullcontext(id_mapper)
-        with context as mapper:
-            return self._execute_embedding_logic(mapper)
+        return self._execute_embedding_logic(id_mapper_obj)
 
     def _load_id_map(self) -> Optional[Mapping]:
         """Loads the UniProt ID mapping file if configured."""
@@ -51,7 +49,7 @@ class Word2VecEmbedder:
             return id_map_result
         return None
 
-    def _execute_embedding_logic(self, id_mapper: Optional[Mapping]) -> Optional[str]:
+    def _execute_embedding_logic(self, id_mapper_obj: Optional[Mapping]) -> Optional[str]:
         """The core logic for Word2Vec, now accepting a mapper object."""
         DataUtils.print_header("Step 1: Preparing FASTA Corpus for Word2Vec")
         fasta_paths = self.config.SEQUENCE_FILE_PATHS
@@ -76,7 +74,9 @@ class Word2VecEmbedder:
 
         DataUtils.print_header("Step 3: Generating Per-Protein Embeddings using Word2Vec")
         protein_embeddings: Dict[str, np.ndarray] = {}
-        sequences_for_embedding = list(FastaUtils.parse_sequences(fasta_files))
+        # --- ANTICIPATORY DEBUGGING: Use the generator directly to avoid loading all sequences into memory ---
+        # This is crucial for scalability with very large FASTA files.
+        sequences_for_embedding = FastaUtils.parse_sequences(fasta_files)
 
         for original_id, sequence in tqdm(sequences_for_embedding, desc="  Generating W2V Protein Embeddings"):
             residue_vectors = EmbeddingProcessor.get_word2vec_residue_embeddings(sequence, w2v_model,
@@ -85,25 +85,29 @@ class Word2VecEmbedder:
                 protein_vector = EmbeddingProcessor.pool_residue_embeddings(residue_vectors,
                                                                             self.config.W2V_POOLING_STRATEGY,
                                                                             self.config.W2V_VECTOR_SIZE)
-                final_key = id_mapper.get(original_id, original_id) if id_mapper else original_id
-                protein_embeddings[final_key] = protein_vector
+                protein_embeddings[original_id] = protein_vector
 
         if not protein_embeddings:
             print("  Warning: No protein embeddings generated from Word2Vec.")
             return None
 
+        # Apply ID mapping to the entire dictionary at once
+        protein_embeddings = IDMapGenerator.apply_mapping(protein_embeddings, id_mapper_obj)
+
         print(f"  Generated {len(protein_embeddings)} protein embeddings using Word2Vec.")
 
         output_h5_path = self.config.RESULTS_W2V_EMBEDDINGS_DIR / f"word2vec_dim{self.config.W2V_VECTOR_SIZE}_{self.config.W2V_POOLING_STRATEGY}.h5"
-        DataUtils.write_h5(protein_embeddings, output_h5_path, "Writing Word2Vec H5 File")
+        FileUtils.write_h5(protein_embeddings, output_h5_path, "Writing Word2Vec H5 File")
 
         # --- NEW: Apply PCA for consistency with other embedding pipelines ---
-        final_path = EmbeddingProcessor.apply_pca_to_h5(
-            input_h5_path=output_h5_path,
-            output_dir=self.config.RESULTS_W2V_EMBEDDINGS_DIR,
-            target_dimension=self.config.PCA_TARGET_DIMENSION,
-            random_seed=self.config.RANDOM_STATE
-        )
+        final_path = output_h5_path
+        if self.config.APPLY_PCA_TO_W2V and self.config.PCA_TARGET_DIMENSION > 0:
+            final_path = EmbeddingProcessor.apply_pca_to_h5(
+                input_h5_path=output_h5_path,
+                output_dir=self.config.RESULTS_W2V_EMBEDDINGS_DIR,
+                target_dimension=self.config.PCA_TARGET_DIMENSION,
+                random_seed=self.config.RANDOM_STATE
+            )
 
         print(f"\nSUCCESS: Word2Vec embeddings processing complete. Final file: {final_path}")
 

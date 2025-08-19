@@ -13,13 +13,27 @@ import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import MessagePassing
 
-from source.utils.post import EmbeddingProcessor
+from source.utils.post.embedding_loader import EmbeddingLoader
+from source.utils.post.embedding_processor import EmbeddingProcessor
 
 
 class DirectGCNLayer(MessagePassing):
     """
     A highly expressive GCN layer with separate and shared transformations for
-    directed and undirected paths, combined via a hierarchical gating mechanism.
+    directed and undirected paths, combined via a hierarchical gating mechanism. This layer
+    is the core of the DirectGCN model, designed to capture complex relational
+    information in directed graphs by processing multiple graph "views" in parallel.
+
+    The key architectural ideas are:
+    1.  **Multi-Path Message Passing:** Instead of a single convolution, it performs
+        separate message passing operations over different graph representations
+        (e.g., incoming edges, outgoing edges, undirected edges, homophilic edges).
+    2.  **Shared & Specific Transformations:** Each path has its own learnable weight
+        matrix, but also benefits from a shared transformation, allowing the model
+        to learn both path-specific and general features.
+    3.  **Hierarchical Gating:** A learnable gating mechanism weights the contribution
+        of each path to the final node representation, allowing the model to
+        dynamically decide which graph views are most important for each node.
     """
 
     def __init__(self, in_channels: int, out_channels: int, num_nodes: int, gating_mode: str = 'vector',
@@ -140,13 +154,21 @@ class DirectGCNLayer(MessagePassing):
 
     def forward(self, x: torch.Tensor, data: Data) -> torch.Tensor:
         """Forward pass implementing the hierarchical, dual-path logic."""
+        # --- 0. Setup ---
+        # Get original node indices if this is a subgraph from clustered training
         original_indices = getattr(data, 'original_indices', None)
 
-        # --- 1. Shared transformation (do this once) ---
+        # --- 1. Shared Transformation ---
+        # This computes a common feature representation that will be combined
+        # with the output of each specialized message-passing path. This is
+        # done once per forward pass for efficiency.
         h_shared = self.lin_shared(x)
 
-        # --- 2. Propagate on all potential paths and combine with shared features ---
-        # --- FIX: Use the correctly processed matrices from the data object ---
+        # --- 2. Path-Specific Propagation and Combination ---
+        # Each path (in-degree, out-degree, undirected, etc.) performs its own
+        # message passing on its specific graph view (e.g., mathcal_A_in).
+        # The result is then combined with the shared features via concatenation
+        # and a final projection layer, creating a rich, path-aware representation.
         path_combinations = []
 
         h_main_in = self.propagate(data.edge_index_mathcal_in, x=self.lin_main_in(x), edge_weight=data.edge_weight_mathcal_in) + self.bias_main_in
@@ -164,9 +186,12 @@ class DirectGCNLayer(MessagePassing):
             path_combinations.append(self.proj_homo(torch.cat([h_homo, h_shared + self.bias_shared_homo], dim=-1)))
             path_combinations.append(self.proj_hetero(torch.cat([h_hetero, h_shared + self.bias_shared_hetero], dim=-1)))
 
-        # --- 3. Get Gating Coefficients and combine paths ---
+        # --- 3. Hierarchical Gating and Path Combination ---
+        # A learnable gating mechanism (scalar, vector, or node-specific) calculates
+        # weights for each path. These weights determine the contribution of each
+        # path's features to the final node representation.
         if self.gating_mode == 'none':
-            # 'none' mode, just sum the combinations
+            # In 'none' mode, all paths contribute equally (summation).
             final_combination = torch.stack(path_combinations, dim=0).sum(dim=0)
         else:
             # Handle 'scalar', 'vector', and 'node_gate_vector' modes
@@ -192,9 +217,10 @@ class DirectGCNLayer(MessagePassing):
                 for i, path_emb in enumerate(path_combinations):
                     final_combination += gating_weights[:, :, i] * path_emb
 
-        # --- 4. Add the learnable node-specific constant ---
-        # This is applied after gating, acting as a final node-specific bias.
-        # It is intentionally not applied in 'scalar' mode, as per the original logic.
+        # --- 4. Final Node-Specific Bias ---
+        # A learnable, node-specific constant is added to the final combined
+        # representation. This acts as a final bias term for each node, allowing
+        # for fine-grained adjustments.
         if self.gating_mode != 'scalar' and self.constant is not None:
             constant_term = self.constant[original_indices] if original_indices is not None else self.constant
             final_combination += constant_term

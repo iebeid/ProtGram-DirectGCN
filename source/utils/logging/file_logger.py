@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: utils/logging.py
+# MODULE: utils/file_logger.py
 # PURPOSE: Provides a class-based utility to redirect stdout/stderr to a log file.
 # VERSION: 2.0 (Corrected path handling and context management)
 # AUTHOR: Islam Ebeid

@@ -1,15 +1,14 @@
 # ==============================================================================
-# MODULE: utils/models.py
-# PURPOSE: Contains tools for loading and post-processing embeddings, such as PCA,
-#          normalization, pooling, and edge feature creation.
-# VERSION: 7.0 (Aligned DirectGCN embedding extraction with Parallel Views architecture)
+# MODULE: utils/model_converter.py
+# PURPOSE: A standalone utility to convert Hugging Face models to a local
+#          TensorFlow format, acting as a disk cache.
+# VERSION: 1.0
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
-import traceback
-from typing import TYPE_CHECKING
 import argparse
 import sys
+import traceback
 from pathlib import Path
 
 # --- FIX: Add the project root to the Python path to allow relative imports ---
@@ -21,31 +20,8 @@ from configuration.config import Config
 # --- Local import to avoid circular dependency at module level ---
 from transformers import AutoTokenizer, TFAutoModel
 
-if TYPE_CHECKING:
-    pass
 
-
-class EarlyStopper:
-    """A simple early stopper to monitor loss and stop training when it stops improving."""
-
-    def __init__(self, patience: int = 1, min_delta: float = 0):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.best_loss = float('inf')
-
-    def early_stop(self, validation_loss: float) -> bool:
-        if validation_loss < self.best_loss - self.min_delta:
-            self.best_loss = validation_loss
-            self.counter = 0
-        else:
-            self.counter += 1
-            if self.counter >= self.patience:
-                return True
-        return False
-
-
-class ModelProcessor:
+class ModelConverter:
     """
     A utility class for handling model format conversions.
     """
@@ -109,7 +85,7 @@ def main():
     args = parser.parse_args()
 
     config = Config()
-    ModelProcessor.convert_and_save_model(
+    ModelConverter.convert_and_save_model(
         model_id=args.model_id,
         output_base_dir=config.DATA_MODELS_DIR
     )

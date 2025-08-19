@@ -16,7 +16,6 @@ project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
 from configuration.config import Config
-from source.data_builders.fastprotgram import FastProtGramDataBuilder
 from source.data_builders.protgram import ProtGramDataBuilder
 
 
@@ -39,10 +38,8 @@ def main():
         print(f"  [build_graphs.py] Overriding config with FASTA path from command line: {args.fasta_path}")
         config.SEQUENCE_FILE_PATHS = [Path(args.fasta_path)]
 
-    if config.USE_FAST_GRAPH_BUILDER:
-        FastProtGramDataBuilder(config).run()
-    else:
-        ProtGramDataBuilder(config).run()
+    ProtGramDataBuilder(config).run()
+
 
 if __name__ == "__main__":
     main()

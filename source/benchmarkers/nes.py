@@ -5,9 +5,8 @@
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
-import os
 import traceback
-from typing import Dict, Any, Tuple
+from typing import Dict, Any
 
 import mlflow
 import numpy as np
@@ -16,13 +15,13 @@ import torch
 import torch.nn.functional as F
 from sklearn.metrics import f1_score, precision_score, recall_score
 from torch_geometric.data import Data
-from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 from torch_geometric.nn import Node2Vec
 
 from configuration.config import Config
 from source.benchmarkers.base import BaseBenchmarker
-from source.utils.data import DataUtils
+from source.utils.data.data_utils import DataUtils
 from source.models.fnn.mlp import SimpleMLP
+from source.utils.models.early_stopper import EarlyStopper
 
 class NetworkEmbeddingBenchmarker(BaseBenchmarker):
     def __init__(self, config: Config):
@@ -52,10 +51,16 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
         precision_at_best_val = -1.0
         recall_at_best_val = -1.0
 
+        # --- NEW: Add early stopping to prevent overfitting the simple classifier ---
+        # --- ANTICIPATORY DEBUGGING: Use early stopping for more robust evaluation ---
+        # Training for a fixed number of epochs can lead to overfitting the classifier.
+        # Early stopping based on validation accuracy provides more reliable and comparable results.
+        early_stopper = EarlyStopper(patience=self.config.PROTGRAM_EARLY_STOPPING_PATIENCE, min_delta=self.config.PROTGRAM_EARLY_STOPPING_MIN_DELTA)
+
         for epoch in range(1, 201):  # A fixed number of epochs for the MLP classifier
             mlp.train()
             optimizer.zero_grad()
-            out = mlp(embeddings[train_mask])
+            out = mlp(embeddings[train_mask].detach()) # Detach to be safe
             loss = F.cross_entropy(out, data.y[train_mask])
             loss.backward()
             optimizer.step()
@@ -77,6 +82,11 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
                 f1_at_best_val = f1_score(y_true_test, y_pred_test, average='macro', zero_division=0)
                 precision_at_best_val = precision_score(y_true_test, y_pred_test, average='macro', zero_division=0)
                 recall_at_best_val = recall_score(y_true_test, y_pred_test, average='macro', zero_division=0)
+
+            # Early stopping is based on validation loss (or 1 - accuracy)
+            if early_stopper.early_stop(1.0 - val_acc):
+                print(f"    MLP training: Early stopping at epoch {epoch}. Best Val Acc: {best_val_acc:.4f}")
+                break
 
         metrics = {
             'Accuracy': test_acc_at_best_val,
@@ -170,8 +180,9 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
             print(f"\nLoaded dataset: {dataset_name}. Nodes: {dataset[0].num_nodes}, Edges: {dataset[0].num_edges}")
 
             for model_name in self.config.BENCHMARK_NE_MODELS_TO_RUN:
+                # --- ERROR HANDLING: Wrap each model's evaluation to prevent one failure from stopping the suite. ---
                 try:
-                    with mlflow.start_run(run_name=f"{model_name}_on_{dataset_name}", nested=True) as run:
+                    with mlflow.start_run(run_name=f"{model_name}_on_{dataset_name}", nested=True):
                         mlflow.set_tag("model_name", model_name)
                         mlflow.set_tag("dataset_name", dataset_name)
                         result = self._run_on_dataset(dataset, dataset_name, model_name)

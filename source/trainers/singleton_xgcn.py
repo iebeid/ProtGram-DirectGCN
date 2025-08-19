@@ -5,6 +5,7 @@
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
+import traceback
 import numpy as np
 import torch
 import pandas as pd
@@ -15,9 +16,10 @@ from torch_geometric.utils import homophily
 from tqdm.auto import tqdm
 
 from configuration.config import Config
-from source.data_structures.graph import DirectedNgramGraph
+from source.data_structures.direct_ngram_graph import DirectedNgramGraph
 from source.data_builders.xgcn import XGCNDataBuilder
-from source.utils.data import DataUtils, ProtgramDaskHelpers
+from source.utils.data.data_utils import DataUtils
+from source.utils.data.protgram_helper import ProtgramDaskHelpers
 from source.models.factory import ModelFactory
 
 
@@ -88,90 +90,120 @@ class SingletonXGCNTrainer:
         test_mask = torch.zeros(self.graph.number_of_nodes, dtype=torch.bool).scatter_(0, torch.from_numpy(test_idx), 1)
 
         all_results = []
-        for model_name in self.config.SINGLETON_EVAL_MODELS_TO_RUN:
+        for model_name in tqdm(self.config.SINGLETON_EVAL_MODELS_TO_RUN, desc="Evaluating Singleton Models"):
             print(f"\n--- Evaluating Singleton Model: {model_name} ---")
+            # --- NEW: Add robust error handling for each model ---
+            # This prevents a single failing model from crashing the entire benchmark suite.
+            try:
+                A_homo_norm, A_hetero_norm = None, None
+                use_homo_hetero_for_this_model = is_heterophilic if model_name.lower() == 'directgcn' else False
+                if use_homo_hetero_for_this_model and labels is not None:
+                    print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.")
+                    split_result = self.graph.split_edges_by_homophily(labels)
+                    if split_result: A_homo_norm, A_hetero_norm = split_result
 
-            A_homo_norm, A_hetero_norm = None, None
-            use_homo_hetero_for_this_model = is_heterophilic if model_name.lower() == 'directgcn' else False
-            if use_homo_hetero_for_this_model and labels is not None:
-                print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.") # --- FIX: Capture the returned matrices from the functional method ---
-                split_result = self.graph.split_edges_by_homophily(labels) # This now returns a tuple
-                if split_result: A_homo_norm, A_hetero_norm = split_result
+                model = self.model_factory.create_model(
+                    model_name=model_name, in_channels=initial_features.shape[1], num_classes=num_classes,
+                    graph_obj=self.graph, use_homo_hetero_paths=use_homo_hetero_for_this_model
+                )
+                if model is None: continue
+                print(model)
 
-            model = self.model_factory.create_model(
-                model_name=model_name, in_channels=initial_features.shape[1], num_classes=num_classes,
-                graph_obj=self.graph, use_homo_hetero_paths=use_homo_hetero_for_this_model
-            )
-            if model is None: continue
-            print(model)
+                model.to(self.device)
+                optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
+                data_for_model = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
+                    model_type=model_name, graph=self.graph, features=initial_features, labels=y_for_stratify,
+                    use_homo_hetero_paths=use_homo_hetero_for_this_model, A_homo_norm=A_homo_norm,
+                    A_hetero_norm=A_hetero_norm, train_mask=train_mask, test_mask=test_mask
+                ).to(self.device)
 
-            model.to(self.device)
-            optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
-            # --- DEFINITIVE FIX: Pass the masks during data object creation ---
-            data_for_model = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
-                model_type=model_name, graph=self.graph, features=initial_features, labels=y_for_stratify,
-                use_homo_hetero_paths=use_homo_hetero_for_this_model, A_homo_norm=A_homo_norm,
-                A_hetero_norm=A_hetero_norm, train_mask=train_mask, test_mask=test_mask
-            ).to(self.device)
+                # --- NEW: Implement Gradient Accumulation ---
+                # This pattern simulates a larger batch size by accumulating gradients over multiple
+                # forward/backward passes before taking an optimizer step. It's most effective
+                # in a mini-batch setting (like the main ProtGram-XGCN trainer's loop over
+                # clustered subgraphs) but is demonstrated here on the epoch loop.
+                accumulation_steps = self.config.SINGLETON_EVAL_GRADIENT_ACCUMULATION_STEPS
+                if accumulation_steps > 1:
+                    print(f"  Gradient accumulation enabled with {accumulation_steps} steps.")
 
-            for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
-                model.train()
                 optimizer.zero_grad()
+                for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
+                    model.train()
 
-                if task_type == 'masked_node':
-                    # This logic remains correct as it creates a new data object on the correct device
-                    masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
-                        self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=test_mask
-                    )
-                    epoch_data = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
-                        model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
-                        use_homo_hetero_paths=use_homo_hetero_for_this_model,
-                        A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
-                    ).to(self.device)
-                    logits, _ = model(epoch_data)
-                    loss = F.cross_entropy(logits[masked_indices], original_node_ids.to(self.device))
-                else:
-                    logits, _ = model(data_for_model)
-                    if data_for_model.train_mask.sum() > 0:
-                        loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask].long())
+                    # --- Forward pass ---
+                    if task_type == 'masked_node':
+                        # For masked node, we need new masks each time, so it's inside the loop
+                        masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=test_mask)
+                        epoch_data = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
+                            model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
+                            use_homo_hetero_paths=use_homo_hetero_for_this_model,
+                            A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
+                        ).to(self.device)
+                        logits, _ = model(epoch_data)
+                        loss = F.cross_entropy(logits[masked_indices], original_node_ids.to(self.device))
                     else:
-                        loss = torch.tensor(0.0, device=self.device)
+                        # For node classification, data is static
+                        logits, _ = model(data_for_model)
+                        if data_for_model.train_mask.sum() > 0:
+                            loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask].long())
+                        else:
+                            loss = torch.tensor(0.0, device=self.device)
 
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                optimizer.step()
+                    # --- Backward pass & Gradient Accumulation ---
+                    if accumulation_steps > 1:
+                        # Normalize loss for accumulation
+                        loss = loss / accumulation_steps
 
-            model.eval()
-            if task_type == 'masked_node':
-                with torch.no_grad():
-                    masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
-                        self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=train_mask
-                    )
-                    eval_data = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
-                        model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
-                        use_homo_hetero_paths=use_homo_hetero_for_this_model,
-                        A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
-                    ).to(self.device)
-                    logits, _ = model(eval_data)
-                    preds = logits[masked_indices].argmax(dim=-1)
-                    y_true = original_node_ids.cpu().numpy()
-                    y_pred = preds.cpu().numpy()
-            else:
-                with torch.no_grad():
-                    logits, _ = model(data_for_model)
-                    preds = logits.argmax(dim=-1)
-                    y_true = data_for_model.y[data_for_model.test_mask].cpu().numpy()
-                    y_pred = preds[data_for_model.test_mask].cpu().numpy()
-            
-            if len(y_true) > 0:
-                metrics = {
-                    "Model": model_name,
-                    "Accuracy": accuracy_score(y_true, y_pred),
-                    "F1-Score (Macro)": f1_score(y_true, y_pred, average='macro', zero_division=0),
-                    "Precision (Macro)": precision_score(y_true, y_pred, average='macro', zero_division=0),
-                    "Recall (Macro)": recall_score(y_true, y_pred, average='macro', zero_division=0)
-                }
-                all_results.append(metrics)
-            else:
-                print(f"  Skipping metrics for {model_name} as there was no data in the test set to evaluate.")
+                    loss.backward()
+
+                    # Update weights only after accumulating gradients for `accumulation_steps`
+                    if (epoch + 1) % accumulation_steps == 0:
+                        # Clip gradients to prevent exploding gradients
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                        optimizer.step()
+                        optimizer.zero_grad()
+
+                model.eval()
+                if task_type == 'masked_node':
+                    with torch.no_grad():
+                        masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
+                            self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=train_mask
+                        )
+                        eval_data = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
+                            model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
+                            use_homo_hetero_paths=use_homo_hetero_for_this_model,
+                            A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
+                        ).to(self.device)
+                        logits, _ = model(eval_data)
+                        preds = logits[masked_indices].argmax(dim=-1)
+                        y_true = original_node_ids.cpu().numpy()
+                        y_pred = preds.cpu().numpy()
+                else:
+                    with torch.no_grad():
+                        logits, _ = model(data_for_model)
+                        preds = logits.argmax(dim=-1)
+                        y_true = data_for_model.y[data_for_model.test_mask].cpu().numpy()
+                        y_pred = preds[data_for_model.test_mask].cpu().numpy()
+
+                if len(y_true) > 0:
+                    metrics = {
+                        "Model": model_name,
+                        "Accuracy": accuracy_score(y_true, y_pred),
+                        "F1-Score (Macro)": f1_score(y_true, y_pred, average='macro', zero_division=0),
+                        "Precision (Macro)": precision_score(y_true, y_pred, average='macro', zero_division=0),
+                        "Recall (Macro)": recall_score(y_true, y_pred, average='macro', zero_division=0)
+                    }
+                    all_results.append(metrics)
+                else:
+                    print(f"  Skipping metrics for {model_name} as there was no data in the test set to evaluate.")
+
+            except Exception as e:
+                print(f"  ❌ ERROR during evaluation of {model_name}: {e}")
+                traceback.print_exc()
+                # Log the error so it appears in the final summary table
+                all_results.append({
+                    "Model": model_name, "Accuracy": 0.0, "F1-Score (Macro)": 0.0,
+                    "Precision (Macro)": 0.0, "Recall (Macro)": 0.0, "error": str(e)
+                })
+
         return pd.DataFrame(all_results)

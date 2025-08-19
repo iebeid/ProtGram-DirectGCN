@@ -5,22 +5,10 @@
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
-import random
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict
 
-import numpy as np
 import torch
-import torch.nn as nn
-from sklearn.model_selection import train_test_split
-from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pad_sequence
-from tqdm.auto import tqdm
-
-from configuration.config import Config
-from source.utils.data import DataUtils, FastaUtils
-from source.models.rnn.lstm import LSTM
-from source.utils.models import EarlyStopper
-from source.utils.post import EmbeddingProcessor
+from torch.utils.data import Dataset
 
 
 class LSTMDataBuilder(Dataset):

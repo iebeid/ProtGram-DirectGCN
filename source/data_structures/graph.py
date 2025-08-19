@@ -1,20 +1,16 @@
 # ==============================================================================
 # MODULE: data_builders/graph.py
-# PURPOSE: Contains robust classes for n-gram graph representation.
-# VERSION: 11.0 (Corrected all identified errors and implemented review suggestions)
+# PURPOSE: Contains robust classes for n-gram graph representation with optimized I/O.
+# VERSION: 12.0 (Added performant serialization/deserialization methods)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
-
-import gc
+import json
 import os
-from typing import List, Dict, Tuple, Any, Optional
+from pathlib import Path
+from typing import List, Dict, Tuple, Any
 
 import numpy as np
-import pandas as pd
 import torch
-from torch_geometric.data import Data
-from torch_geometric.utils import add_self_loops, degree, subgraph
-from torch_geometric.utils.num_nodes import maybe_num_nodes
 
 
 class Graph:
@@ -110,429 +106,68 @@ class Graph:
         values = torch.ones(size, device=device, dtype=torch.float32)
         return torch.sparse_coo_tensor(indices, values, (size, size)).coalesce()
 
-
-class DirectedGraph:
-    """
-    A helper class containing matrix calculation logic, primarily for the
-    benchmarking suite which uses standard PyG Data objects.
-    """
-
-    def __init__(self):
-        pass
-
-    def _calculate_single_propagation_matrix(self, A_w_torch_sparse: torch.Tensor, num_nodes: int) -> torch.Tensor:
+    def save_to_dir(self, dir_path: Union[str, Path]):
         """
-        Calculates the propagation matrix mathcal{A} = sqrt(S^2 + K^2 + epsilon) + I
-        This logic is replicated from the main GraphBuilder for benchmark compatibility.
+        Saves the graph object's components to a directory for robust,
+        performant serialization, avoiding pickle.
         """
-        if num_nodes == 0 or (A_w_torch_sparse.is_sparse and A_w_torch_sparse._nnz() == 0):
-            empty_indices = torch.empty((2, 0), dtype=torch.long, device=A_w_torch_sparse.device)
-            empty_values = torch.empty(0, dtype=torch.float32, device=A_w_torch_sparse.device)
-            return torch.sparse_coo_tensor(empty_indices, empty_values, (num_nodes, num_nodes)).coalesce()
+        from source.utils.fs.file_utils import FileUtils
+        dir_path = Path(dir_path)
+        dir_path.mkdir(parents=True, exist_ok=True)
 
-        dev = A_w_torch_sparse.device
-        row_sum = torch.sparse.sum(A_w_torch_sparse, dim=1).to_dense()
-        # --- FIX: Add clamping for numerical stability, mirroring the main graph class ---
-        # This prevents division by tiny numbers on sparse graphs, which can cause NaNs or performance drops.
-        row_sum_clamped = torch.clamp(row_sum, min=1e-9)
-        D_inv_diag_vals = torch.zeros_like(row_sum_clamped, dtype=torch.float32, device=dev)
-        non_zero_degrees_mask = row_sum_clamped != 0
-        if torch.any(non_zero_degrees_mask):
-            D_inv_diag_vals[non_zero_degrees_mask] = 1.0 / row_sum_clamped[non_zero_degrees_mask]
+        # Save metadata
+        metadata = {
+            'number_of_nodes': self.number_of_nodes,
+            'number_of_edges': self.number_of_edges,
+            'n_value': getattr(self, 'n_value', None),
+            'edge_file_path': str(getattr(self, 'edge_file_path', None)),
+            'epsilon_propagation': getattr(self, 'epsilon_propagation', None)
+        }
+        FileUtils.save_json(metadata, dir_path / "metadata.json")
 
-        A_w_indices = A_w_torch_sparse.indices()
-        A_w_values = A_w_torch_sparse.values()
-        scaled_values = A_w_values * D_inv_diag_vals[A_w_indices[0]]
-        A_n_sparse = torch.sparse_coo_tensor(A_w_indices, scaled_values, A_w_torch_sparse.size()).coalesce()
+        # Save node map
+        node_df = pd.DataFrame(self.idx_to_node.items(), columns=['id', 'node_name'])
+        node_df.to_parquet(dir_path / "nodes.parquet", index=False)
 
-        A_n_sq_values = A_n_sparse.values().pow(2)
-        A_n_sq_sparse = torch.sparse_coo_tensor(A_n_sparse.indices(), A_n_sq_values, A_n_sparse.size()).coalesce()
-        A_n_sq_t_sparse = A_n_sq_sparse.t().coalesce()
-        S_sq_plus_K_sq_sparse = (A_n_sq_sparse + A_n_sq_t_sparse).coalesce()
-        S_sq_plus_K_sq_sparse = torch.sparse_coo_tensor(S_sq_plus_K_sq_sparse.indices(),
-                                                        S_sq_plus_K_sq_sparse.values() * 0.5,
-                                                        S_sq_plus_K_sq_sparse.size()).coalesce()
+        # --- NEW: Save sparse tensor attributes ---
+        for attr_name, attr_value in self.__dict__.items():
+            if isinstance(attr_value, torch.Tensor) and attr_value.is_sparse:
+                coalesced_tensor = attr_value.coalesce()
+                indices = coalesced_tensor.indices().cpu().numpy()
+                values = coalesced_tensor.values().cpu().numpy()
+                np.save(dir_path / f"{attr_name}_indices.npy", indices)
+                np.save(dir_path / f"{attr_name}_values.npy", values)
+                # Add shape to metadata
+                metadata[f"{attr_name}_shape"] = list(coalesced_tensor.shape)
 
-        epsilon_tensor = torch.tensor(1e-9, device=dev, dtype=torch.float32)
-        mathcal_A_base_values = torch.sqrt(S_sq_plus_K_sq_sparse.values() + epsilon_tensor)
-        mathcal_A_base_sparse = torch.sparse_coo_tensor(S_sq_plus_K_sq_sparse.indices(), mathcal_A_base_values,
-                                                        S_sq_plus_K_sq_sparse.size()).coalesce()
+        # Re-save metadata with sparse tensor shapes
+        FileUtils.save_json(metadata, dir_path / "metadata.json")
 
-        identity_sparse = Graph._sparse_identity(num_nodes, device=dev)
-        return (mathcal_A_base_sparse + identity_sparse).coalesce()
+        print(f"  Graph components saved to directory: {dir_path}")
 
-    def _normalize_symmetric_matrix(self, matrix: torch.Tensor, num_nodes: int) -> torch.Tensor:
-        """Helper to apply GCN normalization to a symmetric matrix."""  # noqa
-        if matrix.numel() == 0 or matrix._nnz() == 0: return matrix
-        edge_index, edge_weight = add_self_loops(matrix.indices(), matrix.values(), fill_value=1.0,
-                                                 num_nodes=num_nodes)
-        row, col = edge_index
-        deg = degree(col, num_nodes, dtype=edge_weight.dtype)
-        deg_inv_sqrt = deg.pow(-0.5)
-        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
-        norm_values = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
-        return torch.sparse_coo_tensor(edge_index, norm_values, matrix.shape).coalesce()
-
-    def _preprocess_for_custom_models(self, data: Data, use_homo_hetero_paths: bool) -> Data:
-        """Prepares a data object with all necessary edge indices for custom models."""
-        base_edge_weight = data.edge_attr if hasattr(data,
-                                                     'edge_attr') and data.edge_attr is not None else torch.ones(
-            data.edge_index.shape[1], device=data.edge_index.device)
-
-        if use_homo_hetero_paths:
-            edge_index = data.edge_index
-            source_nodes, target_nodes = edge_index[0], edge_index[1]
-            source_labels = data.y[source_nodes]
-            target_labels = data.y[target_nodes]
-            homo_mask = (source_labels == target_labels)
-            hetero_mask = ~homo_mask
-
-            edge_index_out_homo = edge_index[:, homo_mask]
-            edge_weight_out_homo = base_edge_weight[homo_mask]
-            A_out_w_homo = torch.sparse_coo_tensor(edge_index_out_homo, edge_weight_out_homo,
-                                                   (data.num_nodes, data.num_nodes)).coalesce()
-            A_homo_w = (A_out_w_homo + A_out_w_homo.t()).coalesce()
-            data.edge_index_homo_norm, data.edge_weight_homo_norm = self._normalize_symmetric_matrix(A_homo_w,
-                                                                                                    data.num_nodes).coalesce().indices(), self._normalize_symmetric_matrix(
-                A_homo_w, data.num_nodes).coalesce().values()
-
-            edge_index_out_hetero = edge_index[:, hetero_mask]
-            edge_weight_out_hetero = base_edge_weight[hetero_mask]
-            A_out_w_hetero = torch.sparse_coo_tensor(edge_index_out_hetero, edge_weight_out_hetero,
-                                                     (data.num_nodes, data.num_nodes)).coalesce()
-            A_hetero_w = (A_out_w_hetero + A_out_w_hetero.t()).coalesce()
-            data.edge_index_hetero_norm, data.edge_weight_hetero_norm = self._normalize_symmetric_matrix(A_hetero_w,
-                                                                                                        data.num_nodes).coalesce().indices(), self._normalize_symmetric_matrix(
-                A_hetero_w, data.num_nodes).coalesce().values()
-
-        A_out_w_sparse = torch.sparse_coo_tensor(data.edge_index, base_edge_weight,
-                                                 (data.num_nodes, data.num_nodes)).coalesce()
-        A_in_w_sparse = A_out_w_sparse.t().coalesce()
-        # --- DEFINITIVE FIX: Attach the sparse tensors themselves to the data object ---
-        # The downstream helper function (`prepare_pyg_data_from_protgram_graph`)
-        # expects these attributes to exist on the object it receives.
-        data.A_out_w = A_out_w_sparse
-        data.A_in_w = A_in_w_sparse
-        A_undir_w = (A_out_w_sparse + A_in_w_sparse).coalesce()
-        # --- DEFINITIVE FIX: Attach the sparse tensor itself, not just its components ---
-        A_undirected_norm = self._normalize_symmetric_matrix(A_undir_w, data.num_nodes)
-        data.A_undirected_norm_sparse = A_undirected_norm
-        data.edge_index_out, data.edge_weight_out = A_out_w_sparse.indices(), A_out_w_sparse.values()
-        data.edge_index_in, data.edge_weight_in = A_in_w_sparse.indices(), A_in_w_sparse.values()
-        data.edge_index_undirected_norm, data.edge_weight_undirected_norm = A_undirected_norm.indices(), A_undirected_norm.values()
-        data.edge_index_backward = data.edge_index_in
-
-        data.edge_attr = data.edge_weight_undirected_norm
-        data.edge_index = data.edge_index_undirected_norm
-
-        mathcal_A_out = self._calculate_single_propagation_matrix(A_out_w_sparse, data.num_nodes)
-        mathcal_A_in = self._calculate_single_propagation_matrix(A_in_w_sparse, data.num_nodes)
-        data.edge_index_mathcal_out, data.edge_weight_mathcal_out = mathcal_A_out.indices(), mathcal_A_out.values()
-        data.edge_index_mathcal_in, data.edge_weight_mathcal_in = mathcal_A_in.indices(), mathcal_A_in.values()
-        # --- DEFINITIVE FIX: Attach the full sparse tensors for downstream access ---
-        data.mathcal_A_out = mathcal_A_out
-        data.mathcal_A_in = mathcal_A_in
-        return data
-
-
-class DirectedNgramGraph(Graph):
-    def __init__(self, nodes: Dict[int, Any],
-                 edge_file_path: Optional[str] = None,
-                 epsilon_propagation: float = 1e-9, n_value: Optional[int] = None):
-
-        super().__init__(nodes=nodes, edges=[])
-
-        self.epsilon_propagation = epsilon_propagation
-        self.n_value: Optional[int] = n_value
-
-        # --- FIX: Initialize all matrix attributes to prevent AttributeError ---
-        self.A_out_w: Optional[torch.Tensor] = None
-        self.A_in_w: Optional[torch.Tensor] = None
-        self.A_undirected_norm_sparse: Optional[torch.Tensor] = None
-        self.mathcal_A_out: Optional[torch.Tensor] = None
-        self.mathcal_A_in: Optional[torch.Tensor] = None
-        self.A_homo_w: Optional[torch.Tensor] = None
-        self.A_hetero_w: Optional[torch.Tensor] = None
-        self.A_homo_norm: Optional[torch.Tensor] = None
-        self.A_hetero_norm: Optional[torch.Tensor] = None
-
-        if self.number_of_nodes > 0 and edge_file_path and os.path.exists(edge_file_path):
-            print(f"    Loading edges from {os.path.basename(edge_file_path)}...")
-            try:
-                # --- FIX: Avoid pd.read_parquet to prevent loading the entire edge file into memory. ---
-                # Instead, iterate over the file in chunks using pyarrow for scalability.
-                import pyarrow.parquet as pq # --- DEFINITIVE FIX: Use ParquetDataset to read a directory of files ---
-                parquet_file = pq.ParquetDataset(edge_file_path)
-                source_chunks, target_chunks, weight_chunks = [], [], []
-                for batch in parquet_file.read().to_batches(max_chunksize=10_000_000):
-                    # --- DEFINITIVE FIX: Handle cases where index names are lost during parquet read ---
-                    # Instead of relying on column names like 'source', access by position.
-                    # The structure is known: reset_index() creates [index_col_1, index_col_2, 'weight']
-                    df_chunk = batch.to_pandas().reset_index()
-                    source_chunks.append(df_chunk.iloc[:, 0].to_numpy(dtype=np.int64))
-                    target_chunks.append(df_chunk.iloc[:, 1].to_numpy(dtype=np.int64))
-                    weight_chunks.append(df_chunk['weight'].to_numpy(dtype=np.float32))
-
-                source_indices = np.concatenate(source_chunks)
-                target_indices = np.concatenate(target_chunks)
-                weights = np.concatenate(weight_chunks)
-                del source_chunks, target_chunks, weight_chunks
-                gc.collect()
-
-                self.number_of_edges = len(source_indices)
-                self._create_raw_weighted_adj_matrices_torch(source_indices, target_indices, weights)
-                self._create_undirected_normalized_adj_matrix()
-                self._create_propagation_matrices()
-
-            except Exception as e:
-                print(f"    ❌ Error reading edge file {edge_file_path}: {e}. Initializing empty graph.")
-                self._initialize_empty_matrices()
-        else:
-            self._initialize_empty_matrices()
-
-    def _initialize_empty_matrices(self):
-        """Helper to set all matrices to empty sparse tensors."""
-        self.number_of_edges = 0
-        empty_indices = torch.empty((2, 0), dtype=torch.long)
-        empty_values = torch.empty(0, dtype=torch.float32)
-        size_empty = (self.number_of_nodes, self.number_of_nodes)
-
-        self.A_out_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-        self.A_in_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-        self.A_undirected_norm_sparse = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-        self.mathcal_A_out = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-        self.mathcal_A_in = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-        self.A_homo_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-        self.A_hetero_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-        self.A_homo_norm = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-        self.A_hetero_norm = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-
-    def _create_raw_weighted_adj_matrices_torch(self, source_indices: np.ndarray, target_indices: np.ndarray,
-                                                weights: np.ndarray):
-        """Creates sparse adjacency matrices directly from numpy arrays with memory optimization."""
-        size = (self.number_of_nodes, self.number_of_nodes)
-
-        source_tensor = torch.from_numpy(source_indices)
-        target_tensor = torch.from_numpy(target_indices)
-        edge_indices_tensor = torch.stack([source_tensor, target_tensor]).long()
-        del source_tensor, target_tensor
-        gc.collect()
-
-        edge_weights_tensor = torch.from_numpy(weights).float()
-        del weights
-        gc.collect()
-
-        self.A_out_w = torch.sparse_coo_tensor(edge_indices_tensor, edge_weights_tensor, size).coalesce()
-        del edge_indices_tensor, edge_weights_tensor
-        gc.collect()
-
-        self.A_in_w = self.A_out_w.t().coalesce()
-
-    def _create_undirected_normalized_adj_matrix(self):
+    @classmethod
+    def load_from_dir(cls, dir_path: Union[str, Path]) -> 'DirectedNgramGraph':
         """
-        Creates a symmetric, degree-normalized adjacency matrix.
+        Loads a graph object by reconstructing it from its saved components,
+        avoiding pickle.
         """
-        print(f"  Creating undirected normalized adjacency matrix for n={self.n_value}...")
-        if self.number_of_nodes == 0 or self.A_out_w is None or self.A_in_w is None:
-            return
+        from source.utils.fs.file_utils import FileUtils
+        from source.data_structures.direct_ngram_graph import DirectedNgramGraph
 
-        A_undir_w = (self.A_out_w + self.A_in_w).coalesce()
+        dir_path = Path(dir_path)
+        metadata_path = dir_path / "metadata.json"
+        nodes_path = dir_path / "nodes.parquet"
 
-        edge_index, edge_weight = add_self_loops(
-            A_undir_w.indices(), A_undir_w.values(),
-            fill_value=1.0,
-            num_nodes=self.number_of_nodes
-        )
+        if not all([metadata_path.exists(), nodes_path.exists()]):
+            raise FileNotFoundError(f"Cannot load graph from '{dir_path}', component files are missing.")
 
-        row, col = edge_index
-        deg = degree(col, self.number_of_nodes, dtype=edge_weight.dtype)
-        deg_inv_sqrt = deg.pow(-0.5)
-        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
 
-        norm_values = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
+        nodes_df = pd.read_parquet(nodes_path)
+        idx_to_node = dict(zip(nodes_df['id'], nodes_df['node_name']))
 
-        self.A_undirected_norm_sparse = torch.sparse_coo_tensor(
-            edge_index, norm_values, (self.number_of_nodes, self.number_of_nodes)
-        ).coalesce()
-        print(
-            f"    Undirected normalized matrix created with {self.A_undirected_norm_sparse._nnz()} non-zero elements.")
-
-    def _normalize_symmetric_matrix(self, matrix: torch.Tensor) -> torch.Tensor:
-        """
-        Helper function to apply standard GCN normalization (D^-0.5 * A * D^-0.5)
-        to any given symmetric matrix.
-        """
-        if matrix.numel() == 0 or matrix._nnz() == 0:
-            return matrix
-
-        edge_index, edge_weight = add_self_loops(
-            matrix.indices(), matrix.values(),
-            fill_value=1.0, num_nodes=self.number_of_nodes
-        )
-
-        row, col = edge_index
-        deg = degree(col, self.number_of_nodes, dtype=edge_weight.dtype)
-        deg_inv_sqrt = deg.pow(-0.5)
-        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
-        norm_values = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
-
-        return torch.sparse_coo_tensor(edge_index, norm_values, matrix.shape).coalesce()
-
-    def _calculate_single_propagation_matrix(self, A_w_torch_sparse: torch.Tensor) -> torch.Tensor:
-        """
-        Calculates the propagation matrix mathcal{A} = sqrt(S^2 + K^2 + epsilon) + I
-        using sparse tensor operations and an optimized formula.
-        """
-        if self.number_of_nodes == 0 or (A_w_torch_sparse.is_sparse and A_w_torch_sparse._nnz() == 0):
-            empty_indices = torch.empty((2, 0), dtype=torch.long, device=A_w_torch_sparse.device)
-            empty_values = torch.empty(0, dtype=torch.float32, device=A_w_torch_sparse.device)
-            size = (self.number_of_nodes, self.number_of_nodes)
-            return torch.sparse_coo_tensor(empty_indices, empty_values, size).coalesce()
-
-        dev = A_w_torch_sparse.device
-        num_nodes = self.number_of_nodes
-
-        row_sum = torch.sparse.sum(A_w_torch_sparse, dim=1).to_dense()
-        # --- DEFINITIVE FIX: Clamp row_sum to prevent division by very small numbers, which causes NaNs. ---
-        row_sum_clamped = torch.clamp(row_sum, min=self.epsilon_propagation)
-
-        D_inv_diag_vals = torch.zeros_like(row_sum_clamped, dtype=torch.float32, device=dev)
-        non_zero_degrees_mask = row_sum_clamped != 0
-        if torch.any(non_zero_degrees_mask):
-            D_inv_diag_vals[non_zero_degrees_mask] = 1.0 / row_sum_clamped[non_zero_degrees_mask]
-        del row_sum, row_sum_clamped
-
-        A_w_indices = A_w_torch_sparse.indices()
-        A_w_values = A_w_torch_sparse.values()
-        scaled_values = A_w_values * D_inv_diag_vals[A_w_indices[0]]
-        A_n_sparse = torch.sparse_coo_tensor(A_w_indices, scaled_values, A_w_torch_sparse.size()).coalesce()
-        del D_inv_diag_vals
-
-        A_n_sq_values = A_n_sparse.values().pow(2)
-        A_n_sq_sparse = torch.sparse_coo_tensor(A_n_sparse.indices(), A_n_sq_values, A_n_sparse.size()).coalesce()
-        del A_n_sq_values
-
-        A_n_sq_t_sparse = A_n_sq_sparse.t().coalesce()
-        S_sq_plus_K_sq_sparse = (A_n_sq_sparse + A_n_sq_t_sparse).coalesce()
-        S_sq_plus_K_sq_sparse = torch.sparse_coo_tensor(
-            S_sq_plus_K_sq_sparse.indices(),
-            S_sq_plus_K_sq_sparse.values() * 0.5,
-            S_sq_plus_K_sq_sparse.size()
-        ).coalesce()
-        del A_n_sq_sparse, A_n_sq_t_sparse, A_n_sparse
-        gc.collect()
-
-        # Step 3: Final calculation: sqrt(...) + I
-        epsilon_tensor = torch.tensor(self.epsilon_propagation, device=dev, dtype=torch.float32)
-        mathcal_A_base_values = torch.sqrt(S_sq_plus_K_sq_sparse.values() + epsilon_tensor)
-        mathcal_A_base_sparse = torch.sparse_coo_tensor(S_sq_plus_K_sq_sparse.indices(), mathcal_A_base_values,
-                                                        S_sq_plus_K_sq_sparse.size()).coalesce()
-        del S_sq_plus_K_sq_sparse, mathcal_A_base_values
-        gc.collect()
-
-        identity_sparse = self._sparse_identity(num_nodes, device=dev)
-        mathcal_A_with_self_loops_sparse = (mathcal_A_base_sparse + identity_sparse).coalesce()
-        del mathcal_A_base_sparse, identity_sparse
-        gc.collect()
-
-        return mathcal_A_with_self_loops_sparse
-
-    def _create_propagation_matrices(self):
-        """Computes the mathcal_A_out and mathcal_A_in propagation matrices sparsely."""
-        print(f"  Creating mathcal_A_out for n={self.n_value}...")
-        if self.A_out_w is not None:
-            self.mathcal_A_out = self._calculate_single_propagation_matrix(self.A_out_w)
-        gc.collect()
-        print(f"  Creating mathcal_A_in for n={self.n_value}...")
-        if self.A_in_w is not None:
-            self.mathcal_A_in = self._calculate_single_propagation_matrix(self.A_in_w)
-        gc.collect()
-
-    def split_edges_by_homophily(self, labels: torch.Tensor) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
-        """
-        Splits the raw weighted directed edge matrices (A_out_w, A_in_w) into
-        homophilous and heterophilous components based on the provided node labels.
-        This method is functional and returns the normalized matrices instead
-        of modifying the object state, which is a safer design pattern.
-
-        Returns:
-            A tuple of (A_homo_norm, A_hetero_norm) or None if the graph is empty.
-        """
-        # --- ANTICIPATORY DEBUGGING: Check for invalid state before proceeding ---
-        if self.number_of_nodes == 0 or self.A_out_w is None or self.A_out_w._nnz() == 0:
-            print("  Graph has no nodes or edges, skipping homophily split.")
-            return None
-
-        print(f"  Splitting {self.A_out_w._nnz()} directed edges by homophily...")
-
-        edge_index, edge_weights = self.A_out_w.indices(), self.A_out_w.values()
-        source_nodes, target_nodes = edge_index[0], edge_index[1]
-        source_labels, target_labels = labels[source_nodes], labels[target_nodes]
-
-        homo_mask = (source_labels == target_labels)
-        hetero_mask = ~homo_mask
-
-        A_out_w_homo = torch.sparse_coo_tensor(edge_index[:, homo_mask], edge_weights[homo_mask], self.A_out_w.shape).coalesce()
-        A_out_w_hetero = torch.sparse_coo_tensor(edge_index[:, hetero_mask], edge_weights[hetero_mask], self.A_out_w.shape).coalesce()
-
-        print("    Normalizing homophilic and heterophilic matrices...")
-        A_homo_norm = self._normalize_symmetric_matrix((A_out_w_homo + A_out_w_homo.t()).coalesce())
-        A_hetero_norm = self._normalize_symmetric_matrix((A_out_w_hetero + A_out_w_hetero.t()).coalesce())
-
-        print(f"    - Undirected Homophilous Edges: {(A_out_w_homo + A_out_w_homo.t())._nnz()}")
-        print(f"    - Undirected Heterophilous Edges: {(A_out_w_hetero + A_out_w_hetero.t())._nnz()}")
-        return A_homo_norm, A_hetero_norm
-
-    def create_subgraph_data_for_model(self, model_type: str,
-                                       full_features: torch.Tensor, full_labels: torch.Tensor,
-                                       node_subset: torch.Tensor,
-                                       A_homo_norm: Optional[torch.Tensor] = None,
-                                       A_hetero_norm: Optional[torch.Tensor] = None) -> 'Data':
-        """
-        Creates a valid, self-contained PyG Data object for a subgraph of
-        nodes. This is the critical fix for clustered training. It re-indexes edges.
-        """
-        subgraph_features = full_features[node_subset]
-        subgraph_labels = full_labels[node_subset] if full_labels is not None else None
-
-        if model_type.lower() == 'directgcn':
-            # --- DEFINITIVE FIX: Correctly initialize and populate the data dictionary for DirectGCN subgraphs ---
-            subgraph_data_dict = {
-                'x': subgraph_features,
-                'y': subgraph_labels,
-                'original_indices': node_subset
-            }
-
-            path_matrices = {
-                'mathcal_in': self.mathcal_A_in, 'mathcal_out': self.mathcal_A_out,
-                'undirected_norm': self.A_undirected_norm_sparse
-            }
-            for name, matrix in path_matrices.items():
-                if matrix is not None:
-                    edge_index, edge_weight = subgraph(
-                        node_subset, matrix.indices(), matrix.values(),
-                        relabel_nodes=True, num_nodes=self.number_of_nodes
-                    )
-                    subgraph_data_dict[f'edge_index_{name}'] = edge_index
-                    subgraph_data_dict[f'edge_weight_{name}'] = edge_weight
-
-            # --- ANTICIPATORY DEBUGGING: Conditionally add the new matrices if they were generated. ---
-            # This makes the function flexible for both heterophilic and homophilic graphs.
-            if A_homo_norm is not None and A_hetero_norm is not None:
-                homo_edge_index, homo_edge_weight = subgraph(node_subset, A_homo_norm.indices(), A_homo_norm.values(),
-                                                             relabel_nodes=True, num_nodes=self.number_of_nodes)
-                hetero_edge_index, hetero_edge_weight = subgraph(node_subset, A_hetero_norm.indices(),
-                                                                 A_hetero_norm.values(),
-                                                                 relabel_nodes=True, num_nodes=self.number_of_nodes)
-                subgraph_data_dict.update({
-                    'edge_index_homo_norm': homo_edge_index, 'edge_weight_homo_norm': homo_edge_weight,
-                    'edge_index_hetero_norm': hetero_edge_index, 'edge_weight_hetero_norm': hetero_edge_weight
-                })
-            return Data.from_dict(subgraph_data_dict)
-        else:
-            # Default for other GNNs (uses undirected graph)
-            edge_index, edge_weight = subgraph(node_subset, self.A_undirected_norm_sparse.indices(),
-                                               self.A_undirected_norm_sparse.values(),
-                                               relabel_nodes=True, num_nodes=self.number_of_nodes)
-            return Data(x=subgraph_features, y=subgraph_labels, edge_index=edge_index, edge_attr=edge_weight,
-                        original_indices=node_subset)
+        # Re-instantiate the class using the loaded components
+        # --- FIX: Pass the directory path to the constructor for robust loading ---
+        metadata['dir_path'] = str(dir_path)
+        return DirectedNgramGraph(nodes=idx_to_node, **metadata)

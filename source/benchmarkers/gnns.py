@@ -7,8 +7,7 @@
 
 import os
 import traceback
-import shutil
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any, Tuple
 import mlflow
 from pathlib import Path
 import numpy as np
@@ -17,15 +16,15 @@ import torch
 import torch.nn.functional as F
 from sklearn.metrics import f1_score, precision_score, recall_score
 from torch_geometric.data import Data
-from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
-from torch_geometric.transforms import ToUndirected
-from torch_geometric.utils import to_undirected, homophily, add_self_loops, degree
+from torch_geometric.utils import homophily
 
 from configuration.config import Config
 # --- FIX: Import DataUtils to use its static methods ---
 from source.benchmarkers.base import BaseBenchmarker
 from source.models.factory import ModelFactory
-from source.utils.data import DataUtils, ProtgramDaskHelpers
+from source.utils.data.data_utils import DataUtils
+from source.utils.data.protgram_helper import ProtgramDaskHelpers
+from source.data_structures.directed_graph import DirectedGraph
 
 
 class GNNBenchmarker(BaseBenchmarker):
@@ -111,7 +110,6 @@ class GNNBenchmarker(BaseBenchmarker):
         A just-in-time data preparation utility. It creates a model-specific
         data object with the correct graph representations.
         """
-        from source.data_structures.graph import DirectedGraph # Local import for helper methods
         graph_helper = DirectedGraph()
 
         # Start with a fresh clone of the original data
@@ -207,54 +205,52 @@ class GNNBenchmarker(BaseBenchmarker):
         results = []
         for model_name in self.config.BENCHMARK_GNN_MODELS_TO_RUN:
             print(f"\n--- Benchmarking Model: {model_name} on Dataset: {variant_name} ---")
-            # --- FIX: The try/except block is now inside the MLflow run context ---
-            # This ensures that if a model fails, the MLflow run is correctly marked as FAILED.
-            with mlflow.start_run(run_name=f"{model_name}_on_{variant_name}", nested=True):
-                try:
-                    mlflow.set_tag("model_name", model_name)
-                    mlflow.set_tag("dataset_name", variant_name) # --- FIX: Log the correct epoch parameter ---
-                    mlflow.log_param("epochs", self.config.BENCHMARK_GNN_EPOCHS)
-                    mlflow.log_param("learning_rate", self.config.BENCHMARK_GNN_LEARNING_RATE)
-                    mlflow.log_param("is_undirected", "_Undirected" in variant_name)
+            # --- ERROR HANDLING: Wrap each model's evaluation to prevent one failure from stopping the suite. ---
+            try:
+                with mlflow.start_run(run_name=f"{model_name}_on_{variant_name}", nested=True):
+                        mlflow.set_tag("model_name", model_name)
+                        mlflow.set_tag("dataset_name", variant_name)
+                        mlflow.log_param("epochs", self.config.BENCHMARK_GNN_EPOCHS)
+                        mlflow.log_param("learning_rate", self.config.BENCHMARK_GNN_LEARNING_RATE)
+                        mlflow.log_param("is_undirected", "_Undirected" in variant_name)
 
-                    data_for_model = self._prepare_data_for_model(
-                        model_name=model_name,
-                        data=data,
-                        is_heterophilic=is_heterophilic
-                    )
+                        data_for_model = self._prepare_data_for_model(
+                            model_name=model_name,
+                            data=data,
+                            is_heterophilic=is_heterophilic
+                        )
 
-                    model = self.model_factory.create_model(
-                        model_name=model_name, in_channels=data_for_model.num_features, num_classes=num_classes,
-                        graph_obj=data_for_model, use_homo_hetero_paths=is_heterophilic
-                    )
+                        model = self.model_factory.create_model(
+                            model_name=model_name, in_channels=data_for_model.num_features, num_classes=num_classes,
+                            graph_obj=data_for_model, use_homo_hetero_paths=is_heterophilic
+                        )
 
-                    if self.config.DEBUG_VERBOSE:
-                        print("  Model Architecture:")
-                        print(model)
+                        if self.config.DEBUG_VERBOSE:
+                            print("  Model Architecture:")
+                            print(model)
 
-                    # 3. Pass the correctly prepared data object to the trainer.
-                    metrics, history_df = self._train_and_evaluate(model, data_for_model)
-                    result_row = {"dataset": variant_name, "model": model_name, "error": None}
-                    result_row.update(metrics)
-                    results.append(result_row)
+                        metrics, history_df = self._train_and_evaluate(model, data_for_model)
+                        result_row = {"dataset": variant_name, "model": model_name, "error": None}
+                        result_row.update(metrics)
+                        results.append(result_row)
 
-                    mlflow.log_metrics({
-                        "test_accuracy": metrics.get('Accuracy', 0.0),
-                        "f1_macro": metrics.get('F1-Score (Macro)', 0.0)
-                    })
-                    Path(self.output_dir).mkdir(parents=True, exist_ok=True)
-                    history_path = Path(self.output_dir) / f"history_{model_name}_{variant_name}.csv"
-                    history_df.to_csv(history_path, index=False)
-                    mlflow.log_artifact(str(history_path), "training_history")
-                    if os.path.exists(history_path):
-                        os.remove(history_path)
+                        mlflow.log_metrics({
+                            "test_accuracy": metrics.get('Accuracy', 0.0),
+                            "f1_macro": metrics.get('F1-Score (Macro)', 0.0)
+                        })
+                        Path(self.output_dir).mkdir(parents=True, exist_ok=True)
+                        history_path = Path(self.output_dir) / f"history_{model_name}_{variant_name}.csv"
+                        history_df.to_csv(history_path, index=False)
+                        mlflow.log_artifact(str(history_path), "training_history")
+                        if os.path.exists(history_path):
+                            os.remove(history_path)
 
-                except Exception as e:
-                    print(f"ERROR during training/evaluation of {model_name} on {variant_name}: {e}")
-                    traceback.print_exc()
-                    mlflow.set_tag("status", "FAILED")
-                    mlflow.log_param("error", str(e))
-                    results.append({"dataset": variant_name, "model": model_name, "error": str(e)})
+            except Exception as e:
+                print(f"ERROR during training/evaluation of {model_name} on {variant_name}: {e}")
+                traceback.print_exc()
+                mlflow.set_tag("status", "FAILED")
+                mlflow.log_param("error", str(e))
+                results.append({"dataset": variant_name, "model": model_name, "error": str(e)})
         return results
 
     def run(self):

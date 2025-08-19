@@ -15,7 +15,7 @@ from torch_geometric.data import Data
 from torch_geometric.utils import to_networkx
 from tqdm.auto import tqdm
 
-from source.utils.data import FastaUtils
+from source.utils.data.fasta_utils import FastaUtils
 
 if TYPE_CHECKING:
     pass

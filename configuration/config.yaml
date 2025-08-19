@@ -1,0 +1,237 @@
+# ==============================================================================
+# YAML Configuration for ProtGram-DirectGCN
+# All hyperparameters and pipeline settings are defined here.
+# ==============================================================================
+
+# 1. GENERAL SETTINGS
+RANDOM_STATE: 42
+DEBUG_VERBOSE: true
+
+# 2. DATA SOURCE URLS
+data_urls:
+  UNIPROT_SPROT_FASTA: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz"
+  UNIREF_50_FASTA: "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz"
+  BIOGRID_INTERACTIONS: "https://downloads.thebiogrid.org/BioGRID/Release-Archive/BIOGRID-4.4.248/BIOGRID-ALL-4.4.248.mitab.zip"
+  PROTT5_MODEL: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5"
+  UNIPROT_ID_MAPPING: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping.dat.gz"
+  NEG_INTERACTIONS:
+    - "https://www.russelllab.org/negatives/16169070_neg.mitab.gz"
+    - "https://www.russelllab.org/negatives/14605208_neg.mitab.gz"
+    - "https://www.russelllab.org/negatives/14704431_neg.mitab.gz"
+    - "https://www.russelllab.org/negatives/19123269_neg.mitab.gz"
+    - "https://www.russelllab.org/negatives/10688190_neg.mitab.gz"
+    - "https://www.russelllab.org/negatives/11283351_neg.mitab.gz"
+    - "https://www.russelllab.org/negatives/16267556_neg.mitab.gz"
+    - "https://www.russelllab.org/negatives/18509523_neg.mitab.gz"
+    - "https://www.russelllab.org/negatives/17615063_neg.mitab.gz"
+    - "https://www.russelllab.org/negatives/18000013_neg.mitab.gz"
+
+# 3. PIPELINE CONTROL FLAGS
+pipeline_flags:
+  RUN_GCN_PIPELINE: false
+  RUN_LSTM_PIPELINE: false
+  RUN_WORD2VEC_PIPELINE: false
+  RUN_TRANSFORMER_PIPELINE: true
+  RUN_BENCHMARKING_PIPELINE: true
+  RUN_NETWORK_EMBEDDING_BENCHMARKING: true
+  RUN_MAIN_PPI_EVALUATION: true
+  RUN_INTEGRATED_TESTS: true
+  RUN_SINGLETON_GCN_EVAL: true
+  RUN_DUMMY_TEST: true
+  SEQUENCE_DOWNSAMPLE_FRACTION: 0.01
+  CLEANUP_DUMMY_DATA: true
+  ENABLE_FILE_LOGGING: true
+
+# 4. RESOURCE MANAGEMENT
+resource_management:
+  MEMORY_USAGE_STRATEGY: 'dynamic' # 'low', 'high', or 'dynamic'
+
+# 5. GNN BENCHMARKING PARAMETERS
+gnn_benchmarking:
+  DATASETS:
+    - "KarateClub"
+    - "Cora"
+    - "CiteSeer"
+    - "PubMed"
+    - "Cornell"
+    - "Texas"
+    - "Wisconsin"
+  GNN_MODELS_TO_RUN:
+    - "GCN"
+    - "GAT"
+    - "GraphSAGE"
+    - "GIN"
+    - "ChebNet"
+    - "RGCN"
+    - "DirGNN"
+    - "DirectGCN"
+  NE_MODELS_TO_RUN:
+    - "Node2Vec"
+  SAVE_EMBEDDINGS: true
+  TEST_ON_UNDIRECTED: true
+  SPLIT_RATIOS: {train: 0.1, val: 0.1, test: 0.8}
+  PCA_TARGET_DIM: 64
+  NE_EPOCHS: 5
+  NE_EMBEDDING_DIM: 128
+  NE_WALK_LENGTH: 20
+  NE_CONTEXT_SIZE: 10
+  GNN_HIDDEN_CHANNELS: 64
+  GNN_NUM_LAYERS: 2
+  GNN_DROPOUT_RATE: 0.5
+  GAT_HEADS: 2
+  GAT_DROPOUT_RATE: 0.5
+  CHEBNET_K: 3
+  GNN_LEARNING_RATE: 0.01
+  GNN_EPOCHS: 100
+  RGCN_NUM_RELATIONS: 2
+  DIRECTGCN_HIDDEN_LAYER_DIMS: [64, 64] # [hidden_channels] * num_layers
+  GNN_INIT_DIM: 64
+
+# 6. ProtGram-DirectGCN PIPELINE PARAMETERS
+protgram_gcn:
+  PROTGRAM_NGRAM_MAX_N: 3
+  ID_MAPPING_MODE: 'file'
+  API_MAPPING_FROM_DB: null
+  API_MAPPING_TO_DB: "UniProtKB"
+  PROTGRAM_MODELS_TO_TRAIN: ['directgcn']
+  DIRECTGCN_HIDDEN_LAYER_DIMS: [512, 256, 128, 64]
+  PROTGRAM_1GRAM_INIT_DIM: 512
+  PROTGRAM_MAX_PE_LEN: 512
+  PROTGRAM_GNN_HIDDEN_CHANNELS: 64
+  PROTGRAM_GNN_NUM_LAYERS: 2
+  PROTGRAM_GATING_COEFF_MODE: "vector"
+  PROTGRAM_USE_POSITIONAL_EMBEDDING: true
+  PROTGRAM_EPOCHS_PER_LEVEL: 500
+  PROTGRAM_LR: 0.005
+  PROTGRAM_DROPOUT_RATE: 0.5
+  PROTGRAM_WEIGHT_DECAY: 0.0001
+  PROTGRAM_USE_LR_SCHEDULER: true
+  PROTGRAM_LR_SCHEDULER_PATIENCE: 10
+  PROTGRAM_LR_SCHEDULER_FACTOR: 0.5
+  PROTGRAM_USE_EARLY_STOPPING: true
+  PROTGRAM_EARLY_STOPPING_PATIENCE: 50
+  PROTGRAM_EARLY_STOPPING_MIN_DELTA: 0.00001
+  PROTGRAM_GRADIENT_ACCUMULATION_STEPS: 1 # Set > 1 to enable. Simulates a larger batch size for GNN training.
+  PROTGRAM_TASK_TYPES_PER_LEVEL: {1: "community", 2: "next_node", 3: "next_node"}
+  PROTGRAM_DEFAULT_TASK_TYPE: "community"
+  GCN_HETEROPHILY_THRESHOLD: 0.6
+  # A small value added for numerical stability in the DirectGCN propagation matrix calculation.
+  # Adjust this if you encounter NaN loss issues during training.
+  GCN_PROPAGATION_EPSILON: 1.0e-9
+  PROTGRAM_CLOSEST_AA_K_HOPS: 3
+  PROTGRAM_MASKED_NODE_FRACTION: 0.15
+  PROTGRAM_CLEAN_FASTA_ON_PARSE: true
+  PROTGRAM_FASTA_MIN_LEN: 50
+  PROTGRAM_FASTA_MAX_LEN: 10000
+  PROTGRAM_FASTA_ALPHABET: 'protein'
+  PROTGRAM_USE_CLUSTER_TRAINING: true
+  PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES: 5000
+  # --- NEW: Add partitioning method control ---
+  PROTGRAM_PARTITIONING_METHOD: 'graclus' # 'louvain' or 'graclus'
+  PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING: 1 # Number of coarsening levels if using graclus
+  PROTGRAM_VALIDATE_COARSENING: true
+  PROTGRAM_TARGET_NODES_PER_CLUSTER: 2000
+  PROTGRAM_MIN_CLUSTERS: 2
+  PROTGRAM_MAX_CLUSTERS: 500
+  PROTGRAM_CLUSTER_GROUP_SIZE: 5 # Number of clusters to group into a single mini-batch, as per Cluster-GCN paper.
+  PCA_TARGET_DIMENSION: 64
+  PROTGRAM_PROTEIN_POOLING_STRATEGY: 'attention'
+  PROTGRAM_HIERARCHICAL_POOLING_STRATEGY: 'attention'
+  PROTGRAM_LOG_ATTENTION_WEIGHTS: true
+  PROTGRAM_RUN_SANITY_CHECK_PPI: true
+  PROTGRAM_SANITY_CHECK_EPOCHS: 5
+  PROTGRAM_SANITY_CHECK_TEST_SPLIT: 0.2
+  PROTGRAM_SANITY_CHECK_SAMPLE_SIZE: 2000
+
+# 7. WORD2VEC PIPELINE PARAMETERS
+word2vec:
+  W2V_VECTOR_SIZE: 100
+  W2V_WINDOW: 5
+  W2V_MIN_COUNT: 1
+  W2V_EPOCHS: 5
+  W2V_POOLING_STRATEGY: 'mean'
+  APPLY_PCA_TO_W2V: true
+
+# 8. TRANSFORMER PIPELINE PARAMETERS
+transformer:
+  MODELS_TO_RUN:
+    - {name: "ProtBERT", hf_id: "Rostlab/prot_bert", is_t5: false, batch_size_multiplier: 1.0}
+    - {name: "ESM2", hf_id: "facebook/esm2_t6_8M_UR50D", is_t5: false, batch_size_multiplier: 1.0}
+  MAX_LENGTH: 1024
+  BASE_BATCH_SIZE: 16
+  CHUNK_SIZE: 10000
+  POOLING_STRATEGY: 'mean'
+  USE_XLA_COMPILATION: true
+
+# 9. LSTM PIPELINE PARAMETERS
+lstm:
+  EMBEDDING_DIM: 100
+  HIDDEN_DIM: 256
+  NUM_LAYERS: 2
+  EPOCHS: 5
+  BATCH_SIZE: 64
+  TRAIN_SEQ_LEN: 50
+  TRAIN_STEP: 50
+  LEARNING_RATE: 0.001
+  POOLING_STRATEGY: 'mean'
+
+# 9.5. SINGLETON EVALUATION PARAMETERS
+singleton_eval:
+  EPOCHS: 100
+  TEST_SPLIT: 0.2
+  LR: 0.01
+  MODELS_TO_RUN:
+    - "DirectGCN"
+    - "GCN"
+    - "RGCN"
+    - "DirGNN"
+  GNN_HIDDEN_CHANNELS: 64
+  GNN_NUM_LAYERS: 2
+  GNN_DROPOUT_RATE: 0.5
+  GAT_HEADS: 2
+  GAT_DROPOUT_RATE: 0.5
+  CHEBNET_K: 3
+  RGCN_NUM_RELATIONS: 2
+  DIRECTGCN_HIDDEN_LAYER_DIMS: [64, 64]
+
+# 10. PPI EVALUATION PARAMETERS
+ppi_evaluation:
+  PLOT_TRAINING_HISTORY: true
+  PERFORM_H5_INTEGRITY_CHECK: true
+  EVAL_GENERATE_SHAP_SUMMARY: true
+  EARLY_STOPPING_PATIENCE: 10
+  EDGE_EMBEDDING_METHOD: 'concatenate'
+  N_FOLDS: 3
+  MLP_DENSE1_UNITS: 128
+  MLP_DROPOUT1_RATE: 0.4
+  MLP_DENSE2_UNITS: 64
+  MLP_DROPOUT2_RATE: 0.4
+  MLP_L2_REG: 0.00001
+  BATCH_SIZE: 2048
+  EPOCHS: 10
+  LEARNING_RATE: 0.001
+  K_VALUES_FOR_TABLE: [50, 100]
+  MAIN_EMBEDDING_FOR_STATS: "ProtGramDirectgcn"
+  STATISTICAL_TEST_ALPHA: 0.05
+
+# 11. MLFLOW & EXPERIMENT TRACKING
+mlflow:
+  USE_MLFLOW: true
+  EXPERIMENT_NAME: "PPI-Link-Prediction"
+  BENCHMARK_EXPERIMENT_NAME: "GNN-Benchmarking"
+  NE_BENCHMARK_EXPERIMENT_NAME: "Network_Embedding_Benchmarking"
+
+# 12. HYPERPARAMETER OPTIMIZATION (Optuna)
+hyperparameter_optimization:
+  RUN_HPO: false
+  HPO_N_TRIALS: 50 # Number of trials for Optuna to run
+  HPO_TARGET_EMBEDDING_MODEL: "ProtGramDirectgcn" # Which embedding to optimize the MLP for
+  # Search space for the PPI evaluation MLP
+  HPO_PPI_MLP_SEARCH_SPACE:
+    LEARNING_RATE: {type: 'loguniform', low: 1.0e-5, high: 1.0e-2}
+    DENSE1_UNITS: {type: 'int', low: 32, high: 512, step: 32}
+    DROPOUT1_RATE: {type: 'uniform', low: 0.1, high: 0.6}
+    DENSE2_UNITS: {type: 'int', low: 16, high: 256, step: 16}
+    DROPOUT2_RATE: {type: 'uniform', low: 0.1, high: 0.6}
+    L2_REG: {type: 'loguniform', low: 1.0e-6, high: 1.0e-3}
+    BATCH_SIZE: {type: 'categorical', choices: [512, 1024, 2048, 4096]}

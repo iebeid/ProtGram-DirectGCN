@@ -17,7 +17,7 @@ ENV_NAME = "ppi-env"
 PYTHON_VERSION = "3.11"
 CUDA_VERSION = "12.1"  # Stable version for both TF 2.15 and PyTorch 2.1
 PYTORCH_VERSION = "2.1.2"  # Downgraded to match cuDNN 8.9 requirement
-TORCHVISION_VERSION = "0.16.2" # Corresponding torchvision for PyTorch 2.1.2
+TORCHVISION_VERSION = "0.16.2"  # Corresponding torchvision for PyTorch 2.1.2
 TORCHAUDIO_VERSION = "2.1.2"  # Corresponding torchaudio for PyTorch 2.1.2
 ENVIRONMENT_YML_FILE = "environment.yml"
 
@@ -138,11 +138,11 @@ if __name__ == "__main__":
         "MAX_RETRIES=3",
         "COUNT=0",
         "until " + (f"conda install -y "
-         f"-c nvidia -c conda-forge "
-         f"python={PYTHON_VERSION} "
-         f"'cuda-toolkit={CUDA_VERSION}' 'cuda-compiler={CUDA_VERSION}' 'cudnn=8.9' "
-         f"dask tqdm biopython matplotlib scipy scikit-learn gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"
-         ) + "; do",
+                    f"-c nvidia -c conda-forge "
+                    f"python={PYTHON_VERSION} "
+                    f"'cuda-toolkit={CUDA_VERSION}' 'cuda-compiler={CUDA_VERSION}' 'cudnn=8.9' "
+                    f"dask tqdm biopython matplotlib scipy scikit-learn gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"
+                    ) + "; do",
         "    COUNT=$((COUNT+1))",
         "    if [ \"$COUNT\" -ge \"$MAX_RETRIES\" ]; then",
         "        echo \"Conda install failed after $MAX_RETRIES attempts. Aborting.\"",
@@ -172,7 +172,7 @@ if __name__ == "__main__":
 
         # STAGE 4: Install remaining pip packages
         "echo '--- Stage 4: Installing remaining pip packages (MLflow, Transformers, PyG) ---'",
-        "pip install --no-cache-dir mlflow gdown 'transformers==4.41.2' 'safetensors==0.4.3'",
+        "pip install --no-cache-dir optuna mlflow gdown 'transformers==4.41.2' 'safetensors==0.4.3'",
         (f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
          f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION.replace('.', '')}.html"),
 

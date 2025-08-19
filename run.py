@@ -19,7 +19,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Local imports must come after the environment is validated and potentially set up.
 # We make an exception for Config and FileLogger which are needed for the bootstrapper itself.
 from configuration.config import Config # noqa
-from source.utils.logging import FileLogger
+from source.utils.logging.file_logger import FileLogger
 
 # --- Configuration ---
 # This YAML file is the "source of truth" for a valid environment.
@@ -163,7 +163,7 @@ if __name__ == "__main__":
 
         # --- NEW: Data Validation and Restoration Logic ---
         # This replaces the simple call to setup_data in main.py
-        from configuration.data import DataManager
+        from configuration.manager import DataManager
         data_manager = DataManager(base_config)
 
         print("\n--- Verifying local data integrity ---")
@@ -185,5 +185,5 @@ if __name__ == "__main__":
 
         # 3. Run the main pipeline script as a separate process.
         # This ensures it runs in the now-validated environment with a clean state.
-        main_script_path = str(project_root / "main.py")
+        main_script_path = str(project_root / "source" / "entry" / "main.py")
         run_command([sys.executable, main_script_path])

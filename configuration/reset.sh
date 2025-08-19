@@ -138,7 +138,7 @@ if [ -f "$DATA_BUNDLE_PATH" ] && [ -f "$DATA_MANIFEST_PATH" ]; then
 else
     echo -e "\n--- STEP 4: No data bundle found in cache. Performing full data download and processing... ---"
     echo "--- This is a long-running process and will only be done once. ---"
-    # Trigger the full data setup from configuration/data.py
+    # Trigger the full data setup from configuration/manager.py
     python -c "from configuration.config import Config; from configuration.data import setup_data; print('--- Triggering DataManager full setup ---'); setup_data(Config())"
 fi
 

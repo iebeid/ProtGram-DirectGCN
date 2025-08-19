@@ -5,23 +5,23 @@
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
-import random
 from typing import List, Tuple, Dict, Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.model_selection import train_test_split
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from tqdm.auto import tqdm
 
 from configuration.config import Config
-from source.utils.data import DataUtils, FastaUtils
+from source.utils.data.data_utils import DataUtils
+from source.utils.data.fasta_utils import FastaUtils
 from source.models.rnn.lstm import LSTM
 from source.data_builders.lstm import LSTMDataBuilder
-from source.utils.models import EarlyStopper
-from source.utils.post import EmbeddingProcessor
+from source.utils.models.early_stopper import EarlyStopper
+
 
 class LSTMBasedEmbedder:
     """
