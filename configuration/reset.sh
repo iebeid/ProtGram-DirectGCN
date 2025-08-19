@@ -110,6 +110,18 @@ git clone --branch "$GIT_BRANCH" "$REPO_URL"
 cd "$PROJECT_DIR_NAME"
 echo "SUCCESS: Project repository is ready."
 
+# --- NEW STEP: Install Python Dependencies ---
+echo -e "\n--- STEP 3.5: Installing Python Dependencies ---"
+if [ -f "requirements.txt" ]; then
+    echo "INFO: Found requirements.txt. Installing packages..."
+    # Use --no-cache-dir to ensure fresh installs and --upgrade to meet specified versions.
+    pip install --no-cache-dir --upgrade -r requirements.txt
+    echo "SUCCESS: Python dependencies installed."
+else
+    echo "ERROR: requirements.txt not found in the project root. Cannot install dependencies."
+    exit 1
+fi
+
 # --- CRITICAL FIX: Export the Conda environment's library path. ---
 # This ensures that TensorFlow and other programs can find the CUDA libraries (.so files)
 # that were installed by Conda. This resolves the "Cannot dlopen" errors at runtime.
