@@ -152,13 +152,13 @@ DATA_MANIFEST_PATH="$CACHE_DIR/data_manifest.json"
 if [ -f "$DATA_BUNDLE_PATH" ] && [ -f "$DATA_MANIFEST_PATH" ]; then
     echo -e "\n--- STEP 4: Found existing data bundle in cache. Restoring data... ---"
     # Call python to restore. The script will exit with an error if restoration fails.
-    "$NEW_ENV_PYTHON" -c "from configuration.config import Config; from configuration.data import DataManager; dm = DataManager(Config()); restored = dm.restore_data_from_bundle(); exit(0) if restored else exit(1)"
+    "$NEW_ENV_PYTHON" -c "from configuration.config import Config; from configuration.manager import DataManager; dm = DataManager(Config()); restored = dm.restore_data_from_bundle(); exit(0) if restored else exit(1)"
     echo "--- Data restoration from cache complete. ---"
 else
     echo -e "\n--- STEP 4: No data bundle found in cache. Performing full data download and processing... ---"
     echo "--- This is a long-running process and will only be done once. ---"
     # Trigger the full data setup from configuration/manager.py
-    "$NEW_ENV_PYTHON" -c "from configuration.config import Config; from configuration.data import setup_data; print('--- Triggering DataManager full setup ---'); setup_data(Config())"
+    "$NEW_ENV_PYTHON" -c "from configuration.config import Config; from configuration.manager import setup_data; print('--- Triggering DataManager full setup ---'); setup_data(Config())"
 fi
 
 echo -e "\n--- RESET SCRIPT FINISHED ---"
