@@ -50,21 +50,16 @@ def run_script(script_path: Path):
         executor = ['cmd', '/c'] if is_windows else []
         command_to_run = executor + [str(script_path)]
 
+        # Let the subprocess inherit stdout/stderr directly so that
+        # interactive elements like tqdm can render correctly.
         process = subprocess.Popen(
             command_to_run,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
             text=True,
             encoding='utf-8',
             errors='replace',
-            bufsize=1,
-            universal_newlines=True,
             cwd=script_path.parent
         )
 
-        if process.stdout:
-            for line in iter(process.stdout.readline, ''):
-                print(line, end='', flush=True)
         process.wait()
 
         if process.returncode != 0:
