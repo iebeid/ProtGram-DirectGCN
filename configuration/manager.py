@@ -18,7 +18,7 @@ import requests
 from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 from tqdm.auto import tqdm
 
-from processor import DataProcessor
+from .processor import DataProcessor
 
 # Conditionally import gdown to avoid making it a hard dependency
 try:
