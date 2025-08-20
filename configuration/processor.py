@@ -32,12 +32,14 @@ class DataProcessor:
     def __init__(self, config):
         self.config = config
 
+    @staticmethod
     def _is_file_valid(file_path: Path) -> bool:
         """
         Performs a basic integrity check on a file beyond just existence.
         """
         return file_path.exists() and file_path.stat().st_size > 100
 
+    @staticmethod
     def _calculate_sha256(file_path: Path) -> str:
         """Calculates the SHA256 checksum of a file."""
         sha256_hash = hashlib.sha256()
@@ -57,7 +59,7 @@ class DataProcessor:
 
         print("\n--- Step 2a: Processing UniProt ID Mapping File ---")
         raw_mapping_path = self.config.DATA_SOURCES['UNIPROT_ID_MAPPING']['path']
-        if not self._is_file_valid(raw_mapping_path):
+        if not DataProcessor._is_file_valid(raw_mapping_path):
             print(f"  ERROR: Raw UniProt mapping file not found at {raw_mapping_path}. Cannot proceed.")
             return
 
@@ -81,7 +83,7 @@ class DataProcessor:
 
         print("\n--- Step 2b: Processing Negative Interaction Files ---")
         neg_files = [v['path'] for k, v in self.config.DATA_SOURCES.items() if k.startswith('NEG_INTERACTIONS')]
-        existing_neg_files = [f for f in neg_files if self._is_file_valid(f)]
+        existing_neg_files = [f for f in neg_files if DataProcessor._is_file_valid(f)]
 
         if not existing_neg_files:
             print("  ERROR: No raw negative interaction files found. Cannot proceed.")
@@ -112,7 +114,7 @@ class DataProcessor:
         raw_biogrid_path = self.config.DATA_SOURCES['BIOGRID_INTERACTIONS']['path']
         id_mapping_path = self.config.ID_MAPPING_PATH
 
-        if not self._is_file_valid(raw_biogrid_path) or not id_mapping_path.exists():
+        if not DataProcessor._is_file_valid(raw_biogrid_path) or not id_mapping_path.exists():
             print("  ERROR: Raw BioGRID file or processed ID mapping file not found. Cannot proceed.")
             return
 
