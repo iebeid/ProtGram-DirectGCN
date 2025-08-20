@@ -106,21 +106,14 @@ def is_environment_valid(project_root: Path) -> bool:
 def run_command(command: list[str]):
     """Runs a command and streams its output, exiting on failure."""
     try:
-        # Use Popen to stream output in real-time.
+        # Let the subprocess inherit stdout/stderr directly so that
+        # interactive elements like tqdm can render correctly.
         process = subprocess.Popen(
             command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
             text=True,
             encoding='utf-8',
-            errors='replace',
-            bufsize=1,
-            universal_newlines=True
+            errors='replace'
         )
-        # The 'if process.stdout:' check is crucial.
-        if process.stdout:
-            for line in iter(process.stdout.readline, ''):
-                print(line, end='', flush=True)
 
         process.wait()
         if process.returncode != 0:
