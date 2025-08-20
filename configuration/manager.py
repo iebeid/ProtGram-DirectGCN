@@ -58,9 +58,11 @@ class DataManager:
         self._download_all_sources()
 
         # 2. Process raw files into final Parquet format
-        DataProcessor._process_uniprot_mapping()
-        DataProcessor._process_negative_interactions()
-        DataProcessor._process_biogrid_interactions()
+        # --- FIX: Instantiate the processor to call instance methods ---
+        processor = DataProcessor(self.config)
+        processor._process_uniprot_mapping()
+        processor._process_negative_interactions()
+        processor._process_biogrid_interactions()
 
         # 3. Generate manifest and bundle the final data
         self._generate_manifest_and_bundle()
@@ -203,8 +205,11 @@ class DataManager:
                     print(f"Downloading '{download_target_path.name}' from Google Drive...")
                     gdown.download(url, str(download_target_path), quiet=False, fuzzy=True)
                 else:
+                    # --- FIX: Ensure the target directory exists before downloading ---
+                    download_target_path.parent.mkdir(parents=True, exist_ok=True)
                     print(f"Downloading from {url} to {download_target_path.name}...")
-                    response = requests.get(url, stream=True)
+                    # --- FIX: Add verify=False to handle potential SSL certificate issues in some environments ---
+                    response = requests.get(url, stream=True, verify=False)
                     response.raise_for_status()
                     total_size = int(response.headers.get('content-length', 0))
                     with open(download_target_path, 'wb') as f, tqdm(total=total_size, unit='iB', unit_scale=True,
