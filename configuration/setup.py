@@ -185,8 +185,22 @@ if __name__ == "__main__":
         f'chmod +x "{conda_prefix}/etc/conda/activate.d/env_vars.sh"',
         f'chmod +x "{conda_prefix}/etc/conda/deactivate.d/env_vars.sh"',
 
-        # STAGE 6: VERIFICATION & CLEANUP
-        "echo '--- Verifying installations ---'",
+        # STAGE 6: DATA SETUP
+        "echo '--- Stage 6: Setting up project data ---'",
+        'CACHE_DIR="$HOME/.cache/protgram_directgcn"',
+        'DATA_BUNDLE_PATH="$CACHE_DIR/data_bundle.tar.gz"',
+        'DATA_MANIFEST_PATH="$CACHE_DIR/data_manifest.json"',
+        'if [ -f "$DATA_BUNDLE_PATH" ] && [ -f "$DATA_MANIFEST_PATH" ]; then',
+        '    echo "--- Found existing data bundle in cache. Restoring data... ---"',
+        '    python -c "from configuration.config import Config; from configuration.manager import DataManager; dm = DataManager(Config()); restored = dm.restore_data_from_bundle(); exit(0) if restored else exit(1)"',
+        '    echo "--- Data restoration from cache complete. ---"',
+        'else',
+        '    echo "--- No data bundle found in cache. Performing full data download and processing... ---"',
+        '    python -c "from configuration.config import Config; from configuration.manager import setup_data; print(\'--- Triggering DataManager full setup ---\'); setup_data(Config())"',
+        'fi',
+
+        # STAGE 7: VERIFICATION & CLEANUP
+        "echo '--- Stage 7: Verifying installations ---'",
         (f"python -c '\n"
          f"import sys\n"
          f"print(\"--- Verifying GPU Libraries ---\")\n"
@@ -210,7 +224,7 @@ if __name__ == "__main__":
          f"except Exception as e: print(f\"\\n--- PyCUDA ---\\nERROR: {{e}}\")\n"
          f"'"
          ),
-        "echo '--- Stage 6: Generating environment validation file ---'",
+        "echo '--- Stage 7: Generating environment validation file ---'",
         f'conda env export > "{env_yml_output_path}"',
         "conda clean --all -y",
         "pip cache purge"

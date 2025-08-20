@@ -144,23 +144,6 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 # running Transformer models on the GPU.
 export XLA_FLAGS="--xla_gpu_cuda_data_dir=$CONDA_BASE/envs/$ENV_NAME"
 
-# --- Step 4: Check for cached data bundle and restore, or run full setup ---
-CACHE_DIR="$HOME/.cache/protgram_directgcn"
-DATA_BUNDLE_PATH="$CACHE_DIR/data_bundle.tar.gz"
-DATA_MANIFEST_PATH="$CACHE_DIR/data_manifest.json"
-
-if [ -f "$DATA_BUNDLE_PATH" ] && [ -f "$DATA_MANIFEST_PATH" ]; then
-    echo -e "\n--- STEP 4: Found existing data bundle in cache. Restoring data... ---"
-    # Call python to restore. The script will exit with an error if restoration fails.
-    "$NEW_ENV_PYTHON" -c "from configuration.config import Config; from configuration.manager import DataManager; dm = DataManager(Config()); restored = dm.restore_data_from_bundle(); exit(0) if restored else exit(1)"
-    echo "--- Data restoration from cache complete. ---"
-else
-    echo -e "\n--- STEP 4: No data bundle found in cache. Performing full data download and processing... ---"
-    echo "--- This is a long-running process and will only be done once. ---"
-    # Trigger the full data setup from configuration/manager.py
-    "$NEW_ENV_PYTHON" -c "from configuration.config import Config; from configuration.manager import setup_data; print('--- Triggering DataManager full setup ---'); setup_data(Config())"
-fi
-
 echo -e "\n--- RESET SCRIPT FINISHED ---"
 echo "--- The environment and data are now fully set up. ---"
 echo "--- You can now use 'start.sh' for subsequent runs. ---"
