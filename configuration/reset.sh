@@ -158,7 +158,7 @@ else
     echo -e "\n--- STEP 4: No data bundle found in cache. Performing full data download and processing... ---"
     echo "--- This is a long-running process and will only be done once. ---"
     # Trigger the full data setup from configuration/manager.py
-    "$NEW_ENV_PYTHON" -c "from .config import Config; from .manager import setup_data; print('--- Triggering DataManager full setup ---'); setup_data(Config())"
+    "$NEW_ENV_PYTHON" -c "from configuration.config import Config; from configuration.manager import setup_data; print('--- Triggering DataManager full setup ---'); setup_data(Config())"
 fi
 
 echo -e "\n--- RESET SCRIPT FINISHED ---"
