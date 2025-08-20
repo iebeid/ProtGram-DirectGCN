@@ -115,6 +115,18 @@ git clone --branch "$GIT_BRANCH" "$REPO_URL"
 cd "$PROJECT_DIR_NAME"
 echo "SUCCESS: Project repository is ready."
 
+# --- NEW: Verification Step ---
+# This step makes the script's behavior more transparent by showing exactly
+# what was cloned from the remote repository. This helps diagnose issues
+# where the remote branch might not contain the expected code.
+echo -e "\n--- STEP 3.1: Verifying Cloned Repository State ---"
+echo "  - Current branch: $(git rev-parse --abbrev-ref HEAD)"
+echo "  - Latest commit: $(git log -1 --oneline)"
+echo "  - Verifying contents of 'configuration/__init__.py':"
+echo "    --- start of file ---"
+cat configuration/__init__.py || echo "    [INFO: File is empty or does not exist, which is the correct state.]"
+echo "    --- end of file ---"
+
 # --- NEW STEP: Install Python Dependencies ---
 # This step installs the minimal bootstrap dependencies (like PyYAML) needed to run the data setup scripts.
 echo -e "\n--- STEP 3.5: Installing Python Dependencies ---"
