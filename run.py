@@ -27,79 +27,29 @@ from source.utils.logging.file_logger import FileLogger
 ENVIRONMENT_YML_FILE = "environment.yml"
 
 
-def is_environment_valid(project_root: Path) -> bool:
+def is_environment_valid() -> bool:
     """
-    Checks if the current Conda environment matches the required packages
-    and versions specified in the environment.yml file.
+    Performs a direct, robust check for critical packages in the environment.
+    This is more reliable than checking for a generated file, which might be
+    missing due to an interrupted setup or other issues.
     """
-    env_file = project_root / "configuration" / ENVIRONMENT_YML_FILE
-    if not env_file.exists():
-        print("--- Validation file not found. Assuming first-time setup is required. ---")
-        return False
-
     try:
-        # 1. Get the list of currently installed packages from Conda
-        print(f"--- Validating current environment against '{env_file.relative_to(project_root)}'... ---")
-        result = subprocess.run(
-            ["conda", "list", "--json"],
-            capture_output=True, text=True, check=True, shell=False
-        )
-        # Create a dictionary for faster lookups: { 'package_name': 'version' }
-        installed_packages = {pkg['name'].lower(): pkg['version'] for pkg in json.loads(result.stdout)}
-
-        # 2. Parse the required packages from the environment.yml file
-        with open(env_file, 'r') as f:
-            lines = f.readlines()
-
-        required_packages: Dict[str, str] = {}
-        in_dependencies_section = False
-        in_pip_section = False
-        for line in lines:
-            if line.startswith("dependencies:"):
-                in_dependencies_section = True
-                continue
-            if not in_dependencies_section:
-                continue
-
-            line_stripped = line.strip()
-            # --- DEFINITIVE FIX for SyntaxError: Correctly terminate the string literal ---
-            if not line_stripped or line_stripped.startswith(('#', 'name:', 'channels:', 'prefix:')):
-                continue
-
-            if '- pip:' in line_stripped:
-                in_pip_section = True
-                continue
-
-            package_spec = line_stripped.lstrip('- ').strip()
-            if not package_spec:
-                continue
-
-            # Handle both conda (e.g., 'python=3.11') and pip (e.g., 'transformers==4.41.2') formats
-            parts = package_spec.split('==') if '==' in package_spec else package_spec.split('=')
-            if len(parts) >= 2:
-                name, version = parts[0].strip(), parts[1].strip().strip("'\"")
-                required_packages[name.lower()] = version
-
-        # 3. Check if all required packages and their versions match
-        for req_name, req_version in required_packages.items():
-            if req_name not in installed_packages:
-                print(f"--- Validation FAILED. Missing required package: {req_name} ---")
-                return False
-            # --- NEW: Check for exact version match ---
-            if installed_packages[req_name] != req_version:
-                print(f"--- Validation FAILED. Version mismatch for '{req_name}'. ---")
-                print(f"    Required: {req_version}, Installed: {installed_packages[req_name]}")
-                return False
-
+        print("--- Validating environment by checking for critical packages... ---")
+        # Check for the most important and complex dependencies.
+        # If these exist, it's highly likely the environment is correctly set up.
+        import torch
+        import tensorflow
+        import pycuda.driver
+        import torch_geometric
         print("--- Environment validation PASSED. ---")
         return True
-
-    except (subprocess.CalledProcessError, json.JSONDecodeError, FileNotFoundError) as e:
-        print(f"--- Could not validate environment due to an error: {e} ---")
+    except ImportError as e:
+        print(f"--- Validation FAILED. Missing critical package: {e.name} ---")
         print("--- Assuming setup is required. ---")
         return False
     except Exception as e:
         print(f"--- An unexpected error occurred during validation: {e} ---")
+        print("--- Assuming setup is required. ---")
         return False
 
 
@@ -139,7 +89,7 @@ if __name__ == "__main__":
 
         # 1. Validate the environment. If it's not valid, run the setup script.
         # The output of the setup script will be captured by the logger.
-        if not is_environment_valid(project_root):
+        if not is_environment_valid():
             print("\n--- Environment is invalid or not yet set up. Running installation... ---")
             print("--- This may take several minutes. All output is being logged. ---")
 
@@ -147,7 +97,7 @@ if __name__ == "__main__":
             run_command([sys.executable, setup_script_path])
 
             print("\n--- Environment setup complete. Re-validating... ---")
-            if not is_environment_valid(project_root):
+            if not is_environment_valid():
                 print("\n--- FATAL: Environment is still invalid after setup. Please check the logs. ---")
                 sys.exit(1)
             print("--- Re-validation successful. Starting the main pipeline... ---")
