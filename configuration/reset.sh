@@ -86,7 +86,9 @@ conda clean --all -y > /dev/null
 echo "SUCCESS: Conda cache cleaned."
 
 # --- Step 2: Re-create Environment and Activate ---
-echo -e "\n--- STEP 2: Re-creating Conda Environment '$ENV_NAME' ---"
+echo -e "\n--- STEP 2: Re-creating a minimal Conda Environment '$ENV_NAME' ---"
+echo "INFO: This creates a bare-bones Python environment. The full set of packages"
+echo "      will be installed later by the 'setup.py' script."
 conda create -n "$ENV_NAME" -c conda-forge python="$PYTHON_VERSION" -y
 # --- DEFINITIVE FIX: Explicitly define paths to the new environment's executables ---
 # 'conda activate' does not work reliably in non-interactive scripts.
@@ -128,7 +130,7 @@ cat configuration/__init__.py || echo "    [INFO: File is empty or does not exis
 echo "    --- end of file ---"
 
 # --- NEW STEP: Install Python Dependencies ---
-# This step installs the minimal bootstrap dependencies (like PyYAML) needed to run the data setup scripts.
+# This step installs the minimal bootstrap dependencies (like PyYAML) needed for the main setup scripts to run.
 echo -e "\n--- STEP 3.5: Installing Python Dependencies ---"
 REQUIREMENTS_FILE="configuration/requirements.txt"
 if [ -f "$REQUIREMENTS_FILE" ]; then
@@ -156,7 +158,12 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 # running Transformer models on the GPU.
 export XLA_FLAGS="--xla_gpu_cuda_data_dir=$CONDA_BASE/envs/$ENV_NAME"
 
-echo -e "\n--- RESET SCRIPT FINISHED ---"
-echo "--- The environment and data are now fully set up. ---"
-echo "--- You can now use 'start.sh' for subsequent runs. ---"
+echo -e "\n\n"
+echo "================================================================================"
+echo "--- RESET SCRIPT FINISHED ---"
+echo "--- The project code has been reset and a minimal Conda environment created. ---"
+echo -e "\n--- NEXT STEP: You must now set up the full environment. ---"
+echo "--- Activate the new environment and run the setup script with the following command: ---"
+echo "    conda activate $ENV_NAME && python configuration/setup.py"
+echo -e "\n--- After setup is complete, you can use 'start.sh' for subsequent runs. ---\n"
 exit 0
