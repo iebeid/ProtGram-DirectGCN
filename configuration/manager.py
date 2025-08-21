@@ -253,12 +253,20 @@ class DataManager:
 
         # 2. Generate checksums and sizes
         print(f"  - Generating checksums for {len(files_to_manifest)} files...")
+        # --- DEFINITIVE FIX for Checksum Performance/OOM Kill ---
+        # Define a set of huge files for which we will skip the expensive SHA256 calculation.
+        # A simple size check is sufficient for these large, static source files.
+        huge_files_to_skip_checksum = {
+            "uniref50.fasta",
+            "idmapping.dat"
+        }
         for file_path in tqdm(files_to_manifest, desc="  Calculating Checksums"):
             if file_path.is_file():
                 relative_path = file_path.relative_to(self.config.PROJECT_ROOT)
+                checksum = "skipped_due_to_size" if file_path.name in huge_files_to_skip_checksum else DataProcessor._calculate_sha256(file_path)
                 manifest[relative_path.as_posix()] = {
                     'size': file_path.stat().st_size,
-                    'sha256': DataProcessor._calculate_sha256(file_path)
+                    'sha256': checksum
                 }
 
         # 3. Save the manifest to the cache
