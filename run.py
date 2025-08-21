@@ -20,6 +20,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # We make an exception for Config and FileLogger which are needed for the bootstrapper itself.
 from configuration.config import Config # noqa
 from source.utils.logging.file_logger import FileLogger
+from source.utils.data.data_utils import DataUtils
 
 # --- Configuration ---
 # This YAML file is the "source of truth" for a valid environment.
@@ -90,6 +91,25 @@ if __name__ == "__main__":
         # 1. Validate the environment. If it's not valid, run the setup script.
         # The output of the setup script will be captured by the logger.
         if not is_environment_valid():
+            # --- NEW: Proactive memory check and cleanup for graceful failure ---
+            # The setup process is memory-intensive. Check for sufficient RAM to avoid an OOM kill.
+            # We also clean up leftover temp files from any previous, crashed installation attempt.
+            print("\n--- Performing pre-installation checks... ---")
+            required_ram_gb = 8  # A conservative estimate for the setup process
+            if not DataUtils.has_enough_memory(required_ram_gb, "Environment Setup"):
+                print("\n--- FATAL: Not enough memory to safely run the installation. ---")
+                print("--- Please free up system resources or run on a machine with more RAM. ---")
+                sys.exit(1)
+
+            temp_script_path_sh = project_root / "temp_setup_script.sh"
+            if temp_script_path_sh.exists():
+                print(f"  - Found and removed leftover temporary script: {temp_script_path_sh.name}")
+                temp_script_path_sh.unlink()
+            temp_script_path_bat = project_root / "temp_setup_script.bat"
+            if temp_script_path_bat.exists():
+                print(f"  - Found and removed leftover temporary script: {temp_script_path_bat.name}")
+                temp_script_path_bat.unlink()
+
             print("\n--- Environment is invalid or not yet set up. Running installation... ---")
             print("--- This may take several minutes. All output is being logged. ---")
 
