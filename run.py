@@ -138,7 +138,7 @@ if __name__ == "__main__":
             print("--- This may take several minutes. All output is being logged. ---")
 
             setup_script_path = str(project_root / "configuration" / "setup.py")
-            run_command([sys.executable, setup_script_path])
+            run_command([sys.executable, "-u", setup_script_path])
 
             print("\n--- Environment setup complete. Re-validating... ---")
             if not is_environment_valid():

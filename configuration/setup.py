@@ -135,8 +135,8 @@ if __name__ == "__main__":
         "until " + (f"conda install -y "
                     f"-c nvidia -c conda-forge "
                     f"python={PYTHON_VERSION} "
-                    f"'cuda-toolkit={CUDA_VERSION}' 'cuda-compiler={CUDA_VERSION}' 'cudnn=8.9' "
-                    f"dask tqdm biopython matplotlib scipy scikit-learn gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"
+                    f"'cuda-toolkit={CUDA_VERSION}' 'cuda-compiler={CUDA_VERSION}' 'cudnn=8.9' " # --- FIX: Pin scipy to a version compatible with gensim ---
+                    f"dask tqdm biopython matplotlib 'scipy<1.14.0' scikit-learn gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"
                     ) + "; do",
         "    COUNT=$((COUNT+1))",
         "    if [ \"$COUNT\" -ge \"$MAX_RETRIES\" ]; then",

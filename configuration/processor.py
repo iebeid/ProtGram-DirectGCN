@@ -7,6 +7,7 @@
 
 import hashlib
 from pathlib import Path
+import dask
 
 import dask.dataframe as dd
 from dask.diagnostics import ProgressBar
@@ -64,6 +65,12 @@ class DataProcessor:
             return
 
         with ProgressBar():
+            # --- DEFINITIVE FIX for OOM Kill ---
+            # Explicitly configure Dask to use a limited number of workers for this
+            # memory-intensive task. This prevents it from overwhelming the system.
+            # This context manager ensures the setting is only active for this block.
+            with dask.config.set(scheduler='threads', num_workers=self.config.GRAPH_BUILDER_WORKERS):
+                pass
             print(f"  Reading {raw_mapping_path.name} and filtering for relevant IDs...")
             ddf = dd.read_csv(raw_mapping_path, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'],
                               usecols=[0, 1, 2], dtype={'db': 'category'}, blocksize='128MB')
