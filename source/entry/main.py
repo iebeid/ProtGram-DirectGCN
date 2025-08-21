@@ -258,7 +258,8 @@ class PipelineOrchestrator:
                                 if not self.ui_manager.prompt_to_continue("Graph Building"): sys.exit(0)
 
                                 generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)
-
+                                # --- FIX: Ensure generated_files is a list before extending ---
+                                generated_files = generated_files if isinstance(generated_files, list) else []
                                 config.LP_EMBEDDING_FILES_TO_EVALUATE = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_files # noqa
 
                                 # --- NEW: Run Hyperparameter Optimization ---
@@ -286,7 +287,7 @@ class PipelineOrchestrator:
                                             # by the orchestrator. The `use_dummy_data` flag is for isolated
                                             # testing and should not be used here. The main `RUN_DUMMY_TEST`
                                             # flag already controls the input data for the entire pipeline. ---
-                                            ppi_evaluator.run()
+                                            ppi_evaluator.run(use_dummy_data=config.RUN_DUMMY_TEST)
                                             checkpoint_manager.save_checkpoint("PPI_Evaluation", {"status": "completed"})
                         # --- FIX: Add the missing 'except' block for the per-dataset try block ---
                         # This ensures that if one dataset fails, the pipeline can continue to the next.

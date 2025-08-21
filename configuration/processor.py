@@ -5,6 +5,7 @@
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
+import shutil
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -57,19 +58,34 @@ class DataProcessor:
 
     def _process_uniprot_mapping(self):
         """Processes the raw UniProt ID mapping file into a filtered Parquet file."""
-        if self.config.ID_MAPPING_PATH.exists():
-            print(f"☑ Found existing processed ID mapping file: {self.config.ID_MAPPING_PATH.name}")
+        # --- NEW: Add caching for the processed parquet file to avoid re-processing ---
+        processed_parquet_path = self.config.ID_MAPPING_PATH
+        cache_path = self.config.PERSISTENT_DATA_CACHE / processed_parquet_path.name
+
+        # 1. Check if a valid cached version exists and restore it.
+        if cache_path.exists():
+            print(f"☑ Found cached processed ID mapping file: {cache_path.name}")
+            processed_parquet_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(cache_path, processed_parquet_path)
+            print(f"  Restored {processed_parquet_path.name} from cache.")
             return
 
+        # 2. Check if a local version already exists (and cache it for next time).
+        if processed_parquet_path.exists():
+            print(f"☑ Found existing processed ID mapping file: {processed_parquet_path.name}")
+            print("  Copying to cache for future runs...")
+            shutil.copy(processed_parquet_path, cache_path)
+            return
+
+        # 3. If neither exists, run the full, memory-intensive processing.
         print("\n--- Step 2a: Processing UniProt ID Mapping File ---")
         raw_mapping_path = self.config.DATA_SOURCES['UNIPROT_ID_MAPPING']['path']
         if not DataProcessor._is_file_valid(raw_mapping_path):
             print(f"  ERROR: Raw UniProt mapping file not found at {raw_mapping_path}. Cannot proceed.")
             return
 
-        # --- DEFINITIVE FIX for OOM Kill: Use a two-stage, memory-efficient streaming approach ---
-        # Stage 1: Stream the huge raw file line-by-line, writing filtered lines to a temporary file.
-        # This uses minimal RAM, regardless of the input file size.
+        # --- DEFINITIVE FIX for OOM Kill: Use a two-stage, memory-efficient streaming approach --- #
+        # Stage 1: Stream the huge raw file line-by-line, writing filtered lines to a temporary file. This uses minimal RAM.
         print(f"  Stage 1/2: Streaming and filtering raw mapping file '{raw_mapping_path.name}'...")
         temp_filtered_path = self.config.ID_MAPPING_PATH.with_suffix('.tmp.tsv')
         relevant_dbs = ['GeneID', 'UniRef100', 'UniRef90', 'UniRef50']
@@ -87,17 +103,21 @@ class DataProcessor:
 
         if lines_written == 0:
             print("  - WARNING: No relevant IDs found in the mapping file. The resulting Parquet file will be empty.")
-            # Create an empty parquet file to satisfy downstream dependencies
             empty_df = pd.DataFrame(columns=['uniprot_id', 'db', 'other_id'])
             empty_df.to_parquet(self.config.ID_MAPPING_PATH, engine='pyarrow')
             temp_filtered_path.unlink() # Clean up temp file
             return
 
-        # Stage 2: Convert the much smaller temporary file to a partitioned Parquet file using Dask.
+        # Stage 2: Convert the much smaller temporary file to a partitioned Parquet file.
         print(f"\n  Stage 2/2: Converting {lines_written:,} filtered lines to Parquet format...")
         ddf = dd.read_csv(temp_filtered_path, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'], blocksize='256MB')
         ddf.to_parquet(self.config.ID_MAPPING_PATH, engine='pyarrow', overwrite=True)
         temp_filtered_path.unlink() # Clean up the intermediate file
+
+        # --- NEW: Cache the newly created file for future runs ---
+        if processed_parquet_path.exists():
+            print(f"  Caching new {processed_parquet_path.name} for future runs...")
+            shutil.copy(processed_parquet_path, cache_path)
 
         print("  ✔ UniProt ID mapping processing complete.")
 

@@ -117,15 +117,6 @@ class SingletonXGCNTrainer:
                     A_hetero_norm=A_hetero_norm, train_mask=train_mask, test_mask=test_mask
                 ).to(self.device)
 
-                # --- NEW: Implement Gradient Accumulation ---
-                # This pattern simulates a larger batch size by accumulating gradients over multiple
-                # forward/backward passes before taking an optimizer step. It's most effective
-                # in a mini-batch setting (like the main ProtGram-XGCN trainer's loop over
-                # clustered subgraphs) but is demonstrated here on the epoch loop.
-                accumulation_steps = self.config.SINGLETON_EVAL_GRADIENT_ACCUMULATION_STEPS
-                if accumulation_steps > 1:
-                    print(f"  Gradient accumulation enabled with {accumulation_steps} steps.")
-
                 optimizer.zero_grad()
                 for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
                     model.train()
@@ -149,19 +140,11 @@ class SingletonXGCNTrainer:
                         else:
                             loss = torch.tensor(0.0, device=self.device)
 
-                    # --- Backward pass & Gradient Accumulation ---
-                    if accumulation_steps > 1:
-                        # Normalize loss for accumulation
-                        loss = loss / accumulation_steps
-
+                    # --- Backward pass & Optimizer Step ---
                     loss.backward()
-
-                    # Update weights only after accumulating gradients for `accumulation_steps`
-                    if (epoch + 1) % accumulation_steps == 0:
-                        # Clip gradients to prevent exploding gradients
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                        optimizer.step()
-                        optimizer.zero_grad()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    optimizer.step()
+                    optimizer.zero_grad()
 
                 model.eval()
                 if task_type == 'masked_node':
