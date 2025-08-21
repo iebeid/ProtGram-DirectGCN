@@ -10,6 +10,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import hashlib
 from pathlib import Path
+from tqdm.auto import tqdm
 import dask
 import dask.dataframe as dd
 from dask.diagnostics import ProgressBar
@@ -66,35 +67,37 @@ class DataProcessor:
             print(f"  ERROR: Raw UniProt mapping file not found at {raw_mapping_path}. Cannot proceed.")
             return
 
-        # --- DEFINITIVE FIX for OOM Kill: Replace Dask with a chunked Pandas/PyArrow implementation ---
-        # This provides direct control over memory usage by processing the large file in smaller, manageable pieces.
-        print(f"  Reading and filtering {raw_mapping_path.name} in chunks...")
+        # --- DEFINITIVE FIX for OOM Kill: Use a two-stage, memory-efficient streaming approach ---
+        # Stage 1: Stream the huge raw file line-by-line, writing filtered lines to a temporary file.
+        # This uses minimal RAM, regardless of the input file size.
+        print(f"  Stage 1/2: Streaming and filtering raw mapping file '{raw_mapping_path.name}'...")
+        temp_filtered_path = self.config.ID_MAPPING_PATH.with_suffix('.tmp.tsv')
         relevant_dbs = ['GeneID', 'UniRef100', 'UniRef90', 'UniRef50']
-        chunk_size = 10_000_000  # Process 10 million lines at a time
-        writer = None
-        schema = None
-
         total_size = raw_mapping_path.stat().st_size
-        try:
-            with open(raw_mapping_path, 'r', encoding='utf-8', errors='ignore') as f, tqdm(total=total_size, unit='B', unit_scale=True, desc="  Processing ID Map") as pbar:
-                reader = pd.read_csv(f, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'],
-                                     usecols=[0, 1, 2], dtype={'db': 'category', 'uniprot_id': str, 'other_id': str},
-                                     chunksize=chunk_size, on_bad_lines='skip')
+        lines_written = 0
+        with open(raw_mapping_path, 'r', encoding='utf-8', errors='ignore') as f_in, \
+             open(temp_filtered_path, 'w', encoding='utf-8') as f_out, \
+             tqdm(total=total_size, unit='B', unit_scale=True, desc="  - Filtering raw data") as pbar:
+            for line in f_in:
+                parts = line.strip().split('\t')
+                if len(parts) >= 2 and parts[1] in relevant_dbs:
+                    f_out.write(line)
+                    lines_written += 1
+                pbar.update(len(line.encode('utf-8')))
 
-                for chunk in reader:
-                    filtered_chunk = chunk[chunk['db'].isin(relevant_dbs)]
-                    if not filtered_chunk.empty:
-                        table = pa.Table.from_pandas(filtered_chunk, preserve_index=False)
-                        if writer is None:
-                            schema = table.schema
-                            writer = pq.ParquetWriter(self.config.ID_MAPPING_PATH, schema)
-                        if schema != table.schema:
-                            table = table.cast(schema)
-                        writer.write_table(table)
-                    pbar.update(f.tell() - pbar.n)
-        finally:
-            if writer:
-                writer.close()
+        if lines_written == 0:
+            print("  - WARNING: No relevant IDs found in the mapping file. The resulting Parquet file will be empty.")
+            # Create an empty parquet file to satisfy downstream dependencies
+            empty_df = pd.DataFrame(columns=['uniprot_id', 'db', 'other_id'])
+            empty_df.to_parquet(self.config.ID_MAPPING_PATH, engine='pyarrow')
+            temp_filtered_path.unlink() # Clean up temp file
+            return
+
+        # Stage 2: Convert the much smaller temporary file to a partitioned Parquet file using Dask.
+        print(f"\n  Stage 2/2: Converting {lines_written:,} filtered lines to Parquet format...")
+        ddf = dd.read_csv(temp_filtered_path, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'], blocksize='256MB')
+        ddf.to_parquet(self.config.ID_MAPPING_PATH, engine='pyarrow', overwrite=True)
+        temp_filtered_path.unlink() # Clean up the intermediate file
 
         print("  ✔ UniProt ID mapping processing complete.")
 

@@ -208,6 +208,10 @@ class DataManager:
                     # --- FIX: Ensure the target directory exists before downloading ---
                     download_target_path.parent.mkdir(parents=True, exist_ok=True)
                     print(f"Downloading from {url} to {download_target_path.name}...")
+                    # --- FIX: Add a standard User-Agent header to prevent being blocked by some servers (e.g., BioGRID) ---
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
                     # --- FIX: Add verify=False to handle potential SSL certificate issues in some environments ---
                     response = requests.get(url, stream=True, verify=False, headers=headers)
                     response.raise_for_status()
