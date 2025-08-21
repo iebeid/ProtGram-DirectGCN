@@ -158,7 +158,7 @@ if __name__ == "__main__":
 
         if not is_data_valid:
             print("\n--- Local data is invalid or missing. Attempting to restore from cache... ---")
-            restored_ok = data_manager.restore_data_from_bundle()
+            restored_ok = data_manager.restore_data_from_cache()
             if not restored_ok:
                 print("\n" + "!" * 80)
                 print("!!! FATAL: Data is missing or corrupt, and could not be restored from cache. !!!")

@@ -44,6 +44,15 @@ class DataManager:
         self.config = config
         self.files_to_cleanup: list[Path] = []
 
+    def _copy_to_cache(self, file_path: Path):
+        """Copies a file to the persistent cache if it exists."""
+        if not file_path.exists() or not self.config.PERSISTENT_DATA_CACHE:
+            return
+        cache_path = self.config.PERSISTENT_DATA_CACHE / file_path.name
+        if not cache_path.exists() or cache_path.stat().st_size != file_path.stat().st_size:
+            print(f"  Caching '{file_path.name}' for future runs...")
+            shutil.copy(file_path, cache_path)
+
     def run_full_setup(self):
         """
         Executes the entire data pipeline: download, process, and bundle.
@@ -61,11 +70,14 @@ class DataManager:
         # --- FIX: Instantiate the processor to call instance methods ---
         processor = DataProcessor(self.config)
         processor._process_uniprot_mapping()
+        self._copy_to_cache(self.config.ID_MAPPING_PATH)
         processor._process_negative_interactions()
+        self._copy_to_cache(self.config.NEG_INTERACTIONS_PATH)
         processor._process_biogrid_interactions()
+        self._copy_to_cache(self.config.POS_INTERACTIONS_PATH)
 
-        # 3. Generate manifest and bundle the final data
-        self._generate_manifest_and_bundle()
+        # 3. Generate manifest of all data files
+        self._generate_manifest()
 
         # 4. Clean up intermediate files
         self._cleanup_intermediate_files()
@@ -110,26 +122,38 @@ class DataManager:
 
         return all_valid
 
-    def restore_data_from_bundle(self) -> bool:
-        """Restores the data directory from the cached tar.gz bundle."""
-        bundle_path = self.config.DATA_BUNDLE_PATH
-        if not bundle_path.exists():
-            print(f"  - ERROR: Data bundle not found at {bundle_path}. Cannot restore.")
+    def restore_data_from_cache(self) -> bool:
+        """Restores the data directory from individual files in the cache, guided by the manifest."""
+        # --- DEFINITIVE FIX: Restore individual files from cache, not a bundle ---
+        manifest_path = self.config.DATA_MANIFEST_PATH
+        if not manifest_path.exists():
+            print(f"  - ERROR: Cached manifest not found at {manifest_path}. Cannot restore.")
             return False
 
-        print(f"--- Restoring data from cached bundle: {bundle_path.name} ---")
-        # Ensure the target data directory is clean before extraction
-        if self.config.BASE_DATA_DIR.exists():
-            shutil.rmtree(self.config.BASE_DATA_DIR)
-
+        print(f"--- Restoring data from individual files in cache based on manifest: {manifest_path.name} ---")
         try:
-            with tarfile.open(bundle_path, "r:gz") as tar:
-                tar.extractall(path=self.config.PROJECT_ROOT)
-            print("  - ✅ Successfully extracted data bundle.")
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+
+            files_restored = 0
+            for relative_path_str, properties in manifest.items():
+                cached_file_path = self.config.PERSISTENT_DATA_CACHE / Path(relative_path_str).name
+                project_file_path = self.config.PROJECT_ROOT / relative_path_str
+
+                if cached_file_path.exists():
+                    project_file_path.parent.mkdir(parents=True, exist_ok=True)
+                    if not project_file_path.exists() or project_file_path.stat().st_size != properties['size']:
+                        print(f"  Restoring '{project_file_path.name}'...")
+                        shutil.copy(cached_file_path, project_file_path)
+                        files_restored += 1
+                else:
+                    print(f"  - WARNING: Manifest lists '{relative_path_str}' but it's not in the cache. It will need to be re-downloaded/processed.")
+
+            print(f"  - ✅ Successfully restored {files_restored} file(s) from cache.")
             # Re-validate after extraction to be certain
             return self.validate_data_from_manifest()
-        except (tarfile.ReadError, IOError) as e:
-            print(f"  - ❌ ERROR: Failed to extract data bundle: {e}")
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"  - ❌ ERROR: Failed to read manifest or restore from cache: {e}")
             return False
 
     def _download_benchmark_datasets(self):
@@ -212,6 +236,11 @@ class DataManager:
                     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}  # noqa
                     # --- FIX: Add verify=False to handle potential SSL certificate issues in some environments ---
                     response = requests.get(url, stream=True, verify=False, headers=headers) # noqa
+                    # --- DEFINITIVE FIX for BioGRID Download Error ---
+                    # Check the content type to ensure we are not downloading an HTML error page.
+                    content_type = response.headers.get('content-type', '')
+                    if post_process_type == 'unzip' and 'application/zip' not in content_type:
+                        raise IOError(f"Downloaded file is not a zip file. Content-Type: '{content_type}'. Check URL or User-Agent.")
                     response.raise_for_status()
                     total_size = int(response.headers.get('content-length', 0))
                     with open(download_target_path, 'wb') as f, tqdm(total=total_size, unit='iB', unit_scale=True,
@@ -231,10 +260,7 @@ class DataManager:
                         with zip_ref.open(file_to_extract) as zf, open(final_path, 'wb') as f_out:
                             shutil.copyfileobj(zf, f_out)
 
-                # --- FIX: Corrected caching logic. Just copy to cache if it's not already there. ---
-                if DataProcessor._is_file_valid(final_path) and cache_path and not cache_path.exists():
-                    print(f"  Copying '{final_path.name}' to persistent cache for future use...")
-                    shutil.copy(final_path, cache_path)
+                self._copy_to_cache(final_path)
 
             except Exception as e:
                 print(f"Error acquiring file for '{key}': {e}")
@@ -242,7 +268,7 @@ class DataManager:
         # --- NEW: Trigger benchmark dataset download ---
         self._download_benchmark_datasets()
 
-    def _generate_manifest_and_bundle(self):
+    def _generate_manifest(self):
         """Generates a checksum manifest and bundles the data directory."""
         print("\n--- Step 3: Generating Data Manifest and Bundling ---")
         manifest = {}
@@ -259,7 +285,10 @@ class DataManager:
         # A simple size check is sufficient for these large, static source files.
         huge_files_to_skip_checksum = {
             "uniref50.fasta",
-            "idmapping.dat"
+            "idmapping.dat",
+            "id_mapping.parquet",
+            "negative_interactions.parquet",
+            "positive_interactions.parquet"
         }
         for file_path in tqdm(files_to_manifest, desc="  Calculating Checksums"):
             if file_path.is_file():
@@ -279,35 +308,6 @@ class DataManager:
         except IOError as e:
             print(f"  - ❌ ERROR: Could not save manifest file: {e}")
             return
-
-        # 4. Create the tar.gz bundle in the cache
-        bundle_path = self.config.DATA_BUNDLE_PATH
-        print(f"  - Creating data bundle at: {bundle_path}...")
-        temp_bundle_path = bundle_path.with_suffix(".tmp")
-
-        # --- DEFINITIVE FIX for Bundling Performance & Corruption ---
-        # 1. Exclude huge raw files from the bundle. They are cached individually.
-        # 2. Write to a temporary file first, then atomically rename it. This
-        #    prevents a corrupted bundle if the script is interrupted.
-        huge_files_to_exclude = {"uniref50.fasta", "idmapping.dat", "uniprot_sprot.fasta"}
-
-        try:
-            with tarfile.open(temp_bundle_path, "w:gz") as tar:
-                for file_to_add in files_to_manifest:
-                    if file_to_add.name not in huge_files_to_exclude:
-                        arcname = file_to_add.relative_to(self.config.PROJECT_ROOT).as_posix()
-                        tar.add(file_to_add, arcname=arcname)
-
-            # Atomic move: rename the completed temp file to the final name.
-            if temp_bundle_path.exists():
-                shutil.move(temp_bundle_path, bundle_path)
-
-            print(f"  - ✅ Data successfully bundled.")
-        except (tarfile.TarError, IOError) as e:
-            print(f"  - ❌ ERROR: Could not create data bundle: {e}")
-            # Clean up the failed temporary file
-            if temp_bundle_path.exists():
-                temp_bundle_path.unlink()
 
     def _cleanup_intermediate_files(self):
         """Removes all downloaded and intermediate raw files."""
