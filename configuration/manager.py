@@ -207,10 +207,11 @@ class DataManager:
                 else:
                     # --- FIX: Ensure the target directory exists before downloading ---
                     download_target_path.parent.mkdir(parents=True, exist_ok=True)
-                    print(f"Downloading from {url} to {download_target_path.name}...") # --- FIX: Add a standard User-Agent header to prevent being blocked by some servers (e.g., BioGRID) ---
-                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                    print(f"Downloading from {url} to {download_target_path.name}...")
+                    # --- FIX: Add a standard User-Agent header to prevent being blocked by some servers (e.g., BioGRID) ---
+                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}  # noqa
                     # --- FIX: Add verify=False to handle potential SSL certificate issues in some environments ---
-                    response = requests.get(url, stream=True, verify=False, headers=headers)
+                    response = requests.get(url, stream=True, verify=False, headers=headers) # noqa
                     response.raise_for_status()
                     total_size = int(response.headers.get('content-length', 0))
                     with open(download_target_path, 'wb') as f, tqdm(total=total_size, unit='iB', unit_scale=True,
@@ -282,25 +283,31 @@ class DataManager:
         # 4. Create the tar.gz bundle in the cache
         bundle_path = self.config.DATA_BUNDLE_PATH
         print(f"  - Creating data bundle at: {bundle_path}...")
-        # --- DEFINITIVE FIX for Bundling Performance ---
-        # Exclude the huge raw source files from the tar.gz bundle.
-        # They are already cached individually, and bundling them is extremely slow.
-        # The manifest will still track them, but the bundle will be much smaller.
-        huge_files_to_exclude_from_bundle = {
-            "uniref50.fasta",
-            "idmapping.dat",
-            "uniprot_sprot.fasta"
-        }
+        temp_bundle_path = bundle_path.with_suffix(".tmp")
+
+        # --- DEFINITIVE FIX for Bundling Performance & Corruption ---
+        # 1. Exclude huge raw files from the bundle. They are cached individually.
+        # 2. Write to a temporary file first, then atomically rename it. This
+        #    prevents a corrupted bundle if the script is interrupted.
+        huge_files_to_exclude = {"uniref50.fasta", "idmapping.dat", "uniprot_sprot.fasta"}
+
         try:
-            with tarfile.open(bundle_path, "w:gz") as tar:
-                # Add files to the tarball individually, respecting the exclusion list.
+            with tarfile.open(temp_bundle_path, "w:gz") as tar:
                 for file_to_add in files_to_manifest:
-                    if file_to_add.name not in huge_files_to_exclude_from_bundle:
+                    if file_to_add.name not in huge_files_to_exclude:
                         arcname = file_to_add.relative_to(self.config.PROJECT_ROOT).as_posix()
                         tar.add(file_to_add, arcname=arcname)
+
+            # Atomic move: rename the completed temp file to the final name.
+            if temp_bundle_path.exists():
+                shutil.move(temp_bundle_path, bundle_path)
+
             print(f"  - ✅ Data successfully bundled.")
         except (tarfile.TarError, IOError) as e:
             print(f"  - ❌ ERROR: Could not create data bundle: {e}")
+            # Clean up the failed temporary file
+            if temp_bundle_path.exists():
+                temp_bundle_path.unlink()
 
     def _cleanup_intermediate_files(self):
         """Removes all downloaded and intermediate raw files."""
