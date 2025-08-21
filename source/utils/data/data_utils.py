@@ -126,21 +126,3 @@ class DataUtils:
             return False
         return True
 
-    @staticmethod
-    def has_enough_memory(required_gb: float, context: str) -> bool:
-        """
-        Checks if the system has enough available memory for an operation.
-        This is a proactive check to avoid an OS-level OOM kill.
-
-        Returns:
-            True if memory is sufficient, False otherwise.
-        """
-        available_mem_gb = psutil.virtual_memory().available / (1024 ** 3)
-        if available_mem_gb < required_gb:
-            print("\n" + "!" * 80)
-            print(f"!!! MEMORY WARNING ({context}) !!!")
-            print(f"  Operation requires an estimated {required_gb:.2f} GB, but only {available_mem_gb:.2f} GB is available.")
-            print("  The pipeline will attempt to skip this step gracefully to prevent a system-wide OOM error.")
-            print("!" * 80 + "\n")
-            return False
-        return True
