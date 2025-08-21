@@ -170,8 +170,7 @@ class PPIPipeline:
                 # --- FIX: Use a more representative background dataset for SHAP ---
                 # Instead of just the first few batches, create a summarized background dataset
                 # using k-means, which is a standard practice for large datasets.
-                print(f"    Generating SHAP summary for main model '{embedding_name}' on fold {fold_num + 1}...") # noqa
-                from source.utils.results.shap_explainer import ShapExplainer
+                print(f"    Generating SHAP summary for main model '{embedding_name}' on fold {fold_num + 1}...")
                 train_features_for_shap = np.vstack([x for x, y in train_ds.take(10)])
                 reporter = EvaluationReporter(str(self.config.RESULTS_EVALUATION_DIR), self.config.EVAL_K_VALUES_FOR_TABLE)
                 reporter.generate_shap_summary(

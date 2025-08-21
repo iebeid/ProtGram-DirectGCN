@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/manager.py
 # PURPOSE: Handles the verification and acquisition of all external data files.
-# VERSION: 6.0 (Definitively fixed caching, bundling, and download logic)
+# VERSION: 7.0 (Final, robust version with individual file caching)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -9,14 +9,12 @@ import gzip
 import json
 import os
 import shutil
-import tarfile
 import time
 import zipfile
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 import requests
-# --- NEW: Import PyG for benchmark dataset downloading ---
 from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 from tqdm.auto import tqdm
 
@@ -54,15 +52,16 @@ class DataManager:
         # If the cache destination exists, remove it to ensure a clean copy.
         if cache_path.is_dir():
             shutil.rmtree(cache_path)
-        elif cache_path.is_file():
+        elif cache_path.exists():
             cache_path.unlink()
 
+        print(f"  Caching '{source_path.name}' for future runs...")
         if source_path.is_dir():
-            print(f"  Caching directory '{source_path.name}' for future runs...")
             shutil.copytree(source_path, cache_path)
         elif source_path.is_file():
-            print(f"  Caching file '{source_path.name}' for future runs...")
             shutil.copy(source_path, cache_path)
+        else:
+            print(f"  - WARNING: Source path '{source_path}' is not a file or directory. Cannot cache.")
 
     def run_full_setup(self):
         """
@@ -115,21 +114,21 @@ class DataManager:
                 continue
 
             # For directories (like .parquet), just check for existence.
-            # For files, check size.
-            if file_path.is_file():
+            # For files, check size and checksum.
+            is_dir = properties.get('type') == 'directory'
+            if not is_dir:
                 current_size = file_path.stat().st_size
                 if current_size != properties['size']:
                     print(f"  - ❌ INVALID SIZE: {relative_path_str} (Expected: {properties['size']}, Found: {current_size})")
                     all_valid = False
                     continue
 
-            # Checksum validation is now conditional
-            if properties['sha256'] != "skipped_due_to_size":
-                current_checksum = DataProcessor._calculate_sha256(file_path)
-                if current_checksum != properties['sha256']:
-                    print(f"  - ❌ INVALID CHECKSUM: {relative_path_str}")
-                    all_valid = False
-                    continue
+                if properties['sha256'] != "skipped_due_to_size":
+                    current_checksum = DataProcessor._calculate_sha256(file_path)
+                    if current_checksum != properties['sha256']:
+                        print(f"  - ❌ INVALID CHECKSUM: {relative_path_str}")
+                        all_valid = False
+                        continue
 
             print(f"  - ✅ VALID: {relative_path_str}")
 
@@ -159,7 +158,7 @@ class DataManager:
                     # Clean up destination before copying
                     if project_file_path.is_dir():
                         shutil.rmtree(project_file_path)
-                    elif project_file_path.is_file() or project_file_path.is_symlink():
+                    elif project_file_path.exists() or project_file_path.is_symlink():
                         project_file_path.unlink()
 
                     project_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -233,12 +232,14 @@ class DataManager:
             if cache_path and DataProcessor._is_file_valid(cache_path):
                 print(f"☑ Found cached file: {cache_path}. Copying to project directory...")
                 final_path.parent.mkdir(parents=True, exist_ok=True)
-                if final_path.exists() or final_path.is_symlink(): final_path.unlink()
+                if final_path.exists() or final_path.is_symlink():
+                    final_path.unlink()
                 shutil.copy(cache_path, final_path)
                 continue
 
             url = source_info.get('url')
-            if not url: continue
+            if not url:
+                continue
 
             max_retries = 3
             for attempt in range(max_retries):

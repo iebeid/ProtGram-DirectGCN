@@ -185,9 +185,7 @@ if __name__ == "__main__":
         'CACHE_DIR="$HOME/.cache/protgram_directgcn"',
         'DATA_BUNDLE_PATH="$CACHE_DIR/data_bundle.tar.gz"',
         'DATA_MANIFEST_PATH="$CACHE_DIR/data_manifest.json"',
-        'if [ -f "$DATA_BUNDLE_PATH" ] && [ -f "$DATA_MANIFEST_PATH" ]; then',
-        '    echo "--- Found existing data in cache. Attempting to restore... ---"', # noqa
-        '    python -u -c "from configuration.config import Config; from configuration.manager import DataManager; dm = DataManager(Config()); restored = dm.restore_data_from_cache(); exit(0) if restored else exit(1)"',
+        'if [ -f "$DATA_MANIFEST_PATH" ]; then',
         '    echo "--- Data restoration from cache finished. ---"', # noqa
         'else',
         '    echo "--- No data bundle found in cache. Performing full data download and processing... ---"',
