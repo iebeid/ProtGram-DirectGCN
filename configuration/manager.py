@@ -282,11 +282,22 @@ class DataManager:
         # 4. Create the tar.gz bundle in the cache
         bundle_path = self.config.DATA_BUNDLE_PATH
         print(f"  - Creating data bundle at: {bundle_path}...")
+        # --- DEFINITIVE FIX for Bundling Performance ---
+        # Exclude the huge raw source files from the tar.gz bundle.
+        # They are already cached individually, and bundling them is extremely slow.
+        # The manifest will still track them, but the bundle will be much smaller.
+        huge_files_to_exclude_from_bundle = {
+            "uniref50.fasta",
+            "idmapping.dat",
+            "uniprot_sprot.fasta"
+        }
         try:
-            # This compresses the entire project's 'data' directory into a single
-            # tar.gz file, which will be stored in the persistent cache.
             with tarfile.open(bundle_path, "w:gz") as tar:
-                tar.add(self.config.BASE_DATA_DIR, arcname=self.config.BASE_DATA_DIR.name)
+                # Add files to the tarball individually, respecting the exclusion list.
+                for file_to_add in files_to_manifest:
+                    if file_to_add.name not in huge_files_to_exclude_from_bundle:
+                        arcname = file_to_add.relative_to(self.config.PROJECT_ROOT).as_posix()
+                        tar.add(file_to_add, arcname=arcname)
             print(f"  - ✅ Data successfully bundled.")
         except (tarfile.TarError, IOError) as e:
             print(f"  - ❌ ERROR: Could not create data bundle: {e}")
