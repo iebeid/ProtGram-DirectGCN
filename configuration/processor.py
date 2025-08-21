@@ -110,8 +110,25 @@ class DataProcessor:
 
         # Stage 2: Convert the much smaller temporary file to a partitioned Parquet file.
         print(f"\n  Stage 2/2: Converting {lines_written:,} filtered lines to Parquet format...")
-        ddf = dd.read_csv(temp_filtered_path, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'], blocksize='256MB')
-        ddf.to_parquet(self.config.ID_MAPPING_PATH, engine='pyarrow', overwrite=True)
+        # --- DEFINITIVE FIX for OOM Kill: Use a chunked Pandas reader instead of Dask for this step ---
+        # This provides more direct control over memory and avoids Dask's potentially large intermediate graph.
+        writer = None
+        try:
+            with tqdm(total=temp_filtered_path.stat().st_size, unit='B', unit_scale=True, desc="  - Converting to Parquet") as pbar:
+                reader = pd.read_csv(temp_filtered_path, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'],
+                                     dtype={'db': 'category', 'uniprot_id': str, 'other_id': str},
+                                     chunksize=10_000_000, on_bad_lines='skip')
+
+                for chunk in reader:
+                    table = pa.Table.from_pandas(chunk, preserve_index=False)
+                    if writer is None:
+                        writer = pq.ParquetWriter(self.config.ID_MAPPING_PATH, table.schema)
+                    writer.write_table(table)
+                    pbar.update(chunk.memory_usage(index=True, deep=True).sum())
+        finally:
+            if writer:
+                writer.close()
+
         temp_filtered_path.unlink() # Clean up the intermediate file
 
         # --- NEW: Cache the newly created file for future runs ---

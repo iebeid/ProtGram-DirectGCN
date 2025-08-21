@@ -186,9 +186,9 @@ if __name__ == "__main__":
         'DATA_BUNDLE_PATH="$CACHE_DIR/data_bundle.tar.gz"',
         'DATA_MANIFEST_PATH="$CACHE_DIR/data_manifest.json"',
         'if [ -f "$DATA_BUNDLE_PATH" ] && [ -f "$DATA_MANIFEST_PATH" ]; then',
-        '    echo "--- Found existing data bundle in cache. Restoring data... ---"',
+        '    echo "--- Found existing data bundle in cache. Attempting to restore... ---"',
         '    python -u -c "from configuration.config import Config; from configuration.manager import DataManager; dm = DataManager(Config()); restored = dm.restore_data_from_bundle(); exit(0) if restored else exit(1)"', # -u for unbuffered
-        '    echo "--- Data restoration from cache complete. ---"',
+        '    echo "--- Data restoration from cache finished. ---"',
         'else',
         '    echo "--- No data bundle found in cache. Performing full data download and processing... ---"',
         '    python -u -c "from configuration.config import Config; from configuration.manager import setup_data; print(\'--- Triggering DataManager full setup ---\'); setup_data(Config())"', # -u for unbuffered
