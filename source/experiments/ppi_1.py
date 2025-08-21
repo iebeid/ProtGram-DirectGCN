@@ -167,7 +167,11 @@ class PPIPipeline:
         try:
             is_main_embedding = (embedding_name == self.config.EVAL_MAIN_EMBEDDING_FOR_STATS)
             if self.config.EVAL_GENERATE_SHAP_SUMMARY and fold_num == 0 and is_main_embedding:
-                print(f"    Generating SHAP summary for main model '{embedding_name}' on fold {fold_num + 1}...")
+                # --- FIX: Use a more representative background dataset for SHAP ---
+                # Instead of just the first few batches, create a summarized background dataset
+                # using k-means, which is a standard practice for large datasets.
+                print(f"    Generating SHAP summary for main model '{embedding_name}' on fold {fold_num + 1}...") # noqa
+                from source.utils.results.shap_explainer import ShapExplainer
                 train_features_for_shap = np.vstack([x for x, y in train_ds.take(10)])
                 reporter = EvaluationReporter(str(self.config.RESULTS_EVALUATION_DIR), self.config.EVAL_K_VALUES_FOR_TABLE)
                 reporter.generate_shap_summary(
