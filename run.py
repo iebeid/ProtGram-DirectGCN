@@ -20,7 +20,6 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # We make an exception for Config and FileLogger which are needed for the bootstrapper itself.
 from configuration.config import Config # noqa
 from source.utils.logging.file_logger import FileLogger
-from source.utils.data.data_utils import DataUtils
 
 # --- Configuration ---
 # This YAML file is the "source of truth" for a valid environment.
@@ -91,6 +90,9 @@ if __name__ == "__main__":
         # 1. Validate the environment. If it's not valid, run the setup script.
         # The output of the setup script will be captured by the logger.
         if not is_environment_valid():
+            # --- FIX: Defer import of DataUtils until after the environment check ---
+            # This prevents a ModuleNotFoundError if numpy/torch are not yet installed.
+            from source.utils.data.data_utils import DataUtils
             # --- NEW: Proactive memory check and cleanup for graceful failure ---
             # The setup process is memory-intensive. Check for sufficient RAM to avoid an OOM kill.
             # We also clean up leftover temp files from any previous, crashed installation attempt.
