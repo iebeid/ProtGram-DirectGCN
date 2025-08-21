@@ -5,10 +5,12 @@
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import hashlib
 from pathlib import Path
 import dask
-
 import dask.dataframe as dd
 from dask.diagnostics import ProgressBar
 
@@ -64,22 +66,36 @@ class DataProcessor:
             print(f"  ERROR: Raw UniProt mapping file not found at {raw_mapping_path}. Cannot proceed.")
             return
 
-        with ProgressBar():
-            # --- DEFINITIVE FIX for OOM Kill ---
-            # Explicitly configure Dask to use a limited number of workers for this
-            # memory-intensive task. This prevents it from overwhelming the system.
-            # This context manager ensures the setting is only active for this block.
-            with dask.config.set(scheduler='threads', num_workers=self.config.GRAPH_BUILDER_WORKERS):
-                pass
-            print(f"  Reading {raw_mapping_path.name} and filtering for relevant IDs...")
-            ddf = dd.read_csv(raw_mapping_path, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'],
-                              usecols=[0, 1, 2], dtype={'db': 'category'}, blocksize='128MB')
+        # --- DEFINITIVE FIX for OOM Kill: Replace Dask with a chunked Pandas/PyArrow implementation ---
+        # This provides direct control over memory usage by processing the large file in smaller, manageable pieces.
+        print(f"  Reading and filtering {raw_mapping_path.name} in chunks...")
+        relevant_dbs = ['GeneID', 'UniRef100', 'UniRef90', 'UniRef50']
+        chunk_size = 10_000_000  # Process 10 million lines at a time
+        writer = None
+        schema = None
 
-            relevant_dbs = ['GeneID', 'UniRef100', 'UniRef90', 'UniRef50']
-            filtered_ddf = ddf[ddf['db'].isin(relevant_dbs)].repartition(npartitions=16)
+        total_size = raw_mapping_path.stat().st_size
+        try:
+            with open(raw_mapping_path, 'r', encoding='utf-8', errors='ignore') as f, tqdm(total=total_size, unit='B', unit_scale=True, desc="  Processing ID Map") as pbar:
+                reader = pd.read_csv(f, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'],
+                                     usecols=[0, 1, 2], dtype={'db': 'category', 'uniprot_id': str, 'other_id': str},
+                                     chunksize=chunk_size, on_bad_lines='skip')
 
-            print(f"  Saving filtered mapping to {self.config.ID_MAPPING_PATH.name}...")
-            filtered_ddf.to_parquet(self.config.ID_MAPPING_PATH, engine='pyarrow', overwrite=True)
+                for chunk in reader:
+                    filtered_chunk = chunk[chunk['db'].isin(relevant_dbs)]
+                    if not filtered_chunk.empty:
+                        table = pa.Table.from_pandas(filtered_chunk, preserve_index=False)
+                        if writer is None:
+                            schema = table.schema
+                            writer = pq.ParquetWriter(self.config.ID_MAPPING_PATH, schema)
+                        if schema != table.schema:
+                            table = table.cast(schema)
+                        writer.write_table(table)
+                    pbar.update(f.tell() - pbar.n)
+        finally:
+            if writer:
+                writer.close()
+
         print("  ✔ UniProt ID mapping processing complete.")
 
     def _process_negative_interactions(self):
