@@ -114,13 +114,13 @@ if __name__ == "__main__":
         if not is_environment_valid():
             # --- FIX: Defer import of DataUtils until after the environment check ---
             # This prevents a ModuleNotFoundError if numpy/torch are not yet installed.
-            from source.utils.data.data_utils import DataUtils
+
             # --- NEW: Proactive memory check and cleanup for graceful failure ---
             # The setup process is memory-intensive. Check for sufficient RAM to avoid an OOM kill.
             # We also clean up leftover temp files from any previous, crashed installation attempt.
             print("\n--- Performing pre-installation checks... ---")
             required_ram_gb = 8  # A conservative estimate for the setup process
-            if not DataUtils.has_enough_memory(required_ram_gb, "Environment Setup"):
+            if not has_enough_memory(required_ram_gb, "Environment Setup"):
                 print("\n--- FATAL: Not enough memory to safely run the installation. ---")
                 print("--- Please free up system resources or run on a machine with more RAM. ---")
                 sys.exit(1)
