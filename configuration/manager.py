@@ -1,8 +1,8 @@
 # ==============================================================================
 # MODULE: configuration/manager.py
 # PURPOSE: Handles the verification and acquisition of all external data files.
-# VERSION: 4.0 (Integrated checksum validation, bundling, and restoration)
-# AUTHOR: Islam Ebeid
+# VERSION: 6.0 (Definitively fixed caching, bundling, and download logic)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import gzip
@@ -10,8 +10,10 @@ import json
 import os
 import shutil
 import tarfile
+import time
 import zipfile
 from pathlib import Path
+from typing import List, Optional, Dict, Any
 
 import requests
 # --- NEW: Import PyG for benchmark dataset downloading ---
@@ -29,10 +31,6 @@ except ImportError:
     GDOWN_AVAILABLE = False
 
 
-# Local imports must be inside methods to avoid circular dependencies with Config
-# from configuration.config import Config # Avoid top-level import
-
-
 class DataManager:
     """
     Handles the download, processing, and validation of all project data.
@@ -44,30 +42,40 @@ class DataManager:
         self.config = config
         self.files_to_cleanup: list[Path] = []
 
-    def _copy_to_cache(self, file_path: Path):
-        """Copies a file to the persistent cache if it exists."""
-        if not file_path.exists() or not self.config.PERSISTENT_DATA_CACHE:
+    def _copy_to_cache(self, source_path: Path):
+        """
+        Copies a file or directory to the persistent cache if it exists.
+        This is now robust and handles both files and directories (like .parquet).
+        """
+        if not source_path.exists() or not self.config.PERSISTENT_DATA_CACHE:
             return
-        cache_path = self.config.PERSISTENT_DATA_CACHE / file_path.name
-        if not cache_path.exists() or cache_path.stat().st_size != file_path.stat().st_size:
-            print(f"  Caching '{file_path.name}' for future runs...")
-            shutil.copy(file_path, cache_path)
+        cache_path = self.config.PERSISTENT_DATA_CACHE / source_path.name
+
+        # If the cache destination exists, remove it to ensure a clean copy.
+        if cache_path.is_dir():
+            shutil.rmtree(cache_path)
+        elif cache_path.is_file():
+            cache_path.unlink()
+
+        if source_path.is_dir():
+            print(f"  Caching directory '{source_path.name}' for future runs...")
+            shutil.copytree(source_path, cache_path)
+        elif source_path.is_file():
+            print(f"  Caching file '{source_path.name}' for future runs...")
+            shutil.copy(source_path, cache_path)
 
     def run_full_setup(self):
         """
-        Executes the entire data pipeline: download, process, and bundle.
+        Executes the entire data pipeline: download, process, and create manifest.
         This is a long-running, one-time operation.
         """
         print("\n--- Running Data Setup and Processing ---")
         print("  - Ensuring project data directory structure exists...")
-        # Note: The Config object, passed during initialization, has already created
-        # all necessary subdirectories (e.g., data/sequences, data/models).
 
         # 1. Download all raw source files
         self._download_all_sources()
 
-        # 2. Process raw files into final Parquet format
-        # --- FIX: Instantiate the processor to call instance methods ---
+        # 2. Process raw files into final Parquet format and cache them
         processor = DataProcessor(self.config)
         processor._process_uniprot_mapping()
         self._copy_to_cache(self.config.ID_MAPPING_PATH)
@@ -106,17 +114,22 @@ class DataManager:
                 all_valid = False
                 continue
 
-            current_size = file_path.stat().st_size
-            if current_size != properties['size']:
-                print(f"  - ❌ INVALID SIZE: {relative_path_str} (Expected: {properties['size']}, Found: {current_size})")
-                all_valid = False
-                continue
+            # For directories (like .parquet), just check for existence.
+            # For files, check size.
+            if file_path.is_file():
+                current_size = file_path.stat().st_size
+                if current_size != properties['size']:
+                    print(f"  - ❌ INVALID SIZE: {relative_path_str} (Expected: {properties['size']}, Found: {current_size})")
+                    all_valid = False
+                    continue
 
-            current_checksum = DataProcessor._calculate_sha256(file_path)
-            if current_checksum != properties['sha256']:
-                print(f"  - ❌ INVALID CHECKSUM: {relative_path_str}")
-                all_valid = False
-                continue
+            # Checksum validation is now conditional
+            if properties['sha256'] != "skipped_due_to_size":
+                current_checksum = DataProcessor._calculate_sha256(file_path)
+                if current_checksum != properties['sha256']:
+                    print(f"  - ❌ INVALID CHECKSUM: {relative_path_str}")
+                    all_valid = False
+                    continue
 
             print(f"  - ✅ VALID: {relative_path_str}")
 
@@ -124,7 +137,6 @@ class DataManager:
 
     def restore_data_from_cache(self) -> bool:
         """Restores the data directory from individual files in the cache, guided by the manifest."""
-        # --- DEFINITIVE FIX: Restore individual files from cache, not a bundle ---
         manifest_path = self.config.DATA_MANIFEST_PATH
         if not manifest_path.exists():
             print(f"  - ERROR: Cached manifest not found at {manifest_path}. Cannot restore.")
@@ -141,18 +153,29 @@ class DataManager:
                 project_file_path = self.config.PROJECT_ROOT / relative_path_str
 
                 if cached_file_path.exists():
+                    # Always restore for simplicity and robustness. This ensures the local state matches the cache.
+                    print(f"  Restoring '{project_file_path.name}' from cache...")
+
+                    # Clean up destination before copying
+                    if project_file_path.is_dir():
+                        shutil.rmtree(project_file_path)
+                    elif project_file_path.is_file() or project_file_path.is_symlink():
+                        project_file_path.unlink()
+
                     project_file_path.parent.mkdir(parents=True, exist_ok=True)
-                    if not project_file_path.exists() or project_file_path.stat().st_size != properties['size']:
-                        print(f"  Restoring '{project_file_path.name}'...")
+
+                    # Copy based on type
+                    if cached_file_path.is_dir():
+                        shutil.copytree(cached_file_path, project_file_path)
+                    else:
                         shutil.copy(cached_file_path, project_file_path)
-                        files_restored += 1
+                    files_restored += 1
                 else:
                     print(f"  - WARNING: Manifest lists '{relative_path_str}' but it's not in the cache. It will need to be re-downloaded/processed.")
 
             print(f"  - ✅ Successfully restored {files_restored} file(s) from cache.")
-            # Re-validate after extraction to be certain
             return self.validate_data_from_manifest()
-        except (json.JSONDecodeError, IOError) as e:
+        except (json.JSONDecodeError, IOError, Exception) as e:
             print(f"  - ❌ ERROR: Failed to read manifest or restore from cache: {e}")
             return False
 
@@ -183,21 +206,19 @@ class DataManager:
             self.config.PERSISTENT_DATA_CACHE.mkdir(parents=True, exist_ok=True)
 
         for key, source_info in self.config.DATA_SOURCES.items():
-            # --- NEW: Handle different source types ---
             if source_info.get("type") == "pyg_dataset":
-                continue  # These are handled separately
+                continue
 
             final_path = Path(source_info['path'])
             is_cacheable = source_info.get('cacheable', False)
             cache_path = self.config.PERSISTENT_DATA_CACHE / final_path.name if is_cacheable else None
 
             post_process_type = source_info.get('post_process')
+            download_target_path = final_path
             if post_process_type == 'ungzip':
                 download_target_path = final_path.with_suffix(final_path.suffix + ".gz")
             elif post_process_type == 'unzip':
                 download_target_path = final_path.with_suffix(".zip")
-            else:
-                download_target_path = final_path
 
             if download_target_path != final_path:
                 self.files_to_cleanup.append(download_target_path)
@@ -206,6 +227,7 @@ class DataManager:
 
             if DataProcessor._is_file_valid(final_path):
                 print(f"☑ Found and verified raw file: {final_path.relative_to(self.config.PROJECT_ROOT)}")
+                self._copy_to_cache(final_path)  # Ensure it's cached for future runs
                 continue
 
             if cache_path and DataProcessor._is_file_valid(cache_path):
@@ -218,88 +240,88 @@ class DataManager:
             url = source_info.get('url')
             if not url: continue
 
-            try:
-                # The parent directory for the download target is guaranteed to exist
-                # because the Config object creates the entire data structure on initialization.
-                # --- FIX: Re-introduce gdown logic for Google Drive URLs ---
-                if 'drive.google.com' in url:
-                    if not GDOWN_AVAILABLE:
-                        print(f"  ERROR: URL for '{key}' is a Google Drive link, but 'gdown' is not installed. Skipping.")
-                        continue
-                    print(f"Downloading '{download_target_path.name}' from Google Drive...")
-                    gdown.download(url, str(download_target_path), quiet=False, fuzzy=True)
-                else:
-                    # --- FIX: Ensure the target directory exists before downloading ---
-                    download_target_path.parent.mkdir(parents=True, exist_ok=True)
-                    print(f"Downloading from {url} to {download_target_path.name}...")
-                    # --- FIX: Add a standard User-Agent header to prevent being blocked by some servers (e.g., BioGRID) ---
-                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}  # noqa
-                    # --- FIX: Add verify=False to handle potential SSL certificate issues in some environments ---
-                    response = requests.get(url, stream=True, verify=False, headers=headers) # noqa
-                    # --- DEFINITIVE FIX for BioGRID Download Error ---
-                    # Check the content type to ensure we are not downloading an HTML error page.
-                    content_type = response.headers.get('content-type', '')
-                    if post_process_type == 'unzip' and 'application/zip' not in content_type:
-                        raise IOError(f"Downloaded file is not a zip file. Content-Type: '{content_type}'. Check URL or User-Agent.")
-                    response.raise_for_status()
-                    total_size = int(response.headers.get('content-length', 0))
-                    with open(download_target_path, 'wb') as f, tqdm(total=total_size, unit='iB', unit_scale=True,
-                                                                     desc=download_target_path.name) as pbar:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                            pbar.update(len(chunk))
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    if 'drive.google.com' in url:
+                        if not GDOWN_AVAILABLE:
+                            print(f"  ERROR: URL for '{key}' is a Google Drive link, but 'gdown' is not installed. Skipping.")
+                            break
+                        print(f"Downloading '{download_target_path.name}' from Google Drive...")
+                        gdown.download(url, str(download_target_path), quiet=False, fuzzy=True)
+                    else:
+                        download_target_path.parent.mkdir(parents=True, exist_ok=True)
+                        print(f"Downloading from {url} to {download_target_path.name}...")
+                        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                        response = requests.get(url, stream=True, verify=False, headers=headers)
 
-                if post_process_type == 'ungzip':
-                    print(f"Decompressing {download_target_path.name}...")
-                    with gzip.open(download_target_path, 'rb') as f_in, open(final_path, 'wb') as f_out:
-                        shutil.copyfileobj(f_in, f_out)
-                elif post_process_type == 'unzip':
-                    print(f"Decompressing {download_target_path.name}...")
-                    with zipfile.ZipFile(download_target_path, 'r') as zip_ref:
-                        file_to_extract = sorted(zip_ref.infolist(), key=lambda z: z.file_size, reverse=True)[0]
-                        with zip_ref.open(file_to_extract) as zf, open(final_path, 'wb') as f_out:
-                            shutil.copyfileobj(zf, f_out)
+                        content_type = response.headers.get('content-type', '')
+                        if post_process_type == 'unzip' and 'application/zip' not in content_type:
+                            raise IOError(f"Downloaded file is not a zip file. Content-Type: '{content_type}'. Check URL or User-Agent.")
+                        response.raise_for_status()
 
-                self._copy_to_cache(final_path)
+                        total_size = int(response.headers.get('content-length', 0))
+                        with open(download_target_path, 'wb') as f, tqdm(total=total_size, unit='iB', unit_scale=True, desc=download_target_path.name) as pbar:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                                pbar.update(len(chunk))
 
-            except Exception as e:
-                print(f"Error acquiring file for '{key}': {e}")
+                    if post_process_type == 'ungzip':
+                        print(f"Decompressing {download_target_path.name}...")
+                        with gzip.open(download_target_path, 'rb') as f_in, open(final_path, 'wb') as f_out:
+                            shutil.copyfileobj(f_in, f_out)
+                    elif post_process_type == 'unzip':
+                        print(f"Decompressing {download_target_path.name}...")
+                        with zipfile.ZipFile(download_target_path, 'r') as zip_ref:
+                            file_to_extract = sorted(zip_ref.infolist(), key=lambda z: z.file_size, reverse=True)[0]
+                            with zip_ref.open(file_to_extract) as zf, open(final_path, 'wb') as f_out:
+                                shutil.copyfileobj(zf, f_out)
 
-        # --- NEW: Trigger benchmark dataset download ---
+                    self._copy_to_cache(final_path)
+                    break  # Success, exit retry loop
+                except Exception as e:
+                    print(f"Error acquiring file for '{key}' on attempt {attempt + 1}/{max_retries}: {e}")
+                    if attempt + 1 == max_retries:
+                        print(f"  - ❌ FAILED to acquire file for '{key}' after {max_retries} attempts.")
+                    else:
+                        time.sleep(5)  # Wait before retrying
+
         self._download_benchmark_datasets()
 
     def _generate_manifest(self):
-        """Generates a checksum manifest and bundles the data directory."""
-        print("\n--- Step 3: Generating Data Manifest and Bundling ---")
+        """Generates a checksum manifest for all data files."""
+        print("\n--- Step 3: Generating Data Manifest ---")
         manifest = {}
-        # 1. Find all files to include in the manifest
         files_to_manifest = []
-        for dirpath, _, filenames in os.walk(self.config.BASE_DATA_DIR):
+        for dirpath, dirnames, filenames in os.walk(self.config.BASE_DATA_DIR):
+            # Add directories (like .parquet) to the manifest
+            for d in dirnames:
+                files_to_manifest.append(Path(dirpath) / d)
+            # Add files
             for f in filenames:
                 files_to_manifest.append(Path(dirpath) / f)
 
-        # 2. Generate checksums and sizes
-        print(f"  - Generating checksums for {len(files_to_manifest)} files...")
-        # --- DEFINITIVE FIX for Checksum Performance/OOM Kill ---
-        # Define a set of huge files for which we will skip the expensive SHA256 calculation.
-        # A simple size check is sufficient for these large, static source files.
+        print(f"  - Generating checksums for {len(files_to_manifest)} items...")
         huge_files_to_skip_checksum = {
-            "uniref50.fasta",
-            "idmapping.dat",
-            "id_mapping.parquet",
-            "negative_interactions.parquet",
-            "positive_interactions.parquet"
+            "uniref50.fasta", "idmapping.dat", "id_mapping.parquet",
+            "negative_interactions.parquet", "positive_interactions.parquet"
         }
         for file_path in tqdm(files_to_manifest, desc="  Calculating Checksums"):
+            relative_path = file_path.relative_to(self.config.PROJECT_ROOT)
             if file_path.is_file():
-                relative_path = file_path.relative_to(self.config.PROJECT_ROOT)
                 checksum = "skipped_due_to_size" if file_path.name in huge_files_to_skip_checksum else DataProcessor._calculate_sha256(file_path)
                 manifest[relative_path.as_posix()] = {
+                    'type': 'file',
                     'size': file_path.stat().st_size,
                     'sha256': checksum
                 }
+            elif file_path.is_dir():
+                 manifest[relative_path.as_posix()] = {
+                    'type': 'directory',
+                    'size': sum(f.stat().st_size for f in file_path.glob('**/*') if f.is_file()),
+                    'sha256': "skipped_for_directory"
+                }
 
-        # 3. Save the manifest to the cache
         manifest_path = self.config.DATA_MANIFEST_PATH
         try:
             with open(manifest_path, 'w') as f:
@@ -311,7 +333,7 @@ class DataManager:
 
     def _cleanup_intermediate_files(self):
         """Removes all downloaded and intermediate raw files."""
-        print("\n--- Step 3: Cleaning Up Intermediate Files ---")
+        print("\n--- Step 4: Cleaning Up Intermediate Files ---")
         for f_path in set(self.files_to_cleanup):
             if f_path.exists():
                 try:
@@ -319,7 +341,6 @@ class DataManager:
                         shutil.rmtree(f_path)
                     else:
                         f_path.unlink()
-                    # --- FIX: Complete the print statement ---
                     print(f"  - Cleaned up: {f_path.name}")
                 except OSError as e:
                     print(f"  - WARNING: Could not clean up file {f_path.name}. Error: {e}")
