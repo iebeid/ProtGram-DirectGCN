@@ -58,6 +58,12 @@ echo -e "\n--- STEP 3: Executing the main application via run.py ---"
 echo "INFO: The 'run.py' script will automatically validate local data and restore from cache if needed."
 
 # --- CRITICAL: Export the Conda environment's library path. ---
+# --- NEW: Clean up stale Python bytecode files to prevent caching issues ---
+echo "--- Cleaning up stale Python cache files (.pyc, __pycache__) ---"
+find . -type d -name "__pycache__" -exec rm -rf {} +
+find . -type f -name "*.pyc" -delete
+echo "SUCCESS: Python cache cleared."
+
 # This ensures that TensorFlow and other programs can find the CUDA libraries (.so files)
 # that were installed by Conda. This resolves the "Cannot dlopen" errors at runtime.
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"

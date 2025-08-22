@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/manager.py
 # PURPOSE: Handles the verification and acquisition of all external data files.
-# VERSION: 7.0 (Final, robust version with individual file caching)
+# VERSION: 7.1 (Corrected caching for benchmark datasets)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -113,22 +113,26 @@ class DataManager:
                 all_valid = False
                 continue
 
-            # For directories (like .parquet), just check for existence.
+            # For directories, just check for existence.
             # For files, check size and checksum.
             is_dir = properties.get('type') == 'directory'
-            if not is_dir:
-                current_size = file_path.stat().st_size
-                if current_size != properties['size']:
-                    print(f"  - ❌ INVALID SIZE: {relative_path_str} (Expected: {properties['size']}, Found: {current_size})")
+            if is_dir:
+                # This is a directory, just confirm it exists.
+                print(f"  - ✅ VALID: {relative_path_str}")
+                continue
+
+            current_size = file_path.stat().st_size
+            if current_size != properties['size']:
+                print(f"  - ❌ INVALID SIZE: {relative_path_str} (Expected: {properties['size']}, Found: {current_size})")
+                all_valid = False
+                continue
+
+            if properties['sha256'] != "skipped_due_to_size":
+                current_checksum = DataProcessor._calculate_sha256(file_path)
+                if current_checksum != properties['sha256']:
+                    print(f"  - ❌ INVALID CHECKSUM: {relative_path_str}")
                     all_valid = False
                     continue
-
-                if properties['sha256'] != "skipped_due_to_size":
-                    current_checksum = DataProcessor._calculate_sha256(file_path)
-                    if current_checksum != properties['sha256']:
-                        print(f"  - ❌ INVALID CHECKSUM: {relative_path_str}")
-                        all_valid = False
-                        continue
 
             print(f"  - ✅ VALID: {relative_path_str}")
 
@@ -146,31 +150,41 @@ class DataManager:
             with open(manifest_path, 'r') as f:
                 manifest = json.load(f)
 
+            processed_files_in_cache = {
+                Path(p).name for p in self.config.PROCESSED_FILE_DEPENDENCIES.keys()
+                if (self.config.PERSISTENT_DATA_CACHE / Path(p).name).exists()
+            }
+            raw_files_to_skip = set()
+            for processed_file, raw_dependencies in self.config.PROCESSED_FILE_DEPENDENCIES.items():
+                if processed_file in processed_files_in_cache:
+                    raw_files_to_skip.update(raw_dependencies)
+            
+            if raw_files_to_skip:
+                print(f"  Smart Restore: Will skip restoring raw files: {raw_files_to_skip}")
+
             files_restored = 0
             for relative_path_str, properties in manifest.items():
-                cached_file_path = self.config.PERSISTENT_DATA_CACHE / Path(relative_path_str).name
                 project_file_path = self.config.PROJECT_ROOT / relative_path_str
+                
+                # If a file or directory already exists, skip it.
+                if project_file_path.exists():
+                    continue
 
-                if cached_file_path.exists():
-                    # Always restore for simplicity and robustness. This ensures the local state matches the cache.
+                cached_file_path = self.config.PERSISTENT_DATA_CACHE / Path(relative_path_str).name
+
+                if cached_file_path.exists() and cached_file_path.name not in raw_files_to_skip:
                     print(f"  Restoring '{project_file_path.name}' from cache...")
-
-                    # Clean up destination before copying
-                    if project_file_path.is_dir():
-                        shutil.rmtree(project_file_path)
-                    elif project_file_path.exists() or project_file_path.is_symlink():
-                        project_file_path.unlink()
 
                     project_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-                    # Copy based on type
                     if cached_file_path.is_dir():
                         shutil.copytree(cached_file_path, project_file_path)
                     else:
                         shutil.copy(cached_file_path, project_file_path)
                     files_restored += 1
                 else:
-                    print(f"  - WARNING: Manifest lists '{relative_path_str}' but it's not in the cache. It will need to be re-downloaded/processed.")
+                    if not project_file_path.exists():
+                        print(f"  - WARNING: Manifest lists '{relative_path_str}' but it's not in the cache. It will need to be re-downloaded/processed.")
 
             print(f"  - ✅ Successfully restored {files_restored} file(s) from cache.")
             return self.validate_data_from_manifest()
@@ -179,7 +193,7 @@ class DataManager:
             return False
 
     def _download_benchmark_datasets(self):
-        """Uses PyG to download standard benchmark datasets."""
+        """Uses PyG to download standard benchmark datasets and caches them."""
         print("\n--- Downloading PyG Benchmark Datasets ---")
         dataset_root = self.config.DATA_STANDARD_DATASETS_DIR
         dataset_root.mkdir(parents=True, exist_ok=True)
@@ -195,6 +209,12 @@ class DataManager:
                     Actor(root=str(dataset_root))
                 elif name == 'KarateClub':
                     KarateClub()
+                
+                # After downloading, copy the dataset directory to the cache.
+                dataset_dir = dataset_root / name
+                if dataset_dir.exists() and dataset_dir.is_dir():
+                    self._copy_to_cache(dataset_dir)
+
             except Exception as e:
                 print(f"    - WARNING: Failed to download PyG dataset '{name}': {e}")
 

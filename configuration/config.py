@@ -419,6 +419,14 @@ class Config:
         self.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE = [
             {"name": "ProtT5", "path": self.PROTT5_MODEL_PATH},
         ]
+        # --- NEW: Define dependencies for smart data restoration ---
+        # This maps a processed file to the raw source file(s) it replaces.
+        # The key is the name of the processed file, the value is a list of raw file names.
+        self.PROCESSED_FILE_DEPENDENCIES = {
+            self.ID_MAPPING_PATH.name: [Path(self.DATA_SOURCES['UNIPROT_ID_MAPPING']['path']).name],
+            self.POS_INTERACTIONS_PATH.name: [Path(self.DATA_SOURCES['BIOGRID_INTERACTIONS']['path']).name],
+            self.NEG_INTERACTIONS_PATH.name: [k['path'].name for k,v in self.DATA_SOURCES.items() if k.startswith('NEG_INTERACTIONS')]
+        }
 
     def _setup_gcn_params(self):
         """Sets ProtGram-GCN parameters statically from the YAML config."""
