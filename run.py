@@ -5,6 +5,7 @@
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
+import argparse
 import json
 import subprocess
 import sys
@@ -39,10 +40,10 @@ def has_enough_memory(required_gb: float, context: str) -> bool:
         True if memory is sufficient, False otherwise.
     """
     available_mem_gb = psutil.virtual_memory().available / (1024 ** 3)
-    if available_mem_gb < required_gb:
+    if available_mem_gb < required_gb: # noqa
         print("\n" + "!" * 80)
         print(f"!!! MEMORY WARNING ({context}) !!!")
-        print(f"  Operation requires an estimated {required_gb:.2f} GB, but only {available_mem_gb:.2f} GB is available.")
+        print(f"  Operation requires an estimated {required_gb:.2f} GB, but only {available_mem_gb:.2f} GB is available.") # noqa
         print("  The pipeline will attempt to skip this step gracefully to prevent a system-wide OOM error.")
         print("!" * 80 + "\n")
         return False
@@ -101,76 +102,22 @@ def run_command(command: list[str]):
 
 
 if __name__ == "__main__":
-    # Initialize config and logger at the very beginning to capture all output.
-    base_config = Config()
-    logger = FileLogger(base_config.LOG_DIR, enabled=base_config.ENABLE_FILE_LOGGING)
+    # --- DEFINITIVE FIX: This script is now just an environment validator or a simple launcher ---
+    parser = argparse.ArgumentParser(description="Run pipeline or validate environment.")
+    parser.add_argument('--validate-env-only', action='store_true', help='Only validate the environment and exit with a status code.')
+    args = parser.parse_args()
 
-    # Use the logger as a context manager to ensure it's always closed properly.
-    with logger:
-        project_root = Path(__file__).parent.resolve()
-
-        # 1. Validate the environment. If it's not valid, run the setup script.
-        # The output of the setup script will be captured by the logger.
-        if not is_environment_valid():
-            # --- FIX: Defer import of DataUtils until after the environment check ---
-            # This prevents a ModuleNotFoundError if numpy/torch are not yet installed.
-
-            # --- NEW: Proactive memory check and cleanup for graceful failure ---
-            # The setup process is memory-intensive. Check for sufficient RAM to avoid an OOM kill.
-            # We also clean up leftover temp files from any previous, crashed installation attempt.
-            print("\n--- Performing pre-installation checks... ---")
-            required_ram_gb = 8  # A conservative estimate for the setup process
-            if not has_enough_memory(required_ram_gb, "Environment Setup"):
-                print("\n--- FATAL: Not enough memory to safely run the installation. ---")
-                print("--- Please free up system resources or run on a machine with more RAM. ---")
-                sys.exit(1)
-
-            temp_script_path_sh = project_root / "temp_setup_script.sh"
-            if temp_script_path_sh.exists():
-                print(f"  - Found and removed leftover temporary script: {temp_script_path_sh.name}")
-                temp_script_path_sh.unlink()
-            temp_script_path_bat = project_root / "temp_setup_script.bat"
-            if temp_script_path_bat.exists():
-                print(f"  - Found and removed leftover temporary script: {temp_script_path_bat.name}")
-                temp_script_path_bat.unlink()
-
-            print("\n--- Environment is invalid or not yet set up. Running installation... ---")
-            print("--- This may take several minutes. All output is being logged. ---")
-
-            setup_script_path = str(project_root / "configuration" / "setup.py")
-            run_command([sys.executable, "-u", setup_script_path])
-
-            print("\n--- Environment setup complete. Re-validating... ---")
-            if not is_environment_valid():
-                print("\n--- FATAL: Environment is still invalid after setup. Please check the logs. ---")
-                sys.exit(1)
-            print("--- Re-validation successful. Starting the main pipeline... ---")
+    if args.validate_env_only:
+        if is_environment_valid():
+            sys.exit(0)  # Success
         else:
-            print("--- Environment is already set up and valid. Starting main pipeline... ---")
-
-        # --- NEW: Data Validation and Restoration Logic ---
-        # This replaces the simple call to setup_data in main.py
-        from configuration.manager import DataManager
-        data_manager = DataManager(base_config)
-
-        print("\n--- Verifying local data integrity ---")
-        is_data_valid = data_manager.validate_data_from_manifest()
-
-        if not is_data_valid:
-            print("\n--- Local data is invalid or missing. Attempting to restore from cache... ---")
-            restored_ok = data_manager.restore_data_from_cache()
-            if not restored_ok:
-                print("\n" + "!" * 80)
-                print("!!! FATAL: Data is missing or corrupt, and could not be restored from cache. !!!")
-                print("!!! Please run the one-time setup script to download and process all data: !!!")
-                print("!!!                                                                          !!!")
-                print("!!!   bash configuration/reset.sh                                            !!!")
-                print("!" * 80)
-                sys.exit(1)
-        else:
-            print("--- Local data is valid. ---")
-
-        # 3. Run the main pipeline script as a separate process.
-        # This ensures it runs in the now-validated environment with a clean state.
-        main_script_path = str(project_root / "source" / "entry" / "main.py")
-        run_command([sys.executable, main_script_path])
+            sys.exit(1)  # Failure
+    else:
+        # Default behavior: run the main application logic.
+        # This assumes the environment is already valid.
+        base_config = Config()
+        logger = FileLogger(base_config.LOG_DIR, enabled=base_config.ENABLE_FILE_LOGGING)
+        with logger:
+            from source.entry.main import PipelineOrchestrator
+            orchestrator = PipelineOrchestrator()
+            orchestrator.run()

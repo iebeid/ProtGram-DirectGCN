@@ -20,6 +20,7 @@ import tensorflow as tf
 # --- Local Application Imports ---
 from configuration.config import Config
 from source.benchmarkers.gnns import GNNBenchmarker
+from configuration.manager import DataManager
 from source.benchmarkers.nes import NetworkEmbeddingBenchmarker
 from source.experiments.ppi_1 import PPIPipeline
 from source.testers.unit_tests import run_all_tests
@@ -176,6 +177,26 @@ class PipelineOrchestrator:
         with logger:
             try:
                 DataUtils.print_header("Starting Protein-Protein Interaction Meta-Pipeline")
+
+                # --- NEW: Data Validation and Restoration Logic ---
+                # This logic now lives at the start of the main application run.
+                data_manager = DataManager(self.base_config)
+                print("\n--- Verifying local data integrity ---")
+                is_data_valid = data_manager.validate_data_from_manifest()
+
+                if not is_data_valid:
+                    print("\n--- Local data is invalid or missing. Attempting to restore from cache... ---")
+                    restored_ok = data_manager.restore_data_from_cache()
+                    if not restored_ok:
+                        print("\n" + "!" * 80)
+                        print("!!! FATAL: Data is missing or corrupt, and could not be restored from cache. !!!")
+                        print("!!! Please run the one-time setup script to download and process all data: !!!")
+                        print("!!!                                                                          !!!")
+                        print("!!!   bash configuration/reset.sh                                            !!!")
+                        print("!" * 80)
+                        sys.exit(1)
+                else:
+                    print("--- Local data is valid. ---")
 
                 # --- NEW: Add dynamic system resource checks at the start ---
                 DataUtils.report_system_resources(self.base_config.BASE_OUTPUT_DIR)

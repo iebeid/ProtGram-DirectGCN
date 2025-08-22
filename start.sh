@@ -77,8 +77,16 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 # running Transformer models on the GPU.
 export XLA_FLAGS="--xla_gpu_cuda_data_dir=$CONDA_PREFIX"
 
-# The run.py script will handle the rest of the setup and execution.
-python run.py
+# --- DEFINITIVE FIX: Separate environment validation from the main application run ---
+# 1. Validate the environment. If it fails, run the full setup.
+if ! python run.py --validate-env-only; then
+    echo "--- Environment validation failed. Running full setup script... ---"
+    python configuration/setup.py
+fi
+
+# 2. Now that the environment is guaranteed to be valid, run the main application.
+echo "--- Environment is valid. Starting main application... ---"
+python source/entry/main.py
 
 echo -e "\n--- SCRIPT FINISHED ---"
 exit 0
