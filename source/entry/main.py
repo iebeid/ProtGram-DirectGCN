@@ -38,8 +38,8 @@ from source.trainers.hyperparameter_optimizer import HyperparameterOptimizer
 from configuration.data_downloader import DataDownloader
 from source.utils.data.data_utils import DataUtils
 from source.utils.logging.file_logger import FileLogger
-from .checkpoints import CheckpointManager
-from .ui import UIManager
+from source.entry.checkpoints import CheckpointManager
+from source.entry.ui import UIManager
 
 
 class PipelineOrchestrator:
