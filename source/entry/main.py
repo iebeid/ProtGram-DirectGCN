@@ -281,8 +281,8 @@ class PipelineOrchestrator:
 
                             if self._run_pre_analysis_and_prompt(config, fasta_file_path):
                                 DataUtils.print_header("Building all n-gram graphs for the main pipeline")
-            # --- DEFINITIVE FIX: Call the builder directly to use the correct config ---
-            ProtGramDataBuilder(config).run()
+                                # --- DEFINITIVE FIX: Call the builder directly to use the correct config ---
+                                ProtGramDataBuilder(config).run()
                                 if not self.ui_manager.prompt_to_continue("Graph Building"): sys.exit(0)
 
                                 generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)
