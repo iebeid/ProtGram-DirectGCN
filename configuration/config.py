@@ -1,7 +1,7 @@
-# ==============================================================================
+'''# ==============================================================================
 # MODULE: configuration/config.py
 # PURPOSE: Centralized configuration loaded from a YAML file.
-# VERSION: 3.4 (Added config validation)
+# VERSION: 3.5 (Corrected TypeError in data source linking)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -425,7 +425,7 @@ class Config:
         self.PROCESSED_FILE_DEPENDENCIES = {
             self.ID_MAPPING_PATH.name: [Path(self.DATA_SOURCES['UNIPROT_ID_MAPPING']['path']).name],
             self.POS_INTERACTIONS_PATH.name: [Path(self.DATA_SOURCES['BIOGRID_INTERACTIONS']['path']).name],
-            self.NEG_INTERACTIONS_PATH.name: [k['path'].name for k,v in self.DATA_SOURCES.items() if k.startswith('NEG_INTERACTIONS')]
+            self.NEG_INTERACTIONS_PATH.name: [v['path'].name for k, v in self.DATA_SOURCES.items() if k.startswith('NEG_INTERACTIONS')]
         }
 
     def _setup_gcn_params(self):
@@ -591,11 +591,14 @@ class Config:
             print("  ✅ Configuration is valid.")
         except ValidationError as e:
             # --- DEFINITIVE FIX: Provide clear, actionable error messages and exit ---
-            print("\n" + "="*80)
+            print("
+" + "="*80)
             print("--- ❌ CONFIGURATION ERROR ---")
             print("  Your 'config.yaml' file has one or more errors:")
             # Pydantic provides a nicely formatted error message.
             print(e)
             print("="*80)
-            print("\n--- Please correct the configuration file and try again. ---")
+            print("
+--- Please correct the configuration file and try again. ---")
             sys.exit(1)  # Exit with an error code
+''
