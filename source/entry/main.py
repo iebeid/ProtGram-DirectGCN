@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import time
+import tempfile
 from pathlib import Path
 
 # --- Add project root to sys.path to allow for relative imports ---
@@ -281,14 +282,14 @@ class PipelineOrchestrator:
 
                             if self._run_pre_analysis_and_prompt(config, fasta_file_path):
                                 DataUtils.print_header("Building all n-gram graphs for the main pipeline")
-                                # --- DEFINITIVE FIX: Call the builder directly to use the correct config ---
+                                # --- DEFINITIVE FIX: Correct indentation for the entire block ---
                                 ProtGramDataBuilder(config).run()
-                                if not self.ui_manager.prompt_to_continue("Graph Building"): sys.exit(0)
+                                if not self.ui_manager.prompt_to_continue("Graph Building"):
+                                    sys.exit(0)
 
                                 generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)
-                                # --- FIX: Ensure generated_files is a list before extending ---
                                 generated_files = generated_files if isinstance(generated_files, list) else []
-                                config.LP_EMBEDDING_FILES_TO_EVALUATE = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_files # noqa
+                                config.LP_EMBEDDING_FILES_TO_EVALUATE = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_files
 
                                 # --- NEW: Run Hyperparameter Optimization ---
                                 if config.RUN_HPO:
