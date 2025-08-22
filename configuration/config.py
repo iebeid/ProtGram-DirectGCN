@@ -1,7 +1,7 @@
-'''# ==============================================================================
+# ==============================================================================
 # MODULE: configuration/config.py
 # PURPOSE: Centralized configuration loaded from a YAML file.
-# VERSION: 3.5 (Corrected TypeError in data source linking)
+# VERSION: 3.6 (Corrected syntax errors and added requirements)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -9,15 +9,12 @@ import os
 from pathlib import Path
 from typing import Optional, Dict, List, Any
 import yaml
-import psutil
 import sys
 from pydantic import BaseModel, Field, ValidationError
 
 
 # ==============================================================================
 # Pydantic Validation Schemas
-# These models define the expected structure and types for config.yaml.
-# They are used for validation only and do not store the configuration state.
 # ==============================================================================
 
 class DataUrls(BaseModel):
@@ -591,14 +588,11 @@ class Config:
             print("  ✅ Configuration is valid.")
         except ValidationError as e:
             # --- DEFINITIVE FIX: Provide clear, actionable error messages and exit ---
-            print("
-" + "="*80)
+            print("\n" + "="*80)
             print("--- ❌ CONFIGURATION ERROR ---")
             print("  Your 'config.yaml' file has one or more errors:")
             # Pydantic provides a nicely formatted error message.
             print(e)
             print("="*80)
-            print("
---- Please correct the configuration file and try again. ---")
+            print("\n--- Please correct the configuration file and try again. ---")
             sys.exit(1)  # Exit with an error code
-''
