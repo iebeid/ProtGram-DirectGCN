@@ -136,8 +136,10 @@ class GraphCoarsener:
             L_coarsened_index, L_coarsened_weight = get_laplacian(coarsened_edge_index, coarsened_edge_weight, normalization='sym', num_nodes=num_coarsened_nodes)
             L_coarsened_scipy = to_scipy_sparse_matrix(L_coarsened_index, L_coarsened_weight, num_nodes=num_coarsened_nodes)
 
-            eigvals_orig = np.sort(np.real(sp_linalg.eigs(L_orig_scipy, k=k_eigenvals, which='SM', return_eigenvectors=False)))
-            eigvals_coarsened = np.sort(np.real(sp_linalg.eigs(L_coarsened_scipy, k=k_eigenvals, which='SM', return_eigenvectors=False)))
+            # --- DEFINITIVE FIX for Numerical Stability ---
+            # Use eigsh for symmetric matrices like the Laplacian. It's faster and more stable.
+            eigvals_orig = np.sort(sp_linalg.eigsh(L_orig_scipy, k=k_eigenvals, which='SM', return_eigenvectors=False))
+            eigvals_coarsened = np.sort(sp_linalg.eigsh(L_coarsened_scipy, k=k_eigenvals, which='SM', return_eigenvectors=False))
             spectral_distance = np.linalg.norm(eigvals_orig - eigvals_coarsened)
             print(f"    - Spectral Distance (L2):  {spectral_distance:.4f} (Lower is better)")
         except Exception as e:

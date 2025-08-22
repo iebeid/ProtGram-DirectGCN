@@ -20,6 +20,7 @@ import tensorflow as tf
 # --- Local Application Imports ---
 from configuration.config import Config
 from source.benchmarkers.gnns import GNNBenchmarker
+from source.data_builders.protgram import ProtGramDataBuilder
 from configuration.manager import DataManager
 from source.benchmarkers.nes import NetworkEmbeddingBenchmarker
 from source.experiments.ppi_1 import PPIPipeline
@@ -135,9 +136,11 @@ class PipelineOrchestrator:
             if config.RUN_SINGLETON_GCN_EVAL:
                 DataUtils.print_header("Ensuring n=1 Graph is Built for Singleton Evaluation")
                 singleton_config = copy.deepcopy(config)
-                singleton_config.PROTGRAM_NGRAM_MAX_N = 1
-                build_script_path = singleton_config.BASE_SOURCE_DIR / "data_builders" / "build_graphs.py"
-                subprocess.run([sys.executable, str(build_script_path), "--fasta_path", str(fasta_file_path)], check=True)
+                singleton_config.PROTGRAM_NGRAM_MAX_N = 1 # Only build the n=1 graph
+
+                # --- DEFINITIVE FIX: Call the builder directly instead of using a subprocess ---
+                # This ensures the modified singleton_config is actually used.
+                ProtGramDataBuilder(singleton_config).run()
 
                 # --- FIX: Use the new directory-based loading for graphs ---
                 # The graph is now saved as a directory, not a single .pkl file.

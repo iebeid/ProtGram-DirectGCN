@@ -8,8 +8,7 @@ import numpy as np
 import torch
 from torch_geometric.data import Data
 from torch_geometric.utils import add_self_loops, degree, subgraph
-
-from graph import Graph
+from .graph import Graph
 
 
 class DirectedNgramGraph(Graph):
