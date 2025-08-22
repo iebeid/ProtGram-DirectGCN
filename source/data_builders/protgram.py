@@ -252,8 +252,6 @@ class ProtGramDataBuilder:
                 graph_object.save_to_dir(output_dir_path)
                 print(f"  Graph for n={n} saved to {output_dir_path}")
 
-                # --- FIX: Removed call to non-existent function DataUtils.log_graph_statistics ---
-
                 del graph_object, idx_to_node
                 gc.collect()
 

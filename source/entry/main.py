@@ -9,14 +9,18 @@ import copy
 import os
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
+
+# --- Add project root to sys.path to allow for relative imports ---
+# This must be done BEFORE any local modules (like 'configuration') are imported.
+project_root = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(project_root))
+
 from typing import List, Dict
 
 import mlflow
 import tensorflow as tf
-
 # --- Local Application Imports ---
 from configuration.config import Config
 from source.benchmarkers.gnns import GNNBenchmarker
@@ -277,8 +281,8 @@ class PipelineOrchestrator:
 
                             if self._run_pre_analysis_and_prompt(config, fasta_file_path):
                                 DataUtils.print_header("Building all n-gram graphs for the main pipeline")
-                                build_script_path = config.BASE_SOURCE_DIR / "data_builders" / "build_graphs.py"
-                                subprocess.run([sys.executable, str(build_script_path), "--fasta_path", str(fasta_file_path)], check=True)
+            # --- DEFINITIVE FIX: Call the builder directly to use the correct config ---
+            ProtGramDataBuilder(config).run()
                                 if not self.ui_manager.prompt_to_continue("Graph Building"): sys.exit(0)
 
                                 generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)

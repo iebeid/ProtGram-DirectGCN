@@ -79,7 +79,7 @@ class SingletonXGCNTrainer:
         try:
             train_idx, test_idx = train_test_split(
                 node_indices, test_size=self.config.SINGLETON_EVAL_TEST_SPLIT,
-                random_state=self.config.RANDOM_STATE, stratify=y_for_stratify.numpy()
+                random_state=self.config.RANDOM_STATE, stratify=y_for_stratify.cpu().numpy()
             )
         except ValueError:
             train_idx, test_idx = train_test_split(
