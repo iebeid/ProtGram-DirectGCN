@@ -287,9 +287,13 @@ class DataManager:
                         response.raise_for_status()
 
                         content_type = response.headers.get('content-type', '')
-                        if post_process_type == 'unzip' and 'application/zip' not in content_type and 'application/x-zip-compressed' not in content_type:
-                            raise IOError(f"Downloaded file is not a zip file. Content-Type: '{content_type}'. Check URL or User-Agent.")
 
+                        # --- DEFINITIVE FIX: Relax the content-type check for zip files ---
+                        # Some servers (like BioGRID's) send a generic 'application/download'
+                        # instead of a specific zip type. We'll now log a warning but proceed,
+                        # relying on the zipfile library to fail if it's truly not a zip file.
+                        if post_process_type == 'unzip' and 'application/zip' not in content_type and 'application/x-zip-compressed' not in content_type:
+                            print(f"    - WARNING: Server reported Content-Type as '{content_type}', not a standard zip type. Proceeding based on file extension.")
                         total_size = int(response.headers.get('content-length', 0))
                         with open(download_target_path, 'wb') as f, tqdm(total=total_size, unit='iB', unit_scale=True, desc=download_target_path.name) as pbar:
                             for chunk in response.iter_content(chunk_size=8192):
