@@ -70,7 +70,9 @@ source "$CONDA_BASE/etc/profile.d/conda.sh"
 # --- NEW: Proactively accept Conda Terms of Service ---
 # On fresh Anaconda installations, the ToS for default channels must be accepted.
 echo "INFO: Proactively accepting Conda Terms of Service to prevent interactive prompts..."
-conda config --set anaconda_tos_accepted yes
+# --- DEFINITIVE FIX: Handle both old and new Conda versions ---
+# Older Conda versions don't have this key and will error. `|| true` ensures the script continues.
+conda config --set anaconda_tos_accepted yes || true
 echo "SUCCESS: Conda Terms of Service handled."
 
 # --- Step 0.5: Dependency Checks (Git, Git LFS) ---
