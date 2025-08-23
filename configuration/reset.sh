@@ -70,9 +70,12 @@ source "$CONDA_BASE/etc/profile.d/conda.sh"
 # --- NEW: Proactively accept Conda Terms of Service ---
 # On fresh Anaconda installations, the ToS for default channels must be accepted.
 echo "INFO: Proactively accepting Conda Terms of Service to prevent interactive prompts..."
-# --- DEFINITIVE FIX: Handle both old and new Conda versions ---
-# Older Conda versions don't have this key and will error. `|| true` ensures the script continues.
+# --- DEFINITIVE FIX: Handle multiple Conda versions and their ToS mechanisms ---
+# Newer versions use a single config key. Older versions use the 'tos' subcommand.
+# We try all known methods, and `|| true` ensures the script continues if a command is not supported.
 conda config --set anaconda_tos_accepted yes || true
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
 echo "SUCCESS: Conda Terms of Service handled."
 
 # --- Step 0.5: Dependency Checks (Git, Git LFS) ---
@@ -101,11 +104,17 @@ echo -e "\n--- STEP 2: Re-creating a minimal Conda Environment '$ENV_NAME' ---"
 echo "INFO: This creates a bare-bones Python environment. The full set of packages"
 echo "      will be installed later by the 'setup.py' script."
 conda create -n "$ENV_NAME" -c conda-forge python="$PYTHON_VERSION" -y
-# --- DEFINITIVE FIX: Explicitly define paths to the new environment's executables ---
-# 'conda activate' does not work reliably in non-interactive scripts.
-# We must call the executables directly to ensure we are using the correct environment.
-NEW_ENV_PYTHON="$CONDA_BASE/envs/$ENV_NAME/bin/python"
-NEW_ENV_PIP="$CONDA_BASE/envs/$ENV_NAME/bin/pip"
+
+# --- DEFINITIVE FIX: Dynamically find the new environment's path ---
+# Instead of assuming the env is in `$CONDA_BASE/envs`, we parse conda's output
+# to find the actual location. This handles system vs. user-level installations.
+NEW_ENV_PATH=$(conda info --envs | grep "$ENV_NAME" | awk '{print $NF}')
+if [ -z "$NEW_ENV_PATH" ]; then
+    echo "ERROR: Could not find the path for the newly created environment '$ENV_NAME'."
+    exit 1
+fi
+NEW_ENV_PYTHON="$NEW_ENV_PATH/bin/python"
+NEW_ENV_PIP="$NEW_ENV_PATH/bin/pip"
 
 echo "SUCCESS: Environment '$ENV_NAME' created."
 "$NEW_ENV_PYTHON" --version
@@ -162,27 +171,28 @@ else
     exit 1
 fi
 
-# --- CRITICAL FIX: Export the Conda environment's library path. ---
+# --- CRITICAL FIX: Export the new Conda environment's library path. ---
 # This ensures that TensorFlow and other programs can find the CUDA libraries (.so files)
 # that were installed by Conda. This resolves the "Cannot dlopen" errors at runtime.
-export LD_LIBRARY_PATH="$CONDA_BASE/envs/$ENV_NAME/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$NEW_ENV_PATH/lib:$LD_LIBRARY_PATH"
 
 # --- DEFINITIVE FIX for Reproducibility: Configure CUDA workspace ---
 # This environment variable is required by `torch.use_deterministic_algorithms(True)`
 # to ensure that operations like `index_add` (used by PyG's scatter_add) are deterministic.
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
 
-# --- CRITICAL FIX for XLA/JIT: Point TensorFlow's XLA compiler to the Conda CUDA toolkit. ---
+# --- CRITICAL FIX for XLA/JIT: Point TensorFlow's XLA compiler to the new Conda CUDA toolkit. ---
 # This resolves the "libdevice not found" and "JIT compilation failed" errors when
 # running Transformer models on the GPU.
-export XLA_FLAGS="--xla_gpu_cuda_data_dir=$CONDA_BASE/envs/$ENV_NAME"
+export XLA_FLAGS="--xla_gpu_cuda_data_dir=$NEW_ENV_PATH"
+
+# --- DEFINITIVE FIX: Automate the final setup step ---
+# Instead of prompting the user, directly call the setup script to complete the installation.
+echo -e "\n--- STEP 4: Running the main environment setup script (setup.py) ---"
+"$NEW_ENV_PYTHON" -u configuration/setup.py
 
 echo -e "\n\n"
 echo "================================================================================"
-echo "--- RESET SCRIPT FINISHED ---"
-echo "--- The project code has been reset and a minimal Conda environment created. ---"
-echo -e "\n--- NEXT STEP: You must now set up the full environment. ---"
-echo "--- Activate the new environment and run the setup script with the following command: ---"
-echo "    conda activate $ENV_NAME && python configuration/setup.py"
-echo -e "\n--- After setup is complete, you can use 'start.sh' for subsequent runs. ---"
+echo "--- FULL RESET AND SETUP COMPLETE ---"
+echo -e "\n--- You can now use 'start.sh' for subsequent runs. ---"
 exit 0

@@ -41,9 +41,16 @@ fi
 conda activate "$ENV_NAME"
 
 # --- DEFINITIVE FIX: Use the full path to the environment's Python executable ---
-ENV_PYTHON="$CONDA_BASE/envs/$ENV_NAME/bin/python"
-if [ ! -f "$ENV_PYTHON" ]; then
-    echo "ERROR: Could not find the Python executable for the '$ENV_NAME' environment."
+# --- DEFINITIVE FIX: Dynamically find the environment's path ---
+# This handles system vs. user-level installations.
+ENV_PATH=$(conda info --envs | grep -w "$ENV_NAME" | awk '{print $NF}')
+if [ -z "$ENV_PATH" ]; then
+    echo "ERROR: Could not find the path for the Conda environment '$ENV_NAME'."
+    exit 1
+fi
+ENV_PYTHON="$ENV_PATH/bin/python"
+if [ ! -x "$ENV_PYTHON" ]; then
+    echo "ERROR: Could not find the Python executable at '$ENV_PYTHON'."
     exit 1
 fi
 
