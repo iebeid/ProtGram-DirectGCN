@@ -98,10 +98,14 @@ if __name__ == "__main__":
     config_dir = project_root / "configuration"
     env_yml_output_path = config_dir / ENVIRONMENT_YML_FILE
 
-    conda_prefix = os.environ.get("CONDA_PREFIX")
+    # --- DEFINITIVE FIX: Use sys.prefix to robustly find the environment path ---
+    # This is more reliable than os.environ.get("CONDA_PREFIX") because it works
+    # even when the script is called directly by the env's python executable
+    # from a non-activated shell.
+    conda_prefix = sys.prefix
     if not conda_prefix:
-        print("FATAL ERROR: CONDA_PREFIX environment variable not found.")
-        print("This script must be run from within an activated conda environment.")
+        print(f"FATAL ERROR: Could not determine Conda environment prefix from sys.prefix: {conda_prefix}")
+        print("This script must be run using the Python executable from the target Conda environment.")
         sys.exit(1)
 
     print(f"--- Using Conda prefix for library paths: {conda_prefix} ---")
