@@ -20,21 +20,21 @@ echo "INFO: This script uses 'sudo' to manage system services and mounts."
 echo "You may be prompted for your password once at the beginning."
 sudo -v
 echo "SUCCESS: Sudo credentials refreshed."
-read -r -p "This script needs to install system-level build tools (like build-essential, cmake). Is it OK to proceed? (y/n): " install_confirm
+read -r -p "This script needs to install system-level tools (like git, git-lfs, build-essential, cmake). Is it OK to proceed? (y/n): " install_confirm
 if [[ "$install_confirm" == "y" || "$install_confirm" == "Y" ]]; then
-    echo "INFO: Installing comprehensive system-level build tools..."
+    echo "INFO: Installing comprehensive system-level tools..."
     if command -v apt-get &> /dev/null; then
         echo "  - Debian/Ubuntu based system detected. Using apt-get."
-        sudo apt-get update && sudo apt-get install -y build-essential cmake libssl-dev autoconf automake libtool pkg-config
+        sudo apt-get update && sudo apt-get install -y build-essential cmake libssl-dev autoconf automake libtool pkg-config git git-lfs
     elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
         echo "  - RedHat/CentOS/Fedora based system detected. Using dnf/yum."
-        sudo yum install -y gcc-c++ make cmake openssl-devel autoconf automake libtool pkgconfig
+        sudo yum install -y gcc-c++ make cmake openssl-devel autoconf automake libtool pkgconfig git git-lfs
     elif command -v pacman &> /dev/null; then
         echo "  - Arch-based system detected. Using pacman."
-        sudo pacman -Syu --noconfirm base-devel cmake openssl pkg-config autoconf automake libtool
+        sudo pacman -Syu --noconfirm base-devel cmake openssl pkg-config autoconf automake libtool git git-lfs
     elif command -v brew &> /dev/null; then
         echo "  - macOS detected. Using Homebrew."
-        brew install cmake openssl pkg-config autoconf automake libtool
+        brew install cmake openssl pkg-config autoconf automake libtool git git-lfs
     else
         echo "  - WARNING: Could not detect package manager. Skipping system dependency installation."
         echo "  - Please ensure 'build-essential' (or equivalent), 'cmake', and 'libssl-dev' are installed."
