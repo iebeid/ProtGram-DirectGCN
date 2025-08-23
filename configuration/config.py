@@ -195,9 +195,9 @@ class HPOSearchSpaceItem(BaseModel):
 
 class HPOParams(BaseModel):
     RUN_HPO: bool
-    HPO_N_TRIALS: int = Field(gt=0)
-    HPO_TARGET_EMBEDDING_MODEL: str
-    HPO_PPI_MLP_SEARCH_SPACE: Dict[str, HPOSearchSpaceItem]
+    HPO_N_TRIALS: int = Field(default=50, gt=0)
+    HPO_TARGET_EMBEDDING_MODEL: str = ""
+    HPO_PPI_MLP_SEARCH_SPACE: Dict[str, HPOSearchSpaceItem] = Field(default_factory=dict)
 
 class ValidationSchema(BaseModel):
     """The root model for validating the entire
@@ -215,7 +215,7 @@ class ValidationSchema(BaseModel):
     singleton_eval: SingletonEvalParams
     ppi_evaluation: PPIEvaluationParams
     mlflow: MLflowParams
-    hyperparameter_optimization: HPOParams
+    hyperparameter_optimization: HPOParams = Field(default_factory=HPOParams)
 
 class Config:
     def __init__(self, config_path: str = 'configuration/config.yaml'):
@@ -223,6 +223,9 @@ class Config:
         self._config = self._load_yaml_config(config_path)
 
         # --- 1. GENERAL SETTINGS (from YAML) ---
+        # --- VALIDATE CONFIGURATION FIRST (Fail-Fast) ---
+        self._validate_config()
+
         self.RANDOM_STATE: int = self._config['RANDOM_STATE']
         self.DEBUG_VERBOSE: bool = self._config['DEBUG_VERBOSE']
 
@@ -267,9 +270,6 @@ class Config:
 
         # --- 14. HYPERPARAMETER OPTIMIZATION (from YAML) ---
         self._setup_hpo_params()
-
-        # --- 15. VALIDATE CONFIGURATION ---
-        self._validate_config()
 
     def _load_yaml_config(self, config_path: str) -> Dict:
         """Loads the YAML configuration file."""
@@ -567,11 +567,13 @@ class Config:
 
     def _setup_hpo_params(self):
         """Sets HPO parameters statically from the YAML config."""
-        params = self._config.get('hyperparameter_optimization', {})
-        self.RUN_HPO = params.get('RUN_HPO', False)
-        self.HPO_N_TRIALS = params.get('HPO_N_TRIALS', 50)
-        self.HPO_TARGET_EMBEDDING_MODEL = params.get('HPO_TARGET_EMBEDDING_MODEL', '')
-        self.HPO_PPI_MLP_SEARCH_SPACE = params.get('HPO_PPI_MLP_SEARCH_SPACE', {})
+        # Defaults are handled by the Pydantic schema. If the section is missing,
+        # an empty object with defaults is created during validation.
+        params = self._config['hyperparameter_optimization']
+        self.RUN_HPO = params['RUN_HPO']
+        self.HPO_N_TRIALS = params['HPO_N_TRIALS']
+        self.HPO_TARGET_EMBEDDING_MODEL = params['HPO_TARGET_EMBEDDING_MODEL']
+        self.HPO_PPI_MLP_SEARCH_SPACE = params['HPO_PPI_MLP_SEARCH_SPACE']
 
     def _validate_config(self):
         """
@@ -580,11 +582,7 @@ class Config:
         """
         print("--- Validating configuration parameters using Pydantic schema... ---")
         try:
-            # Pass the raw loaded dictionary to the Pydantic model for validation.
-            # Add the new HPO section to the dictionary being validated.
-            config_to_validate = self._config.copy()
-            config_to_validate['hyperparameter_optimization'] = self._config.get('hyperparameter_optimization', {})
-            ValidationSchema.model_validate(config_to_validate)
+            self._config = ValidationSchema.model_validate(self._config).model_dump()
             print("  ✅ Configuration is valid.")
         except ValidationError as e:
             # --- DEFINITIVE FIX: Provide clear, actionable error messages and exit ---

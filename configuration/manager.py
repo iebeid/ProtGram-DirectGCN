@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/manager.py
 # PURPOSE: Handles the verification and acquisition of all external data files.
-# VERSION: 7.2 (Corrected cleanup logic to prevent deleting essential files)
+# VERSION: 8.0 (Added fail-fast error handling to setup)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -9,6 +9,7 @@ import gzip
 import json
 import os
 import shutil
+import sys
 import time
 import zipfile
 from pathlib import Path
@@ -43,13 +44,11 @@ class DataManager:
     def _copy_to_cache(self, source_path: Path):
         """
         Copies a file or directory to the persistent cache if it exists.
-        This is now robust and handles both files and directories (like .parquet).
         """
         if not source_path.exists() or not self.config.PERSISTENT_DATA_CACHE:
             return
         cache_path = self.config.PERSISTENT_DATA_CACHE / source_path.name
 
-        # If the cache destination exists, remove it to ensure a clean copy.
         if cache_path.is_dir():
             shutil.rmtree(cache_path)
         elif cache_path.exists():
@@ -60,28 +59,45 @@ class DataManager:
             shutil.copytree(source_path, cache_path)
         elif source_path.is_file():
             shutil.copy(source_path, cache_path)
-        else:
-            print(f"  - WARNING: Source path '{source_path}' is not a file or directory. Cannot cache.")
 
     def run_full_setup(self):
         """
         Executes the entire data pipeline: download, process, and create manifest.
-        This is a long-running, one-time operation.
+        If any critical step fails, the entire process will abort.
         """
         print("\n--- Running Data Setup and Processing ---")
         print("  - Ensuring project data directory structure exists...")
 
         # 1. Download all raw source files
-        self._download_all_sources()
+        if not self._download_all_sources():
+            print("\n" + "!" * 80)
+            print("!!! FATAL: Data download failed. Cannot proceed with setup. !!!")
+            print("!!! Please check the URLs in your config and your network connection. !!!")
+            print("!" * 80)
+            sys.exit(1)
 
         # 2. Process raw files into final Parquet format and cache them
         processor = DataProcessor(self.config)
-        processor._process_uniprot_mapping()
-        self._copy_to_cache(self.config.ID_MAPPING_PATH)
-        processor._process_negative_interactions()
-        self._copy_to_cache(self.config.NEG_INTERACTIONS_PATH)
-        processor._process_biogrid_interactions()
-        self._copy_to_cache(self.config.POS_INTERACTIONS_PATH)
+        try:
+            print("\n--- Step 2a: Processing UniProt ID Mapping File ---")
+            processor._process_uniprot_mapping()
+            self._copy_to_cache(self.config.ID_MAPPING_PATH)
+
+            print("\n--- Step 2b: Processing Negative Interaction Files ---")
+            processor._process_negative_interactions()
+            self._copy_to_cache(self.config.NEG_INTERACTIONS_PATH)
+
+            print("\n--- Step 2c: Processing BioGRID Positive Interactions ---")
+            processor._process_biogrid_interactions()
+            self._copy_to_cache(self.config.POS_INTERACTIONS_PATH)
+        except Exception as e:
+            print("\n" + "!" * 80)
+            print(f"!!! FATAL: Data processing failed: {e} !!!")
+            print("!!! Setup cannot continue. The manifest will not be generated. !!!")
+            print("!" * 80)
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
 
         # 3. Generate manifest of all data files
         self._generate_manifest()
@@ -89,7 +105,7 @@ class DataManager:
         # 4. Clean up intermediate files
         self._cleanup_intermediate_files()
 
-        print("--- Data Setup and Processing Complete ---")
+        print("\n--- Data Setup and Processing Complete ---")
 
     def validate_data_from_manifest(self) -> bool:
         """Validates the current data directory against the cached manifest."""
@@ -113,11 +129,8 @@ class DataManager:
                 all_valid = False
                 continue
 
-            # For directories, just check for existence.
-            # For files, check size and checksum.
             is_dir = properties.get('type') == 'directory'
             if is_dir:
-                # This is a directory, just confirm it exists.
                 print(f"  - ✅ VALID: {relative_path_str}")
                 continue
 
@@ -151,13 +164,13 @@ class DataManager:
                 manifest = json.load(f)
 
             processed_files_in_cache = {
-                Path(p).name for p in self.config.PROCESSED_FILE_DEPENDENCIES.keys()
-                if (self.config.PERSISTENT_DATA_CACHE / Path(p).name).exists()
+                name for name in self.config.PROCESSED_FILE_DEPENDENCIES
+                if (self.config.PERSISTENT_DATA_CACHE / name).exists()
             }
             raw_files_to_skip = set()
-            for processed_file, raw_dependencies in self.config.PROCESSED_FILE_DEPENDENCIES.items():
-                if processed_file in processed_files_in_cache:
-                    raw_files_to_skip.update(raw_dependencies)
+            for processed_file_name, raw_dependency_names in self.config.PROCESSED_FILE_DEPENDENCIES.items():
+                if processed_file_name in processed_files_in_cache:
+                    raw_files_to_skip.update(raw_dependency_names)
             
             if raw_files_to_skip:
                 print(f"  Smart Restore: Will skip restoring raw files: {raw_files_to_skip}")
@@ -166,7 +179,6 @@ class DataManager:
             for relative_path_str, properties in manifest.items():
                 project_file_path = self.config.PROJECT_ROOT / relative_path_str
                 
-                # If a file or directory already exists, skip it.
                 if project_file_path.exists():
                     continue
 
@@ -210,7 +222,6 @@ class DataManager:
                 elif name == 'KarateClub':
                     KarateClub()
                 
-                # After downloading, copy the dataset directory to the cache.
                 dataset_dir = dataset_root / name
                 if dataset_dir.exists() and dataset_dir.is_dir():
                     self._copy_to_cache(dataset_dir)
@@ -218,8 +229,8 @@ class DataManager:
             except Exception as e:
                 print(f"    - WARNING: Failed to download PyG dataset '{name}': {e}")
 
-    def _download_all_sources(self):
-        """Downloads and extracts all data sources defined in the config."""
+    def _download_all_sources(self) -> bool:
+        """Downloads and extracts all data sources, aborting if a critical file fails."""
         print("\n--- Step 1: Downloading and Extracting Raw Data ---")
         if hasattr(self.config, 'PERSISTENT_DATA_CACHE'):
             self.config.PERSISTENT_DATA_CACHE.mkdir(parents=True, exist_ok=True)
@@ -229,8 +240,8 @@ class DataManager:
                 continue
 
             final_path = Path(source_info['path'])
-            is_cacheable = source_info.get('cacheable', False)
-            cache_path = self.config.PERSISTENT_DATA_CACHE / final_path.name if is_cacheable else None
+            is_critical = source_info.get('critical', True)
+            cache_path = self.config.PERSISTENT_DATA_CACHE / final_path.name if source_info.get('cacheable', False) else None
 
             post_process_type = source_info.get('post_process')
             download_target_path = final_path
@@ -244,7 +255,7 @@ class DataManager:
 
             if DataProcessor._is_file_valid(final_path):
                 print(f"☑ Found and verified raw file: {final_path.relative_to(self.config.PROJECT_ROOT)}")
-                self._copy_to_cache(final_path)  # Ensure it's cached for future runs
+                self._copy_to_cache(final_path)
                 continue
 
             if cache_path and DataProcessor._is_file_valid(cache_path):
@@ -260,24 +271,24 @@ class DataManager:
                 continue
 
             max_retries = 3
+            download_success = False
             for attempt in range(max_retries):
                 try:
                     if 'drive.google.com' in url:
                         if not GDOWN_AVAILABLE:
-                            print(f"  ERROR: URL for '{key}' is a Google Drive link, but 'gdown' is not installed. Skipping.")
-                            break
+                            raise RuntimeError("URL is a Google Drive link, but 'gdown' is not installed.")
                         print(f"Downloading '{download_target_path.name}' from Google Drive...")
                         gdown.download(url, str(download_target_path), quiet=False, fuzzy=True)
                     else:
                         download_target_path.parent.mkdir(parents=True, exist_ok=True)
                         print(f"Downloading from {url} to {download_target_path.name}...")
                         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-                        response = requests.get(url, stream=True, verify=False, headers=headers)
+                        response = requests.get(url, stream=True, headers=headers)
+                        response.raise_for_status()
 
                         content_type = response.headers.get('content-type', '')
-                        if post_process_type == 'unzip' and 'application/zip' not in content_type:
+                        if post_process_type == 'unzip' and 'application/zip' not in content_type and 'application/x-zip-compressed' not in content_type:
                             raise IOError(f"Downloaded file is not a zip file. Content-Type: '{content_type}'. Check URL or User-Agent.")
-                        response.raise_for_status()
 
                         total_size = int(response.headers.get('content-length', 0))
                         with open(download_target_path, 'wb') as f, tqdm(total=total_size, unit='iB', unit_scale=True, desc=download_target_path.name) as pbar:
@@ -297,15 +308,19 @@ class DataManager:
                                 shutil.copyfileobj(zf, f_out)
 
                     self._copy_to_cache(final_path)
-                    break  # Success, exit retry loop
+                    download_success = True
+                    break
                 except Exception as e:
                     print(f"Error acquiring file for '{key}' on attempt {attempt + 1}/{max_retries}: {e}")
-                    if attempt + 1 == max_retries:
-                        print(f"  - ❌ FAILED to acquire file for '{key}' after {max_retries} attempts.")
-                    else:
-                        time.sleep(5)  # Wait before retrying
+                    if attempt + 1 < max_retries:
+                        time.sleep(5)
+            
+            if not download_success and is_critical:
+                print(f"  - ❌ FATAL: Failed to download CRITICAL file: {key}. Aborting setup.")
+                return False
 
         self._download_benchmark_datasets()
+        return True
 
     def _generate_manifest(self):
         """Generates a checksum manifest for all data files."""
@@ -313,10 +328,8 @@ class DataManager:
         manifest = {}
         files_to_manifest = []
         for dirpath, dirnames, filenames in os.walk(self.config.BASE_DATA_DIR):
-            # Add directories (like .parquet) to the manifest
             for d in dirnames:
                 files_to_manifest.append(Path(dirpath) / d)
-            # Add files
             for f in filenames:
                 files_to_manifest.append(Path(dirpath) / f)
 
@@ -343,23 +356,20 @@ class DataManager:
 
         manifest_path = self.config.DATA_MANIFEST_PATH
         try:
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
             with open(manifest_path, 'w') as f:
                 json.dump(manifest, f, indent=2)
             print(f"  - ✅ Manifest saved to: {manifest_path}")
         except IOError as e:
             print(f"  - ❌ ERROR: Could not save manifest file: {e}")
-            return
 
     def _cleanup_intermediate_files(self):
         """Removes only the downloaded archive files."""
         print("\n--- Step 4: Cleaning Up Intermediate Files ---")
         for f_path in set(self.files_to_cleanup):
-            if f_path.exists() and (f_path.name.endswith('.gz') or f_path.name.endswith('.zip')):
+            if f_path.exists():
                 try:
-                    if f_path.is_dir():
-                        shutil.rmtree(f_path)
-                    else:
-                        f_path.unlink()
+                    f_path.unlink()
                     print(f"  - Cleaned up: {f_path.name}")
                 except OSError as e:
                     print(f"  - WARNING: Could not clean up file {f_path.name}. Error: {e}")

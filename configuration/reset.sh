@@ -29,6 +29,9 @@ if [[ "$install_confirm" == "y" || "$install_confirm" == "Y" ]]; then
     elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
         echo "  - RedHat/CentOS/Fedora based system detected. Using dnf/yum."
         sudo yum install -y gcc-c++ make cmake openssl-devel autoconf automake libtool pkgconfig
+    elif command -v pacman &> /dev/null; then
+        echo "  - Arch-based system detected. Using pacman."
+        sudo pacman -Syu --noconfirm base-devel cmake openssl pkg-config autoconf automake libtool
     elif command -v brew &> /dev/null; then
         echo "  - macOS detected. Using Homebrew."
         brew install cmake openssl pkg-config autoconf automake libtool
