@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/setup.py
 # PURPOSE: Sets up the Python environment and generates a validation file.
-# VERSION: 28.0 (Integrated Conda activation scripts for LD_LIBRARY_PATH)
+# VERSION: 29.0 (Ensures a clean data setup by removing old cache)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -15,10 +15,10 @@ from pathlib import Path
 # --- Configuration ---
 ENV_NAME = "ppi-env"
 PYTHON_VERSION = "3.11"
-CUDA_VERSION = "12.1"  # Stable version for both TF 2.15 and PyTorch 2.1
-PYTORCH_VERSION = "2.1.2"  # Downgraded to match cuDNN 8.9 requirement
-TORCHVISION_VERSION = "0.16.2"  # Corresponding torchvision for PyTorch 2.1.2
-TORCHAUDIO_VERSION = "2.1.2"  # Corresponding torchaudio for PyTorch 2.1.2
+CUDA_VERSION = "12.1"
+PYTORCH_VERSION = "2.1.2"
+TORCHVISION_VERSION = "0.16.2"
+TORCHAUDIO_VERSION = "2.1.2"
 ENVIRONMENT_YML_FILE = "environment.yml"
 
 
@@ -41,7 +41,6 @@ def create_setup_script(commands: list[str], project_root: Path) -> Path:
         os.chmod(script_path, 0o755)
     return script_path
 
-
 def run_script(script_path: Path):
     """Executes the setup script and streams its output."""
     is_windows = platform.system() == "Windows"
@@ -50,8 +49,6 @@ def run_script(script_path: Path):
         executor = ['cmd', '/c'] if is_windows else []
         command_to_run = executor + [str(script_path)]
 
-        # Let the subprocess inherit stdout/stderr directly so that
-        # interactive elements like tqdm can render correctly.
         process = subprocess.Popen(
             command_to_run,
             text=True,
@@ -72,7 +69,6 @@ def run_script(script_path: Path):
         if os.path.exists(script_path):
             os.remove(script_path)
             print(f"--- Cleaned up temporary script file: {script_path.name} ---")
-
 
 def get_conda_base_path() -> str | None:
     """Checks if conda is installed and returns the base path if found."""
@@ -110,8 +106,6 @@ if __name__ == "__main__":
 
     print(f"--- Using Conda prefix for library paths: {conda_prefix} ---")
 
-    # --- Define the content for the activation scripts ---
-    # This ensures LD_LIBRARY_PATH is set correctly whenever the environment is activated.
     activate_script_content = (
         'export OLD_LD_LIBRARY_PATH="${LD_LIBRARY_PATH}"\\n'
         'export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"'
@@ -135,7 +129,7 @@ if __name__ == "__main__":
         "until " + (f"conda install -y "
                     f"-c nvidia -c conda-forge "
                     f"python={PYTHON_VERSION} "
-                    f"'cuda-toolkit={CUDA_VERSION}' 'cuda-compiler={CUDA_VERSION}' 'cudnn=8.9' " # --- FIX: Pin scipy to a version compatible with gensim ---
+                    f"'cuda-toolkit={CUDA_VERSION}' 'cuda-compiler={CUDA_VERSION}' 'cudnn=8.9' "
                     f"dask tqdm biopython matplotlib 'scipy<1.14.0' scikit-learn gensim python-louvain seaborn pandas h5py pyyaml networkx=3.2.1"
                     ) + "; do",
         "    COUNT=$((COUNT+1))",
@@ -153,10 +147,6 @@ if __name__ == "__main__":
          f"\"tensorflow<2.16\" tf-keras "
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} --extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"
          ),
-        # --- DEFINITIVE FIX: This is the key to a stable environment. ---
-        # We must remove ALL CUDA-related libraries installed by pip. This forces
-        # both PyTorch and TensorFlow to use the single, consistent set of libraries
-        # installed by Conda in Stage 1. This resolves all conflicts.
         "echo '--- Stage 2.5: Forcing library consistency by removing ALL pip-installed CUDA libs ---'",
         "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 nvidia-nccl-cu12 nvidia-nvtx-cu12 nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-cupti-cu12 nvidia-nvjitlink-cu12",
 
@@ -182,15 +172,10 @@ if __name__ == "__main__":
 
         # STAGE 6: DATA SETUP
         "echo '--- Stage 6: Setting up project data ---'",
-        'CACHE_DIR="$HOME/.cache/protgram_directgcn"',
-        'DATA_BUNDLE_PATH="$CACHE_DIR/data_bundle.tar.gz"',
-        'DATA_MANIFEST_PATH="$CACHE_DIR/data_manifest.json"',
-        'if [ -f "$DATA_MANIFEST_PATH" ]; then',
-        '    echo "--- Data restoration from cache finished. ---"', # noqa
-        'else',
-        '    echo "--- No data bundle found in cache. Performing full data download and processing... ---"',
-        '    python -u -c "from configuration.config import Config; from configuration.manager import setup_data; print(\'--- Triggering DataManager full setup ---\'); setup_data(Config())"',
-        'fi',
+        'echo "--- Removing old data cache to ensure a clean setup..."'
+        'rm -rf "$HOME/.cache/protgram_directgcn"',
+        'echo "--- Triggering DataManager for full data download and processing... ---"'
+        'python -u -c "from configuration.config import Config; from configuration.manager import setup_data; setup_data(Config())"'
 
         # STAGE 7: VERIFICATION & CLEANUP
         "echo '--- Stage 7: Verifying installations ---'",

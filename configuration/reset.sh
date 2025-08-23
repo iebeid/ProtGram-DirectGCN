@@ -9,7 +9,7 @@
 #             manual data placement.
 # WARNING: This script is ALWAYS DESTRUCTIVE and will remove the existing
 #          project directory.
-# VERSION: 9.1 (Added LD_LIBRARY_PATH export for runtime linking)
+# VERSION: 9.2 (Added data cache removal for a true reset)
 # ==============================================================================
 
 # Exit immediately if a command exits with a non-zero status.
@@ -99,16 +99,24 @@ NEW_ENV_PIP="$CONDA_BASE/envs/$ENV_NAME/bin/pip"
 echo "SUCCESS: Environment '$ENV_NAME' created."
 "$NEW_ENV_PYTHON" --version
 
-# --- Step 3: Reset Project Directory ---
-echo -e "\n--- STEP 3: Resetting Project Directory ---"
+# --- Step 3: Reset Project Directory and Data Cache ---
+echo -e "\n--- STEP 3: Resetting Project Directory and Data Cache ---"
 cd "$PROJECTS_DIR"
 echo "INFO: Current directory: $(pwd)"
 
 # This is a reset script. If the directory exists, it will be destroyed to ensure a clean slate.
 if [ -d "$PROJECT_DIR_NAME" ]; then
     echo "INFO: Existing project directory found. It will be completely removed for a clean reset."
-    rm -rf "$PROJECT_DIR_NAME" # Now it's safe to remove the old project
+    rm -rf "$PROJECT_DIR_NAME"
     echo "SUCCESS: Old project directory removed."
+fi
+
+# --- DEFINITIVE FIX: Also remove the persistent data cache to ensure a true reset ---
+CACHE_DIR="$HOME/.cache/protgram_directgcn"
+if [ -d "$CACHE_DIR" ]; then
+    echo "INFO: Removing persistent data cache at '$CACHE_DIR'..."
+    rm -rf "$CACHE_DIR"
+    echo "SUCCESS: Data cache removed."
 fi
 
 # --- Always perform a standard, full clone. Data is not in the repo. ---
@@ -165,5 +173,5 @@ echo "--- The project code has been reset and a minimal Conda environment create
 echo -e "\n--- NEXT STEP: You must now set up the full environment. ---"
 echo "--- Activate the new environment and run the setup script with the following command: ---"
 echo "    conda activate $ENV_NAME && python configuration/setup.py"
-echo -e "\n--- After setup is complete, you can use 'start.sh' for subsequent runs. ---\n"
+echo -e "\n--- After setup is complete, you can use 'start.sh' for subsequent runs. ---"
 exit 0

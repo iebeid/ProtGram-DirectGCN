@@ -7,7 +7,7 @@
 #          set up at least once by running 'reset.sh'.
 # USAGE:   Run this script from WITHIN the project's root directory.
 #          Example: cd /path/to/ProtGram-DirectGCN && bash start.sh
-# VERSION: 2.0 (Simplified to remove Git LFS and data backup logic)
+# VERSION: 2.1 (Corrected Conda activation and Python path)
 # ==============================================================================
 
 # Exit immediately if a command exits with a non-zero status.
@@ -39,8 +39,16 @@ if ! conda env list | grep -q "$ENV_NAME"; then
     exit 1
 fi
 conda activate "$ENV_NAME"
+
+# --- DEFINITIVE FIX: Use the full path to the environment's Python executable ---
+ENV_PYTHON="$CONDA_BASE/envs/$ENV_NAME/bin/python"
+if [ ! -f "$ENV_PYTHON" ]; then
+    echo "ERROR: Could not find the Python executable for the '$ENV_NAME' environment."
+    exit 1
+fi
+
 echo "SUCCESS: Environment '$ENV_NAME' activated."
-python --version
+"$ENV_PYTHON" --version
 
 # --- Step 2: Update the Repository ---
 echo -e "\n--- STEP 2: Updating the project with the latest changes from Git ---"
@@ -85,14 +93,14 @@ export XLA_FLAGS="--xla_gpu_cuda_data_dir=$CONDA_PREFIX"
 
 # --- DEFINITIVE FIX: Separate environment validation from the main application run ---
 # 1. Validate the environment. If it fails, run the full setup.
-if ! python run.py --validate-env-only; then
+if ! "$ENV_PYTHON" run.py --validate-env-only; then
     echo "--- Environment validation failed. Running full setup script... ---"
-    python configuration/setup.py
+    "$ENV_PYTHON" configuration/setup.py
 fi
 
 # 2. Now that the environment is guaranteed to be valid, run the main application.
 echo "--- Environment is valid. Starting main application... ---"
-python source/entry/main.py
+"$ENV_PYTHON" source/entry/main.py
 
 echo -e "\n--- SCRIPT FINISHED ---"
 exit 0
