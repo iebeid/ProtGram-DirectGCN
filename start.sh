@@ -81,7 +81,7 @@ echo "SUCCESS: Python cache cleared."
 
 # This ensures that TensorFlow and other programs can find the CUDA libraries (.so files)
 # that were installed by Conda. This resolves the "Cannot dlopen" errors at runtime.
-export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$ENV_PATH/lib:$LD_LIBRARY_PATH"
 
 # --- DEFINITIVE FIX for Reproducibility: Configure CUDA workspace ---
 # This environment variable is required by `torch.use_deterministic_algorithms(True)`
@@ -91,7 +91,7 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 # --- CRITICAL for XLA/JIT: Point TensorFlow's XLA compiler to the Conda CUDA toolkit. ---
 # This resolves the "libdevice not found" and "JIT compilation failed" errors when
 # running Transformer models on the GPU.
-export XLA_FLAGS="--xla_gpu_cuda_data_dir=$CONDA_PREFIX"
+export XLA_FLAGS="--xla_gpu_cuda_data_dir=$ENV_PATH"
 
 # --- DEFINITIVE FIX: Separate environment validation from the main application run ---
 # 1. Validate both the environment and the data setup. If either fails, run the full setup.

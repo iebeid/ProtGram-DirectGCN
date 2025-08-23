@@ -5,6 +5,7 @@
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
+import math
 import copy
 import gc
 import random
@@ -390,6 +391,37 @@ class ProtGramXGCNTrainer:
                 print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
                 break
 
+    def _calculate_loss(self, model: nn.Module, data: Data, criterion, task_type: str) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Performs a forward pass and calculates the loss for a given task.
+        This helper centralizes the loss logic for both full-batch and clustered training.
+
+        Returns:
+            A tuple of (loss, predictions, ground_truth_labels).
+        """
+        if task_type == 'masked_node':
+            masked_features, masked_indices, original_labels = self.label_generator.generate_masked_node_task(
+                graph_obj=data.graph_obj, features=data.x,
+                masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION
+            )
+            # Use a cloned data object for the forward pass to avoid modifying the original
+            epoch_data = data.clone()
+            epoch_data.x = masked_features.to(self.device)
+            masked_indices = masked_indices.to(self.device)
+            original_labels = original_labels.to(self.device)
+
+            output, _ = model(data=epoch_data)
+            loss = criterion(output[masked_indices], original_labels)
+            with torch.no_grad():
+                preds = output[masked_indices].argmax(dim=-1)
+            return loss, preds, original_labels
+        else:  # Handles 'community', 'next_node', etc.
+            output, _ = model(data=data)
+            loss = criterion(output, data.y)
+            with torch.no_grad():
+                preds = output.argmax(dim=-1)
+            return loss, preds, data.y
+
     # --- FIX: Add the 'use_homo_hetero_paths' parameter to prevent a TypeError ---
     def _train_single_level_clustered(self, model: nn.Module, full_data: Data, node_partitions: List[List[int]], optimizer: torch.optim.Optimizer, epochs: int, task_type: str):
         """Clustered training logic for a single GNN level."""
@@ -448,40 +480,15 @@ class ProtGramXGCNTrainer:
                 ).to(self.device)
 
                 with torch.amp.autocast(device_type=self.device.type, enabled=use_amp): # noqa
-                    if task_type == 'masked_node': # noqa
-                        num_subgraph_nodes = subgraph_data.num_nodes
-                        num_to_mask = int(num_subgraph_nodes * self.config.PROTGRAM_MASKED_NODE_FRACTION)
+                    # --- REFACTOR: Use the centralized loss calculation helper ---
+                    loss, preds, ground_truth = self._calculate_loss(
+                        model, subgraph_data, criterion, task_type
+                    )
 
-                        if num_to_mask > 0:
-                            # Indices are relative to the subgraph for this batch
-                            permuted_subgraph_indices = torch.randperm(num_subgraph_nodes, device=self.device)
-                            subgraph_masked_indices = permuted_subgraph_indices[:num_to_mask]
-
-                            # The ground truth labels are the original, full-graph node IDs
-                            original_node_labels = subgraph_data.original_indices[subgraph_masked_indices]
-
-                            # Create a masked version of the subgraph features for this batch
-                            masked_subgraph_features = subgraph_data.x.clone()
-                            masked_subgraph_features[subgraph_masked_indices] = 0.0
-                            subgraph_data.x = masked_subgraph_features
-
-                            output, _ = model(data=subgraph_data)
-                            loss = criterion(output[subgraph_masked_indices], original_node_labels)
-
-                            with torch.no_grad():
-                                preds = output[subgraph_masked_indices].argmax(dim=-1)
-                                all_preds.append(preds.cpu())
-                                all_labels.append(original_node_labels.cpu())
-                        else:
-                            loss = torch.tensor(0.0, device=self.device, requires_grad=True)
-                    else:  # Original logic for community/next_node
-                        output, _ = model(data=subgraph_data)
-                        loss = criterion(output, subgraph_data.y)
-                        # --- NEW: Store predictions and labels for epoch metrics ---
-                        with torch.no_grad():
-                            preds = output.argmax(dim=-1)
-                            all_preds.append(preds.cpu())
-                            all_labels.append(subgraph_data.y.cpu())
+                    # --- NEW: Store predictions and labels for epoch metrics ---
+                    with torch.no_grad():
+                        all_preds.append(preds.cpu())
+                        all_labels.append(ground_truth.cpu())
 
                 # --- Backward pass & Gradient Accumulation ---
                 unnormalized_loss = loss.item()
@@ -519,6 +526,114 @@ class ProtGramXGCNTrainer:
             if early_stopper and early_stopper.early_stop(avg_epoch_loss):
                 print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
                 break
+
+    def _load_graph_for_level(self, n: int) -> Optional[DirectedNgramGraph]:
+        """
+        Loads the pre-built graph for a specific n-gram level from disk.
+        Includes an in-memory cache to avoid redundant loads.
+        """
+        if n in self._loaded_graphs:
+            return self._loaded_graphs[n]
+
+        graph_dir = self.config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{n}"
+        if not graph_dir.exists():
+            print(f"  ERROR: Graph directory for n={n} not found at '{graph_dir}'. Cannot proceed with this level.")
+            return None
+
+        print(f"  Loading graph for n={n} from: {graph_dir}")
+        try:
+            graph_obj = DirectedNgramGraph.load_from_dir(graph_dir)
+            if graph_obj:
+                self._loaded_graphs[n] = graph_obj
+                return graph_obj
+        except Exception as e:
+            print(f"  ERROR: Failed to load graph for n={n}. Error: {e}")
+            traceback.print_exc()
+        return None
+
+    def _get_initial_features_for_level(self, n: int, graph_obj: DirectedNgramGraph,
+                                        prev_level_embeddings: Optional[np.ndarray],
+                                        prev_level_map: Optional[Dict[str, int]]) -> Optional[Tuple[torch.Tensor, Dict]]:
+        """
+        Gets initial node features for a given n-gram level.
+        - For n=1, features are randomly initialized.
+        - For n>1, features are pooled from the (n-1) level embeddings.
+        """
+        if n == 1:
+            print(f"  Initializing n=1 features with random noise (dim={self.config.PROTGRAM_1GRAM_INIT_DIM}).")
+            features = torch.randn((graph_obj.number_of_nodes, self.config.PROTGRAM_1GRAM_INIT_DIM))
+            return features, {}
+        elif prev_level_embeddings is not None and prev_level_map is not None:
+            return EmbeddingProcessor.pool_lower_level_embeddings_for_init(
+                graph_obj, prev_level_embeddings, prev_level_map,
+                strategy=self.config.PROTGRAM_HIERARCHICAL_POOLING_STRATEGY
+            )
+        else:
+            print(f"  ERROR: Cannot initialize features for n={n}. Previous level embeddings or map are missing.")
+            return None
+
+    def _partition_graph(self, graph_obj: DirectedNgramGraph) -> List[List[int]]: # noqa
+        """
+        Partitions the graph for clustered training using the configured method.
+        """
+        method = self.config.PROTGRAM_PARTITIONING_METHOD
+        print(f"  Partitioning graph with {graph_obj.number_of_nodes} nodes for clustered training (Method: {method})...")
+
+        if method == 'graclus':
+            from source.data_structures.coarsener import GraphCoarsener
+            coarsening_level = self.config.PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING
+
+            # The coarsener returns the final cluster map directly
+            coarsening_result = GraphCoarsener.coarsen_graph(graph_obj, level=coarsening_level)
+            if coarsening_result is None:
+                print("  - WARNING: Graclus coarsening failed. Falling back to a single partition.")
+                return [list(range(graph_obj.number_of_nodes))]
+
+            coarsened_adj_index, cluster_map, coarsened_adj_weight = coarsening_result
+
+            # --- NEW: Add optional validation step ---
+            if self.config.PROTGRAM_VALIDATE_COARSENING:
+                GraphCoarsener.validate_coarsening(
+                    original_graph=graph_obj,
+                    coarsened_edge_index=coarsened_adj_index,
+                    coarsened_edge_weight=coarsened_adj_weight,
+                    cluster_map=cluster_map
+                )
+
+            num_partitions = int(cluster_map.max().item()) + 1
+            print(f"    Graclus algorithm found {num_partitions} communities.")
+
+            # Group nodes by their partition ID from the cluster map tensor
+            partitions = [[] for _ in range(num_partitions)]
+            for node_idx, cluster_id in enumerate(cluster_map.tolist()):
+                partitions[cluster_id].append(node_idx)
+
+        elif method == 'louvain':
+            import community as community_louvain
+            import networkx as nx
+            # Use the undirected, unweighted graph for community detection as it's standard.
+            if graph_obj.A_undirected_norm_sparse is None or graph_obj.A_undirected_norm_sparse._nnz() == 0:
+                print("  - WARNING: Undirected matrix not available for Louvain. Returning single partition.")
+                return [list(range(graph_obj.number_of_nodes))]
+
+            edge_index = graph_obj.A_undirected_norm_sparse.indices().cpu().numpy()
+            G_nx = nx.Graph()
+            G_nx.add_nodes_from(range(graph_obj.number_of_nodes))
+            G_nx.add_edges_from(edge_index.T)
+
+            partition_map = community_louvain.best_partition(G_nx, random_state=self.config.RANDOM_STATE)
+            num_partitions = len(set(partition_map.values()))
+            print(f"    Louvain algorithm found {num_partitions} communities.")
+
+            # Group nodes by their partition ID
+            partitions = [[] for _ in range(num_partitions)]
+            for node, part_id in partition_map.items():
+                partitions[part_id].append(node)
+        else:
+            raise ValueError(f"Unknown partitioning method: '{method}'")
+
+        print(f"    Created {len(partitions)} partitions.")
+        return [p for p in partitions if p]  # Return non-empty partitions
 
     def _partition_graph(self, graph_obj: DirectedNgramGraph) -> List[List[int]]: # noqa
         """

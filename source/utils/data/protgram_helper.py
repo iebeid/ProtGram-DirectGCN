@@ -1,11 +1,9 @@
 import math
-import numpy as np
 import collections
 from typing import Dict, Iterator, Optional, Tuple, Any, List
 
 import torch
 from torch_geometric.data import Data
-from community import community_louvain
 from source.data_structures.direct_ngram_graph import DirectedNgramGraph
 from source.utils.data.data_utils import DataUtils
 from source.utils.post.embedding_processor import EmbeddingProcessor
@@ -33,11 +31,6 @@ class ProtgramDaskHelpers:
             density = num_edges / possible_edges_no_self_loops if possible_edges_no_self_loops > 0 else 0
             print(f"      Density (E / N(N-1)): {density:.4f}")
         print(f"    --- End of Graph Statistics for n={n_val} ---\n")
-
-    @staticmethod
-    def print_header(title: str):
-        border = "=" * (len(title) + 6)
-        print(f"\n{border}\n### {title} ###\n{border}\n")
 
     @staticmethod
     def preprocess_sequence_tuple_for_bag(seq_tuple: Tuple[str, str], add_initial_space: bool) -> Tuple[str, str]:
@@ -77,80 +70,6 @@ class ProtgramDaskHelpers:
                 source_ngram = processed_seq_text[i:i + n_val]
                 target_ngram = processed_seq_text[i + 1:i + 1 + n_val]
                 yield source_ngram, target_ngram
-
-    @staticmethod
-    def load_graph_for_level(self, n: int) -> Optional[DirectedNgramGraph]:
-        """Loads the graph object for a specific n-gram level, using a cache."""
-        if n in self._loaded_graphs:
-            return self._loaded_graphs[n]
-
-        graph_obj_path = self.config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{n}.pkl"
-        if not graph_obj_path.exists():
-            print(f"  Graph object not found for n={n}. Skipping.")
-            return None
-
-        graph_obj: DirectedNgramGraph = DataUtils.load_object(str(graph_obj_path))
-        if graph_obj is None or graph_obj.number_of_nodes == 0:
-            print(f"  Failed to load graph object or graph is empty for n={n}. Skipping.")
-            return None
-
-        self._loaded_graphs[n] = graph_obj
-        print(f"  Graph for n={n} loaded. Nodes: {graph_obj.number_of_nodes}")
-        # Ensure matrices are on CPU for potential multiprocessing in label generation
-        graph_obj.A_out_w = graph_obj.A_out_w.cpu()
-        graph_obj.A_in_w = graph_obj.A_in_w.cpu()
-        graph_obj.A_undirected_norm_sparse = graph_obj.A_undirected_norm_sparse.cpu()
-        return graph_obj
-
-    @staticmethod
-    def get_initial_features_for_level(self, n: int, graph_obj: DirectedNgramGraph,
-                                        prev_level_embeddings: Optional[np.ndarray],
-                                        prev_level_map: Optional[Dict[str, int]]) -> Optional[Tuple[torch.Tensor, Dict]]:
-        """Generates the initial node features for the current n-gram level."""
-        if n == 1:
-            features = torch.randn((graph_obj.number_of_nodes, self.config.PROTGRAM_1GRAM_INIT_DIM))
-            return features, {}
-        else:
-            if prev_level_embeddings is None or prev_level_embeddings.size == 0 or prev_level_map is None:
-                print(f"  Cannot proceed for n={n}, previous level embeddings not found or empty.")
-                return None
-            result = EmbeddingProcessor.pool_lower_level_embeddings_for_init(
-                graph_obj, prev_level_embeddings, prev_level_map,
-                strategy=self.config.PROTGRAM_HIERARCHICAL_POOLING_STRATEGY)
-            if result is None:
-                return None
-            features, attention_log = result
-            return features, attention_log
-
-    @staticmethod
-    def partition_graph(self, graph: DirectedNgramGraph) -> List[List[int]]:
-        """
-        Partitions the graph into clusters of nodes for batch training.
-        This version is now model-agnostic and only returns the node indices for each partition.
-        """
-        if graph.number_of_nodes == 0: return []
-        num_clusters_calculated = math.ceil(graph.number_of_nodes / self.config.PROTGRAM_TARGET_NODES_PER_CLUSTER)
-        num_clusters = max(self.config.PROTGRAM_MIN_CLUSTERS, num_clusters_calculated)
-        num_clusters = min(num_clusters, self.config.PROTGRAM_MAX_CLUSTERS, graph.number_of_nodes)
-        print(f"  Partitioning graph with {graph.number_of_nodes} nodes into {num_clusters} clusters...")
-
-        A_combined_cpu = (graph.A_in_w.cpu() + graph.A_out_w.cpu()).coalesce()
-        g_nx = to_networkx(Data(edge_index=A_combined_cpu.indices(), edge_attr=A_combined_cpu.values(), num_nodes=graph.number_of_nodes), to_undirected=True, edge_attrs=['edge_attr']) # type: ignore
-
-        try:
-            import metis
-            print("  Using METIS for graph partitioning...")
-            _, parts = metis.part_graph(g_nx, num_clusters, seed=self.config.RANDOM_STATE)
-            partition = {node_idx: part_id for node_idx, part_id in enumerate(parts)}
-        except (ImportError, ModuleNotFoundError):
-            print("  METIS not found. Falling back to Louvain for clustering (slower)...")
-            partition = community_louvain.best_partition(g_nx, random_state=self.config.RANDOM_STATE, weight='edge_attr')
-
-        clusters = collections.defaultdict(list)
-        for node, cluster_id in partition.items(): clusters[cluster_id].append(node)
-        cluster_list = list(clusters.values())
-        print(f"  Graph partitioned into {len(cluster_list)} clusters.")
-        return cluster_list
 
     @staticmethod
     def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramGraph', features: torch.Tensor,

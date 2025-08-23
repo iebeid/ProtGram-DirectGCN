@@ -42,9 +42,9 @@ class PPIPipelineTests(unittest.TestCase):
         self.config.EVAL_EPOCHS = 1
         self.config.EVAL_N_FOLDS = 2
 
-        with mlflow.start_run(run_name="PPI_Pipeline_SMOKE_TEST") as parent_run:
+        with mlflow.start_run(run_name="PPI_Pipeline_SMOKE_TEST"):
             evaluator = PPIPipeline(self.config)
-            evaluator.run(use_dummy_data=True, parent_run_id=parent_run.info.run_id)
+            evaluator.run(use_dummy_data=True)
 
         print("\n  PPIPipeline (dummy run) smoke test ran successfully.")
         print("--- PPI Pipeline (Dummy Run) Smoke Test Complete ---")

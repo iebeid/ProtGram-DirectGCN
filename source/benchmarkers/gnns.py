@@ -19,12 +19,11 @@ from torch_geometric.data import Data
 from torch_geometric.utils import homophily
 
 from configuration.config import Config
-# --- FIX: Import DataUtils to use its static methods ---
 from source.benchmarkers.base import BaseBenchmarker
+from source.utils.fs.file_utils import FileUtils
 from source.models.factory import ModelFactory
 from source.utils.data.data_utils import DataUtils
-from source.utils.data.protgram_helper import ProtgramDaskHelpers
-from source.data_structures.directed_graph import DirectedGraph
+from source.data_structures.direct_ngram_graph import DirectedNgramGraph
 
 
 class GNNBenchmarker(BaseBenchmarker):
@@ -34,11 +33,35 @@ class GNNBenchmarker(BaseBenchmarker):
         self.model_factory = ModelFactory(config, context='benchmark')
         print(f"Benchmark embeddings will be saved to: {self.embedding_dir}")
 
+    def _save_embeddings(self, model: torch.nn.Module, data: Data):
+        """Extracts and saves GNN node embeddings to an H5 file."""
+        print(f"    Extracting embeddings for {model.__class__.__name__}...")
+        with torch.no_grad():
+            model.eval()
+            _, embeddings = model(data.to(self.device))
+        if embeddings is None:
+            print("    Warning: Could not extract embeddings.")
+            return
+
+        embeddings_np = embeddings.cpu().numpy()
+        emb_dict = {str(i): embeddings_np[i] for i in range(embeddings_np.shape[0])}
+
+        # Construct the full path for the output file
+        dataset_name = getattr(data, 'name', 'unknown_dataset')
+        model_name = model.__class__.__name__
+        emb_dim = embeddings_np.shape[1]
+
+        h5_filename = f"{model_name}_embeddings_dim{emb_dim}.h5"
+        full_h5_path = self.embedding_dir / dataset_name / h5_filename
+
+        FileUtils.write_h5(emb_dict, full_h5_path, f"Writing H5 for {model_name}")
+        print(f"      Saved embeddings to {full_h5_path}")
+
     def _train_and_evaluate(self, model: torch.nn.Module, data: Data) -> Tuple[Dict[str, float], pd.DataFrame]:
         """Handles the training and evaluation loop for a given model and data."""
         model.to(self.device)
         data = data.to(self.device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=self.config.BENCHMARK_GNN_LEARNING_RATE, weight_decay=5e-4)
+        optimizer = torch.optim.Adam(model.parameters(), lr=self.config.BENCHMARK_GNN_LEARNING_RATE, weight_decay=self.config.BENCHMARK_GNN_WEIGHT_DECAY)
 
         best_val_acc = -1
         test_acc_at_best_val = -1
@@ -101,7 +124,7 @@ class GNNBenchmarker(BaseBenchmarker):
         print(f"  Finished training. Best Val Acc: {best_val_acc:.4f}, Corresponding Test Acc: {test_acc_at_best_val:.4f}")
 
         if self.config.BENCHMARK_SAVE_EMBEDDINGS:
-            DataUtils.save_embeddings(model, data, self.config, self.embedding_dir, self.device)
+            self._save_embeddings(model, data)
 
         return metrics, pd.DataFrame(history)
 
@@ -110,8 +133,6 @@ class GNNBenchmarker(BaseBenchmarker):
         A just-in-time data preparation utility. It creates a model-specific
         data object with the correct graph representations.
         """
-        graph_helper = DirectedGraph()
-
         # Start with a fresh clone of the original data
         data_for_model = data.clone()
         model_name_lower = model_name.lower()
@@ -127,8 +148,27 @@ class GNNBenchmarker(BaseBenchmarker):
         # --- Model-specific overrides ---
         if model_name_lower == 'directgcn':
             print("    -> Preparing specialized matrices for DirectGCN...")
-            # This model needs multiple, pre-calculated graph views.
-            data_for_model = graph_helper._preprocess_for_custom_models(data, use_homo_hetero_paths=is_heterophilic)
+            # --- REFACTOR: Use the static methods from DirectedNgramGraph ---
+            A_in_w_sparse = A_out_w_sparse.t().coalesce()
+            data_for_model.mathcal_A_in = DirectedNgramGraph._calculate_single_propagation_matrix(
+                A_in_w_sparse, data.num_nodes, self.config.GCN_PROPAGATION_EPSILON)
+            data_for_model.mathcal_A_out = DirectedNgramGraph._calculate_single_propagation_matrix(
+                A_out_w_sparse, data.num_nodes, self.config.GCN_PROPAGATION_EPSILON)
+            data_for_model.A_undirected_norm_sparse = DirectedNgramGraph._normalize_symmetric_matrix(
+                A_undir_w, data.num_nodes)
+
+            # Attach as edge_index attributes for compatibility with the model's forward pass
+            data_for_model.edge_index_mathcal_in = data_for_model.mathcal_A_in.indices()
+            data_for_model.edge_weight_mathcal_in = data_for_model.mathcal_A_in.values()
+            data_for_model.edge_index_mathcal_out = data_for_model.mathcal_A_out.indices()
+            data_for_model.edge_weight_mathcal_out = data_for_model.mathcal_A_out.values()
+            data_for_model.edge_index_undirected_norm = data_for_model.A_undirected_norm_sparse.indices()
+            data_for_model.edge_weight_undirected_norm = data_for_model.A_undirected_norm_sparse.values()
+
+            if is_heterophilic:
+                A_homo_norm, A_hetero_norm = DirectedNgramGraph.split_edges_by_homophily(A_out_w_sparse, data.num_nodes, data.y)
+                data_for_model.edge_index_homo_norm, data_for_model.edge_weight_homo_norm = A_homo_norm.indices(), A_homo_norm.values()
+                data_for_model.edge_index_hetero_norm, data_for_model.edge_weight_hetero_norm = A_hetero_norm.indices(), A_hetero_norm.values()
 
         elif model_name_lower == 'rgcn':
             print("    -> Preparing directed edge format for RGCN.")

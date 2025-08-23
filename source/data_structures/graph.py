@@ -32,58 +32,30 @@ class Graph:
 
     def _process_constructor_inputs(self):
         """
-        Processes the nodes and edges passed to the constructor.
-        Assumes `nodes` is a map from integer index to node name (e.g., n-gram string).
-        Assumes `edges` contains tuples where the first two elements are integer indices.
+        Processes the nodes map passed to the constructor to build the graph's
+        foundational node-to-index mappings. The number of nodes is determined
+        by the highest index provided in the nodes map.
         """
-        if not self.idx_to_node_map_from_constructor and not self.original_edges:
-            self.number_of_nodes = 0
-            self.edges = []
-            self.number_of_edges = 0
-            return
-
-        all_integer_indices = set()
-        if self.idx_to_node_map_from_constructor:
-            all_integer_indices.update(self.idx_to_node_map_from_constructor.keys())
-
-        for edge_tuple in self.original_edges:
-            if len(edge_tuple) >= 2:
-                if not isinstance(edge_tuple[0], (int, np.integer)) or \
-                        not isinstance(edge_tuple[1], (int, np.integer)):
-                    continue
-                all_integer_indices.add(int(edge_tuple[0]))
-                all_integer_indices.add(int(edge_tuple[1]))
-
-        if not all_integer_indices and not self.idx_to_node_map_from_constructor:
+        # --- REFACTOR: Simplified logic based on actual usage by subclasses ---
+        # The complex logic for inferring nodes from edges was unused, as subclasses
+        # pass an empty edge list and handle edge loading themselves.
+        if not self.idx_to_node_map_from_constructor:
             self.number_of_nodes = 0
             return
 
-        max_node_map_idx = -1
-        if self.idx_to_node_map_from_constructor:
-            valid_node_indices = {idx for idx in self.idx_to_node_map_from_constructor.keys() if
-                                  isinstance(idx, (int, np.integer)) and idx >= 0}
-            # --- FIX: Add a warning for potential data inconsistency ---
-            if all_integer_indices and valid_node_indices and max(all_integer_indices) > max(valid_node_indices):
-                # --- ENHANCEMENT: Make the warning more specific and explain the consequence ---
-                print(f"  - WARNING: Data inconsistency detected. Max edge index ({max(all_integer_indices)}) "
-                      f"exceeds max node map index ({max(valid_node_indices)}). This can lead to silent data loss.")
-            if valid_node_indices:
-                max_node_map_idx = max(valid_node_indices)
+        valid_node_indices = {idx for idx in self.idx_to_node_map_from_constructor.keys() if
+                              isinstance(idx, (int, np.integer)) and idx >= 0}
 
-        max_edge_idx = -1
-        if all_integer_indices:
-            max_edge_idx = max(all_integer_indices)
+        if not valid_node_indices:
+            self.number_of_nodes = 0
+            return
 
-        self.number_of_nodes = max(max_node_map_idx, max_edge_idx) + 1
+        # The number of nodes is determined by the highest index provided.
+        self.number_of_nodes = max(valid_node_indices) + 1
 
-        temp_idx_to_node_name = {}
-        for i in range(self.number_of_nodes):
-            node_name = self.idx_to_node_map_from_constructor.get(i)
-            if node_name is None:
-                node_name = f"__NODE_{i}__"
-            temp_idx_to_node_name[i] = str(node_name)
-
-        self.idx_to_node = temp_idx_to_node_name
+        # Build the final, complete node maps, filling in any missing indices with placeholders.
+        self.idx_to_node = {i: str(self.idx_to_node_map_from_constructor.get(i, f"__NODE_{i}__"))
+                            for i in range(self.number_of_nodes)}
         self.node_to_idx = {name: idx for idx, name in self.idx_to_node.items()}
         self.node_names = [self.idx_to_node.get(i, f"__NODE_{i}__") for i in range(self.number_of_nodes)]
 
@@ -147,14 +119,11 @@ class Graph:
         print(f"  Graph components saved to directory: {dir_path}")
 
     @classmethod
-    def load_from_dir(cls, dir_path: Union[str, Path]) -> 'DirectedNgramGraph':
+    def load_from_dir(cls, dir_path: Union[str, Path]) -> 'Graph':
         """
         Loads a graph object by reconstructing it from its saved components,
         avoiding pickle.
         """
-        from source.utils.fs.file_utils import FileUtils
-        from source.data_structures.direct_ngram_graph import DirectedNgramGraph
-
         dir_path = Path(dir_path)
         metadata_path = dir_path / "metadata.json"
         nodes_path = dir_path / "nodes.parquet"
@@ -171,4 +140,5 @@ class Graph:
         # Re-instantiate the class using the loaded components
         # --- FIX: Pass the directory path to the constructor for robust loading ---
         metadata['dir_path'] = str(dir_path)
-        return DirectedNgramGraph(nodes=idx_to_node, **metadata)
+        # --- REFACTOR: Use `cls` to instantiate the correct subclass ---
+        return cls(nodes=idx_to_node, **metadata)

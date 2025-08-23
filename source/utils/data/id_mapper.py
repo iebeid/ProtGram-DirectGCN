@@ -55,6 +55,9 @@ class IDMapGenerator:
         id_map: Dict[str, str] = {}
         if self.mapping_mode == 'regex':
             id_map = self._perform_regex_mapping()
+        elif self.mapping_mode == 'api':
+            # --- FIX: Add explicit handling for the 'api' mode ---
+            raise NotImplementedError("The 'api' mapping mode is configured but not yet implemented.")
         elif self.mapping_mode == 'none':
             return {}
         else:
@@ -79,10 +82,11 @@ class IDMapGenerator:
         id_map = {}
         for fasta_file in self.fasta_files_for_mapping:
             try:
-                for record in tqdm(SeqIO.parse(fasta_file, "fasta"), desc=f"Parsing {fasta_file.name} with Regex"):
+                # --- REFACTOR: Use the centralized FastaUtils header parser to avoid code duplication ---
+                for record in tqdm(SeqIO.parse(fasta_file, "fasta"), desc=f"Parsing {fasta_file.name} with Regex", leave=False):
                     # The header might contain multiple IDs. We want to map them all to one canonical ID.
                     # The canonical ID is what we get from our robust regex.
-                    _, canonical_id = self._extract_canonical_id_and_type_from_header(record.description)
+                    canonical_id = FastaUtils.extract_id_from_header(record.description)
                     if canonical_id:
                         # Map the ID that BioPython parsed as the main ID
                         id_map[record.id] = canonical_id
@@ -94,17 +98,6 @@ class IDMapGenerator:
                 print(f"An error during regex mapping on {fasta_file}: {e}")
         print(f"Regex mapping complete. Found {len(id_map)} potential mappings.")
         return id_map
-
-    @staticmethod
-    def _extract_canonical_id_and_type_from_header(header: str) -> Tuple[Optional[str], Optional[str]]:
-        hid = header.strip().lstrip('>')
-        up_match = re.match(r"^(?:sp|tr)\|([OPQ]?[A-Z0-9]{5,9}(?:-\d+)?)\|", hid, re.IGNORECASE)
-        if up_match: return "UniProt", up_match.group(1)
-        uniref_match = re.match(r"^(UniRef\d{2,3})_([A-Z0-9]+)", hid, re.IGNORECASE)
-        if uniref_match: return "UniProt (from UniRef)", uniref_match.group(2)
-        plain_match_strict = re.match(r"^([OPQ]?[A-Z0-9]{5,9}(?:-\d+)?)", hid.split()[0])
-        if plain_match_strict: return "UniProt (assumed)", plain_match_strict.group(1)
-        return "Unknown", hid.split()[0]
 
     def _get_mapping_dask_dataframe(self) -> Optional[dd.DataFrame]:
         """

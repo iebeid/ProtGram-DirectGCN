@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch_geometric.data import Data
+from source.utils.data.data_utils import DataUtils
 from tqdm.auto import tqdm
 from source.utils.fs.file_system_manager import fs_manager
 
@@ -110,7 +111,7 @@ class FileUtils:
     def check_h5_embeddings_integrity(uri: Union[str, Path], num_samples_to_check: int = 5):
         """Performs a basic integrity check on an HDF5 embedding file from any fsspec-supported location."""
         fs, path = fs_manager.get_fs_and_path(str(uri))
-        FileUtils.print_header(f"--- Checking HDF5 file: {uri} ---")
+        DataUtils.print_header(f"--- Checking HDF5 file: {uri} ---")
 
         if not fs.exists(path):
             print(f"  ERROR: File at '{uri}' does not exist.")
@@ -150,34 +151,3 @@ class FileUtils:
         except (IOError, OSError) as e:
             print(f"  Warning: Could not calculate checksum for {uri}: {e}")
             return ""
-
-    @staticmethod
-    def print_header(title: str):
-        """Prints a standardized header to the console."""
-        border = "=" * (len(title) + 6)
-        print(f"\n{border}\n### {title} ###\n{border}\n")
-
-    @staticmethod
-    def save_embeddings(model: torch.nn.Module, data: Data, embedding_dir_uri: str, device: torch.device):
-        """Extracts and saves GNN node embeddings to an H5 file in any fsspec-supported location."""
-        print(f"    Extracting embeddings for {model.__class__.__name__}...")
-        with torch.no_grad():
-            model.eval()
-            _, embeddings = model(data.to(device))
-        if embeddings is None:
-            print("    Warning: Could not extract embeddings.")
-            return
-
-        embeddings_np = embeddings.cpu().numpy()
-        emb_dict = {str(i): embeddings_np[i] for i in range(embeddings_np.shape[0])}
-
-        # Construct the full URI for the output file
-        dataset_name = getattr(data, 'name', 'unknown_dataset')
-        model_name = model.__class__.__name__
-        emb_dim = embeddings_np.shape[1]
-
-        h5_filename = f"{model_name}_embeddings_dim{emb_dim}.h5"
-        full_h5_uri = os.path.join(embedding_dir_uri, dataset_name, h5_filename)
-
-        FileUtils.write_h5(emb_dict, full_h5_uri, f"Writing H5 for {model_name}")
-        print(f"      Saved embeddings to {full_h5_uri}")

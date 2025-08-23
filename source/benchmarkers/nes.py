@@ -12,88 +12,47 @@ import mlflow
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn.functional as F
-from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 from torch_geometric.data import Data
 from torch_geometric.nn import Node2Vec
 
 from configuration.config import Config
 from source.benchmarkers.base import BaseBenchmarker
 from source.utils.data.data_utils import DataUtils
-from source.models.fnn.mlp import SimpleMLP
-from source.utils.models.early_stopper import EarlyStopper
 
 class NetworkEmbeddingBenchmarker(BaseBenchmarker):
     def __init__(self, config: Config):
         super().__init__(config, "Network Embedding Benchmarker")
 
-    def _train_and_evaluate_mlp(self, embeddings: torch.Tensor, data: Data) -> Dict[str, float]:
-        """Trains and evaluates a simple MLP on the generated embeddings."""
-        num_classes = int(data.y.max().item()) + 1
-        mlp = SimpleMLP(
-            in_channels=embeddings.shape[1],
-            hidden_channels=128,
-            out_channels=num_classes,
-            dropout=0.5
-        ).to(self.device)
-        optimizer = torch.optim.Adam(mlp.parameters(), lr=0.01, weight_decay=5e-4)
-
+    def _train_and_evaluate_classifier(self, embeddings: torch.Tensor, data: Data) -> Dict[str, float]:
+        """
+        Trains and evaluates a Logistic Regression classifier on the generated embeddings.
+        This helper method encapsulates the downstream task logic.
+        """
         # FIX: Use the helper to handle masks that might have multiple splits (e.g., WebKB)
         train_mask = self._get_1d_mask(data.train_mask)
-        val_mask = self._get_1d_mask(data.val_mask)
         test_mask = self._get_1d_mask(data.test_mask)
 
-        best_val_acc = -1
-        # --- DEFINITIVE FIX for UnboundLocalError ---
-        # Initialize metrics to a default value before the loop.
-        test_acc_at_best_val = -1.0
-        f1_at_best_val = -1.0
-        precision_at_best_val = -1.0
-        recall_at_best_val = -1.0
+        X_train = embeddings[train_mask].cpu().numpy()
+        y_train = data.y[train_mask].cpu().numpy()
+        X_test = embeddings[test_mask].cpu().numpy()
+        y_test = data.y[test_mask].cpu().numpy()
 
-        # --- NEW: Add early stopping to prevent overfitting the simple classifier ---
-        # --- ANTICIPATORY DEBUGGING: Use early stopping for more robust evaluation ---
-        # Training for a fixed number of epochs can lead to overfitting the classifier.
-        # Early stopping based on validation accuracy provides more reliable and comparable results.
-        early_stopper = EarlyStopper(patience=self.config.PROTGRAM_EARLY_STOPPING_PATIENCE, min_delta=self.config.PROTGRAM_EARLY_STOPPING_MIN_DELTA)
-
-        for epoch in range(1, 201):  # A fixed number of epochs for the MLP classifier
-            mlp.train()
-            optimizer.zero_grad()
-            out = mlp(embeddings[train_mask].detach()) # Detach to be safe
-            loss = F.cross_entropy(out, data.y[train_mask])
-            loss.backward()
-            optimizer.step()
-
-            mlp.eval()
-            with torch.no_grad():
-                pred = mlp(embeddings).argmax(dim=1)
-                val_correct = (pred[val_mask] == data.y[val_mask]).sum()
-                val_acc = int(val_correct) / int(val_mask.sum()) if val_mask.sum() > 0 else 0.0
-                test_correct = (pred[test_mask] == data.y[test_mask]).sum()
-                test_acc = int(test_correct) / int(test_mask.sum()) if test_mask.sum() > 0 else 0.0
-
-            if val_acc > best_val_acc:
-                best_val_acc = val_acc
-                test_acc_at_best_val = test_acc
-                # --- NEW: Capture all test metrics at the best validation epoch ---
-                y_true_test = data.y[test_mask].cpu().numpy()
-                y_pred_test = pred[test_mask].cpu().numpy()
-                f1_at_best_val = f1_score(y_true_test, y_pred_test, average='macro', zero_division=0)
-                precision_at_best_val = precision_score(y_true_test, y_pred_test, average='macro', zero_division=0)
-                recall_at_best_val = recall_score(y_true_test, y_pred_test, average='macro', zero_division=0)
-
-            # Early stopping is based on validation loss (or 1 - accuracy)
-            if early_stopper.early_stop(1.0 - val_acc):
-                print(f"    MLP training: Early stopping at epoch {epoch}. Best Val Acc: {best_val_acc:.4f}")
-                break
+        classifier = LogisticRegression(
+            C=self.config.BENCHMARK_NE_CLASSIFIER_C,
+            max_iter=self.config.BENCHMARK_NE_CLASSIFIER_MAX_ITER,
+            solver=self.config.BENCHMARK_NE_CLASSIFIER_SOLVER,
+            random_state=self.config.RANDOM_STATE
+        )
+        classifier.fit(X_train, y_train)
+        y_pred = classifier.predict(X_test)
 
         metrics = {
-            'Accuracy': test_acc_at_best_val,
-            'F1-Score (Macro)': f1_at_best_val,
-            'Precision (Macro)': precision_at_best_val,
-            'Recall (Macro)': recall_at_best_val,
-            'best_val_accuracy': best_val_acc
+            'Accuracy': accuracy_score(y_test, y_pred),
+            'F1-Score (Macro)': f1_score(y_test, y_pred, average='macro', zero_division=0),
+            'Precision (Macro)': precision_score(y_test, y_pred, average='macro', zero_division=0),
+            'Recall (Macro)': recall_score(y_test, y_pred, average='macro', zero_division=0)
         }
         return metrics
 
@@ -123,8 +82,8 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
             embedding_dim=self.config.BENCHMARK_NE_EMBEDDING_DIM,
             walk_length=self.config.BENCHMARK_NE_WALK_LENGTH,
             context_size=self.config.BENCHMARK_NE_CONTEXT_SIZE,
-            walks_per_node=10,
-            num_negative_samples=1,
+            walks_per_node=self.config.BENCHMARK_NE_WALKS_PER_NODE,
+            num_negative_samples=self.config.BENCHMARK_NE_NUM_NEGATIVE_SAMPLES,
             p=1, q=1,
             sparse=True,
         ).to(self.device)
@@ -151,8 +110,8 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
             embeddings = node2vec_model()
 
         # 3. Train and evaluate an MLP on the embeddings
-        metrics = self._train_and_evaluate_mlp(embeddings, data) # This call is now correct
-        print(f"  ✅ Best Val Acc: {metrics.get('best_val_accuracy', -1):.4f}, Test Accuracy for {model_name} on {dataset_name}: {metrics.get('Accuracy', -1):.4f}")
+        metrics = self._train_and_evaluate_classifier(embeddings, data)
+        print(f"  ✅ Test Accuracy for {model_name} on {dataset_name}: {metrics.get('Accuracy', -1):.4f}")
 
         # --- ANTICIPATORY DEBUGGING: Explicitly delete large torch objects and collect garbage. ---
         # This helps prevent the loader from hanging in the background before the main script
@@ -187,10 +146,7 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
                         mlflow.set_tag("dataset_name", dataset_name)
                         result = self._run_on_dataset(dataset, dataset_name, model_name)
                         all_results.append(result)
-                        mlflow.log_metrics({
-                            "best_val_accuracy": result.get('best_val_accuracy', 0.0),
-                            "test_accuracy": result.get('Accuracy', 0.0)
-                        })
+                        mlflow.log_metrics({k.replace(' ', '_'): v for k, v in result.items() if isinstance(v, (int, float))})
                 except Exception as e:
                     print(f"ERROR during benchmarking of {model_name} on {dataset_name}: {e}")
                     traceback.print_exc()

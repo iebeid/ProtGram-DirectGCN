@@ -51,6 +51,10 @@ class DirectedNgramGraph(Graph):
         self.A_hetero_w: Optional[torch.Tensor] = None
         self.A_homo_norm: Optional[torch.Tensor] = None
         self.A_hetero_norm: Optional[torch.Tensor] = None
+        # --- NEW: Add private attributes for lazy loading cache ---
+        self._A_undirected_norm_sparse: Optional[torch.Tensor] = None
+        self._mathcal_A_out: Optional[torch.Tensor] = None
+        self._mathcal_A_in: Optional[torch.Tensor] = None
 
         # --- FIX: Dispatch to either load from directory or build from scratch ---
         if dir_path:
@@ -87,8 +91,6 @@ class DirectedNgramGraph(Graph):
 
                 self.number_of_edges = len(source_indices)
                 self._create_raw_weighted_adj_matrices_torch(source_indices, target_indices, weights)
-                self._create_undirected_normalized_adj_matrix()
-                self._create_propagation_matrices()
 
             except Exception as e:
                 import traceback
@@ -164,7 +166,8 @@ class DirectedNgramGraph(Graph):
 
         self.A_in_w = self.A_out_w.t().coalesce()
 
-    def _create_undirected_normalized_adj_matrix(self):
+    @property
+    def A_undirected_norm_sparse(self) -> Optional[torch.Tensor]:
         """
         Creates a symmetric, degree-normalized adjacency matrix (D^-0.5 * A * D^-0.5),
         which is the standard for models like GCN, GAT, and GraphSAGE. This matrix
@@ -172,9 +175,12 @@ class DirectedNgramGraph(Graph):
         an undirected representation. Self-loops are added to ensure nodes are
         connected to themselves.
         """
+        if self._A_undirected_norm_sparse is not None:
+            return self._A_undirected_norm_sparse
+
         print(f"  Creating undirected normalized adjacency matrix for n={self.n_value}...")
         if self.number_of_nodes == 0 or self.A_out_w is None or self.A_in_w is None:
-            return
+            return self._initialize_empty_matrices()
 
         A_undir_w = (self.A_out_w + self.A_in_w).coalesce()
 
@@ -191,13 +197,15 @@ class DirectedNgramGraph(Graph):
 
         norm_values = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
 
-        self.A_undirected_norm_sparse = torch.sparse_coo_tensor(
+        self._A_undirected_norm_sparse = torch.sparse_coo_tensor(
             edge_index, norm_values, (self.number_of_nodes, self.number_of_nodes)
         ).coalesce()
         print(
-            f"    Undirected normalized matrix created with {self.A_undirected_norm_sparse._nnz()} non-zero elements.")
+            f"    Undirected normalized matrix created with {self._A_undirected_norm_sparse._nnz()} non-zero elements.")
+        return self._A_undirected_norm_sparse
 
-    def _normalize_symmetric_matrix(self, matrix: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def _normalize_symmetric_matrix(matrix: torch.Tensor, num_nodes: int) -> torch.Tensor:
         """
         Helper function to apply standard GCN normalization (D^-0.5 * A * D^-0.5)
         to any given symmetric matrix.
@@ -207,18 +215,19 @@ class DirectedNgramGraph(Graph):
 
         edge_index, edge_weight = add_self_loops(
             matrix.indices(), matrix.values(),
-            fill_value=1.0, num_nodes=self.number_of_nodes
+            fill_value=1.0, num_nodes=num_nodes
         )
 
         row, col = edge_index
-        deg = degree(col, self.number_of_nodes, dtype=edge_weight.dtype)
+        deg = degree(col, num_nodes, dtype=edge_weight.dtype)
         deg_inv_sqrt = deg.pow(-0.5)
         deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
         norm_values = deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
 
         return torch.sparse_coo_tensor(edge_index, norm_values, matrix.shape).coalesce()
 
-    def _calculate_single_propagation_matrix(self, A_w_torch_sparse: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def _calculate_single_propagation_matrix(A_w_torch_sparse: torch.Tensor, num_nodes: int, epsilon: float) -> torch.Tensor:
         """
         Calculates the DirectGCN propagation matrix for a single direction (in or out).
 
@@ -229,19 +238,18 @@ class DirectedNgramGraph(Graph):
         diagonal degree matrix, and I is the identity matrix.
         using sparse tensor operations and an optimized formula.
         """
-        if self.number_of_nodes == 0 or (A_w_torch_sparse.is_sparse and A_w_torch_sparse._nnz() == 0):
+        if num_nodes == 0 or (A_w_torch_sparse.is_sparse and A_w_torch_sparse._nnz() == 0):
             empty_indices = torch.empty((2, 0), dtype=torch.long, device=A_w_torch_sparse.device)
             empty_values = torch.empty(0, dtype=torch.float32, device=A_w_torch_sparse.device)
-            size = (self.number_of_nodes, self.number_of_nodes)
+            size = (num_nodes, num_nodes)
             return torch.sparse_coo_tensor(empty_indices, empty_values, size).coalesce()
 
         dev = A_w_torch_sparse.device
         # Step 1: Calculate D_inv * A (row-normalized matrix A_n)
-        num_nodes = self.number_of_nodes
 
         row_sum = torch.sparse.sum(A_w_torch_sparse, dim=1).to_dense()
         # --- DEFINITIVE FIX: Clamp row_sum to prevent division by very small numbers, which causes NaNs. ---
-        row_sum_clamped = torch.clamp(row_sum, min=self.epsilon_propagation)
+        row_sum_clamped = torch.clamp(row_sum, min=epsilon)
 
         D_inv_diag_vals = torch.zeros_like(row_sum_clamped, dtype=torch.float32, device=dev)
         non_zero_degrees_mask = row_sum_clamped != 0
@@ -271,7 +279,7 @@ class DirectedNgramGraph(Graph):
         gc.collect()
 
         # Step 3: Final calculation: sqrt(...) + I
-        epsilon_tensor = torch.tensor(self.epsilon_propagation, device=dev, dtype=torch.float32)
+        epsilon_tensor = torch.tensor(epsilon, device=dev, dtype=torch.float32)
         mathcal_A_base_values = torch.sqrt(S_sq_plus_K_sq_sparse.values() + epsilon_tensor)
         mathcal_A_base_sparse = torch.sparse_coo_tensor(S_sq_plus_K_sq_sparse.indices(), mathcal_A_base_values,
                                                         S_sq_plus_K_sq_sparse.size()).coalesce()
@@ -285,18 +293,30 @@ class DirectedNgramGraph(Graph):
 
         return mathcal_A_with_self_loops_sparse
 
-    def _create_propagation_matrices(self):
-        """Computes the mathcal_A_out and mathcal_A_in propagation matrices sparsely."""
+    @property
+    def mathcal_A_out(self) -> Optional[torch.Tensor]:
+        """Lazy-loaded property for the outgoing propagation matrix."""
+        if self._mathcal_A_out is not None:
+            return self._mathcal_A_out
         print(f"  Creating mathcal_A_out for n={self.n_value}...")
         if self.A_out_w is not None:
-            self.mathcal_A_out = self._calculate_single_propagation_matrix(self.A_out_w)
-        gc.collect()
+            self._mathcal_A_out = self._calculate_single_propagation_matrix(
+                self.A_out_w, self.number_of_nodes, self.epsilon_propagation)
+        return self._mathcal_A_out
+
+    @property
+    def mathcal_A_in(self) -> Optional[torch.Tensor]:
+        """Lazy-loaded property for the incoming propagation matrix."""
+        if self._mathcal_A_in is not None:
+            return self._mathcal_A_in
         print(f"  Creating mathcal_A_in for n={self.n_value}...")
         if self.A_in_w is not None:
-            self.mathcal_A_in = self._calculate_single_propagation_matrix(self.A_in_w)
-        gc.collect()
+            self._mathcal_A_in = self._calculate_single_propagation_matrix(
+                self.A_in_w, self.number_of_nodes, self.epsilon_propagation)
+        return self._mathcal_A_in
 
-    def split_edges_by_homophily(self, labels: torch.Tensor) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
+    @staticmethod
+    def split_edges_by_homophily(A_out_w: torch.Tensor, num_nodes: int, labels: torch.Tensor) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
         """
         Splits the raw weighted directed edge matrices (A_out_w, A_in_w) into
         homophilous (nodes in an edge have the same label) and heterophilous
@@ -308,25 +328,25 @@ class DirectedNgramGraph(Graph):
             A tuple of (A_homo_norm, A_hetero_norm) or None if the graph is empty.
         """
         # --- ANTICIPATORY DEBUGGING: Check for invalid state before proceeding ---
-        if self.number_of_nodes == 0 or self.A_out_w is None or self.A_out_w._nnz() == 0:
+        if num_nodes == 0 or A_out_w is None or A_out_w._nnz() == 0:
             print("  Graph has no nodes or edges, skipping homophily split.")
             return None
 
-        print(f"  Splitting {self.A_out_w._nnz()} directed edges by homophily...")
+        print(f"  Splitting {A_out_w._nnz()} directed edges by homophily...")
 
-        edge_index, edge_weights = self.A_out_w.indices(), self.A_out_w.values()
+        edge_index, edge_weights = A_out_w.indices(), A_out_w.values()
         source_nodes, target_nodes = edge_index[0], edge_index[1]
         source_labels, target_labels = labels[source_nodes], labels[target_nodes]
 
         homo_mask = (source_labels == target_labels)
         hetero_mask = ~homo_mask
 
-        A_out_w_homo = torch.sparse_coo_tensor(edge_index[:, homo_mask], edge_weights[homo_mask], self.A_out_w.shape).coalesce()
-        A_out_w_hetero = torch.sparse_coo_tensor(edge_index[:, hetero_mask], edge_weights[hetero_mask], self.A_out_w.shape).coalesce()
+        A_out_w_homo = torch.sparse_coo_tensor(edge_index[:, homo_mask], edge_weights[homo_mask], A_out_w.shape).coalesce()
+        A_out_w_hetero = torch.sparse_coo_tensor(edge_index[:, hetero_mask], edge_weights[hetero_mask], A_out_w.shape).coalesce()
 
         print("    Normalizing homophilic and heterophilic matrices...")
-        A_homo_norm = self._normalize_symmetric_matrix((A_out_w_homo + A_out_w_homo.t()).coalesce())
-        A_hetero_norm = self._normalize_symmetric_matrix((A_out_w_hetero + A_out_w_hetero.t()).coalesce())
+        A_homo_norm = DirectedNgramGraph._normalize_symmetric_matrix((A_out_w_homo + A_out_w_homo.t()).coalesce(), num_nodes)
+        A_hetero_norm = DirectedNgramGraph._normalize_symmetric_matrix((A_out_w_hetero + A_out_w_hetero.t()).coalesce(), num_nodes)
 
         print(f"    - Undirected Homophilous Edges: {(A_out_w_homo + A_out_w_homo.t())._nnz()}")
         print(f"    - Undirected Heterophilous Edges: {(A_out_w_hetero + A_out_w_hetero.t())._nnz()}")

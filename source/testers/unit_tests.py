@@ -7,6 +7,7 @@
 # ==============================================================================
 
 import unittest
+import argparse
 from .gpu import GPUTests
 from .data_utility import DataUtilityTests
 from .graph_utility import GraphBuilderTests
@@ -18,29 +19,49 @@ from .gnns import GNNBenchmarkerTests
 from .ppi import PPIPipelineTests
 
 
-def run_all_tests():
+def run_all_tests(suites_to_run=None, verbosity=2):
     """Main function to run all tests."""
     gpu_ok = GPUTests.verify_full_gpu_environment()
 
-    # Create a TestSuite
-    suite = unittest.TestSuite()
+    # --- REFACTOR: Allow selective test execution ---
+    all_suites = {
+        "data": DataUtilityTests,
+        "graph": GraphBuilderTests,
+        "models": ModelBuildTests,
+        "reporting": ReportingTests,
+        "w2v": Word2VecPipelineTests,
+        "transformer": TransformerPipelineTests,
+        "gnn": GNNBenchmarkerTests,
+        "ppi": PPIPipelineTests
+    }
 
-    # Add tests from each class
-    suite.addTest(unittest.makeSuite(DataUtilityTests))
-    suite.addTest(unittest.makeSuite(GraphBuilderTests))
-    suite.addTest(unittest.makeSuite(ModelBuildTests))
-    suite.addTest(unittest.makeSuite(ReportingTests))
-    suite.addTest(unittest.makeSuite(Word2VecPipelineTests))
-    suite.addTest(unittest.makeSuite(TransformerPipelineTests))
-    suite.addTest(unittest.makeSuite(GNNBenchmarkerTests))
-    suite.addTest(unittest.makeSuite(PPIPipelineTests))
+    if suites_to_run is None or not suites_to_run:
+        # If no specific suites are requested, run all of them.
+        tests_to_load = all_suites.values()
+        print("\n--- Running all test suites ---")
+    else:
+        # Otherwise, only run the requested suites.
+        tests_to_load = [all_suites[name] for name in suites_to_run if name in all_suites]
+        print(f"\n--- Running selected test suites: {', '.join(suites_to_run)} ---")
+
+    suite = unittest.TestSuite()
+    for test_class in tests_to_load:
+        suite.addTest(unittest.makeSuite(test_class))
 
     # Run the tests
-    runner = unittest.TextTestRunner()
+    runner = unittest.TextTestRunner(verbosity=verbosity)
     runner.run(suite)
 
     return gpu_ok
 
 
 if __name__ == "__main__":
-    run_all_tests()
+    parser = argparse.ArgumentParser(description="Run the project's test suite.")
+    parser.add_argument(
+        '--suite', nargs='*', choices=['data', 'graph', 'models', 'reporting', 'w2v', 'transformer', 'gnn', 'ppi'],
+        help='Specify which test suites to run. If not provided, all suites will be run.'
+    )
+    parser.add_argument('--verbosity', type=int, default=2, help='Set the verbosity level for the test runner.')
+    args = parser.parse_args()
+
+    run_all_tests(suites_to_run=args.suite, verbosity=args.verbosity)

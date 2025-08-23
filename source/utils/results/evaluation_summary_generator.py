@@ -87,6 +87,64 @@ class EvaluationSummary:
 
         return metrics
 
+    def _create_performance_dataframe(self, results_list: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Helper to create the main performance summary DataFrame."""
+        headers = ["Embedding Name", "AUC", "F1", "Precision", "Recall"]
+        for k in self.k_vals_table:
+            headers.extend([f"Hits@{k}", f"NDCG@{k}"])
+        headers.extend(["AUC StdDev", "F1 StdDev"])
+
+        rows_data = []
+        for res in results_list:
+            row = [res.get('embedding_name', 'N/A'), f"{res.get('test_auc_sklearn', 0):.4f}",
+                   f"{res.get('test_f1_sklearn', 0):.4f}", f"{res.get('test_precision_sklearn', 0):.4f}",
+                   f"{res.get('test_recall_sklearn', 0):.4f}"]
+            for k_val in self.k_vals_table:
+                row.append(f"{res.get(f'test_hits_at_{k_val}', 0):.4f}")
+                row.append(f"{res.get(f'test_ndcg_at_{k_val}', 0):.4f}")
+            row.append(f"{res.get('test_auc_sklearn_std', 0):.4f}")
+            row.append(f"{res.get('test_f1_sklearn_std', 0):.4f}")
+            rows_data.append(row)
+
+        return pd.DataFrame(rows_data, columns=headers)
+
+    def _write_statistical_comparison(self, f, results_list: List[Dict[str, Any]], main_emb_name: str, test_metric: str,
+                                      alpha: float):
+        """Helper to write the statistical comparison section to the file."""
+        f.write(f"--- Statistical Comparison vs '{main_emb_name}' on '{test_metric}' (alpha={alpha}) ---\n")
+        main_res = next((r for r in results_list if r.get('embedding_name') == main_emb_name), None)
+        scores_key = 'fold_auc_scores' if 'auc' in test_metric else 'fold_f1_scores'
+
+        if main_res and scores_key in main_res:
+            main_scores = [s for s in main_res[scores_key] if not np.isnan(s)]
+            f.write(
+                f"{'Compared Embedding':<30} | {'p-value (Wilcoxon)':<20} | {'Significantly Different?':<25} | {'Pearson r':<10}\n")
+            f.write("-" * 95 + "\n")
+
+            for other_res in [r for r in results_list if r.get('embedding_name') != main_emb_name]:
+                other_scores = [s for s in other_res.get(scores_key, []) if not np.isnan(s)]
+                if len(main_scores) > 1 and len(other_scores) == len(main_scores):
+                    try:
+                        if np.allclose(main_scores, other_scores):
+                            p_val_wilcoxon = 1.0
+                            conclusion = "Identical scores"
+                        else:
+                            _, p_val_wilcoxon = wilcoxon(main_scores, other_scores)
+                            conclusion = f"Yes (p < {alpha:.2f})" if p_val_wilcoxon < alpha else "No"
+
+                        p_corr, _ = pearsonr(main_scores, other_scores) if len(
+                            np.unique(main_scores)) > 1 and len(np.unique(other_scores)) > 1 else (np.nan, 0)
+                        f.write(
+                            f"{other_res.get('embedding_name', 'Unknown'):<30} | {p_val_wilcoxon:<20.4e} | {conclusion:<25} | {p_corr:<10.4f}\n")
+                    except ValueError as e_stat:
+                        f.write(f"{other_res.get('embedding_name', 'Unknown'):<30} | N/A (stat error: {e_stat})\n")
+                else:
+                    f.write(
+                        f"{other_res.get('embedding_name', 'Unknown'):<30} | N/A (score mismatch or too few/invalid folds)\n")
+        else:
+            f.write(
+                f"Could not perform stats: Baseline model '{main_emb_name}' or its fold scores ('{scores_key}') not found or empty.\n")
+
     def write_summary_file(self, results_list: List[Dict[str, Any]], main_emb_name: str, test_metric: str, alpha: float) -> Optional[Path]:
         """
         Writes a formatted summary table and statistical test results to a text file.
@@ -95,60 +153,17 @@ class EvaluationSummary:
             print("Reporting: No results data provided for summary file.")
             return None
 
-        filepath = self.summary_file_output_dir / "evaluation_summary.txt"
+        # --- REFACTOR: Save as a more useful CSV file instead of TXT ---
+        filepath = self.summary_file_output_dir / "evaluation_summary.csv"
+        performance_df = self._create_performance_dataframe(results_list)
+
+        # Save the main performance table as a CSV
+        performance_df.to_csv(filepath, index=False)
 
         with open(filepath, 'w') as f:
-            f.write("--- Overall Performance Comparison Table (Averaged over Folds) ---\n")
-            headers = ["Embedding Name", "AUC", "F1", "Precision", "Recall"]
-            for k in self.k_vals_table:
-                headers.extend([f"Hits@{k}", f"NDCG@{k}"])
-            headers.extend(["AUC StdDev", "F1 StdDev"])
-
-            rows_data = []
-            for res in results_list:
-                row = [res.get('embedding_name', 'N/A'), f"{res.get('test_auc_sklearn', 0):.4f}", f"{res.get('test_f1_sklearn', 0):.4f}", f"{res.get('test_precision_sklearn', 0):.4f}",
-                       f"{res.get('test_recall_sklearn', 0):.4f}"]
-                for k_val in self.k_vals_table:
-                    row.append(f"{res.get(f'test_hits_at_{k_val}', 0):.4f}")
-                    row.append(f"{res.get(f'test_ndcg_at_{k_val}', 0):.4f}")
-                row.append(f"{res.get('test_auc_sklearn_std', 0):.4f}")
-                row.append(f"{res.get('test_f1_sklearn_std', 0):.4f}")
-                rows_data.append(row)
-
-            df = pd.DataFrame(rows_data, columns=headers)
-            f.write(df.to_string(index=False))
+            f.write(performance_df.to_string(index=False))
             f.write("\n\n")
-
-            f.write(f"--- Statistical Comparison vs '{main_emb_name}' on '{test_metric}' (alpha={alpha}) ---\n")
-            main_res = next((r for r in results_list if r.get('embedding_name') == main_emb_name), None)
-            scores_key = 'fold_auc_scores' if 'auc' in test_metric else 'fold_f1_scores'
-
-            if main_res and scores_key in main_res:
-                main_scores = [s for s in main_res[scores_key] if not np.isnan(s)]
-                f.write(f"{'Compared Embedding':<30} | {'p-value (Wilcoxon)':<20} | {'Significantly Different?':<25} | {'Pearson r':<10}\n")
-                f.write("-" * 95 + "\n")
-
-                for other_res in [r for r in results_list if r.get('embedding_name') != main_emb_name]:
-                    other_scores = [s for s in other_res.get(scores_key, []) if not np.isnan(s)]
-                    # --- FIX: Wilcoxon test requires equal sample sizes. ---
-                    # Only perform the test if both models have the same number of valid fold scores.
-                    if len(main_scores) > 1 and len(other_scores) == len(main_scores):
-                        try:
-                            if np.allclose(main_scores, other_scores):
-                                p_val_wilcoxon = 1.0
-                                conclusion = "Identical scores"
-                            else:
-                                _, p_val_wilcoxon = wilcoxon(main_scores, other_scores)
-                                conclusion = f"Yes (p < {alpha:.2f})" if p_val_wilcoxon < alpha else "No"
-
-                            p_corr, _ = pearsonr(main_scores, other_scores) if len(np.unique(main_scores)) > 1 and len(np.unique(other_scores)) > 1 else (np.nan, 0)
-                            f.write(f"{other_res.get('embedding_name', 'Unknown'):<30} | {p_val_wilcoxon:<20.4e} | {conclusion:<25} | {p_corr:<10.4f}\n")
-                        except ValueError as e_stat:
-                            f.write(f"{other_res.get('embedding_name', 'Unknown'):<30} | N/A (stat error: {e_stat})\n")
-                    else:
-                        f.write(f"{other_res.get('embedding_name', 'Unknown'):<30} | N/A (score mismatch or too few/invalid folds)\n")
-            else:
-                f.write(f"Could not perform stats: Baseline model '{main_emb_name}' or its fold scores ('{scores_key}') not found or empty.\n")
+            self._write_statistical_comparison(f, results_list, main_emb_name, test_metric, alpha)
 
         print(f"Results summary saved to {filepath}")
         return filepath

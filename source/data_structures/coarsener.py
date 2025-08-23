@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: data_structures/coarsener.py
 # PURPOSE: Implements graph coarsening techniques to reduce graph size.
-# VERSION: 1.0
+# VERSION: 1.1 (Refactored to use PyG's pool_edge)
 # AUTHOR: Gemini Code Assist
 # ==============================================================================
 
@@ -10,7 +10,7 @@ from typing import Tuple, Optional
 import numpy as np
 import scipy.sparse.linalg as sp_linalg
 import torch
-from torch_geometric.nn.pool import graclus
+from torch_geometric.nn.pool import graclus, pool_edge
 from torch_geometric.utils import to_scipy_sparse_matrix, from_scipy_sparse_matrix, get_laplacian, modularity
 from tqdm.auto import tqdm
 
@@ -52,9 +52,8 @@ class GraphCoarsener:
         DataUtils.print_header(f"Graph Coarsening (Levels: {level})")
 
         # Start with the undirected, normalized adjacency matrix of the original graph
-        current_adj = graph.A_undirected_norm_sparse.coalesce()
-        edge_index = current_adj.indices()
-        edge_weight = current_adj.values()
+        edge_index = graph.A_undirected_norm_sparse.coalesce().indices()
+        edge_weight = graph.A_undirected_norm_sparse.coalesce().values()
 
         # Initialize the cluster map where each node is its own cluster
         num_nodes = graph.number_of_nodes
@@ -63,31 +62,22 @@ class GraphCoarsener:
         print(f"  Initial graph: {num_nodes} nodes, {edge_index.size(1)} edges.")
 
         for i in tqdm(range(level), desc="  Coarsening Levels", leave=False):
-            # Use Graclus to find clusters in the current graph
-            clusters = graclus(edge_index, edge_weight)
+            if edge_index.numel() == 0:
+                print(f"  - Coarsening stopped at level {i+1}: No edges remain.")
+                break
 
-            # Update the global cluster map: map original nodes to the new clusters
+            clusters = graclus(edge_index, edge_weight)
             cluster_map = clusters[cluster_map]
 
-            # Create the new, smaller adjacency matrix based on the clusters
-            # Convert to SciPy sparse matrix for efficient manipulation
-            scipy_adj = to_scipy_sparse_matrix(edge_index, edge_weight, num_nodes=current_adj.size(0))
+            # --- REFACTOR: Use the idiomatic PyG function for coarsening edges ---
+            # This is cleaner and more direct than converting to SciPy and back.
+            edge_index, edge_weight = pool_edge(clusters, edge_index, edge_weight, reduce='add')
+            num_nodes = int(clusters.max().item()) + 1
 
-            # Create a cluster matrix C where C[i, j] = 1 if node i is in cluster j
-            C = torch.zeros((current_adj.size(0), clusters.max() + 1), dtype=torch.float32)
-            C[torch.arange(current_adj.size(0)), clusters] = 1
-
-            # The new coarsened adjacency matrix is C^T * A * C
-            coarsened_scipy_adj = C.t().numpy() @ scipy_adj @ C.numpy()
-
-            # Convert back to PyG format
-            edge_index, edge_weight = from_scipy_sparse_matrix(coarsened_scipy_adj)
-            current_adj = torch.sparse_coo_tensor(edge_index, edge_weight, size=(C.shape[1], C.shape[1]))
-
-            print(f"  Level {i + 1}: Coarsened to {current_adj.size(0)} nodes, {edge_index.size(1)} edges.")
+            print(f"  Level {i + 1}: Coarsened to {num_nodes} nodes, {edge_index.size(1)} edges.")
 
         print("--- Graph Coarsening Finished ---")
-        return current_adj.coalesce().indices(), cluster_map, current_adj.coalesce().values()
+        return edge_index, cluster_map, edge_weight
 
     @staticmethod
     def validate_coarsening(

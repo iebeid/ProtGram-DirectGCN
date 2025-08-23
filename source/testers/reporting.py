@@ -47,5 +47,11 @@ class ReportingTests(unittest.TestCase):
         reporter.plot_comparison_charts(results_data)
         reporter.write_summary_file(results_data, main_emb_name='Model_A', test_metric='test_auc_sklearn', alpha=0.05)
 
+        # --- NEW: Add assertions to verify that output files were actually created ---
+        self.assertTrue(os.path.exists(os.path.join(self.test_output_dir, "training_plots", "training_history_Model_A_Fold1.png")))
+        self.assertTrue(os.path.exists(os.path.join(self.test_output_dir, "plots", "roc_curves_comparison.png")))
+        self.assertTrue(os.path.exists(os.path.join(self.test_output_dir, "plots", "comparison_charts.png")))
+        self.assertTrue(os.path.exists(os.path.join(self.test_output_dir, "tables", "evaluation_summary.csv")))
+
         print(f"  Example reporting complete. Check '{self.test_output_dir}' directory.")
         print("--- EvaluationReporter Test Complete ---")

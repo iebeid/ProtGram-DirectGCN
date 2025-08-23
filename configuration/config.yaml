@@ -46,6 +46,19 @@ pipeline_flags:
 resource_management:
   MEMORY_USAGE_STRATEGY: 'dynamic' # 'low', 'high', or 'dynamic'
 
+# --- NEW: Shared GNN Hyperparameters using YAML Anchors ---
+# This block defines common GNN parameters once to avoid duplication.
+# It is merged into the gnn_benchmarking and singleton_eval sections below.
+_shared_gnn_params: &gnn_hyperparams
+  GNN_HIDDEN_CHANNELS: 64
+  GNN_NUM_LAYERS: 2
+  GNN_DROPOUT_RATE: 0.5
+  GAT_HEADS: 2
+  GAT_DROPOUT_RATE: 0.5
+  CHEBNET_K: 3
+  RGCN_NUM_RELATIONS: 2
+  DIRECTGCN_HIDDEN_LAYER_DIMS: [64, 64]
+
 # 5. GNN BENCHMARKING PARAMETERS
 gnn_benchmarking:
   DATASETS:
@@ -75,22 +88,21 @@ gnn_benchmarking:
   NE_EMBEDDING_DIM: 128
   NE_WALK_LENGTH: 20
   NE_CONTEXT_SIZE: 10
-  GNN_HIDDEN_CHANNELS: 64
-  GNN_NUM_LAYERS: 2
-  GNN_DROPOUT_RATE: 0.5
-  GAT_HEADS: 2
-  GAT_DROPOUT_RATE: 0.5
-  CHEBNET_K: 3
+  NE_WALKS_PER_NODE: 10
+  NE_NUM_NEGATIVE_SAMPLES: 1
+  NE_CLASSIFIER_C: 1.0
+  NE_CLASSIFIER_MAX_ITER: 1000
+  NE_CLASSIFIER_SOLVER: 'lbfgs'
   GNN_LEARNING_RATE: 0.01
+  GNN_WEIGHT_DECAY: 0.0005
   GNN_EPOCHS: 100
-  RGCN_NUM_RELATIONS: 2
-  DIRECTGCN_HIDDEN_LAYER_DIMS: [64, 64] # [hidden_channels] * num_layers
   GNN_INIT_DIM: 64
+  <<: *gnn_hyperparams # Merge the shared GNN parameters
 
 # 6. ProtGram-DirectGCN PIPELINE PARAMETERS
 protgram_gcn:
   PROTGRAM_NGRAM_MAX_N: 3
-  ID_MAPPING_MODE: 'file'
+  ID_MAPPING_MODE: 'file' # Options: 'regex', 'file', 'api', 'none'
   API_MAPPING_FROM_DB: null
   API_MAPPING_TO_DB: "UniProtKB"
   PROTGRAM_MODELS_TO_TRAIN: ['directgcn']
@@ -174,6 +186,10 @@ lstm:
   TRAIN_STEP: 50
   LEARNING_RATE: 0.001
   POOLING_STRATEGY: 'mean'
+  VALIDATION_SPLIT: 0.1
+  USE_EARLY_STOPPING: true
+  EARLY_STOPPING_PATIENCE: 10
+  EARLY_STOPPING_MIN_DELTA: 0.001
 
 # 9.5. SINGLETON EVALUATION PARAMETERS
 singleton_eval:
@@ -185,14 +201,8 @@ singleton_eval:
     - "GCN"
     - "RGCN"
     - "DirGNN"
-  GNN_HIDDEN_CHANNELS: 64
-  GNN_NUM_LAYERS: 2
-  GNN_DROPOUT_RATE: 0.5
-  GAT_HEADS: 2
-  GAT_DROPOUT_RATE: 0.5
-  CHEBNET_K: 3
-  RGCN_NUM_RELATIONS: 2
-  DIRECTGCN_HIDDEN_LAYER_DIMS: [64, 64]
+  GRADIENT_ACCUMULATION_STEPS: 1
+  <<: *gnn_hyperparams # Merge the shared GNN parameters
 
 # 10. PPI EVALUATION PARAMETERS
 ppi_evaluation:

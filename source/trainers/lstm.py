@@ -79,7 +79,7 @@ class LSTMBasedEmbedder:
         # FIX: Split the list of sequences, not a list containing one giant string,
         # to prevent a ValueError from train_test_split when n_samples=1.
         train_seq_data, val_seq_data = train_test_split(
-            self.sequences, test_size=0.1, random_state=self.config.RANDOM_STATE
+            self.sequences, test_size=self.config.LSTM_VALIDATION_SPLIT, random_state=self.config.RANDOM_STATE
         )
 
         train_dataset = LSTMDataBuilder(
@@ -101,7 +101,10 @@ class LSTMBasedEmbedder:
 
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config.LSTM_LEARNING_RATE)
         criterion = nn.CrossEntropyLoss()
-        early_stopper = EarlyStopper(patience=self.config.EARLY_STOPPING_PATIENCE, min_delta=0.001)
+        early_stopper = EarlyStopper(
+            patience=self.config.LSTM_EARLY_STOPPING_PATIENCE,
+            min_delta=self.config.LSTM_EARLY_STOPPING_MIN_DELTA
+        )
 
         for epoch in range(self.config.LSTM_EPOCHS):
             self.model.train()
@@ -130,9 +133,10 @@ class LSTMBasedEmbedder:
             avg_val_loss = val_loss / len(val_dataloader)
             print(f"  Epoch {epoch + 1} finished. Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
 
-            if early_stopper.early_stop(avg_val_loss):
-                print(f"  Early stopping triggered at epoch {epoch + 1}.")
-                break
+            if self.config.LSTM_USE_EARLY_STOPPING:
+                if early_stopper.early_stop(avg_val_loss):
+                    print(f"  Early stopping triggered at epoch {epoch + 1}.")
+                    break
 
     def run(self) -> Optional[str]:
         DataUtils.print_header("PIPELINE: Training LSTM & Generating Embeddings (PyTorch)")

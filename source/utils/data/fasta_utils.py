@@ -67,8 +67,8 @@ class FastaUtils:
                 # --- PERFORMANCE: Avoid reading the file twice. ---
                 # We open the file once and iterate through it with SeqIO. The tqdm progress
                 # bar will no longer show a total, but this is a major I/O optimization.
-                with open(normalized_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    for record in tqdm(SeqIO.parse(f, "fasta"), desc=f"  - {normalized_path.name}", leave=False, unit="seq"):
+                with open(normalized_path, 'r', encoding='utf-8', errors='ignore') as f: # noqa
+                    for record in SeqIO.parse(f, "fasta"):
                         protein_id = FastaUtils.extract_id_from_header(record.description)
                         sequence = str(record.seq).upper()
 
@@ -92,6 +92,7 @@ class FastaUtils:
             self.fasta_files = [Path(f) for f in fasta_files]
 
         def __iter__(self) -> Iterator[List[str]]:
-            for f_path in self.fasta_files:
-                for _, sequence in FastaUtils.parse_sequences([f_path]):
-                    if sequence: yield list(sequence)
+            # --- REFACTOR: Call parse_sequences once with all files for efficiency ---
+            for _, sequence in FastaUtils.parse_sequences(self.fasta_files):
+                if sequence:
+                    yield list(sequence)

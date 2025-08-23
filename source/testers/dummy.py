@@ -21,7 +21,8 @@ class DummyDataFactory:
         fasta_path = os.path.join(directory, filename)
         with open(fasta_path, "w") as f:
             for i in range(num_seqs):
-                seq_id = f"dummy_prot_{i + 1}"
+                # --- REFACTOR: Use a more realistic UniProt-like header ---
+                seq_id = f"sp|DUMMY{i+1:04d}|TEST_DUMMY"
                 sequence = "".join(np.random.choice(list("ACDEFGHIKLMNPQRSTVWY"), size=np.random.randint(20, 50)))
                 f.write(f">{seq_id}\n{sequence}\n")
         return fasta_path
@@ -59,5 +60,6 @@ class DummyDataFactory:
             protein_ids = [f"DUMMY_P{i:05d}" for i in range(num_proteins)]
         with h5py.File(h5_path, 'w') as hf:
             for pid in protein_ids:
-                hf.create_dataset(pid, data=np.random.rand(dim).astype(np.float32))
+                # --- FIX: Use float16 to match the data type used in the main pipeline's dummy run ---
+                hf.create_dataset(pid, data=np.random.rand(dim).astype(np.float16))
         return h5_path

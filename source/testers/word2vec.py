@@ -10,6 +10,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+import mlflow
 from configuration.config import Config
 from source.trainers.word2vec import Word2VecEmbedder
 from source.utils.data.data_utils import DataUtils
@@ -42,10 +43,12 @@ class Word2VecPipelineTests(unittest.TestCase):
         self.config.SEQUENCE_FILE_PATHS = [Path(dummy_fasta_path)]
         self.config.W2V_EPOCHS = 1
 
-        embedder = Word2VecEmbedder(self.config)
-        result_path = embedder.run()
+        with mlflow.start_run(run_name="Word2Vec_Embedder_SMOKE_TEST"):
+            embedder = Word2VecEmbedder(self.config)
+            result_path = embedder.run()
 
         self.assertIsNotNone(result_path)
+        self.assertIsInstance(result_path, str, "The run method should return a string path.")
         self.assertTrue(os.path.exists(result_path))
         print("\n  Word2VecEmbedder smoke test ran successfully.")
         print("--- Word2Vec Pipeline Smoke Test Complete ---")

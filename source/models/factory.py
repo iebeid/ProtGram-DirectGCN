@@ -65,36 +65,23 @@ class ModelFactory:
         and the specific model being requested.
         """
         # Base parameters applicable to most models
-        if self.context == 'benchmark':
+        params = {}
+        # --- REFACTOR: Consolidate benchmark and singleton contexts which share a similar structure ---
+        if self.context in ['benchmark', 'singleton']:
+            prefix = 'BENCHMARK_' if self.context == 'benchmark' else 'SINGLETON_'
             params = {
-                'hidden_channels': self.config.BENCHMARK_GNN_HIDDEN_CHANNELS,
-                'num_layers': self.config.BENCHMARK_GNN_NUM_LAYERS,
-                'dropout_rate': self.config.BENCHMARK_GNN_DROPOUT_RATE,
-            }
-            # Model-specific overrides
-            if model_name_lower == 'gat':
-                params['heads'] = self.config.BENCHMARK_GAT_HEADS
-            elif model_name_lower == 'chebnet':
-                params['K'] = self.config.BENCHMARK_CHEBNET_K
-            elif model_name_lower == 'rgcn':
-                params['num_relations'] = self.config.BENCHMARK_RGCN_NUM_RELATIONS
-            elif model_name_lower == 'directgcn':
-                params['layer_dims_config'] = self.config.BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS
-
-        elif self.context == 'singleton':
-            params = {
-                'hidden_channels': self.config.SINGLETON_GNN_HIDDEN_CHANNELS,
-                'num_layers': self.config.SINGLETON_GNN_NUM_LAYERS,
-                'dropout_rate': self.config.SINGLETON_GNN_DROPOUT_RATE,
+                'hidden_channels': getattr(self.config, f'{prefix}GNN_HIDDEN_CHANNELS'),
+                'num_layers': getattr(self.config, f'{prefix}GNN_NUM_LAYERS'),
+                'dropout_rate': getattr(self.config, f'{prefix}GNN_DROPOUT_RATE'),
             }
             if model_name_lower == 'gat':
-                params['heads'] = self.config.SINGLETON_GAT_HEADS
+                params['heads'] = getattr(self.config, f'{prefix}GAT_HEADS')
             elif model_name_lower == 'chebnet':
-                params['K'] = self.config.SINGLETON_CHEBNET_K
+                params['K'] = getattr(self.config, f'{prefix}CHEBNET_K')
             elif model_name_lower == 'rgcn':
-                params['num_relations'] = self.config.SINGLETON_RGCN_NUM_RELATIONS
+                params['num_relations'] = getattr(self.config, f'{prefix}RGCN_NUM_RELATIONS')
             elif model_name_lower == 'directgcn':
-                params['layer_dims_config'] = self.config.SINGLETON_DIRECTGCN_HIDDEN_LAYER_DIMS
+                params['layer_dims_config'] = getattr(self.config, f'{prefix}DIRECTGCN_HIDDEN_LAYER_DIMS')
 
         elif self.context == 'protgram':
             params = {
@@ -106,8 +93,6 @@ class ModelFactory:
                 params['num_relations'] = 2  # Default for protgram context
             elif model_name_lower == 'directgcn':
                 params['layer_dims_config'] = self.config.DIRECTGCN_HIDDEN_LAYER_DIMS
-        else:
-            params = {}
 
         # Add common DirectGCN parameters if it's the requested model
         if model_name_lower == 'directgcn':
@@ -128,8 +113,7 @@ class ModelFactory:
         model_class = self._registry.get(name_lower)
 
         if not model_class:
-            print(f"  ERROR: Unknown model type '{model_name}' requested from factory. Is it registered?")
-            return None
+            raise ValueError(f"Unknown model name: '{model_name}'. Supported models are: {list(self._registry.keys())}")
 
         # --- NEW: In-memory instance caching ---
         # Create a unique key based on model name, context, and key parameters

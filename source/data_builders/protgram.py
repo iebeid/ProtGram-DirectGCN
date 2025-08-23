@@ -115,37 +115,27 @@ class ProtGramDataBuilder:
                 A generator that streams sequences from FASTA files, applying cleaning
                 and downsampling as configured. It also yields a flag for the first sequence.
                 """
-                sequence_iterator = None
-                # --- NEW: Downsampling logic ---
-                # If downsampling is enabled, we first get all sequence tuples.
-                # This is memory-intensive but necessary for random sampling.
-                # The pipeline is designed to handle this by having separate flags for large datasets.
+                # Default behavior: stream all sequences directly
+                sequence_iterator = FastaUtils.parse_sequences(
+                    self.protein_sequence_files,
+                    perform_cleaning=self.config.PROTGRAM_CLEAN_FASTA_ON_PARSE,
+                    min_len=self.config.PROTGRAM_FASTA_MIN_LEN,
+                    max_len=self.config.PROTGRAM_FASTA_MAX_LEN,
+                    alphabet_type=self.config.PROTGRAM_FASTA_ALPHABET
+                )
+
+                # --- DEFINITIVE FIX: Use a more scalable single-pass downsampling method ---
+                # This avoids a second full read of the FASTA file just to get the total count.
+                # It yields an *approximate* sample size, which is a good trade-off for performance.
                 if self.config.SEQUENCE_DOWNSAMPLE_FRACTION and 0.0 < self.config.SEQUENCE_DOWNSAMPLE_FRACTION < 1.0:
-                    print(f"  Downsampling FASTA files to {self.config.SEQUENCE_DOWNSAMPLE_FRACTION * 100:.2f}% using memory-efficient reservoir sampling...")
-                    # --- ANTICIPATORY DEBUGGING: Avoid loading the entire dataset into memory for sampling. ---
-                    # Instead of list(FastaUtils.parse_sequences(...)), which would cause an OOM error on large
-                    # files, we use a reservoir sampling algorithm that processes the sequence stream.
-                    sequence_stream = FastaUtils.parse_sequences(
-                        self.protein_sequence_files,
-                        perform_cleaning=self.config.PROTGRAM_CLEAN_FASTA_ON_PARSE,
-                        min_len=self.config.PROTGRAM_FASTA_MIN_LEN,
-                        max_len=self.config.PROTGRAM_FASTA_MAX_LEN,
-                        alphabet_type=self.config.PROTGRAM_FASTA_ALPHABET
-                    )
-                    # Estimate total number of sequences for sampling k
-                    total_sequences = sum(1 for _ in FastaUtils.parse_sequences(self.protein_sequence_files))
-                    sample_size = int(total_sequences * self.config.SEQUENCE_DOWNSAMPLE_FRACTION)
-                    print(f"  Estimated total sequences: {total_sequences}, Target sample size: {sample_size}")
-                    sequence_iterator = DataUtils.reservoir_sample(sequence_stream, sample_size, self.config.RANDOM_STATE)
-                else:
-                    # Default behavior: stream sequences directly
-                    sequence_iterator = FastaUtils.parse_sequences(
-                        self.protein_sequence_files,
-                        perform_cleaning=self.config.PROTGRAM_CLEAN_FASTA_ON_PARSE,
-                        min_len=self.config.PROTGRAM_FASTA_MIN_LEN,
-                        max_len=self.config.PROTGRAM_FASTA_MAX_LEN,
-                        alphabet_type=self.config.PROTGRAM_FASTA_ALPHABET
-                    )
+                    print(f"  Applying single-pass probabilistic downsampling ({self.config.SEQUENCE_DOWNSAMPLE_FRACTION * 100:.2f}% chance per sequence)...")
+                    random.seed(self.config.RANDOM_STATE)
+                    # Re-wrap the iterator in a new generator that applies the filter
+                    def probabilistic_sampler(iterator, fraction):
+                        for item in iterator:
+                            if random.random() < fraction:
+                                yield item
+                    sequence_iterator = probabilistic_sampler(sequence_iterator, self.config.SEQUENCE_DOWNSAMPLE_FRACTION)
 
                 # --- DEFINITIVE FIX: Add the missing iterator and yield logic ---
                 if sequence_iterator:

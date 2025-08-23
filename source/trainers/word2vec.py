@@ -49,18 +49,8 @@ class Word2VecEmbedder:
             return id_map_result
         return None
 
-    def _execute_embedding_logic(self, id_mapper_obj: Optional[Mapping]) -> Optional[str]:
-        """The core logic for Word2Vec, now accepting a mapper object."""
-        DataUtils.print_header("Step 1: Preparing FASTA Corpus for Word2Vec")
-        fasta_paths = self.config.SEQUENCE_FILE_PATHS
-        if not fasta_paths:
-            print("ERROR: No FASTA files configured in 'config.SEQUENCE_FILE_PATHS' for Word2Vec.")
-            return None
-
-        fasta_files = [str(p) for p in fasta_paths]
-        print(f"  Found {len(fasta_files)} FASTA file(s) for corpus: {[os.path.basename(f) for f in fasta_files]}")
-        corpus = FastaUtils.FastaCorpus(fasta_files)
-
+    def _train_w2v_model(self, corpus: FastaUtils.FastaCorpus) -> Word2Vec:
+        """Trains the Word2Vec model on the provided corpus."""
         DataUtils.print_header("Step 2: Training Word2Vec Model")
         print(
             f"  Training Word2Vec model (vector_size={self.config.W2V_VECTOR_SIZE}, window={self.config.W2V_WINDOW}, epochs={self.config.W2V_EPOCHS})...")
@@ -71,11 +61,13 @@ class Word2VecEmbedder:
             workers=self.config.W2V_WORKERS, sg=1, hs=0, negative=5, seed=self.config.RANDOM_STATE
         )
         print(f"  Word2Vec model training finished in {time.time() - model_train_start_time:.2f}s.")
+        return w2v_model
 
+    def _generate_protein_embeddings(self, w2v_model: Word2Vec, fasta_files: List[str]) -> Dict[str, np.ndarray]:
+        """Generates per-protein embeddings using the trained Word2Vec model."""
         DataUtils.print_header("Step 3: Generating Per-Protein Embeddings using Word2Vec")
         protein_embeddings: Dict[str, np.ndarray] = {}
-        # --- ANTICIPATORY DEBUGGING: Use the generator directly to avoid loading all sequences into memory ---
-        # This is crucial for scalability with very large FASTA files.
+        # Use the generator directly to avoid loading all sequences into memory
         sequences_for_embedding = FastaUtils.parse_sequences(fasta_files)
 
         for original_id, sequence in tqdm(sequences_for_embedding, desc="  Generating W2V Protein Embeddings"):
@@ -89,6 +81,26 @@ class Word2VecEmbedder:
 
         if not protein_embeddings:
             print("  Warning: No protein embeddings generated from Word2Vec.")
+
+        return protein_embeddings
+
+    def _execute_embedding_logic(self, id_mapper_obj: Optional[Mapping]) -> Optional[str]:
+        """The core logic for Word2Vec, now accepting a mapper object."""
+        DataUtils.print_header("Step 1: Preparing FASTA Corpus for Word2Vec")
+        fasta_paths = self.config.SEQUENCE_FILE_PATHS
+        if not fasta_paths:
+            print("ERROR: No FASTA files configured in 'config.SEQUENCE_FILE_PATHS' for Word2Vec.")
+            return None
+
+        fasta_files = [str(p) for p in fasta_paths]
+        print(f"  Found {len(fasta_files)} FASTA file(s) for corpus: {[os.path.basename(f) for f in fasta_files]}")
+        corpus = FastaUtils.FastaCorpus(fasta_files)
+
+        # --- REFACTOR: Use helper methods for training and embedding generation ---
+        w2v_model = self._train_w2v_model(corpus)
+        protein_embeddings = self._generate_protein_embeddings(w2v_model, fasta_files)
+
+        if not protein_embeddings:
             return None
 
         # Apply ID mapping to the entire dictionary at once

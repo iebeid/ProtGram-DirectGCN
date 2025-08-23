@@ -108,7 +108,7 @@ conda create -n "$ENV_NAME" -c conda-forge python="$PYTHON_VERSION" -y
 # --- DEFINITIVE FIX: Dynamically find the new environment's path ---
 # Instead of assuming the env is in `$CONDA_BASE/envs`, we parse conda's output
 # to find the actual location. This handles system vs. user-level installations.
-NEW_ENV_PATH=$(conda info --envs | grep "$ENV_NAME" | awk '{print $NF}')
+NEW_ENV_PATH=$(conda info --envs | grep -w "$ENV_NAME" | awk '{print $NF}')
 if [ -z "$NEW_ENV_PATH" ]; then
     echo "ERROR: Could not find the path for the newly created environment '$ENV_NAME'."
     exit 1
@@ -171,28 +171,11 @@ else
     exit 1
 fi
 
-# --- CRITICAL FIX: Export the new Conda environment's library path. ---
-# This ensures that TensorFlow and other programs can find the CUDA libraries (.so files)
-# that were installed by Conda. This resolves the "Cannot dlopen" errors at runtime.
-export LD_LIBRARY_PATH="$NEW_ENV_PATH/lib:$LD_LIBRARY_PATH"
-
-# --- DEFINITIVE FIX for Reproducibility: Configure CUDA workspace ---
-# This environment variable is required by `torch.use_deterministic_algorithms(True)`
-# to ensure that operations like `index_add` (used by PyG's scatter_add) are deterministic.
-export CUBLAS_WORKSPACE_CONFIG=:4096:8
-
-# --- CRITICAL FIX for XLA/JIT: Point TensorFlow's XLA compiler to the new Conda CUDA toolkit. ---
-# This resolves the "libdevice not found" and "JIT compilation failed" errors when
-# running Transformer models on the GPU.
-export XLA_FLAGS="--xla_gpu_cuda_data_dir=$NEW_ENV_PATH"
-
-# --- DEFINITIVE FIX: Automate the final setup step ---
-# Instead of prompting the user, directly call the setup script to complete the installation.
-echo -e "\n--- STEP 4: Running the main environment setup script (setup.py) ---"
-"$NEW_ENV_PYTHON" -u configuration/setup.py
-
 echo -e "\n\n"
 echo "================================================================================"
-echo "--- FULL RESET AND SETUP COMPLETE ---"
-echo -e "\n--- You can now use 'start.sh' for subsequent runs. ---"
+echo "--- RESET SCRIPT FINISHED ---"
+echo "--- The project code has been reset and a minimal Conda environment created. ---"
+echo -e "\n--- NEXT STEP: The main 'start.sh' script will complete the setup. ---"
+echo "--- Change to the project directory and run it with the following command: ---"
+echo "    cd $PROJECTS_DIR/$PROJECT_DIR_NAME && bash start.sh"
 exit 0

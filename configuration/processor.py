@@ -37,6 +37,20 @@ class DataProcessor:
     def __init__(self, config):
         self.config = config
 
+    def is_huge_file(self, file_path: Path) -> bool:
+        """
+        Determines if a file is considered too large for SHA256 checksumming
+        to save time during manifest generation.
+        """
+        huge_files = {
+            "uniref50.fasta",
+            "idmapping.dat",
+            "id_mapping.parquet",
+            "negative_interactions.parquet",
+            "positive_interactions.parquet"
+        }
+        return file_path.name in huge_files
+
     @staticmethod
     def _is_file_valid(file_path: Path) -> bool:
         """
@@ -88,32 +102,31 @@ class DataProcessor:
         # Stage 1: Stream the huge raw file line-by-line, writing filtered lines to a temporary file. This uses minimal RAM.
         print(f"  Stage 1/2: Streaming and filtering raw mapping file '{raw_mapping_path.name}'...")
         temp_filtered_path = self.config.ID_MAPPING_PATH.with_suffix('.tmp.tsv')
-        relevant_dbs = ['GeneID', 'UniRef100', 'UniRef90', 'UniRef50']
-        total_size = raw_mapping_path.stat().st_size
-        lines_written = 0
-        with open(raw_mapping_path, 'r', encoding='utf-8', errors='ignore') as f_in, \
-             open(temp_filtered_path, 'w', encoding='utf-8') as f_out, \
-             tqdm(total=total_size, unit='B', unit_scale=True, desc="  - Filtering raw data") as pbar:
-            for line in f_in:
-                parts = line.strip().split('\t')
-                if len(parts) >= 2 and parts[1] in relevant_dbs:
-                    f_out.write(line)
-                    lines_written += 1
-                pbar.update(len(line.encode('utf-8')))
-
-        if lines_written == 0:
-            print("  - WARNING: No relevant IDs found in the mapping file. The resulting Parquet file will be empty.")
-            empty_df = pd.DataFrame(columns=['uniprot_id', 'db', 'other_id'])
-            empty_df.to_parquet(self.config.ID_MAPPING_PATH, engine='pyarrow')
-            temp_filtered_path.unlink() # Clean up temp file
-            return
-
-        # Stage 2: Convert the much smaller temporary file to a partitioned Parquet file.
-        print(f"\n  Stage 2/2: Converting {lines_written:,} filtered lines to Parquet format...")
-        # --- DEFINITIVE FIX for OOM Kill: Use a chunked Pandas reader instead of Dask for this step ---
-        # This provides more direct control over memory and avoids Dask's potentially large intermediate graph.
-        writer = None
         try:
+            relevant_dbs = ['GeneID', 'UniRef100', 'UniRef90', 'UniRef50']
+            total_size = raw_mapping_path.stat().st_size
+            lines_written = 0
+            with open(raw_mapping_path, 'r', encoding='utf-8', errors='ignore') as f_in, \
+                 open(temp_filtered_path, 'w', encoding='utf-8') as f_out, \
+                 tqdm(total=total_size, unit='B', unit_scale=True, desc="  - Filtering raw data") as pbar:
+                for line in f_in:
+                    parts = line.strip().split('\t')
+                    if len(parts) >= 2 and parts[1] in relevant_dbs:
+                        f_out.write(line)
+                        lines_written += 1
+                    pbar.update(len(line.encode('utf-8')))
+
+            if lines_written == 0:
+                print("  - WARNING: No relevant IDs found in the mapping file. The resulting Parquet file will be empty.")
+                empty_df = pd.DataFrame(columns=['uniprot_id', 'db', 'other_id'])
+                empty_df.to_parquet(self.config.ID_MAPPING_PATH, engine='pyarrow')
+                return
+
+            # Stage 2: Convert the much smaller temporary file to a partitioned Parquet file.
+            print(f"\n  Stage 2/2: Converting {lines_written:,} filtered lines to Parquet format...")
+            # --- DEFINITIVE FIX for OOM Kill: Use a chunked Pandas reader instead of Dask for this step ---
+            # This provides more direct control over memory and avoids Dask's potentially large intermediate graph.
+            writer = None
             with tqdm(total=temp_filtered_path.stat().st_size, unit='B', unit_scale=True, desc="  - Converting to Parquet") as pbar:
                 reader = pd.read_csv(temp_filtered_path, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'],
                                      dtype={'db': 'category', 'uniprot_id': str, 'other_id': str},
@@ -125,11 +138,11 @@ class DataProcessor:
                         writer = pq.ParquetWriter(self.config.ID_MAPPING_PATH, table.schema)
                     writer.write_table(table)
                     pbar.update(chunk.memory_usage(index=True, deep=True).sum())
-        finally:
             if writer:
                 writer.close()
-
-        temp_filtered_path.unlink() # Clean up the intermediate file
+        finally:
+            if temp_filtered_path.exists():
+                temp_filtered_path.unlink() # Clean up the intermediate file
 
         # --- NEW: Cache the newly created file for future runs ---
         if processed_parquet_path.exists():

@@ -79,7 +79,7 @@ class EvaluationReporter:
             plt.plot(history_dict['loss'], label='Training Loss')
         if 'val_loss' in history_dict and history_dict['val_loss']:
             plt.plot(history_dict['val_loss'], label='Validation Loss')
-        plt.title(f'Model Loss: {model_name} (Fold 1)')
+        plt.title(f'Model Loss: {model_name}')
         plt.ylabel('Loss')
         plt.xlabel('Epoch')
         plt.legend()
@@ -96,7 +96,7 @@ class EvaluationReporter:
             plt.plot(history_dict[val_metric_key], label=f'Validation {metric_key.capitalize()}')
 
         metric_title = metric_key.capitalize() if metric_key else "Metric"
-        plt.title(f'Model {metric_title}: {model_name} (Fold 1)')
+        plt.title(f'Model {metric_title}: {model_name}')
         plt.ylabel(metric_title)
         plt.xlabel('Epoch')
         plt.legend()
@@ -137,7 +137,7 @@ class EvaluationReporter:
         plt.ylim([0.0, 1.05])
         plt.xlabel('False Positive Rate')
         plt.ylabel('True Positive Rate')
-        plt.title('ROC Curves Comparison (from First Fold)')
+        plt.title('ROC Curves Comparison')
         plt.legend(loc="lower right")
         plt.grid(True)
 

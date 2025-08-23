@@ -6,13 +6,7 @@
 # ==============================================================================
 
 import argparse
-import json
-import subprocess
 import sys
-from pathlib import Path
-from typing import Dict
-import numpy as np
-import psutil
 
 # --- FIX: Suppress the Hugging Face Tokenizers parallelism warning ---
 # This is a common warning in multiprocessing environments. Setting this environment
@@ -53,32 +47,6 @@ def is_environment_valid() -> bool:
         print(f"--- An unexpected error occurred during validation: {e} ---")
         print("--- Assuming setup is required. ---")
         return False
-
-
-def run_command(command: list[str]):
-    """Runs a command and streams its output, exiting on failure."""
-    try:
-        # Let the subprocess inherit stdout/stderr directly so that
-        # interactive elements like tqdm can render correctly.
-        process = subprocess.Popen(
-            command,
-            text=True,
-            encoding='utf-8',
-            errors='replace'
-        )
-
-        process.wait()
-        if process.returncode != 0:
-            print(f"\n--- Command failed with exit code {process.returncode}. Aborting. ---")
-            sys.exit(process.returncode)
-
-    except FileNotFoundError:
-        print(f"--- ERROR: Command '{command[0]}' not found. Is it in your PATH? ---")
-        sys.exit(1)
-    except Exception as e:
-        print(f"--- An unexpected error occurred while running a command: {e} ---")
-        sys.exit(1)
-
 
 if __name__ == "__main__":
     # --- DEFINITIVE FIX: This script is now just an environment validator or a simple launcher ---

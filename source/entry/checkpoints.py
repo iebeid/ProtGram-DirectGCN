@@ -58,9 +58,19 @@ class CheckpointManager:
                     item["sha256"] = FileUtils.calculate_sha256(item["path"])
 
         self.data[step_name] = serializable_data
-        # --- FIX: Use the filesystem manager to write the checkpoint file ---
-        with self.fs.open(self.checkpoint_file_path, 'w') as f:
-            json.dump(self.data, f, indent=4)
+        # --- DEFINITIVE FIX: Implement atomic write to prevent corruption ---
+        # Write to a temporary file first, then rename. This ensures the main
+        # checkpoint file is never in a partially-written, corrupted state.
+        temp_checkpoint_path = self.checkpoint_file_path + ".tmp"
+        try:
+            with self.fs.open(temp_checkpoint_path, 'w') as f:
+                json.dump(self.data, f, indent=4)
+            # The rename operation is atomic on most filesystems
+            self.fs.rename(temp_checkpoint_path, self.checkpoint_file_path)
+        finally:
+            # Ensure the temporary file is cleaned up on success or failure
+            if self.fs.exists(temp_checkpoint_path):
+                self.fs.rm(temp_checkpoint_path)
         print(f"  ✅ Checkpoint saved for step: '{step_name}'")
 
     def get_checkpoint(self, step_name: str) -> Optional[Any]:

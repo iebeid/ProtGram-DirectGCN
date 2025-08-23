@@ -47,18 +47,18 @@ class ModelConverter:
         print(f"  Output will be saved to: {output_path}")
 
         try:
+            # --- REFACTOR: Load the tokenizer once, as it's the same for both cases ---
+            tokenizer = AutoTokenizer.from_pretrained(model_id)
             # Check if the model requires conversion in the first place
             try:
                 print("  Attempting to download native TensorFlow weights directly...")
                 model = TFAutoModel.from_pretrained(model_id)
-                tokenizer = AutoTokenizer.from_pretrained(model_id)
                 print("  Native TF weights found. Saving them locally...")
             except OSError as e:
                 if "from_pt=True" in str(e):
                     print("  Native TF weights not found. Converting from PyTorch...")
                     print("  !!! THIS STEP IS MEMORY-INTENSIVE AND MAY TAKE A WHILE !!!")
                     model = TFAutoModel.from_pretrained(model_id, from_pt=True)
-                    tokenizer = AutoTokenizer.from_pretrained(model_id)
                     print("  Model converted to TensorFlow in memory.")
                 else:
                     raise e

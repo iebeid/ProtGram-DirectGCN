@@ -26,14 +26,12 @@ class DataUtilityTests(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir)
 
-    def test_data_utilities(self):
-        """Tests the EmbeddingLoader and IDMapGenerator."""
+    def test_embedding_loader(self):
+        """Tests the basic functionality of the EmbeddingLoader."""
         print("\n" + "=" * 80)
-        DataUtils.print_header("Data Utilities Test")
+        DataUtils.print_header("Testing: EmbeddingLoader")
         print("=" * 80)
 
-        # Test EmbeddingLoader
-        print("\nTesting EmbeddingLoader:")
         dummy_h5_path = os.path.join(self.temp_dir, "temp_dummy_embeddings.h5")
         with h5py.File(dummy_h5_path, 'w') as hf:
             hf.create_dataset("protein_X", data=np.random.rand(10))
@@ -41,20 +39,39 @@ class DataUtilityTests(unittest.TestCase):
             self.assertIn("protein_X", loader)
             embedding = loader["protein_X"]
             print(f"  Successfully loaded dummy embedding for protein_X, shape: {embedding.shape}")
+        print("--- EmbeddingLoader Test Complete ---")
 
-        # Test IDMapGenerator
-        print("\nTesting IDMapGenerator (regex mode):")
-        dummy_fasta_path = os.path.join(self.temp_dir, "dummy_id_map.fasta")
+    def test_id_map_generator(self):
+        """Tests the IDMapGenerator in regex mode."""
+        print("\n" + "=" * 80)
+        DataUtils.print_header("Testing: IDMapGenerator")
+        print("=" * 80)
+        # --- REFACTOR: Use the DummyDataFactory for consistency ---
+        dummy_fasta_path = DummyDataFactory.create_fasta(self.temp_dir, "id_map_test.fasta")
         self.config.SEQUENCE_FILE_PATHS = [Path(dummy_fasta_path)]
         self.config.ID_MAPPING_PATH = Path(os.path.join(self.temp_dir, "dummy_id_map.tsv"))
         self.config.ID_MAPPING_MODE = 'regex'
-        with open(dummy_fasta_path, 'w') as f:
-            f.write(">sp|P12345|TEST_HUMAN Test protein\nACGT\n")
-            f.write(">tr|A0A0A0|ANOTHER_TEST Another test\nGTCA\n")
 
         parser_mapper = IDMapGenerator(config=self.config)
         id_map_dictionary = parser_mapper.generate_id_maps()
         print(f"  IDMapGenerator created {len(id_map_dictionary)} mappings.")
         self.assertGreater(len(id_map_dictionary), 0)
+        print("--- IDMapGenerator Test Complete ---")
 
-        print("--- Data Utilities Test Complete ---")
+    def test_protgram_data_builder_smoke_test(self):
+        """Smoke test for the ProtGramDataBuilder to ensure it runs without crashing."""
+        print("\n" + "=" * 80)
+        DataUtils.print_header("Smoke Test: ProtGramDataBuilder")
+        print("=" * 80)
+        dummy_fasta_path = DummyDataFactory.create_fasta(self.temp_dir, "graph_builder_test.fasta")
+        self.config.SEQUENCE_FILE_PATHS = [dummy_fasta_path]
+        self.config.PROTGRAM_NGRAM_MAX_N = 2 # Keep it small for a fast test
+
+        builder = ProtGramDataBuilder(self.config)
+        builder.run()
+
+        # Verify that the output directories were created
+        graph_n1_dir = self.config.RESULTS_GRAPH_OBJECTS_DIR / "ngram_graph_n1"
+        self.assertTrue(graph_n1_dir.exists() and graph_n1_dir.is_dir(), "Graph for n=1 was not created.")
+        print(f"  Successfully created graph directory: {graph_n1_dir}")
+        print("--- ProtGramDataBuilder Smoke Test Complete ---")

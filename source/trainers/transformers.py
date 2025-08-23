@@ -9,6 +9,7 @@
 import gc
 import time
 import traceback
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Any, Mapping
 
@@ -130,15 +131,11 @@ class TransformerEmbedder:
             return id_map_result
         return None
 
-    def run(self, parent_run_id: Optional[str] = None) -> Dict[str, Path]:
+    def run(self) -> Dict[str, Path]:
         """
         Main entry point for the Transformer embedding generation pipeline.
         This method efficiently processes the sequence file by loading each model
         only once and then iterating through chunks of data.
-
-        Args:
-            parent_run_id (Optional[str]): If provided, this pipeline will run
-                                           as a nested MLflow run.
         """
         DataUtils.print_header("PIPELINE STEP: Generating Embeddings from Transformers")
         self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -238,8 +235,8 @@ class TransformerEmbedder:
                     all_protein_embeddings_for_model = IDMapGenerator.apply_mapping(all_protein_embeddings_for_model, id_mapper_obj)
 
                     # Save the final aggregated embeddings for this model
-                    from contextlib import nullcontext
-                    nested_run_context = mlflow.start_run(run_name=model_name, nested=True) if mlflow_active else nullcontext()
+                    # A run is nested if there's already an active run.
+                    nested_run_context = mlflow.start_run(run_name=model_name, nested=mlflow.active_run() is not None) if mlflow_active else nullcontext()
                     with nested_run_context:
                         output_filename = f"{model_name}_{self.config.TRANSFORMER_POOLING_STRATEGY}_dim{embedding_dim}.h5"
                         output_path = self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR / output_filename

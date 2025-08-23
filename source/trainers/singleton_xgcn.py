@@ -18,8 +18,8 @@ from tqdm.auto import tqdm
 from configuration.config import Config
 from source.data_structures.direct_ngram_graph import DirectedNgramGraph
 from source.data_builders.xgcn import XGCNDataBuilder
+from torch_geometric.data import Data
 from source.utils.data.data_utils import DataUtils
-from source.utils.data.protgram_helper import ProtgramDaskHelpers
 from source.models.factory import ModelFactory
 
 
@@ -99,23 +99,25 @@ class SingletonXGCNTrainer:
                 use_homo_hetero_for_this_model = is_heterophilic if model_name.lower() == 'directgcn' else False
                 if use_homo_hetero_for_this_model and labels is not None:
                     print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.")
-                    split_result = self.graph.split_edges_by_homophily(labels)
+                    # --- FIX: Call as a static method, passing the required graph attributes ---
+                    split_result = DirectedNgramGraph.split_edges_by_homophily(
+                        self.graph.A_out_w, self.graph.number_of_nodes, labels
+                    )
                     if split_result: A_homo_norm, A_hetero_norm = split_result
 
                 model = self.model_factory.create_model(
                     model_name=model_name, in_channels=initial_features.shape[1], num_classes=num_classes,
-                    graph_obj=self.graph, use_homo_hetero_paths=use_homo_hetero_for_this_model
+                    graph_obj=self.graph, use_homo_hetero_paths=use_homo_hetero_for_this_model, n_val=1
                 )
                 if model is None: continue
                 print(model)
 
                 model.to(self.device)
                 optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
-                data_for_model = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
-                    model_type=model_name, graph=self.graph, features=initial_features, labels=y_for_stratify,
-                    use_homo_hetero_paths=use_homo_hetero_for_this_model, A_homo_norm=A_homo_norm,
-                    A_hetero_norm=A_hetero_norm, train_mask=train_mask, test_mask=test_mask
-                ).to(self.device)
+                # --- REFACTOR: Construct the Data object directly, removing the helper dependency ---
+                data_for_model = Data(x=initial_features, y=y_for_stratify, graph_obj=self.graph,
+                                      A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm,
+                                      train_mask=train_mask, test_mask=test_mask).to(self.device)
 
                 optimizer.zero_grad()
                 for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
@@ -125,11 +127,9 @@ class SingletonXGCNTrainer:
                     if task_type == 'masked_node':
                         # For masked node, we need new masks each time, so it's inside the loop
                         masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=test_mask)
-                        epoch_data = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
-                            model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
-                            use_homo_hetero_paths=use_homo_hetero_for_this_model,
-                            A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
-                        ).to(self.device)
+                        # Create a new Data object for this epoch with the masked features
+                        epoch_data = data_for_model.clone()
+                        epoch_data.x = masked_features
                         logits, _ = model(epoch_data)
                         loss = F.cross_entropy(logits[masked_indices], original_node_ids.to(self.device))
                     else:
@@ -152,11 +152,9 @@ class SingletonXGCNTrainer:
                         masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
                             self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=train_mask
                         )
-                        eval_data = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
-                            model_type=model_name, graph=self.graph, features=masked_features, labels=y_for_stratify,
-                            use_homo_hetero_paths=use_homo_hetero_for_this_model,
-                            A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm
-                        ).to(self.device)
+                        # Create a new Data object for evaluation with the masked features
+                        eval_data = data_for_model.clone()
+                        eval_data.x = masked_features
                         logits, _ = model(eval_data)
                         preds = logits[masked_indices].argmax(dim=-1)
                         y_true = original_node_ids.cpu().numpy()

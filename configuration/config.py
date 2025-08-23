@@ -23,7 +23,7 @@ class DataUrls(BaseModel):
     BIOGRID_INTERACTIONS: str
     PROTT5_MODEL: str
     UNIPROT_ID_MAPPING: str
-    NEG_INTERACTIONS: List[str]
+    NEG_INTERACTIONS: List[str] = Field(default_factory=list)
 
 class ResourceManagementParams(BaseModel):
     MEMORY_USAGE_STRATEGY: str
@@ -55,6 +55,11 @@ class GNNBenchmarkingParams(BaseModel):
     NE_EMBEDDING_DIM: int = Field(gt=0)
     NE_WALK_LENGTH: int = Field(gt=0)
     NE_CONTEXT_SIZE: int = Field(gt=0)
+    NE_WALKS_PER_NODE: int = Field(gt=0)
+    NE_NUM_NEGATIVE_SAMPLES: int = Field(gt=0)
+    NE_CLASSIFIER_C: float = Field(gt=0)
+    NE_CLASSIFIER_MAX_ITER: int = Field(gt=0)
+    NE_CLASSIFIER_SOLVER: str
     GNN_HIDDEN_CHANNELS: int = Field(gt=0)
     GNN_NUM_LAYERS: int = Field(gt=0)
     GNN_DROPOUT_RATE: float = Field(ge=0.0, lt=1.0)
@@ -62,6 +67,7 @@ class GNNBenchmarkingParams(BaseModel):
     GAT_DROPOUT_RATE: float = Field(ge=0.0, lt=1.0)
     CHEBNET_K: int = Field(gt=0)
     GNN_LEARNING_RATE: float = Field(gt=0)
+    GNN_WEIGHT_DECAY: float = Field(default=5e-4, ge=0.0)
     GNN_EPOCHS: int = Field(gt=0)
     RGCN_NUM_RELATIONS: int = Field(gt=0)
     DIRECTGCN_HIDDEN_LAYER_DIMS: List[int]
@@ -145,6 +151,10 @@ class LSTMParams(BaseModel):
     TRAIN_STEP: int = Field(gt=0)
     LEARNING_RATE: float = Field(gt=0)
     POOLING_STRATEGY: str
+    VALIDATION_SPLIT: float = Field(gt=0, lt=1.0)
+    USE_EARLY_STOPPING: bool
+    EARLY_STOPPING_PATIENCE: int = Field(ge=0)
+    EARLY_STOPPING_MIN_DELTA: float = Field(ge=0.0)
 
 class SingletonEvalParams(BaseModel):
     EPOCHS: int = Field(gt=0)
@@ -309,8 +319,8 @@ class Config:
         Sets the memory usage strategy from the config. The actual logic for how
         to use this strategy is handled by the components that need it (e.g., EmbeddingLoader).
         """
-        params = self._config.get('resource_management', {})
-        self.MEMORY_USAGE_STRATEGY = params.get('MEMORY_USAGE_STRATEGY', 'dynamic')
+        params = self._config['resource_management']
+        self.MEMORY_USAGE_STRATEGY = params['MEMORY_USAGE_STRATEGY']
 
     def _setup_pipeline_flags(self):
         """Sets flags statically from the YAML config."""
@@ -343,6 +353,11 @@ class Config:
         self.BENCHMARK_NE_EMBEDDING_DIM = params['NE_EMBEDDING_DIM']
         self.BENCHMARK_NE_WALK_LENGTH = params['NE_WALK_LENGTH']
         self.BENCHMARK_NE_CONTEXT_SIZE = params['NE_CONTEXT_SIZE']
+        self.BENCHMARK_NE_WALKS_PER_NODE = params['NE_WALKS_PER_NODE']
+        self.BENCHMARK_NE_NUM_NEGATIVE_SAMPLES = params['NE_NUM_NEGATIVE_SAMPLES']
+        self.BENCHMARK_NE_CLASSIFIER_C = params['NE_CLASSIFIER_C']
+        self.BENCHMARK_NE_CLASSIFIER_MAX_ITER = params['NE_CLASSIFIER_MAX_ITER']
+        self.BENCHMARK_NE_CLASSIFIER_SOLVER = params['NE_CLASSIFIER_SOLVER']
         self.BENCHMARK_GNN_HIDDEN_CHANNELS = params['GNN_HIDDEN_CHANNELS']
         self.BENCHMARK_GNN_NUM_LAYERS = params['GNN_NUM_LAYERS']
         self.BENCHMARK_GNN_DROPOUT_RATE = params['GNN_DROPOUT_RATE']
@@ -350,6 +365,7 @@ class Config:
         self.BENCHMARK_GAT_DROPOUT_RATE = params['GAT_DROPOUT_RATE']
         self.BENCHMARK_CHEBNET_K = params['CHEBNET_K']
         self.BENCHMARK_GNN_LEARNING_RATE = params['GNN_LEARNING_RATE']
+        self.BENCHMARK_GNN_WEIGHT_DECAY = params['GNN_WEIGHT_DECAY']
         self.BENCHMARK_GNN_EPOCHS = params['GNN_EPOCHS']
         self.BENCHMARK_RGCN_NUM_RELATIONS = params['RGCN_NUM_RELATIONS']
         self.BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS = params['DIRECTGCN_HIDDEN_LAYER_DIMS']
@@ -452,7 +468,7 @@ class Config:
         self.PROTGRAM_USE_EARLY_STOPPING = params['PROTGRAM_USE_EARLY_STOPPING']
         self.PROTGRAM_EARLY_STOPPING_PATIENCE = params['PROTGRAM_EARLY_STOPPING_PATIENCE']
         self.PROTGRAM_EARLY_STOPPING_MIN_DELTA = params['PROTGRAM_EARLY_STOPPING_MIN_DELTA']
-        self.PROTGRAM_GRADIENT_ACCUMULATION_STEPS = params.get('PROTGRAM_GRADIENT_ACCUMULATION_STEPS', 1)
+        self.PROTGRAM_GRADIENT_ACCUMULATION_STEPS = params['PROTGRAM_GRADIENT_ACCUMULATION_STEPS']
         self.PROTGRAM_TASK_TYPES_PER_LEVEL = params['PROTGRAM_TASK_TYPES_PER_LEVEL']
         self.PROTGRAM_DEFAULT_TASK_TYPE = params['PROTGRAM_DEFAULT_TASK_TYPE']
         self.GCN_HETEROPHILY_THRESHOLD = params['GCN_HETEROPHILY_THRESHOLD']
@@ -465,13 +481,13 @@ class Config:
         self.PROTGRAM_FASTA_ALPHABET = params['PROTGRAM_FASTA_ALPHABET']
         self.PROTGRAM_USE_CLUSTER_TRAINING = params['PROTGRAM_USE_CLUSTER_TRAINING']
         self.PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES = params['PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES']
-        self.PROTGRAM_PARTITIONING_METHOD = params.get('PROTGRAM_PARTITIONING_METHOD', 'louvain')
-        self.PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING = params.get('PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING', 1)
-        self.PROTGRAM_VALIDATE_COARSENING = params.get('PROTGRAM_VALIDATE_COARSENING', False)
+        self.PROTGRAM_PARTITIONING_METHOD = params['PROTGRAM_PARTITIONING_METHOD']
+        self.PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING = params['PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING']
+        self.PROTGRAM_VALIDATE_COARSENING = params['PROTGRAM_VALIDATE_COARSENING']
         self.PROTGRAM_TARGET_NODES_PER_CLUSTER = params['PROTGRAM_TARGET_NODES_PER_CLUSTER']
         self.PROTGRAM_MIN_CLUSTERS = params['PROTGRAM_MIN_CLUSTERS']
         self.PROTGRAM_MAX_CLUSTERS = params['PROTGRAM_MAX_CLUSTERS']
-        self.PROTGRAM_CLUSTER_GROUP_SIZE = params.get('PROTGRAM_CLUSTER_GROUP_SIZE', 1)
+        self.PROTGRAM_CLUSTER_GROUP_SIZE = params['PROTGRAM_CLUSTER_GROUP_SIZE']
         self.POOLING_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1
         self.PCA_TARGET_DIMENSION = params['PCA_TARGET_DIMENSION']
         self.PROTGRAM_PROTEIN_POOLING_STRATEGY = params['PROTGRAM_PROTEIN_POOLING_STRATEGY']
@@ -516,6 +532,10 @@ class Config:
         self.LSTM_TRAIN_STEP = params['TRAIN_STEP']
         self.LSTM_LEARNING_RATE = params['LEARNING_RATE']
         self.LSTM_POOLING_STRATEGY = params['POOLING_STRATEGY']
+        self.LSTM_VALIDATION_SPLIT = params['VALIDATION_SPLIT']
+        self.LSTM_USE_EARLY_STOPPING = params['USE_EARLY_STOPPING']
+        self.LSTM_EARLY_STOPPING_PATIENCE = params['EARLY_STOPPING_PATIENCE']
+        self.LSTM_EARLY_STOPPING_MIN_DELTA = params['EARLY_STOPPING_MIN_DELTA']
 
     def _setup_singleton_eval_params(self):
         """Sets Singleton evaluation parameters statically from the YAML config."""
@@ -531,7 +551,7 @@ class Config:
         self.SINGLETON_GAT_DROPOUT_RATE = params['GAT_DROPOUT_RATE']
         self.SINGLETON_CHEBNET_K = params['CHEBNET_K']
         self.SINGLETON_RGCN_NUM_RELATIONS = params['RGCN_NUM_RELATIONS']
-        self.SINGLETON_EVAL_GRADIENT_ACCUMULATION_STEPS = params.get('GRADIENT_ACCUMULATION_STEPS', 1)
+        self.SINGLETON_EVAL_GRADIENT_ACCUMULATION_STEPS = params['GRADIENT_ACCUMULATION_STEPS']
         self.SINGLETON_DIRECTGCN_HIDDEN_LAYER_DIMS = params['DIRECTGCN_HIDDEN_LAYER_DIMS']
 
     def _setup_evaluation_params(self):

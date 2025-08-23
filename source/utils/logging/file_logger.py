@@ -98,8 +98,9 @@ class FileLogger:
         if not self.enabled or self.original_stdout is None:
             return
 
-        # Check if streams have already been restored to prevent errors
-        if sys.stdout is self.original_stdout:
+        # --- FIX: Make the 'already stopped' check more robust ---
+        # Instead of checking identity, we check if stdout is still our Tee object.
+        if not isinstance(sys.stdout, self._Tee):
             return
 
         sys.stdout = self.original_stdout

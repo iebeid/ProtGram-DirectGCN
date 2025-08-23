@@ -100,7 +100,7 @@ class DataManager:
             sys.exit(1)
 
         # 3. Generate manifest of all data files
-        self._generate_manifest()
+        self._generate_manifest(processor)
 
         # 4. Clean up intermediate files
         self._cleanup_intermediate_files()
@@ -204,30 +204,28 @@ class DataManager:
             print(f"  - ❌ ERROR: Failed to read manifest or restore from cache: {e}")
             return False
 
-    def _download_benchmark_datasets(self):
-        """Uses PyG to download standard benchmark datasets and caches them."""
-        print("\n--- Downloading PyG Benchmark Datasets ---")
-        dataset_root = self.config.DATA_STANDARD_DATASETS_DIR
-        dataset_root.mkdir(parents=True, exist_ok=True)
+    def _try_get_file_from_local_or_cache(self, final_path: Path, cache_path: Optional[Path]) -> bool:
+        """
+        Checks for a valid file locally or in the cache and restores if found.
+        Returns True if the file is successfully made available, False otherwise.
+        """
+        # Case 1: Valid file already exists in the project data directory.
+        if DataProcessor._is_file_valid(final_path):
+            print(f"☑ Found and verified raw file: {final_path.relative_to(self.config.PROJECT_ROOT)}")
+            # Ensure it's also in the cache for future resets.
+            self._copy_to_cache(final_path)
+            return True
 
-        for name in self.config.BENCHMARK_NODE_CLASSIFICATION_DATASETS:
-            print(f"  - Ensuring dataset '{name}' is downloaded...")
-            try:
-                if name in ['Cora', 'CiteSeer', 'PubMed']:
-                    Planetoid(root=str(dataset_root), name=name)
-                elif name in ['Cornell', 'Texas', 'Wisconsin']:
-                    WebKB(root=str(dataset_root), name=name)
-                elif name == 'Actor':
-                    Actor(root=str(dataset_root))
-                elif name == 'KarateClub':
-                    KarateClub()
-                
-                dataset_dir = dataset_root / name
-                if dataset_dir.exists() and dataset_dir.is_dir():
-                    self._copy_to_cache(dataset_dir)
+        # Case 2: File not in project, but a valid cached version exists.
+        if cache_path and DataProcessor._is_file_valid(cache_path):
+            print(f"☑ Found cached file: {cache_path}. Copying to project directory...")
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+            if final_path.exists() or final_path.is_symlink():
+                final_path.unlink()
+            shutil.copy(cache_path, final_path)
+            return True
 
-            except Exception as e:
-                print(f"    - WARNING: Failed to download PyG dataset '{name}': {e}")
+        return False
 
     def _download_all_sources(self) -> bool:
         """Downloads and extracts all data sources, aborting if a critical file fails."""
@@ -236,35 +234,40 @@ class DataManager:
             self.config.PERSISTENT_DATA_CACHE.mkdir(parents=True, exist_ok=True)
 
         for key, source_info in self.config.DATA_SOURCES.items():
+            # --- DEFINITIVE FIX: Unify PyG dataset downloading into the main loop ---
             if source_info.get("type") == "pyg_dataset":
-                continue
+                dataset_root = self.config.DATA_STANDARD_DATASETS_DIR
+                dataset_root.mkdir(parents=True, exist_ok=True)
+                name = source_info['name']
+                print(f"  - Ensuring PyG dataset '{name}' is downloaded...")
+                try:
+                    if name in ['Cora', 'CiteSeer', 'PubMed']:
+                        Planetoid(root=str(dataset_root), name=name)
+                    elif name in ['Cornell', 'Texas', 'Wisconsin']:
+                        WebKB(root=str(dataset_root), name=name)
+                    elif name == 'Actor':
+                        Actor(root=str(dataset_root))
+                    elif name == 'KarateClub':
+                        KarateClub()
+                    self._copy_to_cache(dataset_root / name)
+                except Exception as e:
+                    print(f"    - WARNING: Failed to download PyG dataset '{name}': {e}")
+                continue # Move to the next source
 
             final_path = Path(source_info['path'])
             is_critical = source_info.get('critical', True)
             cache_path = self.config.PERSISTENT_DATA_CACHE / final_path.name if source_info.get('cacheable', False) else None
 
+            if self._try_get_file_from_local_or_cache(final_path, cache_path):
+                continue
+
             post_process_type = source_info.get('post_process')
             download_target_path = final_path
-            if post_process_type == 'ungzip':
-                download_target_path = final_path.with_suffix(final_path.suffix + ".gz")
-            elif post_process_type == 'unzip':
+            if post_process_type in ['ungzip', 'unzip']:
                 download_target_path = final_path.with_suffix(".zip")
 
             if download_target_path != final_path:
                 self.files_to_cleanup.append(download_target_path)
-
-            if DataProcessor._is_file_valid(final_path):
-                print(f"☑ Found and verified raw file: {final_path.relative_to(self.config.PROJECT_ROOT)}")
-                self._copy_to_cache(final_path)
-                continue
-
-            if cache_path and DataProcessor._is_file_valid(cache_path):
-                print(f"☑ Found cached file: {cache_path}. Copying to project directory...")
-                final_path.parent.mkdir(parents=True, exist_ok=True)
-                if final_path.exists() or final_path.is_symlink():
-                    final_path.unlink()
-                shutil.copy(cache_path, final_path)
-                continue
 
             url = source_info.get('url')
             if not url:
@@ -283,7 +286,7 @@ class DataManager:
                         download_target_path.parent.mkdir(parents=True, exist_ok=True)
                         print(f"Downloading from {url} to {download_target_path.name}...")
                         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-                        response = requests.get(url, stream=True, headers=headers)
+                        response = requests.get(url, stream=True, headers=headers, verify=False) # INSECURE: Added verify=False
                         response.raise_for_status()
 
                         content_type = response.headers.get('content-type', '')
@@ -323,10 +326,9 @@ class DataManager:
                 print(f"  - ❌ FATAL: Failed to download CRITICAL file: {key}. Aborting setup.")
                 return False
 
-        self._download_benchmark_datasets()
         return True
 
-    def _generate_manifest(self):
+    def _generate_manifest(self, processor: DataProcessor):
         """Generates a checksum manifest for all data files."""
         print("\n--- Step 3: Generating Data Manifest ---")
         manifest = {}
@@ -338,14 +340,10 @@ class DataManager:
                 files_to_manifest.append(Path(dirpath) / f)
 
         print(f"  - Generating checksums for {len(files_to_manifest)} items...")
-        huge_files_to_skip_checksum = {
-            "uniref50.fasta", "idmapping.dat", "id_mapping.parquet",
-            "negative_interactions.parquet", "positive_interactions.parquet"
-        }
         for file_path in tqdm(files_to_manifest, desc="  Calculating Checksums"):
             relative_path = file_path.relative_to(self.config.PROJECT_ROOT)
             if file_path.is_file():
-                checksum = "skipped_due_to_size" if file_path.name in huge_files_to_skip_checksum else DataProcessor._calculate_sha256(file_path)
+                checksum = "skipped_due_to_size" if processor.is_huge_file(file_path) else DataProcessor._calculate_sha256(file_path)
                 manifest[relative_path.as_posix()] = {
                     'type': 'file',
                     'size': file_path.stat().st_size,

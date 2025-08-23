@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
-from source.utils.post.embedding_processor import EmbeddingProcessor
 from configuration.config import Config
 
 # ==============================================================================
@@ -165,7 +164,7 @@ class GroundTruthLoader:
             return []
 
         # --- NEW: Use high-performance Pandas loading in high-memory mode ---
-        if config and config.USE_HIGH_MEMORY_STRATEGY:
+        if config and config.MEMORY_USAGE_STRATEGY == 'high':
             print(f"  High-performance filtering pairs from: {filepath.name} (label: {label})...")
             try:
                 with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:

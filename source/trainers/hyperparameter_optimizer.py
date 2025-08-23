@@ -15,6 +15,7 @@ from sklearn.model_selection import train_test_split
 from configuration.config import Config
 from source.experiments.ppi_1 import PPIPipeline
 from source.utils.data.ground_truth_loader import GroundTruthLoader
+from source.utils.post.embedding_processor import EmbeddingProcessor
 from source.utils.post.embedding_loader import EmbeddingLoader
 from source.utils.data.data_utils import DataUtils
 
@@ -76,7 +77,17 @@ class HyperparameterOptimizer:
             train_pairs, val_pairs = train_test_split(
                 all_pairs, test_size=0.2, random_state=self.base_config.RANDOM_STATE, stratify=labels_array
             )
-            print(f"  Data prepared: {len(train_pairs)} training pairs, {len(val_pairs)} validation pairs.")
+            print(f"  Data split: {len(train_pairs)} training pairs, {len(val_pairs)} validation pairs.")
+
+            # --- DEFINITIVE FIX: Pre-compute feature matrices to match the new PPIPipeline interface ---
+            print("  Pre-computing feature matrices for HPO study...")
+            X_train, y_train = EmbeddingProcessor.create_edge_features(
+                train_pairs, loader, self.base_config.EVAL_EDGE_EMBEDDING_METHOD
+            )
+            X_val, y_val = EmbeddingProcessor.create_edge_features(
+                val_pairs, loader, self.base_config.EVAL_EDGE_EMBEDDING_METHOD
+            )
+            print(f"  Feature matrices created. X_train shape: {X_train.shape}")
 
             # 2. Define the objective function for Optuna
             def objective(trial: optuna.Trial) -> float:
@@ -92,15 +103,11 @@ class HyperparameterOptimizer:
                 trial_config.EVAL_BATCH_SIZE = self._get_trial_param(trial, 'BATCH_SIZE', search_space)
 
                 ppi_pipeline = PPIPipeline(trial_config)
-                first_key = next(iter(loader.get_keys()), None)
-                embedding_dim = loader[first_key].shape[0] if first_key else 0
-                feature_dim_map = {'concatenate': embedding_dim * 2, 'average': embedding_dim, 'hadamard': embedding_dim, 'l1_distance': embedding_dim, 'l2_distance': embedding_dim}
-                edge_feature_dim = feature_dim_map.get(trial_config.EVAL_EDGE_EMBEDDING_METHOD, embedding_dim * 2)
 
                 try:
                     metrics, _ = ppi_pipeline._train_and_evaluate_fold(
-                        train_pairs=train_pairs, val_pairs=val_pairs, protein_embeddings=loader,
-                        edge_feature_dim=edge_feature_dim, embedding_dim=embedding_dim,
+                        X_train=X_train, y_train=y_train,
+                        X_val=X_val, y_val=y_val,
                         embedding_name=embedding_name, fold_num=trial.number
                     )
                     return float(metrics.get('auc_sklearn', 0.0))

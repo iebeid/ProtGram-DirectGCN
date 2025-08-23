@@ -7,7 +7,6 @@
 
 import torch
 import tensorflow as tf
-import numpy as np
 from source.utils.data.data_utils import DataUtils
 
 
@@ -96,34 +95,36 @@ class GPUTests:
             return False
 
     @staticmethod
-    def verify_cuda_with_pycuda():
+    def _test_pycuda_gpu() -> bool:
         """
         Verifies basic CUDA functionality by performing a matrix multiplication on the GPU using PyCUDA.
+        Returns True on success, False on failure.
         """
-        print("\n" + "=" * 80)
-        DataUtils.print_header("CUDA Verification with PyCUDA")
-        print("=" * 80)
+        print("\n--- Verifying PyCUDA ---")
         try:
             import pycuda.autoinit
             import pycuda.driver as drv
             import pycuda.gpuarray as gpuarray
             import pycuda.tools
+            import numpy as np
 
             pycuda.tools.clear_context_caches()
             device = drv.Device(0)
-            print(f"Successfully selected GPU 0: {device.name()}")
+            print(f"  ✅ [Success] PyCUDA initialized and found GPU 0: {device.name()}")
 
             matrix_a_cpu = np.random.randn(512, 1024).astype(np.float32)
             matrix_b_cpu = np.random.randn(512, 1024).astype(np.float32)
             matrix_a_gpu = gpuarray.to_gpu(matrix_a_cpu)
             matrix_b_gpu = gpuarray.to_gpu(matrix_b_cpu)
-            result_gpu = matrix_a_gpu + matrix_b_gpu
-            result_cpu = result_gpu.get()
+            _ = (matrix_a_gpu + matrix_b_gpu).get()
 
-            print(f"\nVerification successful! A small subset of the result tensor:\n{result_cpu[:2, :2]}")
+            print("  ✅ [Success] PyCUDA GPU tensor operation completed.")
+            return True
         except Exception as e:
-            print("Error: Could not find or initialize a CUDA-enabled GPU with PyCUDA.")
-            print(f"Details: {e}")
+            # --- FIX: Make error message consistent with other tests ---
+            print(f"  ❌ [Error] Could not find or initialize a CUDA-enabled GPU with PyCUDA.")
+            print(f"    Details: {e}")
+            return False
 
     @staticmethod
     def verify_full_gpu_environment() -> bool:
@@ -138,11 +139,9 @@ class GPUTests:
         pytorch_ok = GPUTests._test_pytorch_gpu()
         tensorflow_ok = GPUTests._test_tensorflow_gpu()
         cudnn_ok = GPUTests._verify_cudnn_library()
+        pycuda_ok = GPUTests._test_pycuda_gpu()
 
-        # Also run the PyCUDA specific test for completeness
-        GPUTests.verify_cuda_with_pycuda()
-
-        all_ok = pytorch_ok and tensorflow_ok and cudnn_ok
+        all_ok = pytorch_ok and tensorflow_ok and cudnn_ok and pycuda_ok
 
         # --- Final Summary ---
         print("\n" + "-" * 40)

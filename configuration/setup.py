@@ -126,6 +126,10 @@ if __name__ == "__main__":
         "echo '--- Clearing PyCUDA cache to ensure rediscovery of system compiler ---'",
         "rm -rf ~/.config/pycuda",
 
+        # --- ANTICIPATORY DEBUGGING: Force update of certificate store ---
+        "echo '--- Stage 0.5: Updating SSL certificate bundle to prevent verification errors ---'",
+        "pip install --no-cache-dir --upgrade certifi",
+
         # STAGE 1: CONDA FOR THE CUDA FOUNDATION
         "echo '--- Stage 1: Installing CUDA Toolkit and core data science libraries from Conda ---'",
         "MAX_RETRIES=3",
@@ -152,7 +156,7 @@ if __name__ == "__main__":
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} --extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"
          ),
         "echo '--- Stage 2.5: Forcing library consistency by removing ALL pip-installed CUDA libs ---'",
-        "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 nvidia-nccl-cu12 nvidia-nvtx-cu12 nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-cupti-cu12 nvidia-nvjitlink-cu12",
+        "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 nvidia-nccl-cu12 nvidia-nvtx-cu12 nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-cupti-cu12 nvidia-nvjitlink-cu12 2>/dev/null || true",
 
         # STAGE 3: PYCUDA INSTALL
         "echo '--- Stage 3: Building PyCUDA from source ---'",
@@ -173,13 +177,6 @@ if __name__ == "__main__":
         f'printf \'{deactivate_script_content}\' > "{conda_prefix}/etc/conda/deactivate.d/env_vars.sh"',
         f'chmod +x "{conda_prefix}/etc/conda/activate.d/env_vars.sh"',
         f'chmod +x "{conda_prefix}/etc/conda/deactivate.d/env_vars.sh"',
-
-        # STAGE 6: DATA SETUP
-        "echo '--- Stage 6: Setting up project data ---'",
-        'echo "--- Removing old data cache to ensure a clean setup..."',
-        'rm -rf "$HOME/.cache/protgram_directgcn"',
-        'echo "--- Triggering DataManager for full data download and processing... ---"',
-        'python -u -c "from configuration.config import Config; from configuration.manager import setup_data; setup_data(Config())"',
 
         # STAGE 7: VERIFICATION & CLEANUP
         "echo '--- Stage 7: Verifying installations ---'",

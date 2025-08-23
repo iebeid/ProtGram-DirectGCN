@@ -15,6 +15,7 @@ import torch
 from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 
 from configuration.config import Config
+from typing import Optional, Any
 from source.utils.data.data_utils import DataUtils
 
 
@@ -64,7 +65,7 @@ class BaseBenchmarker(ABC):
             print(f"  Symlinked project benchmark directory to persistent cache.")
         return str(project_benchmark_dir)
 
-    def _get_dataset(self, name: str, **kwargs):
+    def _get_dataset(self, name: str, **kwargs) -> Optional[Any]:
         """Loads a standard PyG dataset."""
         try:
             if name in ['Cora', 'CiteSeer', 'PubMed']: return Planetoid(root=self.dataset_root, name=name, **kwargs)
@@ -73,7 +74,7 @@ class BaseBenchmarker(ABC):
             if name == 'KarateClub': return KarateClub(**kwargs)
             raise ValueError(f"Dataset '{name}' not recognized.")
         except Exception as e:
-            print(f"  Error loading dataset '{name}': {e}")
+            print(f"  Error loading dataset '{name}': {e.__class__.__name__}: {e}")
             return None
 
     def _get_1d_mask(self, mask_tensor: torch.Tensor) -> torch.Tensor:

@@ -34,15 +34,19 @@ class UIManager:
 
         while True:
             # Use a direct read from stdin to be more robust
-            print(f"\n✅ Pipeline step '{step_completed}' is complete. Continue to the next step? (y/n): ", end="")
-            sys.stdout.flush()
-            response = sys.stdin.readline().strip().lower()
-            if response in ['y', 'yes']:
-                return True
-            if response in ['n', 'no']:
-                print("Exiting as requested by user.")
+            try:
+                print(f"\n✅ Pipeline step '{step_completed}' is complete. Continue to the next step? (y/n): ", end="")
+                sys.stdout.flush()
+                response = sys.stdin.readline().strip().lower()
+                if response in ['y', 'yes']:
+                    return True
+                if response in ['n', 'no']:
+                    print("Exiting as requested by user.")
+                    return False
+                print("Invalid input. Please enter 'y' or 'n'.")
+            except (KeyboardInterrupt, EOFError):
+                print("\nOperation cancelled by user. Exiting.")
                 return False
-            print("Invalid input. Please enter 'y' or 'n'.")
 
     @staticmethod
     def get_fasta_files_to_process(config: Config, temp_dir: Path) -> List[Path]:

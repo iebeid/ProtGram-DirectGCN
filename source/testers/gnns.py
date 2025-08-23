@@ -9,6 +9,7 @@ import unittest
 import shutil
 import tempfile
 from pathlib import Path
+import pandas as pd
 import mlflow
 from configuration.config import Config
 from source.benchmarkers.gnns import GNNBenchmarker
@@ -40,13 +41,19 @@ class GNNBenchmarkerTests(unittest.TestCase):
         print("=" * 80)
 
         self.config.BENCHMARK_NODE_CLASSIFICATION_DATASETS = ["KarateClub"]
+        self.config.BENCHMARK_GNN_MODELS_TO_RUN = ["GCN", "GAT"]
         self.config.BENCHMARK_GNN_EPOCHS = 2
         self.config.BENCHMARK_SAVE_EMBEDDINGS = False
 
         with mlflow.start_run(run_name="GNN_Benchmark_SMOKE_TEST"):
             benchmarker = GNNBenchmarker(self.config)
             results = benchmarker.run()
-            self.assertFalse(results.empty)
+            self.assertIsInstance(results, pd.DataFrame, "Benchmarker did not return a pandas DataFrame.")
+            self.assertFalse(results.empty, "Benchmarker returned an empty DataFrame.")
+            self.assertIn("model", results.columns)
+            self.assertIn("Accuracy", results.columns)
+            self.assertEqual(len(results), len(self.config.BENCHMARK_GNN_MODELS_TO_RUN))
 
         print("\n  GNNBenchmarker smoke test ran successfully.")
+        print(results[['model', 'dataset', 'Accuracy']].to_string(index=False))
         print("--- GNN Benchmarker Smoke Test Complete ---")

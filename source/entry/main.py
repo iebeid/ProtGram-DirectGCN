@@ -138,32 +138,26 @@ class PipelineOrchestrator:
 
         try:
             if config.RUN_SINGLETON_GCN_EVAL:
-                DataUtils.print_header("Ensuring n=1 Graph is Built for Singleton Evaluation")
-                singleton_config = copy.deepcopy(config)
-                singleton_config.PROTGRAM_NGRAM_MAX_N = 1 # Only build the n=1 graph
-
-                # --- DEFINITIVE FIX: Call the builder directly instead of using a subprocess ---
-                # This ensures the modified singleton_config is actually used.
-                ProtGramDataBuilder(singleton_config).run()
+                DataUtils.print_header("Running Singleton (n=1) GCN Evaluation")
 
                 # --- FIX: Use the new directory-based loading for graphs ---
                 # The graph is now saved as a directory, not a single .pkl file.
-                n1_graph_dir = singleton_config.RESULTS_GRAPH_OBJECTS_DIR / "ngram_graph_n1"
+                n1_graph_dir = config.RESULTS_GRAPH_OBJECTS_DIR / "ngram_graph_n1"
                 if n1_graph_dir.exists() and n1_graph_dir.is_dir():
-                    print("  n=1 graph found. Proceeding with singleton evaluation...")
+                    print("  n=1 graph found. Proceeding...")
                     from source.data_structures.graph import DirectedNgramGraph
                     from source.trainers.singleton_xgcn import SingletonXGCNTrainer
                     # Use the correct class method to load from the directory
                     n1_graph: DirectedNgramGraph = DirectedNgramGraph.load_from_dir(n1_graph_dir)
                     if n1_graph:
-                        singleton_results_df = SingletonXGCNTrainer(singleton_config, n1_graph).run()
+                        singleton_results_df = SingletonXGCNTrainer(config, n1_graph).run()
                         if singleton_results_df is not None and not singleton_results_df.empty:
                             singleton_results_df = singleton_results_df.rename(columns={'Model': 'model'})
                             singleton_results_df['dataset'] = f"ProtGram_n1_Singleton_{fasta_file_path.stem}"
                             singleton_results_df['error'] = None
                             all_benchmark_results.append(singleton_results_df)
                 else:
-                    print(f"  Warning: n=1 graph directory not found at {n1_graph_dir}. Skipping singleton evaluation.")
+                    print(f"  Warning: n=1 graph not found at {n1_graph_dir}. It may not have been built. Skipping singleton evaluation.")
         except Exception as e:
             print(f"\n--- SINGLETON GCN EVALUATION FAILED: {e} ---\n")
             import traceback
@@ -287,12 +281,12 @@ class PipelineOrchestrator:
                             checkpoint_dir_uri = os.path.join(str(config.BASE_OUTPUT_DIR), "checkpoints", dataset_name)
                             checkpoint_manager = CheckpointManager(checkpoint_dir_uri)
 
+                            DataUtils.print_header("Building all n-gram graphs for the main pipeline")
+                            ProtGramDataBuilder(config).run()
+                            if not self.ui_manager.prompt_to_continue("Graph Building"):
+                                continue
+
                             if self._run_pre_analysis_and_prompt(config, fasta_file_path):
-                                DataUtils.print_header("Building all n-gram graphs for the main pipeline")
-                                # --- DEFINITIVE FIX: Correct indentation for the entire block ---
-                                ProtGramDataBuilder(config).run()
-                                if not self.ui_manager.prompt_to_continue("Graph Building"):
-                                    sys.exit(0)
 
                                 generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)
                                 generated_files = generated_files if isinstance(generated_files, list) else []
@@ -319,10 +313,8 @@ class PipelineOrchestrator:
                                     if not checkpoint_manager.get_checkpoint("PPI_Evaluation"):
                                         if config.LP_EMBEDDING_FILES_TO_EVALUATE:
                                             ppi_evaluator = PPIPipeline(config)
-                                            # --- FIX: The PPI pipeline should always run on the data configured
-                                            # by the orchestrator. The `use_dummy_data` flag is for isolated
-                                            # testing and should not be used here. The main `RUN_DUMMY_TEST`
-                                            # flag already controls the input data for the entire pipeline. ---
+                                            # --- FIX: Pass the use_dummy_data flag to the pipeline ---
+                                            # This ensures the evaluation runs on the correct dataset.
                                             ppi_evaluator.run(use_dummy_data=config.RUN_DUMMY_TEST)
                                             checkpoint_manager.save_checkpoint("PPI_Evaluation", {"status": "completed"})
                         # --- FIX: Add the missing 'except' block for the per-dataset try block ---

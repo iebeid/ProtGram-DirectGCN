@@ -36,9 +36,10 @@ class FileSystemManager:
 
     @staticmethod
     def get_protocol(uri: str) -> str:
-        """Determines the protocol from a given URI (e.g., 's3', 'gcs', 'file')."""
-        parsed = urlparse(str(uri))
-        return parsed.scheme or 'file'
+        """Robustly determines the protocol from a given URI (e.g., 's3', 'gcs', 'file')."""
+        # --- REFACTOR: Use fsspec's internal utility for more robust protocol detection ---
+        # This correctly handles local Windows paths (e.g., "C:\...") unlike urlparse.
+        return fsspec.utils.get_protocol(str(uri))
 
     def get_fs_and_path(self, uri: str) -> Tuple[Any, str]:
         """

@@ -81,7 +81,6 @@ After the one-time installation with `reset.sh` is complete, all subsequent runs
 ### Step 1: Navigate to the Project Directory
 
 Open a new WSL terminal. The `ppi-env` is **not** activated by default. The `start.sh` script will handle activation.
-
 ```sh
 cd ~/documents/projects/ProtGram-DirectGCN
 ```

@@ -1,3 +1,11 @@
+# ==============================================================================
+# MODULE: utils/post/embedding_processor.py
+# PURPOSE: Contains tools for loading and post-processing embeddings, such as PCA,
+#          normalization, pooling, and edge feature creation.
+# VERSION: 7.0 (Aligned DirectGCN embedding extraction with Parallel Views architecture)
+# AUTHOR: Islam Ebeid
+# ==============================================================================
+
 from pathlib import Path
 from typing import Dict, Optional, List, Tuple, Set, Union, TYPE_CHECKING, Iterator, Callable
 
@@ -9,10 +17,13 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from torch_geometric.data import Data
 from tqdm.auto import tqdm
+from gensim.models import Word2Vec
 from source.utils.post.embedding_loader import EmbeddingLoader
 
 if TYPE_CHECKING:
-    pass
+    from configuration.config import Config
+    from source.data_structures.direct_ngram_graph import DirectedNgramGraph
+
 
 class EmbeddingProcessor:
     """
@@ -177,7 +188,7 @@ class EmbeddingProcessor:
             return raw_model_output[1:min(raw_model_output.shape[0], original_sequence_length + 1), :]
 
     @staticmethod
-    def get_word2vec_residue_embeddings(sequence: str, w2v_model: 'Word2Vec',
+    def get_word2vec_residue_embeddings(sequence: str, w2v_model: Word2Vec,
                                         embedding_dim: int) -> Optional[np.ndarray]:
         if not sequence: return np.zeros((0, embedding_dim), dtype=np.float32)
         if not hasattr(w2v_model, 'wv'): return np.zeros((0, embedding_dim), dtype=np.float32)
@@ -408,40 +419,53 @@ class EmbeddingProcessor:
         return torch.from_numpy(initial_features), hierarchical_attention_log
 
     @staticmethod
-    def generate_edge_features_batched(interaction_pairs: List[Tuple[str, str, int]],
-                                       protein_embeddings: Union[Dict[str, np.ndarray], 'EmbeddingLoader'], method: str,
-                                       batch_size: int, embedding_dim: int) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
-        """Generates edge features in batches for link prediction. Yields (features_batch, labels_batch)."""
-        if not protein_embeddings or embedding_dim <= 0: return
+    def create_edge_features(
+            interaction_pairs: List[Tuple[str, str, int]],
+            protein_embeddings: Union[Dict[str, np.ndarray], 'EmbeddingLoader'],
+            method: str
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Creates a full feature matrix (X) and label vector (y) from interaction pairs.
+        This is a high-memory operation intended to be run once before CV.
+        """
+        if not interaction_pairs:
+            return np.array([]), np.array([])
 
-        batch_features, batch_labels = [], []
-        for p1_id, p2_id, label in interaction_pairs:
+        # Get embedding dimension from the first valid embedding
+        first_key = next(iter(protein_embeddings.get_keys()), None)
+        if not first_key:
+            return np.array([]), np.array([])
+        embedding_dim = protein_embeddings[first_key].shape[0]
+
+        feature_dim_map = {
+            'concatenate': embedding_dim * 2, 'average': embedding_dim,
+            'hadamard': embedding_dim, 'l1_distance': embedding_dim, 'l2_distance': embedding_dim
+        }
+        edge_feature_dim = feature_dim_map.get(method, embedding_dim * 2)
+
+        # Pre-allocate arrays for performance
+        num_pairs = len(interaction_pairs)
+        X = np.zeros((num_pairs, edge_feature_dim), dtype=np.float16)
+        y = np.zeros(num_pairs, dtype=np.int32)
+
+        valid_pair_count = 0
+        for i, (p1_id, p2_id, label) in enumerate(tqdm(interaction_pairs, desc="  Creating Edge Features")):
             if p1_id in protein_embeddings and p2_id in protein_embeddings:
                 emb1, emb2 = protein_embeddings[p1_id], protein_embeddings[p2_id]
-                if emb1.shape[0] == embedding_dim and emb2.shape[0] == embedding_dim:
-                    if method == 'concatenate':
-                        feature = np.concatenate((emb1, emb2))
-                    elif method == 'average':
-                        feature = (emb1.astype(np.float32) + emb2.astype(np.float32)) / 2.0
-                    elif method == 'hadamard':
-                        feature = emb1 * emb2
-                    elif method == 'l1_distance':
-                        feature = np.abs(emb1 - emb2)
-                    elif method == 'l2_distance':
-                        feature = (emb1 - emb2) ** 2
-                    else:
-                        feature = np.concatenate((emb1, emb2))
 
-                    batch_features.append(feature.astype(np.float16))
-                    batch_labels.append(label)
+                if emb1.shape[0] != embedding_dim or emb2.shape[0] != embedding_dim:
+                    continue  # Skip pairs with mismatched embedding dimensions
 
-                    if len(batch_features) >= batch_size:
-                        yield np.array(batch_features, dtype=np.float16), np.array(batch_labels, dtype=np.int32)
-                        # --- ANTICIPATORY DEBUGGING (BUG FIX): Re-initialize lists to prevent memory leak ---
-                        batch_features, batch_labels = [], []
+                if method == 'concatenate': feature = np.concatenate((emb1, emb2))
+                elif method == 'average': feature = (emb1.astype(np.float32) + emb2.astype(np.float32)) / 2.0
+                elif method == 'hadamard': feature = emb1 * emb2
+                elif method == 'l1_distance': feature = np.abs(emb1 - emb2)
+                elif method == 'l2_distance': feature = (emb1 - emb2) ** 2
+                else: feature = np.concatenate((emb1, emb2))
 
-        # --- ANTICIPATORY DEBUGGING (BUG FIX): Yield the final, smaller batch to ensure all data is processed. ---
-        # Modern TensorFlow handles variable batch sizes gracefully, so dropping the remainder
-        # is no longer necessary and leads to incomplete evaluation.
-        if batch_features:
-            yield np.array(batch_features, dtype=np.float16), np.array(batch_labels, dtype=np.int32)
+                X[valid_pair_count] = feature.astype(np.float16)
+                y[valid_pair_count] = label
+                valid_pair_count += 1
+
+        # Trim arrays to the number of valid pairs found
+        return X[:valid_pair_count], y[:valid_pair_count]

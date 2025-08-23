@@ -14,17 +14,18 @@ import torch
 from torch_geometric.data import Data
 from torch_geometric.utils import to_networkx
 from tqdm.auto import tqdm
-
 from source.utils.data.fasta_utils import FastaUtils
 
+# --- FIX: Import classes for direct type hinting instead of forward references ---
 if TYPE_CHECKING:
-    pass
+    from configuration.config import Config
+    from source.data_structures.graph import DirectedNgramGraph
 
 
 class XGCNDataBuilder:
     """A class dedicated to generating labels for self-supervised tasks on graphs."""
 
-    def __init__(self, config: 'Config'):
+    def __init__(self, config: 'Config'): # Keep forward ref here for constructor
         self.config = config
 
     def generate_task_labels(self, graph: 'DirectedNgramGraph', task_type: str) -> Tuple[

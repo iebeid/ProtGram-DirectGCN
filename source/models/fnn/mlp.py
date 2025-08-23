@@ -70,23 +70,3 @@ class MLP:
             ]
         )
         return model
-
-
-import torch
-import torch.nn.functional as F
-
-class SimpleMLP(torch.nn.Module):
-    """A simple PyTorch MLP for node classification on embeddings."""
-
-    def __init__(self, in_channels: int, hidden_channels: int, out_channels: int, dropout: float):
-        super().__init__()
-        self.lin1 = torch.nn.Linear(in_channels, hidden_channels)
-        self.lin2 = torch.nn.Linear(hidden_channels, out_channels)
-        self.dropout = dropout
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.lin1(x)
-        x = x.relu()
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.lin2(x)
-        return x

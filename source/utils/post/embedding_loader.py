@@ -1,5 +1,5 @@
 # ==============================================================================
-# MODULE: utils/model_converter.py
+# MODULE: utils/post/embedding_loader.py
 # PURPOSE: Contains tools for loading and post-processing embeddings, such as PCA,
 #          normalization, pooling, and edge feature creation.
 # VERSION: 7.0 (Aligned DirectGCN embedding extraction with Parallel Views architecture)
@@ -109,6 +109,12 @@ class EmbeddingLoader:
 
     def __len__(self) -> int:
         return len(self._keys) if self._keys is not None else 0
+
+    def __iter__(self) -> Iterator[str]:
+        """Allows iterating over the keys of the embedding file."""
+        if self._keys is None:
+            raise RuntimeError("EmbeddingLoader used outside of context or after exit.")
+        return iter(self._keys)
 
     def get_keys(self) -> Set[str]:
         if self._keys is None:

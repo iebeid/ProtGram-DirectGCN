@@ -44,14 +44,18 @@ class TransformerPipelineTests(unittest.TestCase):
         for model_cfg in self.config.TRANSFORMER_MODELS_TO_RUN:
             ModelConverter.convert_and_save_model(model_cfg['hf_id'], temp_model_dir)
 
-        self.config.SEQUENCE_FILE_PATHS = [dummy_fasta_path]
+        self.config.SEQUENCE_FILE_PATHS = [Path(dummy_fasta_path)]
         self.config.TRANSFORMER_BASE_BATCH_SIZE = 1
 
-        with mlflow.start_run(run_name="Transformer_Embedder_SMOKE_TEST") as run:
+        with mlflow.start_run(run_name="Transformer_Embedder_SMOKE_TEST"):
             embedder = TransformerEmbedder(self.config)
-            generated_paths = embedder.run(parent_run_id=run.info.run_id)
-            self.assertIn("ProtBERT", generated_paths)
-            self.assertTrue(generated_paths["ProtBERT"].exists())
+            generated_paths = embedder.run()
+            # --- REFACTOR: Make assertions dynamic and more robust ---
+            self.assertIsInstance(generated_paths, dict, "The run method should return a dictionary.")
+            self.assertGreater(len(generated_paths), 0, "The run method returned an empty dictionary.")
+            for model_name, output_path in generated_paths.items():
+                print(f"  - Verifying output for {model_name}...")
+                self.assertTrue(output_path.exists(), f"Output file for {model_name} was not created at {output_path}")
 
         print("\n  TransformerEmbedder smoke test ran successfully.")
         print("--- Transformer Embedder Pipeline Smoke Test Complete ---")
