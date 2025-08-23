@@ -172,10 +172,10 @@ if __name__ == "__main__":
 
         # STAGE 6: DATA SETUP
         "echo '--- Stage 6: Setting up project data ---'",
-        'echo "--- Removing old data cache to ensure a clean setup..."'
+        'echo "--- Removing old data cache to ensure a clean setup..."',
         'rm -rf "$HOME/.cache/protgram_directgcn"',
-        'echo "--- Triggering DataManager for full data download and processing... ---"'
-        'python -u -c "from configuration.config import Config; from configuration.manager import setup_data; setup_data(Config())"'
+        'echo "--- Triggering DataManager for full data download and processing... ---"',
+        'python -u -c "from configuration.config import Config; from configuration.manager import setup_data; setup_data(Config())"',
 
         # STAGE 7: VERIFICATION & CLEANUP
         "echo '--- Stage 7: Verifying installations ---'",
