@@ -67,6 +67,12 @@ fi
 echo "INFO: Conda base found at: $CONDA_BASE"
 source "$CONDA_BASE/etc/profile.d/conda.sh"
 
+# --- NEW: Proactively accept Conda Terms of Service ---
+# On fresh Anaconda installations, the ToS for default channels must be accepted.
+echo "INFO: Proactively accepting Conda Terms of Service to prevent interactive prompts..."
+conda config --set anaconda_tos_accepted yes
+echo "SUCCESS: Conda Terms of Service handled."
+
 # --- Step 0.5: Dependency Checks (Git, Git LFS) ---
 if ! command -v git &> /dev/null || ! command -v git-lfs &> /dev/null; then
     echo "ERROR: 'git' and 'git-lfs' are required. Please install them."
