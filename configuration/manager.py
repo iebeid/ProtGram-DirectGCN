@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/manager.py
 # PURPOSE: Handles the verification and acquisition of all external data files.
-# VERSION: 7.1 (Corrected caching for benchmark datasets)
+# VERSION: 7.2 (Corrected cleanup logic to prevent deleting essential files)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -241,8 +241,6 @@ class DataManager:
 
             if download_target_path != final_path:
                 self.files_to_cleanup.append(download_target_path)
-            if post_process_type:
-                self.files_to_cleanup.append(final_path)
 
             if DataProcessor._is_file_valid(final_path):
                 print(f"☑ Found and verified raw file: {final_path.relative_to(self.config.PROJECT_ROOT)}")
@@ -353,10 +351,10 @@ class DataManager:
             return
 
     def _cleanup_intermediate_files(self):
-        """Removes all downloaded and intermediate raw files."""
+        """Removes only the downloaded archive files."""
         print("\n--- Step 4: Cleaning Up Intermediate Files ---")
         for f_path in set(self.files_to_cleanup):
-            if f_path.exists():
+            if f_path.exists() and (f_path.name.endswith('.gz') or f_path.name.endswith('.zip')):
                 try:
                     if f_path.is_dir():
                         shutil.rmtree(f_path)
