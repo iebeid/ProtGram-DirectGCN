@@ -35,7 +35,6 @@ from source.trainers.protgram_xgcn import ProtGramXGCNTrainer
 from source.trainers.transformers import TransformerEmbedder
 from source.trainers.word2vec import Word2VecEmbedder
 from source.trainers.hyperparameter_optimizer import HyperparameterOptimizer
-from configuration.data_downloader import DataDownloader
 from source.utils.data.data_utils import DataUtils
 from source.utils.logging.file_logger import FileLogger
 from source.entry.checkpoints import CheckpointManager
@@ -186,31 +185,39 @@ class PipelineOrchestrator:
             try:
                 DataUtils.print_header("Starting Protein-Protein Interaction Meta-Pipeline")
 
-                # --- NEW: Data Validation and Restoration Logic ---
-                # This logic now lives at the start of the main application run.
+                # --- DEFINITIVE FIX: Make the application self-healing for data issues ---
                 data_manager = DataManager(self.base_config)
                 print("\n--- Verifying local data integrity ---")
-                is_data_valid = data_manager.validate_data_from_manifest()
-
-                if not is_data_valid:
+                if not data_manager.validate_data_from_manifest():
                     print("\n--- Local data is invalid or missing. Attempting to restore from cache... ---")
-                    restored_ok = data_manager.restore_data_from_cache()
-                    if not restored_ok:
-                        print("\n" + "!" * 80)
-                        print("!!! FATAL: Data is missing or corrupt, and could not be restored from cache. !!!")
-                        print("!!! Please run the one-time setup script to download and process all data: !!!")
-                        print("!!!                                                                          !!!")
-                        print("!!!   bash configuration/reset.sh                                            !!!")
-                        print("!" * 80)
-                        sys.exit(1)
+                    if not data_manager.restore_data_from_cache():
+                        print("\n" + "=" * 80)
+                        print("--- Data cache is missing or incomplete. ---")
+                        print("--- Triggering a one-time, full data download and processing step. ---")
+                        print("--- This may take a significant amount of time. ---")
+                        print("=" * 80 + "\n")
+                        try:
+                            # The setup script handles download, processing, and manifest creation.
+                            from configuration.manager import setup_data
+                            setup_data(self.base_config)
+                            print("\n--- Data setup complete. Re-validating... ---")
+                            if not data_manager.validate_data_from_manifest():
+                                print("FATAL: Data validation failed even after a full setup. Please check logs.")
+                                sys.exit(1)
+                            print("  - ✅ Data is now valid.")
+                        except Exception as e:
+                            print(f"FATAL: An unexpected error occurred during data setup: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            sys.exit(1)
+                    else:
+                        print("  - ✅ Successfully restored data from cache.")
                 else:
-                    print("--- Local data is valid. ---")
+                    print("  - ✅ Local data is valid.")
 
                 # --- NEW: Add dynamic system resource checks at the start ---
                 DataUtils.report_system_resources(self.base_config.BASE_OUTPUT_DIR)
 
-                # --- NEW: Add data download step with network resilience ---
-                DataDownloader(self.base_config).run()
                 if self.base_config.DEBUG_VERBOSE:
                     print("--- Full Configuration Values ---")
                     for key, value in sorted(vars(self.base_config).items()):

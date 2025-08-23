@@ -76,11 +76,6 @@ echo "SUCCESS: Python cache cleared."
 # that were installed by Conda. This resolves the "Cannot dlopen" errors at runtime.
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 
-# --- NEW FIX for HDF5 File Locking Issues ---
-# On some network filesystems (like NFS), file locking can cause errors.
-# This environment variable disables it for the HDF5 library.
-export HDF5_USE_FILE_LOCKING=FALSE
-
 # --- DEFINITIVE FIX for Reproducibility: Configure CUDA workspace ---
 # This environment variable is required by `torch.use_deterministic_algorithms(True)`
 # to ensure that operations like `index_add` (used by PyG's scatter_add) are deterministic.
@@ -92,15 +87,18 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 export XLA_FLAGS="--xla_gpu_cuda_data_dir=$CONDA_PREFIX"
 
 # --- DEFINITIVE FIX: Separate environment validation from the main application run ---
-# 1. Validate the environment. If it fails, run the full setup.
-if ! "$ENV_PYTHON" run.py --validate-env-only; then
-    echo "--- Environment validation failed. Running full setup script... ---"
-    "$ENV_PYTHON" configuration/setup.py
+# 1. Validate both the environment and the data setup. If either fails, run the full setup.
+DATA_MANIFEST_PATH="$HOME/.cache/protgram_directgcn/data_manifest.json"
+
+if ! "$ENV_PYTHON" run.py --validate-env-only || [ ! -f "$DATA_MANIFEST_PATH" ]; then
+    echo "--- Environment or data validation failed. Running full setup script... ---"
+    # The setup script will handle both package installation and data download.
+    "$ENV_PYTHON" -u configuration/setup.py
 fi
 
 # 2. Now that the environment is guaranteed to be valid, run the main application.
-echo "--- Environment is valid. Starting main application... ---"
-"$ENV_PYTHON" source/entry/main.py
+echo "--- Environment and data are valid. Starting main application... ---"
+"$ENV_PYTHON" -u run.py
 
 echo -e "\n--- SCRIPT FINISHED ---"
 exit 0
