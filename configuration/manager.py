@@ -44,20 +44,32 @@ class DataManager:
     def _copy_to_cache(self, source_path: Path):
         """
         Copies a file or directory to the persistent cache if it exists.
+        Prioritizes the larger file if a version already exists in the cache.
         """
         if not source_path.exists() or not self.config.PERSISTENT_DATA_CACHE:
             return
         cache_path = self.config.PERSISTENT_DATA_CACHE / source_path.name
 
-        if cache_path.is_dir():
-            shutil.rmtree(cache_path)
-        elif cache_path.exists():
-            cache_path.unlink()
+        if cache_path.exists():
+            is_dir = source_path.is_dir()
+            # Use a robust way to get directory size
+            source_size = sum(f.stat().st_size for f in source_path.glob('**/*') if f.is_file()) if is_dir else source_path.stat().st_size
+            cache_size = sum(f.stat().st_size for f in cache_path.glob('**/*') if f.is_file()) if is_dir else cache_path.stat().st_size
+
+            if source_size > cache_size:
+                print(f"  Updating cache for '{source_path.name}': local version is larger ({source_size} > {cache_size} bytes).")
+                if is_dir:
+                    shutil.rmtree(cache_path)
+                else:
+                    cache_path.unlink()
+            else:
+                print(f"  Skipping cache for '{source_path.name}': cached version is same size or larger.")
+                return  # Do nothing
 
         print(f"  Caching '{source_path.name}' for future runs...")
         if source_path.is_dir():
             shutil.copytree(source_path, cache_path)
-        elif source_path.is_file():
+        else:
             shutil.copy(source_path, cache_path)
 
     def run_full_setup(self):

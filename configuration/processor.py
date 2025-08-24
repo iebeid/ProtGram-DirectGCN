@@ -98,6 +98,26 @@ class DataProcessor:
             print(f"  ERROR: Raw UniProt mapping file not found at {raw_mapping_path}. Cannot proceed.")
             return
 
+        # --- DEFINITIVE FIX: Respect the memory usage strategy ---
+        if self.config.MEMORY_USAGE_STRATEGY == 'high':
+            print("  High-memory strategy selected. Using Dask for faster, in-memory processing.")
+            try:
+                with ProgressBar():
+                    ddf = dd.read_csv(raw_mapping_path, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'],
+                                      on_bad_lines='warn', blocksize='256MB', dtype={'db': 'category', 'uniprot_id': str, 'other_id': str})
+
+                    relevant_dbs = ['GeneID', 'UniRef100', 'UniRef90', 'UniRef50']
+                    filtered_ddf = ddf[ddf['db'].isin(relevant_dbs)]
+
+                    print(f"  Saving filtered mapping to Parquet file: {processed_parquet_path.name}...")
+                    filtered_ddf.to_parquet(processed_parquet_path, engine='pyarrow', overwrite=True)
+            except Exception as e:
+                print(f"  ❌ ERROR during high-memory Dask processing: {e}")
+                print("     This may be due to an actual out-of-memory error. Consider using the 'dynamic' or 'low' memory strategy.")
+                # Fallback or exit could be implemented here if needed
+                return # Abort processing for this step
+
+
         # --- DEFINITIVE FIX for OOM Kill: Use a two-stage, memory-efficient streaming approach --- #
         # Stage 1: Stream the huge raw file line-by-line, writing filtered lines to a temporary file. This uses minimal RAM.
         print(f"  Stage 1/2: Streaming and filtering raw mapping file '{raw_mapping_path.name}'...")
@@ -143,12 +163,6 @@ class DataProcessor:
         finally:
             if temp_filtered_path.exists():
                 temp_filtered_path.unlink() # Clean up the intermediate file
-
-        # --- NEW: Cache the newly created file for future runs ---
-        if processed_parquet_path.exists():
-            print(f"  Caching new {processed_parquet_path.name} for future runs...")
-            shutil.copy(processed_parquet_path, cache_path)
-
         print("  ✔ UniProt ID mapping processing complete.")
 
     def _process_negative_interactions(self):
