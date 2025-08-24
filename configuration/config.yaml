@@ -44,7 +44,7 @@ pipeline_flags:
 
 # 4. RESOURCE MANAGEMENT
 resource_management:
-  MEMORY_USAGE_STRATEGY: 'dynamic' # 'low', 'high', or 'dynamic'
+  MEMORY_USAGE_STRATEGY: 'high' # 'low', 'high', or 'dynamic'
 
 # --- NEW: Shared GNN Hyperparameters using YAML Anchors ---
 # This block defines common GNN parameters once to avoid duplication.
