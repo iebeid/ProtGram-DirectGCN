@@ -21,12 +21,13 @@ class GraphBuilderTests(unittest.TestCase):
         self.config = Config()
         # Store original values to restore them in tearDown
         self.original_base_output_dir = self.config.BASE_OUTPUT_DIR
+        self.original_graph_objects_dir = self.config.RESULTS_GRAPH_OBJECTS_DIR
         self.original_downsample = self.config.SEQUENCE_DOWNSAMPLE_FRACTION
         self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN
 
-        # --- DEFINITIVE FIX: Set the temporary output directory BEFORE setting up other paths ---
+        # --- DEFINITIVE FIX: Manually override all relevant paths for true isolation ---
         self.config.BASE_OUTPUT_DIR = Path(self.temp_dir)
-        self.config._setup_paths()
+        self.config.RESULTS_GRAPH_OBJECTS_DIR = Path(self.temp_dir) / "graph_objects"
 
         # Now, apply other test-specific overrides
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = None
@@ -39,6 +40,7 @@ class GraphBuilderTests(unittest.TestCase):
     def tearDown(self):
         """Clean up the temporary directory after the test."""
         self.config.BASE_OUTPUT_DIR = self.original_base_output_dir
+        self.config.RESULTS_GRAPH_OBJECTS_DIR = self.original_graph_objects_dir
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = self.original_downsample
         self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
         shutil.rmtree(self.temp_dir)

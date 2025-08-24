@@ -68,7 +68,13 @@ class Word2VecEmbedder:
         DataUtils.print_header("Step 3: Generating Per-Protein Embeddings using Word2Vec")
         protein_embeddings: Dict[str, np.ndarray] = {}
         # Use the generator directly to avoid loading all sequences into memory
-        sequences_for_embedding = FastaUtils.parse_sequences(fasta_files)
+        sequences_for_embedding = FastaUtils.parse_sequences(
+            fasta_files,
+            perform_cleaning=self.config.PROTGRAM_CLEAN_FASTA_ON_PARSE,
+            min_len=self.config.PROTGRAM_FASTA_MIN_LEN,
+            max_len=self.config.PROTGRAM_FASTA_MAX_LEN,
+            alphabet_type=self.config.PROTGRAM_FASTA_ALPHABET
+        )
 
         for original_id, sequence in tqdm(sequences_for_embedding, desc="  Generating W2V Protein Embeddings"):
             residue_vectors = EmbeddingProcessor.get_word2vec_residue_embeddings(sequence, w2v_model,

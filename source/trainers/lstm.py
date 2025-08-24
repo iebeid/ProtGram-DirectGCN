@@ -45,7 +45,13 @@ class LSTMBasedEmbedder:
         Prepares the corpus by loading sequences. Downsampling is now handled
         globally by the main pipeline runner.
         """
-        self.sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
+        self.sequences = list(FastaUtils.parse_sequences(
+            self.config.SEQUENCE_FILE_PATHS,
+            perform_cleaning=self.config.PROTGRAM_CLEAN_FASTA_ON_PARSE,
+            min_len=self.config.PROTGRAM_FASTA_MIN_LEN,
+            max_len=self.config.PROTGRAM_FASTA_MAX_LEN,
+            alphabet_type=self.config.PROTGRAM_FASTA_ALPHABET
+        ))
 
         if not self.sequences:
             print("  WARNING: No sequences available for LSTM training. Skipping.")
