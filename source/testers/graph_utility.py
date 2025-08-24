@@ -30,6 +30,8 @@ class GraphBuilderTests(unittest.TestCase):
         with open(self.fasta_path, "w") as f:
             f.write(">seq1\nACGT\n>seq2\nTTAC\n>seq3\nAGA\n")
         self.config.BASE_OUTPUT_DIR = Path(self.temp_dir)
+        # --- FIX: Isolate the graph object directory for this test class ---
+        self.config.RESULTS_GRAPH_OBJECTS_DIR = self.config.BASE_OUTPUT_DIR / "graph_objects"
         self.config._setup_paths()
         self.config.SEQUENCE_FILE_PATHS = [Path(self.fasta_path)]
 

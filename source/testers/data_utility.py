@@ -29,6 +29,8 @@ class DataUtilityTests(unittest.TestCase):
         self.config.PROTGRAM_FASTA_MIN_LEN = 1
         # Isolate paths for this test class
         self.config.BASE_OUTPUT_DIR = Path(self.temp_dir)
+        # --- FIX: Isolate the graph object directory for this test class ---
+        self.config.RESULTS_GRAPH_OBJECTS_DIR = self.config.BASE_OUTPUT_DIR / "graph_objects"
         self.config._setup_paths()
 
     def tearDown(self):
