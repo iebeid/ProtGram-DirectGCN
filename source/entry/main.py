@@ -34,7 +34,7 @@ from source.trainers.lstm import LSTMBasedEmbedder
 from source.trainers.protgram_xgcn import ProtGramXGCNTrainer
 from source.trainers.transformers import TransformerEmbedder
 from source.trainers.word2vec import Word2VecEmbedder
-from source.trainers.hyperparameter_optimizer import HyperparameterOptimizer
+from source.utils.models.hyperparameter_optimizer import HyperparameterOptimizer
 from source.utils.data.data_utils import DataUtils
 from source.utils.logging.file_logger import FileLogger
 from source.entry.checkpoints import CheckpointManager

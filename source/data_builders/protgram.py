@@ -16,6 +16,7 @@ from pathlib import Path
 import dask.bag as db
 import dask.dataframe as dd
 import pyarrow.parquet as pq
+import pandas as pd
 from tqdm.auto import tqdm
 
 from configuration.config import Config
@@ -149,6 +150,19 @@ class ProtGramDataBuilder:
             num_partitions_for_bag = effective_dask_workers if effective_dask_workers > 1 else 1
             raw_sequence_bag_with_flag = db.from_sequence(sequence_generator, npartitions=num_partitions_for_bag)
             final_preprocessed_input_bag = raw_sequence_bag_with_flag.starmap(ProtgramDaskHelpers.preprocess_sequence_tuple_for_bag)
+
+            # --- FIX: Add a check for empty input after downsampling/filtering ---
+            # This prevents Dask from erroring on empty partitions, which can happen
+            # in tests or if the downsample fraction is very small.
+            try:
+                if final_preprocessed_input_bag.count().compute() == 0:
+                    print("\n--- ⚠️ WARNING: No sequences remained after downsampling/filtering. ---")
+                    print("--- The input FASTA file might be too small for the specified SEQUENCE_DOWNSAMPLE_FRACTION,")
+                    print("--- or all sequences were filtered out by length constraints.")
+                    print("--- Skipping n-gram graph generation. ---")
+                    return # The 'finally' block will still run for cleanup.
+            except Exception:
+                print("--- WARNING: Could not compute initial sequence count. Proceeding with build. ---")
 
             # --- DEFINITIVE FIX: Restore the main processing loop for each n-gram level ---
             for n in tqdm(n_values, desc="Building N-Gram Levels"):

@@ -39,7 +39,21 @@ class Word2VecPipelineTests(unittest.TestCase):
         DataUtils.print_header("Word2Vec Pipeline Smoke Test")
         print("=" * 80)
 
-        dummy_fasta_path = DummyDataFactory.create_fasta(str(self.base_test_dir / "input"), "w2v_test.fasta")
+        # --- Create dummy data ---
+        num_seqs = 5
+        input_dir = self.base_test_dir / "input"
+        dummy_fasta_path = DummyDataFactory.create_fasta(str(input_dir), "w2v_test.fasta", num_seqs=num_seqs)
+
+        # --- CRITICAL FIX: Create a dummy mapping file and point the config to it. ---
+        # This prevents the test from loading the massive production ID mapping file,
+        # which was causing the extreme slowdown during the Dask merge operation.
+        dummy_mapping_path = DummyDataFactory.create_dummy_id_mapping_parquet(
+            str(input_dir), "dummy_id_mapping.parquet", num_ids=num_seqs
+        )
+        self.config.ID_MAPPING_PATH = Path(dummy_mapping_path)
+        # Ensure the pipeline uses the file-based mapping mode for this test.
+        self.config.ID_MAPPING_MODE = 'file'
+
         self.config.SEQUENCE_FILE_PATHS = [Path(dummy_fasta_path)]
         self.config.W2V_EPOCHS = 1
 

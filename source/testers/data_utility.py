@@ -20,11 +20,16 @@ class DataUtilityTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
         self.config = Config()
+        # --- FIX: Disable downsampling for tests to ensure data is always present ---
+        self.original_downsample = self.config.SEQUENCE_DOWNSAMPLE_FRACTION
+        self.config.SEQUENCE_DOWNSAMPLE_FRACTION = None
         # Isolate paths for this test class
         self.config.BASE_OUTPUT_DIR = Path(self.temp_dir)
         self.config._setup_paths()
 
     def tearDown(self):
+        # Restore original config value
+        self.config.SEQUENCE_DOWNSAMPLE_FRACTION = self.original_downsample
         shutil.rmtree(self.temp_dir)
 
     def test_embedding_loader(self):

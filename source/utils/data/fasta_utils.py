@@ -5,6 +5,8 @@ from typing import Iterator, List, Optional, Tuple, Union
 from Bio import SeqIO
 from tqdm.auto import tqdm
 
+from source.utils.data.data_utils import DataUtils
+
 # ==============================================================================
 # 2. FASTA File Utilities
 # ==============================================================================
@@ -84,6 +86,36 @@ class FastaUtils:
                 print(f"Error: FASTA file not found at {normalized_path}")
             except Exception as e:
                 print(f"Error parsing FASTA file {normalized_path}: {e}")
+
+    @staticmethod
+    def check_uniprot_header_compatibility(fasta_paths: List[Path], sample_size: int) -> float:
+        """
+        Samples FASTA files to determine the compatibility score with the fast regex parser.
+        Returns the score (fraction of headers that look like UniProt headers).
+        """
+        if not fasta_paths:
+            return 0.0
+
+        def header_iterator(paths: List[Path]) -> Iterator[str]:
+            for path in paths:
+                if not path.exists(): continue
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line in f:
+                        if line.startswith('>'):
+                            yield line.strip()
+
+        all_headers_iterator = header_iterator(fasta_paths)
+        sampled_headers = DataUtils.reservoir_sample(all_headers_iterator, sample_size)
+
+        if not sampled_headers:
+            return 0.0
+
+        uniprot_like_ids = 0
+        for header in sampled_headers:
+            if FastaUtils.extract_id_from_header(header) != header.lstrip('>').split()[0]:
+                uniprot_like_ids += 1
+
+        return uniprot_like_ids / len(sampled_headers)
 
     class FastaCorpus:
         """A memory-efficient corpus for Word2Vec that reads from FASTA files."""

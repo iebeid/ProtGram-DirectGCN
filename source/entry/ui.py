@@ -79,6 +79,7 @@ class UIManager:
         if should_downsample:
             DataUtils.print_header(f"Downsampling FASTA files ({config.SEQUENCE_DOWNSAMPLE_FRACTION:.1%})")
             random.seed(config.RANDOM_STATE)
+            files_to_process = []
             for original_path in config.ORIGINAL_SEQUENCE_FILE_PATHS:
                 with open(original_path, 'r', encoding='utf-8', errors='ignore') as f:
                     total_sequences = sum(1 for line in f if line.startswith('>'))
@@ -100,6 +101,7 @@ class UIManager:
                     for seq_id, sequence in sampled_sequences:
                         f.write(f">{seq_id}\n{sequence}\n")
                 files_to_process.append(temp_fasta_path)
+            return files_to_process
         else:
             print(f"\nUsing specified FASTA file: {config.ORIGINAL_SEQUENCE_FILE_PATHS[0].name}")
             return config.ORIGINAL_SEQUENCE_FILE_PATHS.copy()
@@ -182,10 +184,14 @@ class UIManager:
             for group_name, group_df in final_summary_df.groupby('dataset_group', sort=False):
                 print(f"\n--- Results for Dataset: {group_name} ---")
                 formatted_group_df = group_df.copy()
+                # --- FIX: Make formatting robust to NaN and missing columns ---
+                for col in columns_to_print:
+                    if col not in formatted_group_df:
+                        formatted_group_df[col] = 'N/A' # Add missing columns
                 float_cols = formatted_group_df.select_dtypes(include=['float']).columns
                 for col in float_cols:
-                    formatted_group_df[col] = formatted_group_df[col].map('{:.4f}'.format)
-                print(formatted_group_df[columns_to_print].to_string(index=False, na_rep='NaN'))
+                    formatted_group_df[col] = formatted_group_df[col].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
+                print(formatted_group_df[columns_to_print].to_string(index=False, na_rep='N/A'))
         except Exception as e:
             import traceback
             print(f"\n--- ❌ ERROR: Could not generate the aggregated benchmark summary. ---")

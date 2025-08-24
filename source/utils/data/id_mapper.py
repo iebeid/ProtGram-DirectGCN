@@ -15,7 +15,6 @@ from tqdm.auto import tqdm
 
 from configuration.config import Config
 from source.utils.data.data_utils import DataUtils
-from source.entry.ui import UIManager
 from source.utils.data.fasta_utils import FastaUtils
 
 
@@ -45,12 +44,15 @@ class IDMapGenerator:
         if not self.mapping_output_file and self.mapping_mode not in ['file', 'none']:
             return None
 
-        # --- NEW: Smart Mapping Logic ---
+        # --- REFACTOR: Automatic Smart Mapping Logic ---
         if self.mapping_mode == 'file' and self.config.ENABLE_SMART_MAPPING_PROMPT:
             compatibility = self._assess_fasta_header_compatibility()
             if compatibility >= self.config.REGEX_CONFIDENCE_THRESHOLD:
-                if UIManager.prompt_for_fast_id_mapping(compatibility):
-                    self.mapping_mode = 'regex' # Override for this run
+                print(f"  💡 Smart Mapping: FASTA headers are {compatibility:.1%} compatible. Automatically switching to fast 'regex' mode.")
+                self.mapping_mode = 'regex'  # Override for this run
+            else:
+                print(f"  - FASTA headers are not compatible with fast 'regex' mode (score: {compatibility:.1%}).")
+                print(f"  - Proceeding with configured 'file' mode.")
 
         if self.mapping_mode == 'file':
             DataUtils.print_header("Loading Protein ID Mapping from File")
@@ -113,23 +115,11 @@ class IDMapGenerator:
         the fast regex parser.
         """
         print("  Assessing FASTA header compatibility for smart mapping...")
-        sample_size = self.config.REGEX_COMPATIBILITY_SAMPLE_SIZE
-        if not self.fasta_files_for_mapping: return 0.0
-
-        # Take a sample from the first FASTA file
-        sequence_iterator = FastaUtils.parse_sequences(self.fasta_files_for_mapping)
-        sample_records = [record for _, record in zip(range(sample_size), sequence_iterator)]
-
-        if not sample_records: return 0.0
-
-        uniprot_like_ids = 0
-        for header, _ in sample_records:
-            # The regex parser returns the full ID if it can't find a UniProt pattern.
-            # We check if the parsed ID is different from the first word.
-            if FastaUtils.extract_id_from_header(header) != header.split()[0]:
-                uniprot_like_ids += 1
-
-        return uniprot_like_ids / len(sample_records)
+        # --- REFACTOR: Delegate to the centralized FastaUtils method ---
+        return FastaUtils.check_uniprot_header_compatibility(
+            fasta_paths=self.fasta_files_for_mapping,
+            sample_size=self.config.REGEX_COMPATIBILITY_SAMPLE_SIZE
+        )
 
     def _get_mapping_dask_dataframe(self) -> Optional[dd.DataFrame]:
         """
