@@ -103,7 +103,6 @@ class ModelFactory:
                 'gating_mode': self.config.PROTGRAM_GATING_COEFF_MODE,
                 'disable_pe': not self.config.PROTGRAM_USE_POSITIONAL_EMBEDDING
             })
-        return params
         # --- DEFINITIVE FIX: Ensure use_homo_hetero_paths is always present for DirectGCN ---
         if model_name_lower == 'directgcn':
             params.setdefault('use_homo_hetero_paths', False)
