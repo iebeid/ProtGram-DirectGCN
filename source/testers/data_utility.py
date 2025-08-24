@@ -20,21 +20,23 @@ class DataUtilityTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
         self.config = Config()
-        # --- FIX: Disable downsampling for tests to ensure data is always present ---
+        # Store original values to restore them in tearDown
+        self.original_base_output_dir = self.config.BASE_OUTPUT_DIR
         self.original_downsample = self.config.SEQUENCE_DOWNSAMPLE_FRACTION
-        # --- NEW FIX: Override the minimum sequence length for testing ---
-        # The default min_len (e.g., 50) filters out the short dummy sequences.
         self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN
-        self.config.SEQUENCE_DOWNSAMPLE_FRACTION = None
-        self.config.PROTGRAM_FASTA_MIN_LEN = 1
-        # Isolate paths for this test class
+
+        # --- DEFINITIVE FIX: Set the temporary output directory BEFORE setting up other paths ---
+        # This ensures all output paths derived from BASE_OUTPUT_DIR point to the temp directory.
         self.config.BASE_OUTPUT_DIR = Path(self.temp_dir)
-        # --- FIX: Isolate the graph object directory for this test class ---
-        self.config.RESULTS_GRAPH_OBJECTS_DIR = self.config.BASE_OUTPUT_DIR / "graph_objects"
         self.config._setup_paths()
 
+        # Now, apply other test-specific overrides
+        self.config.SEQUENCE_DOWNSAMPLE_FRACTION = None
+        self.config.PROTGRAM_FASTA_MIN_LEN = 1
+
     def tearDown(self):
-        # Restore original config value
+        # Restore original config values
+        self.config.BASE_OUTPUT_DIR = self.original_base_output_dir
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = self.original_downsample
         self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
         shutil.rmtree(self.temp_dir)
