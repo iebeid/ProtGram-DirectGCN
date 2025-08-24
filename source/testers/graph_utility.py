@@ -19,24 +19,26 @@ class GraphBuilderTests(unittest.TestCase):
         """Set up a temporary directory and a dummy FASTA file."""
         self.temp_dir = tempfile.mkdtemp()
         self.config = Config()
-        # --- FIX: Disable downsampling for tests to ensure data is always present ---
+        # Store original values to restore them in tearDown
+        self.original_base_output_dir = self.config.BASE_OUTPUT_DIR
         self.original_downsample = self.config.SEQUENCE_DOWNSAMPLE_FRACTION
-        self.config.SEQUENCE_DOWNSAMPLE_FRACTION = None
-        # --- NEW FIX: Override the minimum sequence length for testing ---
-        # The default min_len (e.g., 50) filters out the short dummy sequences.
         self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN
+
+        # --- DEFINITIVE FIX: Set the temporary output directory BEFORE setting up other paths ---
+        self.config.BASE_OUTPUT_DIR = Path(self.temp_dir)
+        self.config._setup_paths()
+
+        # Now, apply other test-specific overrides
+        self.config.SEQUENCE_DOWNSAMPLE_FRACTION = None
         self.config.PROTGRAM_FASTA_MIN_LEN = 1
         self.fasta_path = os.path.join(self.temp_dir, "test_sequences.fasta")
         with open(self.fasta_path, "w") as f:
             f.write(">seq1\nACGT\n>seq2\nTTAC\n>seq3\nAGA\n")
-        self.config.BASE_OUTPUT_DIR = Path(self.temp_dir)
-        # --- FIX: Isolate the graph object directory for this test class ---
-        self.config.RESULTS_GRAPH_OBJECTS_DIR = self.config.BASE_OUTPUT_DIR / "graph_objects"
-        self.config._setup_paths()
         self.config.SEQUENCE_FILE_PATHS = [Path(self.fasta_path)]
 
     def tearDown(self):
         """Clean up the temporary directory after the test."""
+        self.config.BASE_OUTPUT_DIR = self.original_base_output_dir
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = self.original_downsample
         self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
         shutil.rmtree(self.temp_dir)
