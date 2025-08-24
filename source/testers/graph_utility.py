@@ -22,6 +22,10 @@ class GraphBuilderTests(unittest.TestCase):
         # --- FIX: Disable downsampling for tests to ensure data is always present ---
         self.original_downsample = self.config.SEQUENCE_DOWNSAMPLE_FRACTION
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = None
+        # --- NEW FIX: Override the minimum sequence length for testing ---
+        # The default min_len (e.g., 50) filters out the short dummy sequences.
+        self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN
+        self.config.PROTGRAM_FASTA_MIN_LEN = 1
         self.fasta_path = os.path.join(self.temp_dir, "test_sequences.fasta")
         with open(self.fasta_path, "w") as f:
             f.write(">seq1\nACGT\n>seq2\nTTAC\n>seq3\nAGA\n")
@@ -32,6 +36,7 @@ class GraphBuilderTests(unittest.TestCase):
     def tearDown(self):
         """Clean up the temporary directory after the test."""
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = self.original_downsample
+        self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
         shutil.rmtree(self.temp_dir)
 
     def test_graph_builder_smoke(self):

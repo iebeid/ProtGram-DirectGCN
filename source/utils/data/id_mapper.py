@@ -76,10 +76,14 @@ class IDMapGenerator:
 
         if id_map:
             try:
-                with open(self.mapping_output_file, 'w', encoding='utf-8') as f:
-                    for original, mapped in id_map.items():
-                        f.write(f"{original}\t{mapped}\n")
-                print(f"ID mapping saved to {self.mapping_output_file}")
+                # --- FIX: Check if the output path is a directory before writing ---
+                if Path(self.mapping_output_file).is_dir():
+                    print(f"  Warning: Output path '{self.mapping_output_file}' is a directory. Skipping file write for in-memory regex map.")
+                else:
+                    with open(self.mapping_output_file, 'w', encoding='utf-8') as f:
+                        for original, mapped in id_map.items():
+                            f.write(f"{original}\t{mapped}\n")
+                    print(f"ID mapping saved to {self.mapping_output_file}")
             except IOError as e:
                 print(f"ERROR: Could not write ID mapping file: {e}")
         print("--- Protein ID Mapping Finished ---")

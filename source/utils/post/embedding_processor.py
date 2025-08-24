@@ -129,6 +129,10 @@ class EmbeddingProcessor:
                 if target_dimension >= original_dimension:
                     print(f"  PCA Skipped: Target dimension ({target_dimension}) is >= original dimension ({original_dimension}).")
                     return input_h5_path
+                # --- FIX: Also check if the number of samples is sufficient for PCA ---
+                if target_dimension >= len(keys):
+                    print(f"  PCA Skipped: Target dimension ({target_dimension}) is >= number of samples ({len(keys)}).")
+                    return input_h5_path
 
                 for i in tqdm(range(0, len(keys), batch_size), desc="  - Fitting PCA"):
                     batch_keys = keys[i:i + batch_size]
