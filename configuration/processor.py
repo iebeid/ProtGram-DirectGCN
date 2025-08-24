@@ -199,8 +199,11 @@ class DataProcessor:
             # Extract GeneID from 'entrez gene/locuslink:ID' format
             biogrid_ddf['gene_id_1'] = biogrid_ddf['p1_raw'].str.split(':').str[1]
             biogrid_ddf['gene_id_2'] = biogrid_ddf['p2_raw'].str.split(':').str[1]
-            biogrid_pairs_ddf = biogrid_ddf[['gene_id_1', 'gene_id_2']].dropna().astype(
-                {'gene_id_1': 'int64', 'gene_id_2': 'int64'})
+            # --- DEFINITIVE FIX: Coerce to numeric and drop non-integer IDs ---
+            # This handles cases where BioGRID provides non-GeneID identifiers (e.g., 'uniprotkb:P0DTD2').
+            biogrid_ddf['gene_id_1'] = dd.to_numeric(biogrid_ddf['gene_id_1'], errors='coerce')
+            biogrid_ddf['gene_id_2'] = dd.to_numeric(biogrid_ddf['gene_id_2'], errors='coerce')
+            biogrid_pairs_ddf = biogrid_ddf[['gene_id_1', 'gene_id_2']].dropna().astype(int)
 
             print(f"  Reading ID mapping from {id_mapping_path.name}...")
             mapping_ddf = dd.read_parquet(id_mapping_path)
