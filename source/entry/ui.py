@@ -51,24 +51,9 @@ class UIManager:
     @staticmethod
     def get_fasta_files_to_process(config: Config, temp_dir: Path) -> List[Path]:
         """Handles logic for downsampling and selecting FASTA files."""
-        files_to_process = []
-        # Interactive FASTA file selection
-        if len(config.ORIGINAL_SEQUENCE_FILE_PATHS) > 1:
-            print("\n--- Multiple FASTA files found. Please choose one to process for this run: ---")
-            for i, path in enumerate(config.ORIGINAL_SEQUENCE_FILE_PATHS):
-                print(f"  [{i + 1}] {path.name}")
-            while True:
-                try:
-                    choice = int(input(f"Enter number (1-{len(config.ORIGINAL_SEQUENCE_FILE_PATHS)}): "))
-                    if 1 <= choice <= len(config.ORIGINAL_SEQUENCE_FILE_PATHS):
-                        chosen_path = config.ORIGINAL_SEQUENCE_FILE_PATHS[choice - 1]
-                        print(f"You selected: {chosen_path.name}")
-                        config.ORIGINAL_SEQUENCE_FILE_PATHS = [chosen_path]
-                        break
-                    else:
-                        print("Invalid choice. Please try again.")
-                except ValueError:
-                    print("Invalid input. Please enter a number.")
+        # --- REFACTOR: The interactive prompt is removed. ---
+        # The Config class now ensures that ORIGINAL_SEQUENCE_FILE_PATHS contains only the single,
+        # user-specified FASTA file. This method now only needs to handle the downsampling logic.
 
         # Downsampling logic
         should_downsample = config.SEQUENCE_DOWNSAMPLE_FRACTION and 0 < config.SEQUENCE_DOWNSAMPLE_FRACTION < 1.0
@@ -97,9 +82,8 @@ class UIManager:
                         f.write(f">{seq_id}\n{sequence}\n")
                 files_to_process.append(temp_fasta_path)
         else:
-            print("\nNo downsampling requested. Using original FASTA files for experiments.")
-            files_to_process = config.ORIGINAL_SEQUENCE_FILE_PATHS.copy()
-        return files_to_process
+            print(f"\nUsing specified FASTA file: {config.ORIGINAL_SEQUENCE_FILE_PATHS[0].name}")
+            return config.ORIGINAL_SEQUENCE_FILE_PATHS.copy()
 
     @staticmethod
     def launch_mlflow_ui(config: Config):

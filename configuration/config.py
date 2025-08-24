@@ -75,6 +75,7 @@ class GNNBenchmarkingParams(BaseModel):
 
 class ProtGramGCNParams(BaseModel):
     PROTGRAM_NGRAM_MAX_N: int = Field(gt=0, lt=5, description="Maximum n-gram size. Kept below 5 for memory efficiency.")
+    FASTA_FILE_TO_PROCESS: str
     ID_MAPPING_MODE: str
     API_MAPPING_FROM_DB: Optional[str]
     API_MAPPING_TO_DB: str
@@ -423,11 +424,16 @@ class Config:
         self.DATA_MANIFEST_PATH = self.PERSISTENT_DATA_CACHE / "data_manifest.json"
         self.PROTT5_MODEL_PATH = self.DATA_SOURCES['PROTT5_MODEL']['path']
 
-        self.ORIGINAL_SEQUENCE_FILE_PATHS = [
-            Path(source_info['path']) for _, source_info in self.DATA_SOURCES.items()
-            if 'path' in source_info and str(source_info['path']).endswith(('.fasta', '.fa'))
-        ]
-        self.SEQUENCE_FILE_PATHS = self.ORIGINAL_SEQUENCE_FILE_PATHS.copy()
+        # --- REFACTOR: Use the configured FASTA file key to select the single file to process ---
+        fasta_key = self.FASTA_FILE_TO_PROCESS
+        if fasta_key in self.DATA_SOURCES and str(self.DATA_SOURCES[fasta_key]['path']).endswith(('.fasta', '.fa')):
+            self.SEQUENCE_FILE_PATHS = [Path(self.DATA_SOURCES[fasta_key]['path'])]
+        else:
+            print(f"  - ❌ CONFIGURATION ERROR: The specified 'FASTA_FILE_TO_PROCESS' key '{fasta_key}' was not found in the defined DATA_SOURCES or is not a FASTA file. Aborting.")
+            sys.exit(1)
+
+        # This attribute is used by the UI manager for downsampling logic.
+        self.ORIGINAL_SEQUENCE_FILE_PATHS = self.SEQUENCE_FILE_PATHS.copy()
 
         self.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE = [
             {"name": "ProtT5", "path": self.PROTT5_MODEL_PATH},
@@ -446,6 +452,7 @@ class Config:
         params = self._config['protgram_gcn']
         cpu_cores = os.cpu_count()
         self.PROTGRAM_NGRAM_MAX_N = params['PROTGRAM_NGRAM_MAX_N']
+        self.FASTA_FILE_TO_PROCESS = params['FASTA_FILE_TO_PROCESS']
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1
         self.ID_MAPPING_MODE = params['ID_MAPPING_MODE']
         self.API_MAPPING_FROM_DB = params['API_MAPPING_FROM_DB']
