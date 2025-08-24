@@ -458,10 +458,10 @@ class Config:
         self.FASTA_FILE_TO_PROCESS = params['FASTA_FILE_TO_PROCESS']
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1
         self.ID_MAPPING_MODE = params['ID_MAPPING_MODE']
-        # --- NEW: Load smart mapping options ---
-        self.ENABLE_SMART_MAPPING_PROMPT = params['id_mapping_options']['ENABLE_SMART_MAPPING_PROMPT']
-        self.REGEX_CONFIDENCE_THRESHOLD = params['id_mapping_options']['REGEX_CONFIDENCE_THRESHOLD']
-        self.REGEX_COMPATIBILITY_SAMPLE_SIZE = params['id_mapping_options']['REGEX_COMPATIBILITY_SAMPLE_SIZE']
+        # --- FIX: Load smart mapping options from the correct (top) level ---
+        self.ENABLE_SMART_MAPPING_PROMPT = params['ENABLE_SMART_MAPPING_PROMPT']
+        self.REGEX_CONFIDENCE_THRESHOLD = params['REGEX_CONFIDENCE_THRESHOLD']
+        self.REGEX_COMPATIBILITY_SAMPLE_SIZE = params['REGEX_COMPATIBILITY_SAMPLE_SIZE']
         self.API_MAPPING_FROM_DB = params['API_MAPPING_FROM_DB']
         self.API_MAPPING_TO_DB = params['API_MAPPING_TO_DB']
         self.PROTGRAM_MODELS_TO_TRAIN = params['PROTGRAM_MODELS_TO_TRAIN']
