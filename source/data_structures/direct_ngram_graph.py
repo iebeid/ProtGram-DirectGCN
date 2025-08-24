@@ -44,9 +44,6 @@ class DirectedNgramGraph(Graph):
         # Initialize all matrix attributes
         self.A_out_w: Optional[torch.Tensor] = None
         self.A_in_w: Optional[torch.Tensor] = None
-        self.A_undirected_norm_sparse: Optional[torch.Tensor] = None
-        self.mathcal_A_out: Optional[torch.Tensor] = None
-        self.mathcal_A_in: Optional[torch.Tensor] = None
         self.A_homo_w: Optional[torch.Tensor] = None
         self.A_hetero_w: Optional[torch.Tensor] = None
         self.A_homo_norm: Optional[torch.Tensor] = None
