@@ -106,10 +106,9 @@ protgram_gcn:
   FASTA_FILE_TO_PROCESS: "UNIPROT_SPROT_FASTA" # Options: "UNIPROT_SPROT_FASTA", "UNIREF_50_FASTA"
   ID_MAPPING_MODE: 'file' # Options: 'regex', 'file', 'api', 'none'
   # --- NEW: Options for the smart ID mapping prompter ---
-  id_mapping_options:
-    ENABLE_SMART_MAPPING_PROMPT: true # If true, will check FASTA headers and prompt to use 'regex' if compatible.
-    REGEX_CONFIDENCE_THRESHOLD: 0.95 # The compatibility threshold (95%) to trigger the prompt.
-    REGEX_COMPATIBILITY_SAMPLE_SIZE: 1000 # Number of FASTA headers to sample for the check.
+  ENABLE_SMART_MAPPING_PROMPT: true # If true, will check FASTA headers and prompt to use 'regex' if compatible.
+  REGEX_CONFIDENCE_THRESHOLD: 0.95 # The compatibility threshold (95%) to trigger the prompt.
+  REGEX_COMPATIBILITY_SAMPLE_SIZE: 1000 # Number of FASTA headers to sample for the check.
   API_MAPPING_FROM_DB: null
   API_MAPPING_TO_DB: "UniProtKB"
   PROTGRAM_MODELS_TO_TRAIN: ['directgcn']
