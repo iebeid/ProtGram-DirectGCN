@@ -25,12 +25,16 @@ class Word2VecPipelineTests(unittest.TestCase):
         self.config = Config()
         self.original_base_output_dir = self.config.BASE_OUTPUT_DIR
         self.original_epochs = self.config.W2V_EPOCHS
+        # --- FIX: Override min sequence length for dummy data ---
+        self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN
+        self.config.PROTGRAM_FASTA_MIN_LEN = 1
         self.config.BASE_OUTPUT_DIR = self.base_test_dir
         self.config._setup_paths()
 
     def tearDown(self):
         self.config.BASE_OUTPUT_DIR = self.original_base_output_dir
         self.config.W2V_EPOCHS = self.original_epochs
+        self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
         self.config._setup_paths()
         shutil.rmtree(self.base_test_dir)
 
