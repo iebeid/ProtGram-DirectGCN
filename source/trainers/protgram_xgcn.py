@@ -247,9 +247,11 @@ class ProtGramXGCNTrainer:
                 is_heterophilic = homophily_ratio < self.config.GCN_HETEROPHILY_THRESHOLD
                 print(f"  Graph n={n} Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
                 if is_heterophilic:
-                    print(f"  -> Enabling specialized homophily/heterophily paths for DirectGCN at n={n}.") # --- FIX: Capture the returned matrices from the functional method ---
-                    use_homo_hetero_paths_for_level = True
-                    split_result = graph_obj.split_edges_by_homophily(labels) # This now returns a tuple
+                    print(f"  -> Enabling specialized homophily/heterophily paths for DirectGCN at n={n}.")
+                    use_homo_hetero_paths_for_level = True # --- FIX: Call as a static method with the correct arguments ---
+                    split_result = DirectedNgramGraph.split_edges_by_homophily(
+                        graph_obj.A_out_w, graph_obj.number_of_nodes, labels
+                    )
                     if split_result: A_homo_norm, A_hetero_norm = split_result
 
             model = self.model_factory.create_model(

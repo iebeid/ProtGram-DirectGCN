@@ -145,7 +145,7 @@ class PipelineOrchestrator:
                 n1_graph_dir = config.RESULTS_GRAPH_OBJECTS_DIR / "ngram_graph_n1"
                 if n1_graph_dir.exists() and n1_graph_dir.is_dir():
                     print("  n=1 graph found. Proceeding...")
-                    from source.data_structures.graph import DirectedNgramGraph
+                    from source.data_structures.direct_ngram_graph import DirectedNgramGraph
                     from source.trainers.singleton_xgcn import SingletonXGCNTrainer
                     # Use the correct class method to load from the directory
                     n1_graph: DirectedNgramGraph = DirectedNgramGraph.load_from_dir(n1_graph_dir)

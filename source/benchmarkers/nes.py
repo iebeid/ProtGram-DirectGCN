@@ -34,9 +34,9 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
         train_mask = self._get_1d_mask(data.train_mask)
         test_mask = self._get_1d_mask(data.test_mask)
 
-        X_train = embeddings[train_mask].cpu().numpy()
+        X_train = embeddings[train_mask].detach().cpu().numpy()
         y_train = data.y[train_mask].cpu().numpy()
-        X_test = embeddings[test_mask].cpu().numpy()
+        X_test = embeddings[test_mask].detach().cpu().numpy()
         y_test = data.y[test_mask].cpu().numpy()
 
         classifier = LogisticRegression(
