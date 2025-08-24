@@ -255,12 +255,6 @@ class Config:
         # --- 5. DATA SOURCES (Dynamically set, logic from original file) ---
         self._setup_data_sources()
 
-        # --- 6. DYNAMICALLY LINK DATA SOURCES (logic from original file) ---
-        self._link_data_sources_to_attributes()
-
-        # --- 7. ProtGram-DirectGCN PIPELINE PARAMETERS (from YAML) ---
-        self._setup_gcn_params()
-
         # --- 8. WORD2VEC PIPELINE PARAMETERS (from YAML) ---
         self._setup_word2vec_params()
 
@@ -281,6 +275,12 @@ class Config:
 
         # --- 14. HYPERPARAMETER OPTIMIZATION (from YAML) ---
         self._setup_hpo_params()
+
+        # --- LAST STEP: Link attributes now that all params are loaded ---
+        # This must be called after all other setup methods to ensure that
+        # dependent attributes (like FASTA_FILE_TO_PROCESS) are available.
+        self._setup_gcn_params()
+        self._link_data_sources_to_attributes()
 
     def _load_yaml_config(self, config_path: str) -> Dict:
         """Loads the YAML configuration file."""
