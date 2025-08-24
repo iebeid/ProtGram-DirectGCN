@@ -38,13 +38,14 @@ pipeline_flags:
   RUN_INTEGRATED_TESTS: true
   RUN_SINGLETON_GCN_EVAL: true
   RUN_DUMMY_TEST: true
-  SEQUENCE_DOWNSAMPLE_FRACTION: 0.001
+  SEQUENCE_DOWNSAMPLE_FRACTION: 0.99
   CLEANUP_DUMMY_DATA: true
   ENABLE_FILE_LOGGING: true
 
 # 4. RESOURCE MANAGEMENT
 resource_management:
   MEMORY_USAGE_STRATEGY: 'high' # 'low', 'high', or 'dynamic'
+  CHECKSUM_SKIP_SIZE_MB: 500 # Files larger than this (in MB) will skip SHA256 checksumming to speed up validation.
 
 # --- NEW: Shared GNN Hyperparameters using YAML Anchors ---
 # This block defines common GNN parameters once to avoid duplication.

@@ -111,13 +111,45 @@ class SingletonXGCNTrainer:
                 )
                 if model is None: continue
                 print(model)
-
                 model.to(self.device)
                 optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
-                # --- REFACTOR: Construct the Data object directly, removing the helper dependency ---
-                data_for_model = Data(x=initial_features, y=y_for_stratify, graph_obj=self.graph,
-                                      A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm,
-                                      train_mask=train_mask, test_mask=test_mask).to(self.device)
+
+                # --- DEFINITIVE FIX: Prepare the Data object with the specific attributes each model expects ---
+                # This resolves the various 'edge_index' and attribute errors by constructing a valid
+                # Data object tailored to the model being evaluated in each loop iteration.
+                data_for_model = Data(x=initial_features, y=y_for_stratify, train_mask=train_mask, test_mask=test_mask)
+
+                if model_name == "DirectGCN":
+                    # DirectGCN requires all specialized matrices.
+                    data_for_model.edge_index_mathcal_in = self.graph.mathcal_A_in.coalesce().indices()
+                    data_for_model.edge_weight_mathcal_in = self.graph.mathcal_A_in.coalesce().values()
+                    data_for_model.edge_index_mathcal_out = self.graph.mathcal_A_out.coalesce().indices()
+                    data_for_model.edge_weight_mathcal_out = self.graph.mathcal_A_out.coalesce().values()
+                    data_for_model.edge_index_undirected_norm = self.graph.A_undirected_norm_sparse.coalesce().indices()
+                    data_for_model.edge_weight_undirected_norm = self.graph.A_undirected_norm_sparse.coalesce().values()
+                    if use_homo_hetero_for_this_model and A_homo_norm is not None and A_hetero_norm is not None:
+                        data_for_model.edge_index_homo_norm = A_homo_norm.coalesce().indices()
+                        data_for_model.edge_weight_homo_norm = A_homo_norm.coalesce().values()
+                        data_for_model.edge_index_hetero_norm = A_hetero_norm.coalesce().indices()
+                        data_for_model.edge_weight_hetero_norm = A_hetero_norm.coalesce().values()
+
+                elif model_name == "RGCN":
+                    # RGCN needs a standard edge_index and an edge_type tensor.
+                    edge_index_forward = self.graph.A_in.coalesce().indices()
+                    edge_index_backward = self.graph.A_out.coalesce().indices()
+                    data_for_model.edge_index = torch.cat([edge_index_forward, edge_index_backward], dim=1)
+                    data_for_model.edge_type = torch.cat([
+                        torch.zeros(edge_index_forward.size(1), dtype=torch.long),
+                        torch.ones(edge_index_backward.size(1), dtype=torch.long)
+                    ]).to(self.device)
+
+                else: # For GCN, GAT, GraphSAGE, DirGNN, etc.
+                    # These models typically expect a single, undirected edge_index.
+                    undirected_adj = self.graph.A_undirected_norm_sparse.coalesce()
+                    data_for_model.edge_index = undirected_adj.indices()
+                    data_for_model.edge_attr = undirected_adj.values()
+
+                data_for_model = data_for_model.to(self.device)
 
                 optimizer.zero_grad()
                 for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):

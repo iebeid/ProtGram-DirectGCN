@@ -146,7 +146,13 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
                         mlflow.set_tag("dataset_name", dataset_name)
                         result = self._run_on_dataset(dataset, dataset_name, model_name)
                         all_results.append(result)
-                        mlflow.log_metrics({k.replace(' ', '_'): v for k, v in result.items() if isinstance(v, (int, float))})
+                        # --- FIX: Sanitize metric names to be MLflow compatible ---
+                        # MLflow does not allow parentheses or other special characters in metric names.
+                        sanitized_metrics = {
+                            k.replace(' ', '_').replace('(', '').replace(')', '').replace('-', '_'): v
+                            for k, v in result.items() if isinstance(v, (int, float))
+                        }
+                        mlflow.log_metrics(sanitized_metrics)
                 except Exception as e:
                     print(f"ERROR during benchmarking of {model_name} on {dataset_name}: {e}")
                     traceback.print_exc()

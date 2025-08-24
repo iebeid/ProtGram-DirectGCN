@@ -27,6 +27,7 @@ class DataUrls(BaseModel):
 
 class ResourceManagementParams(BaseModel):
     MEMORY_USAGE_STRATEGY: str
+    CHECKSUM_SKIP_SIZE_MB: int = Field(default=500, gt=0)
 
 class PipelineFlags(BaseModel):
     RUN_GCN_PIPELINE: bool
@@ -325,6 +326,7 @@ class Config:
         """
         params = self._config['resource_management']
         self.MEMORY_USAGE_STRATEGY = params['MEMORY_USAGE_STRATEGY']
+        self.CHECKSUM_SKIP_SIZE_BYTES = params['CHECKSUM_SKIP_SIZE_MB'] * 1024 * 1024
 
     def _setup_pipeline_flags(self):
         """Sets flags statically from the YAML config."""

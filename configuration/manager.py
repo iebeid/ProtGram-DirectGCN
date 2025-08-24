@@ -304,8 +304,14 @@ class DataManager:
                         download_target_path.parent.mkdir(parents=True, exist_ok=True)
                         print(f"Downloading from {url} to {download_target_path.name}...")
                         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-                        response = requests.get(url, stream=True, headers=headers, verify=False) # INSECURE: Added verify=False
-                        response.raise_for_status()
+                        try:
+                            response = requests.get(url, stream=True, headers=headers, verify=True)
+                            response.raise_for_status()
+                        except requests.exceptions.SSLError:
+                            print("    - WARNING: SSL verification failed. Retrying without verification. This is insecure and should only be used if the target server has a known certificate issue.")
+                            # The original script had verify=False, so we maintain this as a fallback.
+                            response = requests.get(url, stream=True, headers=headers, verify=False)
+                            response.raise_for_status()
 
                         content_type = response.headers.get('content-type', '')
 

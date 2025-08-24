@@ -39,17 +39,12 @@ class DataProcessor:
 
     def is_huge_file(self, file_path: Path) -> bool:
         """
-        Determines if a file is considered too large for SHA256 checksumming
-        to save time during manifest generation.
+        Determines if a file is considered too large for SHA256 checksumming to
+        save time during manifest generation, based on the configuration.
         """
-        huge_files = {
-            "uniref50.fasta",
-            "idmapping.dat",
-            "id_mapping.parquet",
-            "negative_interactions.parquet",
-            "positive_interactions.parquet"
-        }
-        return file_path.name in huge_files
+        if not file_path.is_file():
+            return False
+        return file_path.stat().st_size > self.config.CHECKSUM_SKIP_SIZE_BYTES
 
     @staticmethod
     def _is_file_valid(file_path: Path) -> bool:

@@ -95,7 +95,17 @@ class TransformerEmbedder:
                 print("  No local model found. Attempting to download native TF model from Hugging Face Hub...")
                 tokenizer_class = T5Tokenizer if is_t5 else AutoTokenizer
                 tokenizer = tokenizer_class.from_pretrained(hf_id)
-                model = TFAutoModel.from_pretrained(hf_id)
+                try:
+                    # First, try to load as a native TF model
+                    model = TFAutoModel.from_pretrained(hf_id)
+                except OSError as e:
+                    # --- FIX: If loading fails because it's a PT model, retry with conversion ---
+                    if "from_pt=True" in str(e):
+                        print(f"  Could not load native TF model for {model_name}. Attempting to convert from PyTorch weights...")
+                        model = TFAutoModel.from_pretrained(hf_id, from_pt=True)
+                    else:
+                        # Re-raise any other OS errors
+                        raise e
 
             if model is None or tokenizer is None:
                 raise RuntimeError("Model or tokenizer could not be loaded. The pre-conversion step may have failed.")
