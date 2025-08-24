@@ -77,47 +77,50 @@ class DataManager:
         Executes the entire data pipeline: download, process, and create manifest.
         If any critical step fails, the entire process will abort.
         """
-        print("\n--- Running Data Setup and Processing ---")
-        print("  - Ensuring project data directory structure exists...")
-
-        # 1. Download all raw source files
-        if not self._download_all_sources():
-            print("\n" + "!" * 80)
-            print("!!! FATAL: Data download failed. Cannot proceed with setup. !!!")
-            print("!!! Please check the URLs in your config and your network connection. !!!")
-            print("!" * 80)
-            sys.exit(1)
-
-        # 2. Process raw files into final Parquet format and cache them
-        processor = DataProcessor(self.config)
+        # --- DEFINITIVE FIX: Use a try...finally block to guarantee cleanup ---
+        # This ensures that downloaded archives are removed even if a later step fails.
         try:
-            print("\n--- Step 2a: Processing UniProt ID Mapping File ---")
-            processor._process_uniprot_mapping()
-            self._copy_to_cache(self.config.ID_MAPPING_PATH)
+            print("\n--- Running Data Setup and Processing ---")
+            print("  - Ensuring project data directory structure exists...")
 
-            print("\n--- Step 2b: Processing Negative Interaction Files ---")
-            processor._process_negative_interactions()
-            self._copy_to_cache(self.config.NEG_INTERACTIONS_PATH)
+            # 1. Download all raw source files
+            if not self._download_all_sources():
+                print("\n" + "!" * 80)
+                print("!!! FATAL: Data download failed. Cannot proceed with setup. !!!")
+                print("!!! Please check the URLs in your config and your network connection. !!!")
+                print("!" * 80)
+                sys.exit(1)
 
-            print("\n--- Step 2c: Processing BioGRID Positive Interactions ---")
-            processor._process_biogrid_interactions()
-            self._copy_to_cache(self.config.POS_INTERACTIONS_PATH)
-        except Exception as e:
-            print("\n" + "!" * 80)
-            print(f"!!! FATAL: Data processing failed: {e} !!!")
-            print("!!! Setup cannot continue. The manifest will not be generated. !!!")
-            print("!" * 80)
-            import traceback
-            traceback.print_exc()
-            sys.exit(1)
+            # 2. Process raw files into final Parquet format and cache them
+            processor = DataProcessor(self.config)
+            try:
+                print("\n--- Step 2a: Processing UniProt ID Mapping File ---")
+                processor._process_uniprot_mapping()
+                self._copy_to_cache(self.config.ID_MAPPING_PATH)
 
-        # 3. Generate manifest of all data files
-        self._generate_manifest(processor)
+                print("\n--- Step 2b: Processing Negative Interaction Files ---")
+                processor._process_negative_interactions()
+                self._copy_to_cache(self.config.NEG_INTERACTIONS_PATH)
 
-        # 4. Clean up intermediate files
-        self._cleanup_intermediate_files()
+                print("\n--- Step 2c: Processing BioGRID Positive Interactions ---")
+                processor._process_biogrid_interactions()
+                self._copy_to_cache(self.config.POS_INTERACTIONS_PATH)
+            except Exception as e:
+                print("\n" + "!" * 80)
+                print(f"!!! FATAL: Data processing failed: {e} !!!")
+                print("!!! Setup cannot continue. The manifest will not be generated. !!!")
+                print("!" * 80)
+                import traceback
+                traceback.print_exc()
+                sys.exit(1)
 
-        print("\n--- Data Setup and Processing Complete ---")
+            # 3. Generate manifest of all data files
+            self._generate_manifest(processor)
+        finally:
+            # 4. Clean up intermediate files
+            self._cleanup_intermediate_files()
+
+        print("\n--- Data Setup and Processing Finished Successfully ---")
 
     def validate_data_from_manifest(self) -> bool:
         """Validates the current data directory against the cached manifest."""
@@ -275,8 +278,11 @@ class DataManager:
 
             post_process_type = source_info.get('post_process')
             download_target_path = final_path
-            if post_process_type in ['ungzip', 'unzip']:
-                download_target_path = final_path.with_suffix(".zip")
+            # --- DEFINITIVE FIX: Use the URL to determine the correct archive filename ---
+            # This correctly handles both .zip and .gz files instead of assuming .zip
+            if post_process_type in ['ungzip', 'unzip'] and source_info.get('url'):
+                from urllib.parse import urlparse
+                download_target_path = final_path.parent / Path(urlparse(source_info['url']).path).name
 
             if download_target_path != final_path:
                 self.files_to_cleanup.append(download_target_path)

@@ -72,60 +72,25 @@ class DataProcessor:
 
     def _process_uniprot_mapping(self):
         """Processes the raw UniProt ID mapping file into a filtered Parquet file."""
-        # --- NEW: Add caching for the processed parquet file to avoid re-processing ---
         processed_parquet_path = self.config.ID_MAPPING_PATH
-        cache_path = self.config.PERSISTENT_DATA_CACHE / processed_parquet_path.name
-
-        # 1. Check if a valid cached version exists and restore it.
-        if cache_path.exists():
-            print(f"☑ Found cached processed ID mapping file: {cache_path.name}")
-            processed_parquet_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(cache_path, processed_parquet_path)
-            print(f"  Restored {processed_parquet_path.name} from cache.")
-            return
-
-        # 2. Check if a local version already exists (and cache it for next time).
         if processed_parquet_path.exists():
             print(f"☑ Found existing processed ID mapping file: {processed_parquet_path.name}")
-            print("  Copying to cache for future runs...")
-            shutil.copy(processed_parquet_path, cache_path)
             return
 
-        # 3. If neither exists, run the full, memory-intensive processing.
         print("\n--- Step 2a: Processing UniProt ID Mapping File ---")
         raw_mapping_path = self.config.DATA_SOURCES['UNIPROT_ID_MAPPING']['path']
         if not DataProcessor._is_file_valid(raw_mapping_path):
             print(f"  ERROR: Raw UniProt mapping file not found at {raw_mapping_path}. Cannot proceed.")
             return
 
-        # --- DEFINITIVE FIX: Respect the memory usage strategy ---
-        if self.config.MEMORY_USAGE_STRATEGY == 'high':
-            print("  High-memory strategy selected. Using Dask for faster, in-memory processing.")
-            try:
-                with ProgressBar():
-                    ddf = dd.read_csv(raw_mapping_path, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'],
-                                      on_bad_lines='warn', blocksize='256MB', dtype={'db': 'category', 'uniprot_id': str, 'other_id': str})
-
-                    relevant_dbs = ['GeneID', 'UniRef100', 'UniRef90', 'UniRef50']
-                    filtered_ddf = ddf[ddf['db'].isin(relevant_dbs)]
-
-                    print(f"  Saving filtered mapping to Parquet file: {processed_parquet_path.name}...")
-                    filtered_ddf.to_parquet(processed_parquet_path, engine='pyarrow', overwrite=True)
-            except Exception as e:
-                print(f"  ❌ ERROR during high-memory Dask processing: {e}")
-                print("     This may be due to an actual out-of-memory error. Consider using the 'dynamic' or 'low' memory strategy.")
-                # Fallback or exit could be implemented here if needed
-                return # Abort processing for this step
-
-
-        # --- DEFINITIVE FIX for OOM Kill: Use a two-stage, memory-efficient streaming approach --- #
-        # Stage 1: Stream the huge raw file line-by-line, writing filtered lines to a temporary file. This uses minimal RAM.
+        # --- REFACTOR: The streaming pre-filter is always the most efficient first step. ---
+        # It dramatically reduces the data size before handing it off to Dask or Pandas.
         print(f"  Stage 1/2: Streaming and filtering raw mapping file '{raw_mapping_path.name}'...")
         temp_filtered_path = self.config.ID_MAPPING_PATH.with_suffix('.tmp.tsv')
+        lines_written = 0
         try:
             relevant_dbs = ['GeneID', 'UniRef100', 'UniRef90', 'UniRef50']
             total_size = raw_mapping_path.stat().st_size
-            lines_written = 0
             with open(raw_mapping_path, 'r', encoding='utf-8', errors='ignore') as f_in, \
                  open(temp_filtered_path, 'w', encoding='utf-8') as f_out, \
                  tqdm(total=total_size, unit='B', unit_scale=True, desc="  - Filtering raw data") as pbar:
@@ -138,32 +103,49 @@ class DataProcessor:
 
             if lines_written == 0:
                 print("  - WARNING: No relevant IDs found in the mapping file. The resulting Parquet file will be empty.")
-                empty_df = pd.DataFrame(columns=['uniprot_id', 'db', 'other_id'])
-                empty_df.to_parquet(self.config.ID_MAPPING_PATH, engine='pyarrow')
+                pd.DataFrame(columns=['uniprot_id', 'db', 'other_id']).to_parquet(self.config.ID_MAPPING_PATH, engine='pyarrow')
                 return
 
-            # Stage 2: Convert the much smaller temporary file to a partitioned Parquet file.
             print(f"\n  Stage 2/2: Converting {lines_written:,} filtered lines to Parquet format...")
-            # --- DEFINITIVE FIX for OOM Kill: Use a chunked Pandas reader instead of Dask for this step ---
-            # This provides more direct control over memory and avoids Dask's potentially large intermediate graph.
-            writer = None
-            with tqdm(total=temp_filtered_path.stat().st_size, unit='B', unit_scale=True, desc="  - Converting to Parquet") as pbar:
-                reader = pd.read_csv(temp_filtered_path, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'],
-                                     dtype={'db': 'category', 'uniprot_id': str, 'other_id': str},
-                                     chunksize=10_000_000, on_bad_lines='skip')
 
-                for chunk in reader:
-                    table = pa.Table.from_pandas(chunk, preserve_index=False)
-                    if writer is None:
-                        writer = pq.ParquetWriter(self.config.ID_MAPPING_PATH, table.schema)
-                    writer.write_table(table)
-                    pbar.update(chunk.memory_usage(index=True, deep=True).sum())
-            if writer:
-                writer.close()
+            # --- DEFINITIVE FIX: Now, use the memory strategy on the *smaller, filtered* file ---
+            if self.config.MEMORY_USAGE_STRATEGY == 'high':
+                print("  High-memory strategy selected. Using Dask for faster conversion.")
+                with ProgressBar():
+                    ddf = dd.read_csv(temp_filtered_path, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'],
+                                      on_bad_lines='warn', dtype={'db': 'category', 'uniprot_id': str, 'other_id': str})
+                    ddf.to_parquet(processed_parquet_path, engine='pyarrow', overwrite=True)
+            else:
+                print("  Low-memory strategy selected. Using chunked Pandas for conversion.")
+                writer = None
+                with tqdm(total=temp_filtered_path.stat().st_size, unit='B', unit_scale=True, desc="  - Converting to Parquet") as pbar:
+                    reader = pd.read_csv(temp_filtered_path, sep='\t', header=None, names=['uniprot_id', 'db', 'other_id'],
+                                         dtype={'db': 'category', 'uniprot_id': str, 'other_id': str},
+                                         chunksize=10_000_000, on_bad_lines='skip')
+                    for chunk in reader:
+                        table = pa.Table.from_pandas(chunk, preserve_index=False)
+                        if writer is None:
+                            writer = pq.ParquetWriter(self.config.ID_MAPPING_PATH, table.schema)
+                        writer.write_table(table)
+                        pbar.update(chunk.memory_usage(index=True, deep=True).sum())
+                if writer:
+                    writer.close()
+
+        except Exception as e:
+            print(f"  ❌ ERROR during UniProt mapping processing: {e}")
+            import traceback
+            traceback.print_exc()
+            # Ensure we don't leave a corrupt partial file
+            if processed_parquet_path.exists():
+                processed_parquet_path.unlink()
         finally:
+            # Always clean up the temporary file
             if temp_filtered_path.exists():
-                temp_filtered_path.unlink() # Clean up the intermediate file
+                temp_filtered_path.unlink()
+                print(f"  Cleaned up temporary file: {temp_filtered_path.name}")
+
         print("  ✔ UniProt ID mapping processing complete.")
+
 
     def _process_negative_interactions(self):
         """Combines and processes all raw negative interaction files into a single Parquet file."""
