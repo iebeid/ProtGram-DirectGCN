@@ -1,6 +1,7 @@
 import os
 import random
 import re
+import gc
 import time
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Set, Tuple, Union, Any
@@ -66,8 +67,14 @@ class IDMapGenerator:
                 # This is the expensive, one-time computation
                 mapping_df = mapping_ddf.compute()
 
-            # Convert to a dictionary for fast lookups
+            # Convert to a dictionary for fast lookups.
             id_map = dict(zip(mapping_df['original_id'], mapping_df['mapped_id']))
+
+            # --- DEFINITIVE FIX for OOM Error ---
+            # Explicitly delete the large DataFrame and run garbage collection
+            # to free up memory BEFORE saving the dictionary to disk.
+            del mapping_df
+            gc.collect()
 
             if id_map:
                 print(f"  Saving newly generated ID map to cache: {cache_file_path.name}")
@@ -106,6 +113,30 @@ class IDMapGenerator:
 
         # Default case for 'none' or unknown modes
         return {}
+
+    def _perform_regex_mapping(self) -> Dict[str, str]:
+        """Performs ID mapping by parsing FASTA headers with regular expressions."""
+        if not self.fasta_files_for_mapping: return {}
+        print(f"Starting Regex ID mapping for: {[p.name for p in self.fasta_files_for_mapping]}...")
+        id_map = {}
+        for fasta_file in self.fasta_files_for_mapping:
+            try:
+                # Use the centralized FastaUtils header parser to avoid code duplication
+                for record in tqdm(SeqIO.parse(fasta_file, "fasta"), desc=f"Parsing {fasta_file.name} with Regex", leave=False):
+                    # The header might contain multiple IDs. We want to map them all to one canonical ID.
+                    # The canonical ID is what we get from our robust regex.
+                    canonical_id = FastaUtils.extract_id_from_header(record.description)
+                    if canonical_id:
+                        # Map the ID that BioPython parsed as the main ID
+                        id_map[record.id] = canonical_id
+                        # Also map the first word of the header, as it's often used as an ID
+                        first_word = record.description.split()[0]
+                        if first_word != record.id:
+                            id_map[first_word] = canonical_id
+            except Exception as e:
+                print(f"An error during regex mapping on {fasta_file}: {e}")
+        print(f"Regex mapping complete. Found {len(id_map)} potential mappings.")
+        return id_map
 
     def _assess_fasta_header_compatibility(self) -> float:
         """

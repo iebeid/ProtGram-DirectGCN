@@ -73,8 +73,7 @@ class ProtgramDaskHelpers:
 
     @staticmethod
     def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramGraph', features: torch.Tensor,
-                                             labels: Optional[torch.Tensor], use_homo_hetero_paths: bool,
-                                             A_homo_norm: Optional[torch.Tensor] = None, A_hetero_norm: Optional[torch.Tensor] = None,
+                                             labels: Optional[torch.Tensor], A_homo_norm: Optional[torch.Tensor] = None, A_hetero_norm: Optional[torch.Tensor] = None,
                                              train_mask: Optional[torch.Tensor] = None,
                                              val_mask: Optional[torch.Tensor] = None,
                                              test_mask: Optional[torch.Tensor] = None) -> Data:
@@ -110,7 +109,7 @@ class ProtgramDaskHelpers:
                 'edge_index_mathcal_out': graph.mathcal_A_out.indices(),
                 'edge_weight_mathcal_out': graph.mathcal_A_out.values()
             })
-            if use_homo_hetero_paths and A_homo_norm is not None and A_hetero_norm is not None:
+            if A_homo_norm is not None and A_hetero_norm is not None:
                 print("    -> Adding normalized homophily/heterophily paths for DirectGCN.")
                 data_dict.update({
                     'edge_index_homo_norm': A_homo_norm.indices(), 'edge_weight_homo_norm': A_homo_norm.values(),

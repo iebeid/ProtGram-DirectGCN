@@ -266,10 +266,9 @@ class ProtGramXGCNTrainer:
             optimizer = optim.Adam(model.parameters(), lr=self.config.PROTGRAM_LR, weight_decay=self.config.PROTGRAM_WEIGHT_DECAY)
 
             # Train the model for this level
-            self._train_single_level(model, graph_obj, data, optimizer, use_homo_hetero_paths_for_level)
+            self._train_single_level(model, graph_obj, data, optimizer)
 
             prepare_func = partial(ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph,
-                                   use_homo_hetero_paths=use_homo_hetero_paths_for_level,
                                    A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm)
             ngram_embeddings_per_level[n] = EmbeddingProcessor.extract_gcn_node_embeddings(
                 model, data, graph_obj, self.config, self.device,
@@ -285,7 +284,7 @@ class ProtGramXGCNTrainer:
 
         return ngram_embeddings_per_level, hierarchical_attention_per_level
 
-    def _train_single_level(self, model: nn.Module, graph_obj: DirectedNgramGraph, data: Data, optimizer: torch.optim.Optimizer, use_homo_hetero_paths: bool):
+    def _train_single_level(self, model: nn.Module, graph_obj: DirectedNgramGraph, data: Data, optimizer: torch.optim.Optimizer):
         """Orchestrates the training for a single level, choosing between full-batch and clustered training."""
         # Determine the task type for this level (e.g., community detection, masked node prediction)
         task_type = self.config.PROTGRAM_TASK_TYPES_PER_LEVEL.get(graph_obj.n_value, self.config.PROTGRAM_DEFAULT_TASK_TYPE)
@@ -296,17 +295,16 @@ class ProtGramXGCNTrainer:
             node_partitions = self._partition_graph(graph_obj)
             self._train_single_level_clustered(model, data, node_partitions, optimizer, self.config.PROTGRAM_EPOCHS_PER_LEVEL, task_type)
         else:
-            self._train_single_level_full_batch(model, data, optimizer, self.config.PROTGRAM_EPOCHS_PER_LEVEL, task_type, use_homo_hetero_paths)
+            self._train_single_level_full_batch(model, data, optimizer, self.config.PROTGRAM_EPOCHS_PER_LEVEL, task_type)
 
     def _train_single_level_full_batch(self, model: nn.Module, data: Data, optimizer: torch.optim.Optimizer, epochs: int,
-                                       task_type: str, use_homo_hetero_paths: bool):
+                                       task_type: str):
         """Full-batch training logic for a single GNN level."""
         model.train()
         model.to(self.device)
         # --- FIX: Use the centralized data preparation utility --- # noqa
         full_data_gpu = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
-            model_type=model.__class__.__name__.lower(), graph=data.graph_obj,
-            features=data.x, labels=data.y, use_homo_hetero_paths=use_homo_hetero_paths,
+            model_type=model.__class__.__name__.lower(), graph=data.graph_obj, features=data.x, labels=data.y,
             A_homo_norm=getattr(data, 'A_homo_norm', None),
             A_hetero_norm=getattr(data, 'A_hetero_norm', None)
         ).to(self.device)

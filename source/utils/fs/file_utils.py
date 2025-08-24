@@ -105,7 +105,9 @@ class FileUtils:
                             # --- NEW: Add chunking and compression for better I/O performance and smaller file size ---
                             hf.create_dataset(key, data=value, chunks=True, compression="gzip")
         except Exception as e:
+            import traceback
             print(f"  ERROR: Could not write HDF5 file to {uri}: {e}")
+            traceback.print_exc()
 
     @staticmethod
     def check_h5_embeddings_integrity(uri: Union[str, Path], num_samples_to_check: int = 5):
