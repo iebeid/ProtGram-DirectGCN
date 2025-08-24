@@ -22,7 +22,11 @@ class DataUtilityTests(unittest.TestCase):
         self.config = Config()
         # --- FIX: Disable downsampling for tests to ensure data is always present ---
         self.original_downsample = self.config.SEQUENCE_DOWNSAMPLE_FRACTION
+        # --- NEW FIX: Override the minimum sequence length for testing ---
+        # The default min_len (e.g., 50) filters out the short dummy sequences.
+        self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = None
+        self.config.PROTGRAM_FASTA_MIN_LEN = 1
         # Isolate paths for this test class
         self.config.BASE_OUTPUT_DIR = Path(self.temp_dir)
         self.config._setup_paths()
@@ -30,6 +34,7 @@ class DataUtilityTests(unittest.TestCase):
     def tearDown(self):
         # Restore original config value
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = self.original_downsample
+        self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
         shutil.rmtree(self.temp_dir)
 
     def test_embedding_loader(self):
