@@ -20,20 +20,22 @@ class DataUtilityTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
         self.config = Config()
-        # --- DEFINITIVE FIX: Store and override the specific output path directly ---
-        # This avoids side effects from the _setup_paths() method and guarantees isolation.
-        self.original_graph_objects_dir = self.config.RESULTS_GRAPH_OBJECTS_DIR
+        # Store original values to restore them in tearDown
+        self.original_base_output_dir = self.config.BASE_OUTPUT_DIR
         self.original_downsample = self.config.SEQUENCE_DOWNSAMPLE_FRACTION
         self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN
 
-        # Override paths for this test run
-        self.config.RESULTS_GRAPH_OBJECTS_DIR = Path(self.temp_dir) / "graph_objects"
+        # --- DEFINITIVE FIX: Set the temporary output directory BEFORE setting up other paths ---
+        self.config.BASE_OUTPUT_DIR = Path(self.temp_dir)
+        self.config._setup_paths()
+
+        # Now, apply other test-specific overrides
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = None
         self.config.PROTGRAM_FASTA_MIN_LEN = 1
 
     def tearDown(self):
         # Restore original config values
-        self.config.RESULTS_GRAPH_OBJECTS_DIR = self.original_graph_objects_dir
+        self.config.BASE_OUTPUT_DIR = self.original_base_output_dir
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = self.original_downsample
         self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
         shutil.rmtree(self.temp_dir)
