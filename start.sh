@@ -97,14 +97,20 @@ export XLA_FLAGS="--xla_gpu_cuda_data_dir=$ENV_PATH"
 # 1. Validate both the environment and the data setup. If either fails, run the full setup.
 DATA_MANIFEST_PATH="$HOME/.cache/protgram_directgcn/data_manifest.json"
 
-if ! "$ENV_PYTHON" run.py --validate-env-only || [ ! -f "$DATA_MANIFEST_PATH" ]; then
-    echo "--- Environment or data validation failed. Running full setup script... ---"
+# --- DEFINITIVE FIX: Separate validation checks for clearer logging ---
+if ! "$ENV_PYTHON" run.py --validate-env-only; then
+    echo "--- Environment validation FAILED. Critical Python packages are missing. ---"
+    echo "--- Running full setup script... ---"
     # The setup script will handle both package installation and data download.
+    "$ENV_PYTHON" -u configuration/setup.py
+elif [ ! -f "$DATA_MANIFEST_PATH" ]; then
+    echo "--- Data validation FAILED. The data manifest is missing. ---"
+    echo "--- Running full setup script... ---"
     "$ENV_PYTHON" -u configuration/setup.py
 fi
 
 # 2. Now that the environment is guaranteed to be valid, run the main application.
-echo "--- Environment and data are valid. Starting main application... ---"
+echo "--- Environment and data are now valid. Starting main application... ---"
 "$ENV_PYTHON" -u run.py
 
 echo -e "\n--- SCRIPT FINISHED ---"

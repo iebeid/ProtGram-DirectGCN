@@ -159,7 +159,8 @@ class ProtGramDataBuilder:
                 print(f"  [n={n}] Generating and mapping unique n-grams...")
                 extract_ngrams_partial = partial(ProtgramDaskHelpers.extract_ngrams_from_sequence_tuple, n_val=n)
                 ngrams_bag = final_preprocessed_input_bag.map(extract_ngrams_partial).flatten()
-                ngrams_ddf = ngrams_bag.to_dataframe(columns=['ngram'])
+                # --- DEFINITIVE FIX: Provide metadata to handle empty partitions in Dask ---
+                ngrams_ddf = ngrams_bag.to_dataframe(columns=['ngram'], meta=pd.DataFrame({'ngram': pd.Series(dtype='str')}))
 
                 # Use Dask to find unique n-grams and create an ID map
                 ngram_map_ddf = ngrams_ddf.drop_duplicates(split_out=num_partitions_for_bag).reset_index(drop=True)

@@ -104,6 +104,10 @@ class ModelFactory:
                 'disable_pe': not self.config.PROTGRAM_USE_POSITIONAL_EMBEDDING
             })
         return params
+        # --- DEFINITIVE FIX: Ensure use_homo_hetero_paths is always present for DirectGCN ---
+        if model_name_lower == 'directgcn':
+            params.setdefault('use_homo_hetero_paths', False)
+        return params
 
     def create_model(self, model_name: str, in_channels: int, num_classes: int, **kwargs) -> Optional[nn.Module]:
         """

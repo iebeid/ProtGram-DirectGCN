@@ -122,7 +122,8 @@ class IDMapGenerator:
         Applies an ID mapping to a dictionary of embeddings.
         This function handles both in-memory dictionaries and Dask DataFrames for mapping.
         """
-        if not mapper or not embeddings:
+        # --- DEFINITIVE FIX: Check for None explicitly to avoid ambiguous truth value error ---
+        if mapper is None or not embeddings:
             return embeddings
 
         print("  Applying ID mapping to generated embeddings...")
