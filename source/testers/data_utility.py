@@ -9,6 +9,7 @@ from source.utils.data.data_utils import DataUtils
 from source.utils.data.id_mapper import IDMapGenerator
 from source.utils.post.embedding_loader import EmbeddingLoader
 from source.data_builders.protgram import ProtGramDataBuilder
+from source.testers.dummy import DummyDataFactory
 import tempfile
 import time
 

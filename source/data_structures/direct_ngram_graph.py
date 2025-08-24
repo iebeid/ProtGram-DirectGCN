@@ -286,7 +286,7 @@ class DirectedNgramGraph(Graph):
         del S_sq_plus_K_sq_sparse, mathcal_A_base_values
         gc.collect()
 
-        identity_sparse = self._sparse_identity(num_nodes, device=dev)
+        identity_sparse = DirectedNgramGraph._sparse_identity(num_nodes, device=dev)
         mathcal_A_with_self_loops_sparse = (mathcal_A_base_sparse + identity_sparse).coalesce()
         del mathcal_A_base_sparse, identity_sparse
         gc.collect()

@@ -8,7 +8,7 @@
 import gc
 import os
 import time
-from typing import Dict, Optional, Mapping
+from typing import Dict, Optional, Mapping, List
 
 import numpy as np
 from gensim.models import Word2Vec
