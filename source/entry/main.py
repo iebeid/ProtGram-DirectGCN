@@ -183,33 +183,23 @@ class PipelineOrchestrator:
                 print("\n--- Verifying local data integrity ---")
                 # --- DEFINITIVE FIX: Use the more robust setup check ---
                 if not data_manager.is_setup_complete():
-                    print("\n--- Local data is invalid or missing. Attempting to restore from cache... ---")
-                    if not data_manager.restore_data_from_cache():
-                        # --- DEFINITIVE FIX: Also pre-generate the ID map after a successful restore ---
-                        # The restore only brings back source files, not the derived pickle cache.
-                        # This ensures the cache is created if it was missing.
-                        data_manager._pregenerate_and_cache_id_map()
-                        print("\n" + "=" * 80)
-                        print("--- Data cache is missing or incomplete. ---")
-                        print("--- Triggering a one-time, full data download and processing step. ---")
-                        print("--- This may take a significant amount of time. ---")
-                        print("=" * 80 + "\n")
-                        try:
-                            # The setup script handles download, processing, and manifest creation.
-                            from configuration.manager import setup_data
-                            setup_data(self.base_config)
-                            print("\n--- Data setup complete. Re-validating... ---")
-                            if not data_manager.validate_data_from_manifest():
-                                print("FATAL: Data validation failed even after a full setup. Please check logs.")
-                                sys.exit(1)
-                            print("  - ✅ Data is now valid.")
-                        except Exception as e:
-                            print(f"FATAL: An unexpected error occurred during data setup: {e}")
-                            import traceback
-                            traceback.print_exc()
-                            sys.exit(1)
+                    print("\n--- Local data is invalid or incomplete. Attempting to restore from cache... ---")
+                    # Try to restore source files. This is just an optimization.
+                    if data_manager.restore_data_from_cache():
+                        print("  - ✅ Successfully restored source data from cache.")
                     else:
-                        print("  - ✅ Successfully restored data from cache.")
+                        print("  - ℹ️ Could not restore from cache. Will proceed with full download.")
+
+                    # Now, run the full setup. It's idempotent and will handle everything.
+                    # If files were restored, it will skip downloading and just process.
+                    # If restore failed, it will download and then process.
+                    # This guarantees that the ID map cache is created.
+                    print("\n--- Data setup is incomplete. Running full setup to generate derived files... ---")
+                    data_manager.run_full_setup()
+
+                    if not data_manager.is_setup_complete():
+                        print("FATAL: Data validation failed even after a full setup. Please check logs.")
+                        sys.exit(1)
                 else:
                     print("  - ✅ Local data is valid.")
 
