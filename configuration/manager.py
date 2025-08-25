@@ -84,6 +84,17 @@ class DataManager:
         """
         print("\n--- Step 2d: Pre-generating and caching the ID Map pickle ---")
         try:
+            # --- DEFINITIVE FIX: Make this step idempotent. ---
+            # If the cache file already exists in the project root (e.g., from a
+            # previous partial run), don't regenerate it. Just copy it to the
+            # persistent cache if needed.
+            cache_filename = f"{self.config.ID_MAPPING_MODE}_map_cache.pkl"
+            local_cache_path = self.config.PROJECT_ROOT / cache_filename
+            if local_cache_path.exists():
+                print(f"  INFO: ID map cache '{local_cache_path.name}' already exists. Skipping generation.")
+                self._copy_to_cache(local_cache_path)
+                return
+
             mapper = IDMapper(self.config)
             mapper.pregenerate_caches() # This is the slow, one-time operation.
             self._copy_to_cache(self.config.PROJECT_ROOT / f"{self.config.ID_MAPPING_MODE}_map_cache.pkl")

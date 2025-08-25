@@ -29,15 +29,21 @@ class Word2VecPipelineTests(unittest.TestCase):
         # --- DEFINITIVE FIX: Override min sequence length and isolate all paths ---
         self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN
         self.original_w2v_dir = self.config.RESULTS_W2V_EMBEDDINGS_DIR
+        # --- DEFINITIVE FIX: Isolate the test's "project root" to its temp directory ---
+        # This prevents the test from writing cache files to the actual project root
+        # and interfering with the main application run.
+        self.original_project_root = self.config.PROJECT_ROOT
 
         self.config.PROTGRAM_FASTA_MIN_LEN = 1
         self.config.RESULTS_W2V_EMBEDDINGS_DIR = self.base_test_dir / "word2vec_embeddings"
+        self.config.PROJECT_ROOT = self.base_test_dir
 
     def tearDown(self):
         self.config.BASE_OUTPUT_DIR = self.original_base_output_dir
         self.config.W2V_EPOCHS = self.original_epochs
         self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
         self.config.RESULTS_W2V_EMBEDDINGS_DIR = self.original_w2v_dir
+        self.config.PROJECT_ROOT = self.original_project_root
         shutil.rmtree(self.base_test_dir)
 
     def test_word2vec_pipeline_run(self):
