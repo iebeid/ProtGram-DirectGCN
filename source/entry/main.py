@@ -185,6 +185,10 @@ class PipelineOrchestrator:
                 if not data_manager.is_setup_complete():
                     print("\n--- Local data is invalid or missing. Attempting to restore from cache... ---")
                     if not data_manager.restore_data_from_cache():
+                        # --- DEFINITIVE FIX: Also pre-generate the ID map after a successful restore ---
+                        # The restore only brings back source files, not the derived pickle cache.
+                        # This ensures the cache is created if it was missing.
+                        data_manager._pregenerate_and_cache_id_map()
                         print("\n" + "=" * 80)
                         print("--- Data cache is missing or incomplete. ---")
                         print("--- Triggering a one-time, full data download and processing step. ---")
