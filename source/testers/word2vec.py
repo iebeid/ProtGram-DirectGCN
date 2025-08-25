@@ -9,6 +9,7 @@ import unittest
 import os
 import shutil
 import tempfile
+import pickle
 from pathlib import Path
 import mlflow
 from configuration.config import Config
@@ -28,7 +29,6 @@ class Word2VecPipelineTests(unittest.TestCase):
         # --- DEFINITIVE FIX: Override min sequence length and isolate all paths ---
         self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN
         self.original_w2v_dir = self.config.RESULTS_W2V_EMBEDDINGS_DIR
-        self.original_id_mapping_path = self.config.ID_MAPPING_PATH
 
         self.config.PROTGRAM_FASTA_MIN_LEN = 1
         self.config.RESULTS_W2V_EMBEDDINGS_DIR = self.base_test_dir / "word2vec_embeddings"
@@ -38,7 +38,6 @@ class Word2VecPipelineTests(unittest.TestCase):
         self.config.W2V_EPOCHS = self.original_epochs
         self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
         self.config.RESULTS_W2V_EMBEDDINGS_DIR = self.original_w2v_dir
-        self.config.ID_MAPPING_PATH = self.original_id_mapping_path
         shutil.rmtree(self.base_test_dir)
 
     def test_word2vec_pipeline_run(self):
@@ -50,12 +49,10 @@ class Word2VecPipelineTests(unittest.TestCase):
         num_seqs = 5
         input_dir = self.base_test_dir / "input"
         dummy_fasta_path = DummyDataFactory.create_fasta(str(input_dir), "w2v_test.fasta", num_seqs=num_seqs)
-        # This prevents the test from trying to load the massive production ID mapping file.
-        dummy_mapping_path = DummyDataFactory.create_dummy_id_mapping_parquet(
-            str(input_dir), "dummy_id_mapping.parquet", num_ids=num_seqs
-        )
-        self.config.ID_MAPPING_PATH = Path(dummy_mapping_path)
+        # --- DEFINITIVE FIX: Create the prerequisite cache file for this test ---
+        # This makes the test self-contained and independent of other tests.
         self.config.ID_MAPPING_MODE = 'file'
+        DummyDataFactory.create_dummy_id_map_cache(self.config, num_ids=num_seqs)
 
         self.config.SEQUENCE_FILE_PATHS = [Path(dummy_fasta_path)]
         self.config.W2V_EPOCHS = 1

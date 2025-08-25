@@ -39,6 +39,10 @@ class TransformerPipelineTests(unittest.TestCase):
 
         dummy_fasta_path = DummyDataFactory.create_fasta(str(self.base_test_dir / "input"), "transformer_test.fasta", num_seqs=2)
 
+        # --- DEFINITIVE FIX: Create the prerequisite cache file for this test ---
+        self.config.ID_MAPPING_MODE = 'file'
+        DummyDataFactory.create_dummy_id_map_cache(self.config, num_ids=2)
+
         temp_model_dir = self.base_test_dir / "models"
         self.config.DATA_MODELS_DIR = temp_model_dir
         for model_cfg in self.config.TRANSFORMER_MODELS_TO_RUN:

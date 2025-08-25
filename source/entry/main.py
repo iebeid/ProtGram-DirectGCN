@@ -252,10 +252,11 @@ class PipelineOrchestrator:
                                     is_pytorch_only = "tensorflow" not in info.tags and "tf" not in info.tags
                                     if is_pytorch_only:
                                         print(f"\n--- ACTION: Model '{model_id}' requires conversion. ---")
-                                        conversion_script_path = self.project_root / "source" / "utils" / "models" / "model_converter.py"
-                                        # --- FIX: Remove capture_output to make the conversion process visible to the user ---
-                                        # The conversion script prints its own progress, which is useful for debugging.
-                                        subprocess.run([sys.executable, str(conversion_script_path), model_id], check=True)
+                                        # --- DEFINITIVE FIX: Invoke the converter as a module (-m) ---
+                                        # This is the standard, robust way to run a script from within a package,
+                                        # as it correctly handles the Python path and avoids ModuleNotFoundError.
+                                        module_path = "source.utils.models.model_converter"
+                                        subprocess.run([sys.executable, "-m", module_path, model_id], check=True)
                                 except Exception as e:
                                     print(f"  Warning: Could not verify or convert model '{model_id}': {e}")
 
