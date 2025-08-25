@@ -144,6 +144,28 @@ class DataManager:
 
         print("\n--- Data Setup and Processing Finished Successfully ---")
 
+    def is_setup_complete(self) -> bool:
+        """
+        Performs a comprehensive check to see if the data setup is truly complete.
+        This is more robust than just checking the manifest, as it also verifies
+        that critical derivative files (like the ID map cache) exist.
+
+        Returns:
+            True if the manifest is valid AND all critical files exist, False otherwise.
+        """
+        if not self.validate_data_from_manifest():
+            return False
+
+        # Also check for the existence of the crucial ID map pickle file.
+        id_map_mode = self.config.ID_MAPPING_MODE
+        if id_map_mode != 'none':
+            expected_cache_file = self.config.PROJECT_ROOT / f"{id_map_mode}_map_cache.pkl"
+            if not expected_cache_file.exists():
+                print(f"  - Validation FAILED: Manifest is valid, but critical ID map cache '{expected_cache_file.name}' is missing.")
+                return False
+
+        return True
+
     def validate_data_from_manifest(self) -> bool:
         """Validates the current data directory against the cached manifest."""
         manifest_path = self.config.DATA_MANIFEST_PATH

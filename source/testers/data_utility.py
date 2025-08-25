@@ -26,6 +26,10 @@ class DataUtilityTests(unittest.TestCase):
         self.original_graph_objects_dir = self.config.RESULTS_GRAPH_OBJECTS_DIR
         self.original_downsample = self.config.SEQUENCE_DOWNSAMPLE_FRACTION
         self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN
+        # --- DEFINITIVE FIX: Isolate the test's "project root" to its temp directory ---
+        # This prevents the test from writing cache files to the actual project root
+        # and interfering with the main application run.
+        self.original_project_root = self.config.PROJECT_ROOT
 
         # --- DEFINITIVE FIX: Manually override all relevant paths for true isolation ---
         # This avoids calling _setup_paths() and its side effects.
@@ -35,6 +39,7 @@ class DataUtilityTests(unittest.TestCase):
         # Now, apply other test-specific overrides
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = None
         self.config.PROTGRAM_FASTA_MIN_LEN = 1
+        self.config.PROJECT_ROOT = Path(self.temp_dir)
 
     def tearDown(self):
         # Restore original config values
@@ -42,6 +47,7 @@ class DataUtilityTests(unittest.TestCase):
         self.config.RESULTS_GRAPH_OBJECTS_DIR = self.original_graph_objects_dir
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = self.original_downsample
         self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
+        self.config.PROJECT_ROOT = self.original_project_root
         shutil.rmtree(self.temp_dir)
 
     def test_embedding_loader(self):

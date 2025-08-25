@@ -179,10 +179,10 @@ class PipelineOrchestrator:
             try:
                 DataUtils.print_header("Starting Protein-Protein Interaction Meta-Pipeline")
 
-                # --- DEFINITIVE FIX: Make the application self-healing for data issues ---
                 data_manager = DataManager(self.base_config)
                 print("\n--- Verifying local data integrity ---")
-                if not data_manager.validate_data_from_manifest():
+                # --- DEFINITIVE FIX: Use the more robust setup check ---
+                if not data_manager.is_setup_complete():
                     print("\n--- Local data is invalid or missing. Attempting to restore from cache... ---")
                     if not data_manager.restore_data_from_cache():
                         print("\n" + "=" * 80)
