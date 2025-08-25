@@ -1,15 +1,9 @@
-import os
-import random
-import re
 import gc
-import time
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Set, Tuple, Union, Any
+from typing import Dict, Mapping, Optional, Any
 
 import dask.dataframe as dd
-import numpy as np
 import pandas as pd
-import requests
 from Bio import SeqIO
 from dask.diagnostics import ProgressBar
 from tqdm.auto import tqdm
@@ -19,168 +13,150 @@ from source.utils.data.data_utils import DataUtils
 from source.utils.data.fasta_utils import FastaUtils
 from source.utils.fs.file_utils import FileUtils
 
-
 # ==============================================================================
 # 3. Protein ID Mapping Utilities
 # ==============================================================================
 
-# --- 3a. ID Map Generator ---
-class IDMapGenerator:
+class IDMapper:
     """
-    Handles the complex process of generating protein ID mappings from various
-    sources (API, regex, or large mapping files).
+    A singleton class to manage loading and applying protein ID maps.
+
+    This class ensures that the ID mapping dictionary is loaded from disk only
+    once per application run, providing a consistent and efficient way for all
+    pipelines to access it. It relies on the DataManager to have already
+    generated the necessary cache files during the initial setup.
     """
+    _instance = None
+    _id_map: Optional[Dict[str, str]] = None
+    _mode_used: Optional[str] = None
 
-    def __init__(self, config: Config):
-        self.config = config
-        self.fasta_files_for_mapping = config.SEQUENCE_FILE_PATHS
-        self.mapping_output_file = str(config.ID_MAPPING_PATH) # This is now only used for regex mode
-        self.random_seed_for_mapping = config.RANDOM_STATE
-        self.mapping_mode = config.ID_MAPPING_MODE
+    def __new__(cls, config: Config):
+        if cls._instance is None:
+            cls._instance = super(IDMapper, cls).__new__(cls)
+            # Store config on first creation, but don't re-initialize the map
+            cls._instance.config = config
+        return cls._instance
 
-    def generate_id_maps(self) -> Optional[Union[Mapping[str, str], dd.DataFrame]]:
+    def get_map(self) -> Optional[Mapping[str, str]]:
         """
-        Main entry point for generating ID mappings.
-        Returns a dictionary for 'regex'/'api' modes or a Dask DataFrame for 'file' mode.
+        Gets the ID mapping dictionary based on the configuration.
+
+        This method is idempotent. It loads the map from the appropriate
+        pickle file on the first call and returns the cached-in-memory
+        dictionary on subsequent calls.
+
+        Returns:
+            A mapping dictionary or None if mapping is disabled.
         """
-        # --- DEFINITIVE FIX: The generate_id_maps method should always return a dictionary. ---
-        # The logic for choosing the mode and caching the result is now centralized here.
+        mode = self.config.ID_MAPPING_MODE
 
-        if self.mapping_mode == 'file':
-            DataUtils.print_header("Loading Protein ID Mapping from File")
-            # --- NEW CACHING LOGIC FOR FILE MODE ---
-            cache_file_path = self.config.DATA_MAPPINGS_DIR / "file_map_cache.pkl"
-            if cache_file_path.exists():
-                print(f"  Found cached file-based ID map. Loading from: {cache_file_path.name}")
-                cached_map = FileUtils.load_object(cache_file_path)
-                if cached_map is not None:
-                    return cached_map
-                print("  Warning: Cached map file is corrupted. Regenerating...")
+        if mode == 'none':
+            return None
 
-            # If cache doesn't exist, generate it from the Parquet file
-            print("  No cache found. Generating ID map dictionary from Parquet file (one-time operation)...")
-            mapping_ddf = self._get_mapping_dask_dataframe()
-            if mapping_ddf is None:
-                return {}
+        # If map is already loaded and mode hasn't changed, return cached version
+        if self._id_map is not None and self._mode_used == mode:
+            return self._id_map
 
-            with ProgressBar():
-                # This is the expensive, one-time computation
-                mapping_df = mapping_ddf.compute()
+        # Load the map from the correct pickle file
+        self._mode_used = mode
+        cache_filename = f"{mode}_map_cache.pkl"
+        # --- DEFINITIVE FIX: Check for the cache file in the project root, where DataManager places it. ---
+        cache_path = self.config.PROJECT_ROOT / cache_filename
 
-            # Convert to a dictionary for fast lookups.
-            id_map = dict(zip(mapping_df['original_id'], mapping_df['mapped_id']))
+        if cache_path.exists():
+            print(f"  INFO: Loading ID map for mode '{mode}' from cache: {cache_path.name}")
+            self._id_map = FileUtils.load_object(cache_path)
+            if self._id_map is None:
+                print(f"  - ❌ ERROR: Failed to load or unpickle cached ID map '{cache_path.name}'.")
+        else:
+            print(f"  - ❌ ERROR: ID map cache file not found: '{cache_path.name}'. The data setup process may have failed.")
+            self._id_map = None
 
-            # --- DEFINITIVE FIX for OOM Error ---
-            # Explicitly delete the large DataFrame and run garbage collection
-            # to free up memory BEFORE saving the dictionary to disk.
-            del mapping_df
-            gc.collect()
+        return self._id_map
 
-            if id_map:
-                print(f"  Saving newly generated ID map to cache: {cache_file_path.name}")
-                FileUtils.save_object(id_map, cache_file_path)
+    def pregenerate_caches(self):
+        """
+        Performs the slow, one-time generation of the ID map cache file.
+        This method should ONLY be called by the DataManager during initial setup.
+        """
+        mode = self.config.ID_MAPPING_MODE
+        if mode == 'none':
+            return
 
-            print("--- Protein ID Mapping Finished ---")
-            return id_map
+        cache_filename = f"{mode}_map_cache.pkl"
+        local_cache_path = self.config.PROJECT_ROOT / cache_filename
 
-        if self.mapping_mode == 'regex':
-            DataUtils.print_header("Generating Protein ID Mapping (Regex Mode)")
-            # --- DEFINITIVE FIX: Implement caching for regex-generated maps ---
-            # Create a unique cache file name based on the primary input FASTA file.
-            if not self.fasta_files_for_mapping:
-                print("  Warning: No FASTA files provided for regex mapping. Cannot generate or load cache.")
-                return {}
-            input_fasta_stem = self.fasta_files_for_mapping[0].stem
-            cache_file_path = self.config.DATA_MAPPINGS_DIR / f"regex_map_cache_{input_fasta_stem}.pkl"
+        if local_cache_path.exists():
+            print(f"  INFO: ID map cache '{local_cache_path.name}' already exists. Skipping generation.")
+            return
 
-            # Try to load from the persistent cache first.
-            if cache_file_path.exists():
-                print(f"  Found cached regex ID map. Loading from: {cache_file_path.name}")
-                cached_map = FileUtils.load_object(cache_file_path)
-                if cached_map is not None:
-                    return cached_map
-                print("  Warning: Cached map file is corrupted. Regenerating...")
-
-            # If cache doesn't exist or is corrupt, generate the map.
-            id_map = self._perform_regex_mapping()
-            if id_map:
-                print(f"  Saving newly generated regex ID map to cache: {cache_file_path.name}")
-                FileUtils.save_object(id_map, cache_file_path)
-            return id_map
-
-        if self.mapping_mode == 'api':
+        id_map = {}
+        if mode == 'file':
+            id_map = self._generate_from_file()
+        elif mode == 'regex':
+            id_map = self._generate_from_regex()
+        elif mode == 'api':
             raise NotImplementedError("The 'api' mapping mode is configured but not yet implemented.")
 
-        # Default case for 'none' or unknown modes
-        return {}
+        if id_map:
+            print(f"  Saving newly generated ID map to local cache: {local_cache_path.name}")
+            FileUtils.save_object(id_map, local_cache_path)
 
-    def _perform_regex_mapping(self) -> Dict[str, str]:
+    def _generate_from_file(self) -> Dict[str, str]:
+        """Generates the ID map dictionary from the large Parquet file."""
+        print("  Generating ID map dictionary from Parquet file (one-time operation)...")
+        mapping_ddf = self._get_mapping_dask_dataframe()
+        if mapping_ddf is None:
+            return {}
+
+        with ProgressBar():
+            mapping_df = mapping_ddf.compute()
+
+        id_map = dict(zip(mapping_df['original_id'], mapping_df['mapped_id']))
+        del mapping_df, mapping_ddf
+        gc.collect()
+        return id_map
+
+    def _generate_from_regex(self) -> Dict[str, str]:
         """Performs ID mapping by parsing FASTA headers with regular expressions."""
-        if not self.fasta_files_for_mapping: return {}
-        print(f"Starting Regex ID mapping for: {[p.name for p in self.fasta_files_for_mapping]}...")
+        fasta_files = self.config.SEQUENCE_FILE_PATHS
+        if not fasta_files: return {}
+
+        print(f"  Starting Regex ID mapping for: {[p.name for p in fasta_files]}...")
         id_map = {}
-        for fasta_file in self.fasta_files_for_mapping:
+        for fasta_file in fasta_files:
             try:
-                # Use the centralized FastaUtils header parser to avoid code duplication
                 for record in tqdm(SeqIO.parse(fasta_file, "fasta"), desc=f"Parsing {fasta_file.name} with Regex", leave=False):
-                    # The header might contain multiple IDs. We want to map them all to one canonical ID.
-                    # The canonical ID is what we get from our robust regex.
                     canonical_id = FastaUtils.extract_id_from_header(record.description)
                     if canonical_id:
-                        # Map the ID that BioPython parsed as the main ID
                         id_map[record.id] = canonical_id
-                        # Also map the first word of the header, as it's often used as an ID
                         first_word = record.description.split()[0]
                         if first_word != record.id:
                             id_map[first_word] = canonical_id
             except Exception as e:
                 print(f"An error during regex mapping on {fasta_file}: {e}")
-        print(f"Regex mapping complete. Found {len(id_map)} potential mappings.")
+        print(f"  Regex mapping complete. Found {len(id_map)} potential mappings.")
         return id_map
 
-    def _assess_fasta_header_compatibility(self) -> float:
-        """
-        Samples the FASTA file to determine how compatible its headers are with
-        the fast regex parser.
-        """
-        print("  Assessing FASTA header compatibility for smart mapping...")
-        # --- REFACTOR: Delegate to the centralized FastaUtils method ---
-        return FastaUtils.check_uniprot_header_compatibility(
-            fasta_paths=self.fasta_files_for_mapping,
-            sample_size=self.config.REGEX_COMPATIBILITY_SAMPLE_SIZE
-        )
-
     def _get_mapping_dask_dataframe(self) -> Optional[dd.DataFrame]:
-        """
-        Loads the large mapping file into a Dask DataFrame for scalable lookups.
-        """
+        """Loads the large mapping file into a Dask DataFrame."""
         source_parquet_path = self.config.ID_MAPPING_PATH
         if not source_parquet_path or not source_parquet_path.exists():
             print(f"ERROR: Processed mapping file not found at {source_parquet_path}.")
-            print("Ensure the data setup process has been run successfully.")
             return None
 
-        print(f"  Loading ID mapping from Parquet file: {source_parquet_path.name}")
         ddf = dd.read_parquet(source_parquet_path)
-        # Rename for clarity in the merge operation
         ddf = ddf.rename(columns={'other_id': 'original_id', 'uniprot_id': 'mapped_id'})
-        # Persist in memory for faster subsequent operations
         return ddf.persist()
 
     @staticmethod
-    def apply_mapping(embeddings: Dict[str, np.ndarray], mapper: Any) -> Dict[str, np.ndarray]:
-        """
-        Applies an ID mapping to a dictionary of embeddings.
-        This function now only expects an in-memory dictionary for mapping.
-        """
-        if mapper is None or not isinstance(mapper, Mapping) or not embeddings:
+    def apply_mapping(embeddings: Dict[str, Any], id_map: Optional[Mapping[str, str]]) -> Dict[str, Any]:
+        """Applies the ID mapping to a dictionary of embeddings at the end of a pipeline."""
+        if not id_map or not embeddings:
             return embeddings
 
-        print("  Applying ID mapping to generated embeddings...")
+        print("  INFO: Applying ID mapping to generated embeddings...")
         original_count = len(embeddings)
-
-        # The mapper is now always a dictionary, so this is the only path needed.
-        mapped_embeddings = {mapper.get(k, k): v for k, v in embeddings.items()}
-
-        print(f"    Original count: {original_count}, Mapped count: {len(mapped_embeddings)}")
+        mapped_embeddings = {id_map.get(k, k): v for k, v in embeddings.items()}
+        print(f"    - Original IDs: {original_count}, Final Mapped IDs: {len(mapped_embeddings)}")
         return mapped_embeddings

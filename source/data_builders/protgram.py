@@ -100,13 +100,13 @@ class ProtGramDataBuilder:
         # --- NEW: Wrap the core logic in a try...finally block to guarantee cleanup of the temp directory ---
         try:
             n_values = range(1, self.n_max + 1)
-            effective_dask_workers = self.num_workers_config
-            dask_scheduler_general = 'threads' if effective_dask_workers > 1 else 'sync'
+            effective_dask_workers = self.num_workers_config if self.num_workers_config > 1 else 1
+            dask_scheduler_general = 'processes' if effective_dask_workers > 1 else 'sync'
 
             if self.num_workers_config > 1:
                 print("\n" + "=" * 80)
                 print(f"GraphBuilder is configured for parallel processing (GRAPH_BUILDER_WORKERS={self.num_workers_config}).")
-                print(f"Using Dask with a THREADED scheduler ({effective_dask_workers} threads).")
+                print(f"Using Dask with a MULTIPROCESSING scheduler ({effective_dask_workers} processes).")
                 print("=" * 80 + "\n")
             else:
                 print("\nGraphBuilder is configured for synchronous (single-threaded) execution.\n")

@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: trainers/protgram_xgcn.py
 # PURPOSE: Unified trainer for GNNs on ProtGram n-gram graphs.
-# VERSION: 7.1 (Corrected data flow for DirectGCN and integrated homophily paths)
+# VERSION: 8.0 (Refactored to use centralized IDMapper singleton)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -30,7 +30,7 @@ from source.utils.fs.file_utils import FileUtils
 from source.experiments.ppi_1 import PPIPipeline
 from source.models.factory import ModelFactory
 from source.utils.data.data_utils import DataUtils
-from source.utils.data.id_mapper import IDMapGenerator
+from source.utils.data.id_mapper import IDMapper
 from source.utils.data.fasta_utils import FastaUtils
 from source.utils.data.protgram_helper import ProtgramDaskHelpers
 from source.utils.post.embedding_processor import EmbeddingProcessor
@@ -71,9 +71,10 @@ class ProtGramXGCNTrainer:
         """
         DataUtils.print_header("PIPELINE STEP: Training ProtGram Models & Generating Embeddings")
 
-        final_protein_embeddings_per_model = {}
+        final_protein_embeddings_per_model: Dict[str, Dict[str, np.ndarray]] = {}
         all_attention_data_per_model: Dict[str, Dict[str, Any]] = {}
-        id_mapper_obj = self._load_id_map()
+        # --- REFACTOR: Use the new singleton IDMapper to get the map once. ---
+        id_map = IDMapper(self.config).get_map()
 
         # --- ANTICIPATORY DEBUGGING: Parse sequences once to avoid redundant I/O ---
         protein_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
@@ -88,7 +89,7 @@ class ProtGramXGCNTrainer:
             )
 
             # Apply mapping using the new centralized helper
-            final_protein_embeddings = IDMapGenerator.apply_mapping(final_protein_embeddings, id_mapper_obj)
+            final_protein_embeddings = IDMapper.apply_mapping(final_protein_embeddings, id_map)
 
             final_protein_embeddings_per_model[model_type] = final_protein_embeddings
             all_attention_data_per_model[model_type] = {
@@ -698,16 +699,6 @@ class ProtGramXGCNTrainer:
         print(f"    Created {len(partitions)} partitions.")
         return [p for p in partitions if p]  # Return non-empty partitions
 
-
-    def _load_id_map(self) -> Optional[Mapping]:
-        """Loads the UniProt ID mapping file if configured."""
-        DataUtils.print_header("Step 1: Loading Protein ID Mapping (if configured)")
-        if getattr(self.config, 'ID_MAPPING_MODE', 'none') != 'none':
-            id_mapper_instance = IDMapGenerator(config=self.config)
-            id_map_result = id_mapper_instance.generate_id_maps()
-            print(f"  ID mapping result of type '{type(id_map_result)}' loaded.")
-            return id_map_result
-        return None
 
     def _get_level_ngram_maps(self) -> Dict[int, Dict[str, int]]:
         """Returns the node_to_idx maps for all loaded graph levels."""

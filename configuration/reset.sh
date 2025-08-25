@@ -124,9 +124,25 @@ echo -e "\n--- STEP 3: Resetting Project Directory and Data Cache ---"
 cd "$PROJECTS_DIR"
 echo "INFO: Current directory: $(pwd)"
 
+echo -e "\n\n\033[1;31m" # Bold Red
+echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! WARNING: DESTRUCTIVE ACTION !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+echo "This script is about to COMPLETELY REMOVE the following directories:"
+echo "  1. Project Directory: $PROJECTS_DIR/$PROJECT_DIR_NAME"
+echo "  2. Persistent Cache:  $HOME/.cache/protgram_directgcn"
+echo ""
+echo "This will delete all local code changes, results, and cached data."
+echo "This action CANNOT be undone."
+echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+echo -e "\033[0m" # Reset color
+
+read -r -p "Are you absolutely sure you want to proceed with this destructive reset? (y/n): " reset_confirm
+if [[ "$reset_confirm" != "y" && "$reset_confirm" != "Y" ]]; then
+    echo "INFO: Reset cancelled by user. Exiting."
+    exit 0
+fi
+
 # This is a reset script. If the directory exists, it will be destroyed to ensure a clean slate.
 if [ -d "$PROJECT_DIR_NAME" ]; then
-    echo "INFO: Existing project directory found. It will be completely removed for a clean reset."
     rm -rf "$PROJECT_DIR_NAME"
     echo "SUCCESS: Old project directory removed."
 fi
@@ -134,7 +150,6 @@ fi
 # --- DEFINITIVE FIX: Also remove the persistent data cache to ensure a true reset ---
 CACHE_DIR="$HOME/.cache/protgram_directgcn"
 if [ -d "$CACHE_DIR" ]; then
-    echo "INFO: Removing persistent data cache at '$CACHE_DIR'..."
     rm -rf "$CACHE_DIR"
     echo "SUCCESS: Data cache removed."
 fi

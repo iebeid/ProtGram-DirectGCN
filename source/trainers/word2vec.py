@@ -17,7 +17,7 @@ from tqdm.auto import tqdm
 from configuration.config import Config
 from source.utils.data.data_utils import DataUtils
 from source.utils.data.fasta_utils import FastaUtils
-from source.utils.data.id_mapper import IDMapGenerator
+from source.utils.data.id_mapper import IDMapper
 from source.utils.fs.file_utils import FileUtils
 from source.utils.post.embedding_processor import EmbeddingProcessor
 
@@ -34,20 +34,10 @@ class Word2VecEmbedder:
         """
         DataUtils.print_header("PIPELINE STEP: Training Word2Vec & Generating Embeddings")
         self.config.RESULTS_W2V_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
+        # --- REFACTOR: Use the new singleton IDMapper to get the map once. ---
+        id_map = IDMapper(self.config).get_map()
 
-        id_mapper_obj = self._load_id_map()
-
-        return self._execute_embedding_logic(id_mapper_obj)
-
-    def _load_id_map(self) -> Optional[Mapping]:
-        """Loads the UniProt ID mapping file if configured."""
-        if getattr(self.config, 'ID_MAPPING_MODE', 'none') != 'none':
-            print("  Loading Protein ID Mapping for consistency...")
-            id_mapper_instance = IDMapGenerator(config=self.config)
-            id_map_result = id_mapper_instance.generate_id_maps()
-            print(f"  ID mapping result of type '{type(id_map_result)}' loaded.")
-            return id_map_result
-        return None
+        return self._execute_embedding_logic(id_map)
 
     def _train_w2v_model(self, corpus: FastaUtils.FastaCorpus) -> Word2Vec:
         """Trains the Word2Vec model on the provided corpus."""
@@ -90,7 +80,7 @@ class Word2VecEmbedder:
 
         return protein_embeddings
 
-    def _execute_embedding_logic(self, id_mapper_obj: Optional[Mapping]) -> Optional[str]:
+    def _execute_embedding_logic(self, id_map: Optional[Mapping]) -> Optional[str]:
         """The core logic for Word2Vec, now accepting a mapper object."""
         DataUtils.print_header("Step 1: Preparing FASTA Corpus for Word2Vec")
         fasta_paths = self.config.SEQUENCE_FILE_PATHS
@@ -110,7 +100,7 @@ class Word2VecEmbedder:
             return None
 
         # Apply ID mapping to the entire dictionary at once
-        protein_embeddings = IDMapGenerator.apply_mapping(protein_embeddings, id_mapper_obj)
+        protein_embeddings = IDMapper.apply_mapping(protein_embeddings, id_map)
 
         print(f"  Generated {len(protein_embeddings)} protein embeddings using Word2Vec.")
 

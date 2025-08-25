@@ -1,12 +1,13 @@
 import unittest
 import os
 import shutil
+import pickle
 from pathlib import Path
 import h5py
 import numpy as np
 from configuration.config import Config
 from source.utils.data.data_utils import DataUtils
-from source.utils.data.id_mapper import IDMapGenerator
+from source.utils.data.id_mapper import IDMapper
 from source.utils.post.embedding_loader import EmbeddingLoader
 from source.data_builders.protgram import ProtGramDataBuilder
 from source.testers.dummy import DummyDataFactory
@@ -58,22 +59,43 @@ class DataUtilityTests(unittest.TestCase):
             print(f"  Successfully loaded dummy embedding for protein_X, shape: {embedding.shape}")
         print("--- EmbeddingLoader Test Complete ---")
 
-    def test_id_map_generator(self):
-        """Tests the IDMapGenerator in regex mode."""
+    def test_id_mapper_pregeneration(self):
+        """
+        Tests the IDMapper's pre-generation of cache files from a parquet source.
+        """
         print("\n" + "=" * 80)
-        DataUtils.print_header("Testing: IDMapGenerator")
+        DataUtils.print_header("Testing: IDMapper Pregeneration")
         print("=" * 80)
-        # --- REFACTOR: Use the DummyDataFactory for consistency ---
-        dummy_fasta_path = DummyDataFactory.create_fasta(self.temp_dir, "id_map_test.fasta")
-        self.config.SEQUENCE_FILE_PATHS = [Path(dummy_fasta_path)]
-        self.config.ID_MAPPING_PATH = Path(os.path.join(self.temp_dir, "dummy_id_map.tsv"))
-        self.config.ID_MAPPING_MODE = 'regex'
 
-        parser_mapper = IDMapGenerator(config=self.config)
-        id_map_dictionary = parser_mapper.generate_id_maps()
-        print(f"  IDMapGenerator created {len(id_map_dictionary)} mappings.")
-        self.assertGreater(len(id_map_dictionary), 0)
-        print("--- IDMapGenerator Test Complete ---")
+        # 1. Setup: Create a dummy source parquet file, which is the input for pre-generation.
+        input_dir = Path(self.temp_dir) / "input"
+        dummy_parquet_path = DummyDataFactory.create_dummy_id_mapping_parquet(
+            str(input_dir), "dummy_id_mapping.parquet", num_ids=5
+        )
+
+        # 2. Configure the test
+        self.config.ID_MAPPING_MODE = 'file'
+        self.config.ID_MAPPING_PATH = Path(dummy_parquet_path)
+
+        # 3. Run the pre-generation
+        mapper = IDMapper(self.config)
+        mapper.pregenerate_caches()
+
+        # 4. Assertions
+        expected_cache_file = self.config.PROJECT_ROOT / "file_map_cache.pkl"
+        try:
+            self.assertTrue(expected_cache_file.exists(), "The ID map pickle cache was not created.")
+
+            with open(expected_cache_file, 'rb') as f:
+                loaded_map = pickle.load(f)
+            self.assertIsInstance(loaded_map, dict)
+            # Based on the dummy data created by the factory
+            self.assertEqual(loaded_map.get("DUMMY0001"), "DUMMY0001")
+            print("--- IDMapper Pregeneration Test Complete ---")
+        finally:
+            # Clean up the generated cache file to not interfere with other tests
+            if expected_cache_file.exists():
+                expected_cache_file.unlink()
 
     def test_protgram_data_builder_smoke_test(self):
         """Smoke test for the ProtGramDataBuilder to ensure it runs without crashing."""

@@ -1,8 +1,8 @@
 # ==============================================================================
 # MODULE: utils/model_converter.py
 # PURPOSE: A standalone utility to convert Hugging Face models to a local
-#          TensorFlow format, acting as a disk cache.
-# VERSION: 1.0
+#          TensorFlow format, acting as a disk cache for faster startup.
+# VERSION: 2.0 (Made project root detection robust)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -11,13 +11,21 @@ import sys
 import traceback
 from pathlib import Path
 
-# --- FIX: Add the project root to the Python path to allow relative imports ---
-# This must be done BEFORE any local modules (like 'configuration') are imported.
-project_root = Path(__file__).resolve().parents[2]
+def find_project_root(start_path: Path, marker: str = 'run.py') -> Path:
+    """Traverses up from the start_path to find the project root directory."""
+    current_path = start_path.resolve()
+    while current_path != current_path.parent:  # Stop at the filesystem root
+        if (current_path / marker).exists():
+            return current_path
+        current_path = current_path.parent
+    raise FileNotFoundError(f"Could not find project root containing '{marker}' from '{start_path}'.")
+
+# --- DEFINITIVE FIX: Add project root to sys.path to resolve module imports robustly ---
+# This allows the script to be called from anywhere and still find the 'configuration' module.
+project_root = find_project_root(Path(__file__))
 sys.path.insert(0, str(project_root))
 
 from configuration.config import Config
-# --- Local import to avoid circular dependency at module level ---
 from transformers import AutoTokenizer, TFAutoModel
 
 
@@ -47,21 +55,19 @@ class ModelConverter:
         print(f"  Output will be saved to: {output_path}")
 
         try:
-            # --- REFACTOR: Load the tokenizer once, as it's the same for both cases ---
             tokenizer = AutoTokenizer.from_pretrained(model_id)
-            # Check if the model requires conversion in the first place
             try:
                 print("  Attempting to download native TensorFlow weights directly...")
                 model = TFAutoModel.from_pretrained(model_id)
                 print("  Native TF weights found. Saving them locally...")
             except OSError as e:
                 if "from_pt=True" in str(e):
-                    print("  Native TF weights not found. Converting from PyTorch...")
+                    print("  Native TF weights not found. Attempting to convert from PyTorch weights...")
                     print("  !!! THIS STEP IS MEMORY-INTENSIVE AND MAY TAKE A WHILE !!!")
                     model = TFAutoModel.from_pretrained(model_id, from_pt=True)
                     print("  Model converted to TensorFlow in memory.")
                 else:
-                    raise e
+                    raise e  # Re-raise other OS errors
 
             print("\n  Saving model and tokenizer to disk...")
             model.save_pretrained(output_path)

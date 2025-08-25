@@ -5,16 +5,28 @@
 # AUTHOR: Gemini Code Assist
 # ==============================================================================
 
-from typing import Tuple, Optional
+from typing import Tuple, Optional, TYPE_CHECKING
 
 import numpy as np
 import scipy.sparse.linalg as sp_linalg
 import torch
-from torch_geometric.nn.pool import graclus, pool_edge
-from torch_geometric.utils import to_scipy_sparse_matrix, from_scipy_sparse_matrix, get_laplacian, modularity
+# --- DEFINITIVE FIX: Add version-agnostic imports for PyG to handle API changes ---
+try:
+    # For PyG >= 2.0
+    from torch_geometric.nn.pool import graclus, pool_edge
+    from torch_geometric.nn import modularity
+except ImportError:
+    # Fallback for PyG < 2.0
+    from torch_geometric.nn import functional as F
+    from torch_geometric.utils import pool_edge
+    from torch_geometric.utils import modularity
+    graclus = F.graclus
+from torch_geometric.utils import to_scipy_sparse_matrix, from_scipy_sparse_matrix, get_laplacian
 from tqdm.auto import tqdm
 
-from source.data_structures.direct_ngram_graph import DirectedNgramGraph
+# --- FIX: Use a forward reference to prevent circular import errors ---
+if TYPE_CHECKING:
+    from source.data_structures.direct_ngram_graph import DirectedNgramGraph
 from source.utils.data.data_utils import DataUtils
 
 
@@ -26,7 +38,7 @@ class GraphCoarsener:
     """
 
     @staticmethod
-    def coarsen_graph(graph: DirectedNgramGraph, level: int = 1) -> Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+    def coarsen_graph(graph: 'DirectedNgramGraph', level: int = 1) -> Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         """
         Coarsens a graph using the Graclus clustering algorithm.
 
@@ -81,7 +93,7 @@ class GraphCoarsener:
 
     @staticmethod
     def validate_coarsening(
-            original_graph: DirectedNgramGraph,
+            original_graph: 'DirectedNgramGraph',
             coarsened_edge_index: torch.Tensor,
             coarsened_edge_weight: torch.Tensor,
             cluster_map: torch.Tensor,

@@ -6,8 +6,6 @@ import h5py
 import numpy as np
 from configuration.config import Config
 from source.utils.data.data_utils import DataUtils
-from source.utils.data.id_mapper import IDMapGenerator
-from source.utils.post.embedding_loader import EmbeddingLoader
 from source.data_builders.protgram import ProtGramDataBuilder
 import tempfile
 import time

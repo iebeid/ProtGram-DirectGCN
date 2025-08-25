@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: trainers/lstm.py
 # PURPOSE: Trainer for a character-level LSTM model to generate protein embeddings.
-# VERSION: 8.1 (Corrected EarlyStopper import path)
+# VERSION: 9.0 (Integrated consistent ID mapping)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -18,6 +18,7 @@ from tqdm.auto import tqdm
 from configuration.config import Config
 from source.utils.data.data_utils import DataUtils
 from source.utils.data.fasta_utils import FastaUtils
+from source.utils.data.id_mapper import IDMapper
 from source.models.rnn.lstm import LSTM
 from source.data_builders.lstm import LSTMDataBuilder
 from source.utils.models.early_stopper import EarlyStopper
@@ -191,6 +192,10 @@ class LSTMBasedEmbedder:
                 _, batch_embeddings = self.model(padded_batch)
                 for j, prot_id in enumerate(batch_ids):
                     protein_embeddings[prot_id] = batch_embeddings[j].cpu().numpy().astype(np.float16)
+
+        # --- NEW: Apply consistent ID mapping at the end of the pipeline ---
+        id_map = IDMapper(self.config).get_map()
+        protein_embeddings = IDMapper.apply_mapping(protein_embeddings, id_map)
 
         output_path = self.config.RESULTS_LSTM_EMBEDDINGS_DIR / "lstm_generated_embeddings.h5"
         DataUtils.write_h5(protein_embeddings, output_path, "Writing LSTM Embeddings")

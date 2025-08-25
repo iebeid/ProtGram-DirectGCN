@@ -2,8 +2,8 @@
 # MODULE: trainers/transformers.py
 # PURPOSE: Generates per-protein embeddings using pre-trained Transformer
 #          models from Hugging Face.
-# VERSION: 6.0 (Definitively fixed model loading logic and syntax)
-# AUTHOR: Islam Ebeid
+# VERSION: 7.0 (Refactored to use centralized IDMapper singleton)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import gc
@@ -22,7 +22,7 @@ from configuration.config import Config
 from source.utils.data.data_utils import DataUtils
 from source.utils.data.fasta_utils import FastaUtils
 from source.utils.fs.file_utils import FileUtils
-from source.utils.data.id_mapper import IDMapGenerator
+from source.utils.data.id_mapper import IDMapper
 from source.utils.post.embedding_processor import EmbeddingProcessor
 
 
@@ -131,16 +131,6 @@ class TransformerEmbedder:
             traceback.print_exc()
             return None, None, None, 0
 
-    def _load_id_map(self) -> Optional[Mapping]:
-        """Loads the UniProt ID mapping file if configured."""
-        if getattr(self.config, 'ID_MAPPING_MODE', 'none') != 'none':
-            print("  Loading Protein ID Mapping for consistency...")
-            id_mapper_instance = IDMapGenerator(config=self.config)
-            id_map_result = id_mapper_instance.generate_id_maps()
-            print(f"  ID mapping result of type '{type(id_map_result)}' loaded.")
-            return id_map_result
-        return None
-
     def run(self) -> Dict[str, Path]:
         """
         Main entry point for the Transformer embedding generation pipeline.
@@ -158,7 +148,9 @@ class TransformerEmbedder:
         else:
             print("  TensorFlow: No GPU detected. Using CPU.")
 
-        id_mapper_obj = self._load_id_map()
+        # --- REFACTOR: Use the new singleton IDMapper to get the map once. ---
+        # This is now a fast, in-memory lookup after the first call.
+        id_map = IDMapper(self.config).get_map()
         mlflow_active = self.config.USE_MLFLOW
 
         # --- NEW: Wrap the entire model processing loop in a try/finally to ensure cache cleanup ---
@@ -242,7 +234,7 @@ class TransformerEmbedder:
                     print(f"\n  Generated {len(all_protein_embeddings_for_model)} total protein embeddings for {model_name}.")
 
                     # Apply ID mapping
-                    all_protein_embeddings_for_model = IDMapGenerator.apply_mapping(all_protein_embeddings_for_model, id_mapper_obj)
+                    all_protein_embeddings_for_model = IDMapper.apply_mapping(all_protein_embeddings_for_model, id_map)
 
                     # Save the final aggregated embeddings for this model
                     # A run is nested if there's already an active run.

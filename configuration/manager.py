@@ -9,6 +9,7 @@ import gzip
 import json
 import os
 import shutil
+import traceback
 import sys
 import time
 import zipfile
@@ -20,6 +21,9 @@ from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 from tqdm.auto import tqdm
 
 from .processor import DataProcessor
+# --- REFACTOR: Import the new, centralized IDMapper ---
+from source.utils.data.id_mapper import IDMapper
+
 
 # Conditionally import gdown to avoid making it a hard dependency
 try:
@@ -72,6 +76,21 @@ class DataManager:
         else:
             shutil.copy(source_path, cache_path)
 
+    def _pregenerate_and_cache_id_map(self):
+        """
+        Calls the IDMapper to pre-generate its cache and then copies
+        that cache to the persistent cache directory. This is a critical step
+        to prevent slow, repeated processing during the main application run.
+        """
+        print("\n--- Step 2d: Pre-generating and caching the ID Map pickle ---")
+        try:
+            mapper = IDMapper(self.config)
+            mapper.pregenerate_caches() # This is the slow, one-time operation.
+            self._copy_to_cache(self.config.PROJECT_ROOT / f"{self.config.ID_MAPPING_MODE}_map_cache.pkl")
+        except Exception as e:
+            print(f"  - ❌ ERROR: Failed to pre-generate ID map cache: {e}")
+            traceback.print_exc()
+
     def run_full_setup(self):
         """
         Executes the entire data pipeline: download, process, and create manifest.
@@ -105,6 +124,9 @@ class DataManager:
                 print("\n--- Step 2c: Processing BioGRID Positive Interactions ---")
                 processor._process_biogrid_interactions()
                 self._copy_to_cache(self.config.POS_INTERACTIONS_PATH)
+
+                # --- REFACTOR: Pre-generate and cache the ID map pickle file here ---
+                self._pregenerate_and_cache_id_map()
             except Exception as e:
                 print("\n" + "!" * 80)
                 print(f"!!! FATAL: Data processing failed: {e} !!!")
@@ -362,6 +384,17 @@ class DataManager:
                 files_to_manifest.append(Path(dirpath) / d)
             for f in filenames:
                 files_to_manifest.append(Path(dirpath) / f)
+
+        # --- DEFINITIVE FIX: Add known ad-hoc cache files to the manifest ---
+        # This ensures they are tracked and can be restored from cache.
+        ad_hoc_files_to_find = [
+            "file_map_cache.pkl",
+            "regex_map_cache.pkl"
+        ]
+        for filename in set(ad_hoc_files_to_find): # Use set to avoid duplicates
+            path = self.config.PROJECT_ROOT / filename
+            if path.exists():
+                files_to_manifest.append(path)
 
         print(f"  - Generating checksums for {len(files_to_manifest)} items...")
         for file_path in tqdm(files_to_manifest, desc="  Calculating Checksums"):

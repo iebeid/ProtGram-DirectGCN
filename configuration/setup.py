@@ -155,6 +155,9 @@ if __name__ == "__main__":
          f"\"tensorflow<2.16\" tf-keras "
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} --extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"
          ),
+        "# --- MAINTENANCE NOTE: The following command is version-specific. ---",
+        "# If you change the CUDA_VERSION variable above, you MUST update the 'cu12' suffix",
+        "# in the package names below to match your new CUDA version (e.g., 'cu11' for CUDA 11.x).",
         "echo '--- Stage 2.5: Forcing library consistency by removing ALL pip-installed CUDA libs ---'",
         "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 nvidia-nccl-cu12 nvidia-nvtx-cu12 nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-cupti-cu12 nvidia-nvjitlink-cu12 2>/dev/null || true",
 
