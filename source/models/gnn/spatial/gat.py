@@ -40,7 +40,7 @@ class GAT(nn.Module):
         else:
             # Input layer
             self.convs.append(GATConv(in_channels, hidden_channels, heads=heads, concat=True))
-
+            self.norms.append(nn.LayerNorm(hidden_channels * heads))
             # Hidden layers (if any)
             for _ in range(num_layers - 2):
                 self.convs.append(GATConv(hidden_channels * heads, hidden_channels, heads=heads, concat=True))

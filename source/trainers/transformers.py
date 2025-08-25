@@ -11,6 +11,7 @@ import time
 import traceback
 from contextlib import nullcontext
 from pathlib import Path
+import random
 from typing import Dict, Optional, Tuple, Any, Mapping
 
 import mlflow
@@ -153,6 +154,20 @@ class TransformerEmbedder:
         id_map = IDMapper(self.config).get_map()
         mlflow_active = self.config.USE_MLFLOW
 
+        # --- NEW: Optional sampling for faster inference runs ---
+        all_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
+        sample_fraction = getattr(self.config, 'TRANSFORMER_INFERENCE_SAMPLE_FRACTION', 1.0)
+
+        if 0.0 < sample_fraction < 1.0:
+            num_to_sample = int(len(all_sequences) * sample_fraction)
+            print(f"\n--- SAMPLING ENABLED: Running Transformer inference on a random sample of {num_to_sample} sequences ({sample_fraction:.1%}) ---")
+            random.seed(self.config.RANDOM_STATE)
+            sequences_to_process = random.sample(all_sequences, num_to_sample)
+        else:
+            sequences_to_process = all_sequences
+
+        del all_sequences # Free up memory
+
         # --- NEW: Wrap the entire model processing loop in a try/finally to ensure cache cleanup ---
         try:
             # --- Main Efficient Loop: Iterate through MODELS first ---
@@ -183,15 +198,14 @@ class TransformerEmbedder:
                         continue  # Skip to the next model if loading failed
 
                     # --- Inner Loop: Iterate through DATA CHUNKS ---
-                    sequence_iterator = FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS)
                     chunk_num = 0
                     while True:
                         chunk_num += 1
-                        chunk = [item for _, item in zip(range(self.config.TRANSFORMER_CHUNK_SIZE), sequence_iterator)]
+                        start_idx = (chunk_num - 1) * self.config.TRANSFORMER_CHUNK_SIZE
+                        chunk = sequences_to_process[start_idx : start_idx + self.config.TRANSFORMER_CHUNK_SIZE]
                         if not chunk:
                             break
 
-                        print(f"\n  Processing Sequence Chunk {chunk_num} ({len(chunk)} sequences) for model '{model_name}'...")
                         sorted_sequences = sorted(chunk, key=lambda x: len(x[1]))
 
                         for i in tqdm(range(0, len(sorted_sequences), batch_size), desc=f"    Generating Embeddings"):

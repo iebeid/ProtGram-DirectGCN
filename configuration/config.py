@@ -145,6 +145,7 @@ class TransformerParams(BaseModel):
     CHUNK_SIZE: int = Field(gt=0)
     POOLING_STRATEGY: str
     USE_XLA_COMPILATION: bool
+    TRANSFORMER_INFERENCE_SAMPLE_FRACTION: float = Field(default=1.0, ge=0.0, le=1.0)
 
 class LSTMParams(BaseModel):
     EMBEDDING_DIM: int = Field(gt=0)
@@ -159,6 +160,7 @@ class LSTMParams(BaseModel):
     VALIDATION_SPLIT: float = Field(gt=0, lt=1.0)
     USE_EARLY_STOPPING: bool
     EARLY_STOPPING_PATIENCE: int = Field(ge=0)
+    DROPOUT_RATE: float = Field(default=0.5, ge=0.0, lt=1.0)
     EARLY_STOPPING_MIN_DELTA: float = Field(ge=0.0)
 
 class SingletonEvalParams(BaseModel):
@@ -535,6 +537,7 @@ class Config:
         self.TRANSFORMER_CHUNK_SIZE = params['CHUNK_SIZE']
         self.TRANSFORMER_POOLING_STRATEGY = params['POOLING_STRATEGY']
         self.USE_XLA_COMPILATION = params['USE_XLA_COMPILATION']
+        self.TRANSFORMER_INFERENCE_SAMPLE_FRACTION = params['TRANSFORMER_INFERENCE_SAMPLE_FRACTION']
 
     def _setup_lstm_params(self):
         """Sets LSTM parameters statically from the YAML config."""
@@ -551,6 +554,7 @@ class Config:
         self.LSTM_VALIDATION_SPLIT = params['VALIDATION_SPLIT']
         self.LSTM_USE_EARLY_STOPPING = params['USE_EARLY_STOPPING']
         self.LSTM_EARLY_STOPPING_PATIENCE = params['EARLY_STOPPING_PATIENCE']
+        self.LSTM_DROPOUT_RATE = params['DROPOUT_RATE']
         self.LSTM_EARLY_STOPPING_MIN_DELTA = params['EARLY_STOPPING_MIN_DELTA']
 
     def _setup_singleton_eval_params(self):

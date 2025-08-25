@@ -34,6 +34,7 @@ class RGCN(nn.Module):
             self.convs.append(RGCNConv(in_channels, out_channels, num_relations=num_relations, **kwargs))
         else:
             self.convs.append(RGCNConv(in_channels, hidden_channels, num_relations, **kwargs))
+            self.norms.append(nn.LayerNorm(hidden_channels))
             for _ in range(num_layers - 2):
                 self.convs.append(RGCNConv(hidden_channels, hidden_channels, num_relations, **kwargs))
                 self.norms.append(nn.LayerNorm(hidden_channels))

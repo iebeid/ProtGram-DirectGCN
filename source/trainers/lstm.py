@@ -19,6 +19,7 @@ from configuration.config import Config
 from source.utils.data.data_utils import DataUtils
 from source.utils.data.fasta_utils import FastaUtils
 from source.utils.data.id_mapper import IDMapper
+from source.utils.fs.file_utils import FileUtils
 from source.models.rnn.lstm import LSTM
 from source.data_builders.lstm import LSTMDataBuilder
 from source.utils.models.early_stopper import EarlyStopper
@@ -71,7 +72,8 @@ class LSTMBasedEmbedder:
             vocab_size=self.vocab_size,
             embedding_dim=self.config.LSTM_EMBEDDING_DIM,
             hidden_dim=self.config.LSTM_HIDDEN_DIM,
-            num_layers=self.config.LSTM_NUM_LAYERS
+            num_layers=self.config.LSTM_NUM_LAYERS,
+            dropout_rate=self.config.LSTM_DROPOUT_RATE
         ).to(self.device)
         print("  PyTorch LSTM model built:")
         print(self.model)
@@ -198,6 +200,6 @@ class LSTMBasedEmbedder:
         protein_embeddings = IDMapper.apply_mapping(protein_embeddings, id_map)
 
         output_path = self.config.RESULTS_LSTM_EMBEDDINGS_DIR / "lstm_generated_embeddings.h5"
-        DataUtils.write_h5(protein_embeddings, output_path, "Writing LSTM Embeddings")
+        FileUtils.write_h5(protein_embeddings, output_path, "Writing LSTM Embeddings")
         print(f"\nSUCCESS: LSTM embeddings saved to: {output_path}")
         return str(output_path)

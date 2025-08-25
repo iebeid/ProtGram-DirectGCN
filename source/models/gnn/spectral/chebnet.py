@@ -35,6 +35,7 @@ class ChebNet(nn.Module):
             self.convs.append(ChebConv(in_channels, out_channels, K=K, **kwargs))
         else:
             self.convs.append(ChebConv(in_channels, hidden_channels, K=K, **kwargs))
+            self.norms.append(nn.LayerNorm(hidden_channels))
             for _ in range(num_layers - 2):
                 self.convs.append(ChebConv(hidden_channels, hidden_channels, K=K, **kwargs))
                 self.norms.append(nn.LayerNorm(hidden_channels))

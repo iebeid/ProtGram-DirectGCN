@@ -118,12 +118,12 @@ class ProtGramXGCNTrainer:
                 if hierarchical_data:
                     hierarchical_json_path = attention_dir / f"hierarchical_attention_{model_name}.json"
                     # --- DEFINITIVE FIX for OOM Crash: Save as JSONL for scalable reading ---
-                    DataUtils.save_json(hierarchical_data, hierarchical_json_path, json_lines=True)
+                    FileUtils.save_json(hierarchical_data, hierarchical_json_path, json_lines=True)
                     reporter.generate_hierarchical_attention_plot(hierarchical_json_path, model_name)
                 pooling_data = attention_data.get("protein_pooling")
                 if pooling_data:
                     pooling_json_path = attention_dir / f"pooling_attention_{model_name}.json"
-                    DataUtils.save_json(pooling_data, pooling_json_path, json_lines=True)
+                    FileUtils.save_json(pooling_data, pooling_json_path, json_lines=True)
                     reporter.generate_pooling_attention_plot(pooling_json_path, model_name)
 
         if self.config.PROTGRAM_RUN_SANITY_CHECK_PPI:

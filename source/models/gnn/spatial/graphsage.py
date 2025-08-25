@@ -35,6 +35,7 @@ class GraphSAGE(nn.Module):
             self.convs.append(SAGEConv(in_channels, out_channels, **kwargs))
         else:
             self.convs.append(SAGEConv(in_channels, hidden_channels, **kwargs))
+            self.norms.append(nn.LayerNorm(hidden_channels))
             for _ in range(num_layers - 2):
                 self.convs.append(SAGEConv(hidden_channels, hidden_channels, **kwargs))
                 self.norms.append(nn.LayerNorm(hidden_channels))

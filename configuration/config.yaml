@@ -38,7 +38,7 @@ pipeline_flags:
   RUN_INTEGRATED_TESTS: true
   RUN_SINGLETON_GCN_EVAL: true
   RUN_DUMMY_TEST: true
-  SEQUENCE_DOWNSAMPLE_FRACTION: 0.01
+  SEQUENCE_DOWNSAMPLE_FRACTION: 0.1
   CLEANUP_DUMMY_DATA: true
   ENABLE_FILE_LOGGING: true
 
@@ -104,7 +104,7 @@ gnn_benchmarking:
 protgram_gcn:
   PROTGRAM_NGRAM_MAX_N: 3
   # --- NEW: Specify which FASTA file to use for the main pipelines ---
-  FASTA_FILE_TO_PROCESS: "UNIPROT_SPROT_FASTA" # Options: "UNIPROT_SPROT_FASTA", "UNIREF_50_FASTA"
+  FASTA_FILE_TO_PROCESS: "UNIREF_50_FASTA" # Options: "UNIPROT_SPROT_FASTA", "UNIREF_50_FASTA"
   ID_MAPPING_MODE: 'file' # Options: 'regex', 'file', 'api', 'none'
   # --- NEW: Options for the smart ID mapping prompter ---
   ENABLE_SMART_MAPPING_PROMPT: true # If true, will check FASTA headers and prompt to use 'regex' if compatible.
@@ -180,6 +180,8 @@ transformer:
   BASE_BATCH_SIZE: 16
   CHUNK_SIZE: 10000
   POOLING_STRATEGY: 'mean'
+  # --- NEW: Set to a value < 1.0 (e.g., 0.1 for 10%) to run inference on a random sample of sequences. ---
+  TRANSFORMER_INFERENCE_SAMPLE_FRACTION: 1.0
   USE_XLA_COMPILATION: true
 
 # 9. LSTM PIPELINE PARAMETERS
@@ -196,6 +198,7 @@ lstm:
   VALIDATION_SPLIT: 0.1
   USE_EARLY_STOPPING: true
   EARLY_STOPPING_PATIENCE: 10
+  DROPOUT_RATE: 0.5
   EARLY_STOPPING_MIN_DELTA: 0.001
 
 # 9.5. SINGLETON EVALUATION PARAMETERS

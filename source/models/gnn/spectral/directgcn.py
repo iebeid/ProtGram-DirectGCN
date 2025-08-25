@@ -268,14 +268,20 @@ class DirectGCN(nn.Module):
             self.res_projs.append(nn.Linear(in_dim, out_dim) if in_dim != out_dim else nn.Identity())
             self.layer_norms.append(nn.LayerNorm(out_dim))
 
-        final_embedding_dim = layer_dims[-1]
-        decoder_hidden_dim = final_embedding_dim // 2 if final_embedding_dim > 1 else 1
-        self.decoder_fc = nn.Sequential(
-            nn.Linear(final_embedding_dim, decoder_hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(p=0.5),
-            nn.Linear(decoder_hidden_dim, task_num_output_classes)
-        )
+        # --- REFACTOR for Benchmarking ---
+        # The complex decoder is specific to the main ProtGram pipeline. For a fair
+        # benchmark comparison, we replace it with a simple linear layer, making
+        # its architecture consistent with the other GNNs.
+        if num_graph_nodes is not None: # This check implies it's a benchmark context
+            final_embedding_dim = layer_dims[-1]
+            self.decoder_fc = nn.Linear(final_embedding_dim, task_num_output_classes)
+        else: # Main pipeline context
+            final_embedding_dim = layer_dims[-1]
+            decoder_hidden_dim = final_embedding_dim // 2 if final_embedding_dim > 1 else 1
+            self.decoder_fc = nn.Sequential(
+                nn.Linear(final_embedding_dim, decoder_hidden_dim), nn.ReLU(),
+                nn.Dropout(p=0.5), nn.Linear(decoder_hidden_dim, task_num_output_classes)
+            )
 
     def _apply_pe(self, x: torch.Tensor) -> torch.Tensor:
         """Applies positional embeddings to the input features if applicable."""

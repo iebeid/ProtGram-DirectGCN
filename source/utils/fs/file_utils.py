@@ -8,6 +8,7 @@
 import os
 import hashlib
 import json
+import tempfile
 import pickle
 import random
 from pathlib import Path
@@ -94,20 +95,31 @@ class FileUtils:
     @staticmethod
     def write_h5(embeddings_dict: Dict, uri: Union[str, Path], desc: str):
         """Helper function to write a dictionary of embeddings to an HDF5 file in any fsspec-supported location."""
-        fs, path = fs_manager.get_fs_and_path(str(uri))
+        fs, final_path = fs_manager.get_fs_and_path(str(uri))
+        # --- DEFINITIVE FIX for io.UnsupportedOperation: read ---
+        # This error occurs when h5py tries to perform complex I/O on a file-like object
+        # from fsspec that doesn't support all expected operations (like simultaneous read/write/seek).
+        # The standard, robust solution is to write to a temporary local file first,
+        # and then use the filesystem manager to move the completed file to its final destination.
+        with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as tmp_f:
+            temp_local_path = tmp_f.name
+
         try:
-            parent_dir = os.path.dirname(path)
-            if parent_dir: fs.makedirs(parent_dir, exist_ok=True)
-            with fs.open(path, 'wb') as f:
-                with h5py.File(f, 'w') as hf:
-                    for key, value in tqdm(embeddings_dict.items(), desc=f"  {desc}"):
-                        if value is not None and value.size > 0:
-                            # --- NEW: Add chunking and compression for better I/O performance and smaller file size ---
-                            hf.create_dataset(key, data=value, chunks=True, compression="gzip")
+            with h5py.File(temp_local_path, 'w') as hf:
+                for key, value in tqdm(embeddings_dict.items(), desc=f"  {desc}"):
+                    if value is not None and value.size > 0:
+                        hf.create_dataset(key, data=value, chunks=True, compression="gzip")
+
+            # Move the completed local file to the final destination URI
+            final_dir = os.path.dirname(final_path)
+            if final_dir:
+                fs.makedirs(final_dir, exist_ok=True)
+            fs.put(temp_local_path, final_path)
         except Exception as e:
-            import traceback
-            print(f"  ERROR: Could not write HDF5 file to {uri}: {e}")
-            traceback.print_exc()
+            print(f"  ERROR: Could not write HDF5 file to {uri}: {e.__class__.__name__}")
+        finally:
+            if os.path.exists(temp_local_path):
+                os.remove(temp_local_path)
 
     @staticmethod
     def check_h5_embeddings_integrity(uri: Union[str, Path], num_samples_to_check: int = 5):
