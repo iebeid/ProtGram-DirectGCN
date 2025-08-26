@@ -558,10 +558,10 @@ class Config:
 
     def _setup_singleton_eval_params(self):
         """Sets Singleton evaluation parameters statically from the YAML config."""
-        params = self._config['singleton_eval'] # --- REFACTOR: Rename LR to be consistent ---
-        params['LEARNING_RATE'] = params.pop('LR')
+        params = self._config['singleton_eval']
         self.SINGLETON_EVAL_EPOCHS = params['EPOCHS'] # Keep this for clarity if needed elsewhere
         self.SINGLETON_EVAL_TEST_SPLIT = params['TEST_SPLIT']
+        self.SINGLETON_EVAL_LR = params['LEARNING_RATE']
         self.SINGLETON_EVAL_MODELS_TO_RUN = params['MODELS_TO_RUN']
         self.SINGLETON_GNN_HIDDEN_CHANNELS = params['GNN_HIDDEN_CHANNELS']
         self.SINGLETON_GNN_NUM_LAYERS = params['GNN_NUM_LAYERS']
