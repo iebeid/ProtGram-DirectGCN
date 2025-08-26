@@ -1,75 +1,58 @@
 # ==============================================================================
-# MODULE: models/fnn/mlp.py
-# PURPOSE: Contains the definition for the Multi-Layer Perceptron (MLP) used
-#          for link prediction in the evaluation trainers.
-# VERSION: 2.1 (Corrected docstrings and path)
-# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
+# MODULE: source/models/fnn/mlp.py
+# PURPOSE: Defines a Multi-Layer Perceptron (MLP) for link prediction.
+# VERSION: 2.1 (Updated Keras imports for TF 2.15+)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
-from typing import Dict, Any
+# *** MODIFICATION START ***
+# The import paths are changed from tensorflow.keras to the standalone tf_keras package.
+from tf_keras.layers import InputLayer, Dense, Dropout
+from tf_keras.models import Sequential
+from tf_keras.optimizers import Adam
+from tf_keras.regularizers import l2
+# *** MODIFICATION END ***
 
-import tensorflow as tf
-from tensorflow.keras.layers import InputLayer, Dense, Dropout
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.regularizers import l2
 
 class MLP:
-    """
-    A class responsible for building and compiling MLP models
-    for link prediction.
-    """
+    """A Multi-Layer Perceptron for link prediction."""
 
-    def __init__(self, input_shape: int, mlp_params: Dict[str, Any], learning_rate: float):
-        """
-        Initializes the MLP.
-
-        Args:
-            input_shape (int): The dimension of the input edge features.
-            mlp_params (Dict[str, Any]): A dictionary containing the MLP architecture parameters.
-                                         Expected keys: 'dense1_units', 'dropout1_rate',
-                                                        'dense2_units', 'dropout2_rate', 'l2_reg'.
-            learning_rate (float): The learning rate for the Adam optimizer.
-        """
-        self.input_shape = input_shape
-        self.mlp_params = mlp_params
-        self.learning_rate = learning_rate
-
-    def build(self) -> tf.keras.Model:
+    @staticmethod
+    def build(input_dim: int, config) -> Sequential:
         """
         Builds and compiles the MLP model.
 
+        Args:
+            input_dim: The dimension of the input layer.
+            config: The configuration object with MLP parameters.
+
         Returns:
-            tf.keras.Model: The compiled Keras model.
+            A compiled Keras Sequential model.
         """
         model = Sequential([
-            InputLayer(input_shape=(self.input_shape,)),
-            # --- DEFINITIVE FIX: Use .get() for robust parameter access ---
-            # This prevents KeyErrors if a parameter is missing from the config
-            # and makes the model builder more self-contained and resilient.
+            InputLayer(input_shape=(input_dim,)),
+
             Dense(
-                self.mlp_params.get('dense1_units', 128),
+                config.EVAL_MLP_DENSE1_UNITS,
                 activation='relu',
-                kernel_regularizer=l2(self.mlp_params.get('l2_reg', 1e-5))
+                kernel_regularizer=l2(config.EVAL_MLP_L2_REG1)
             ),
-            Dropout(self.mlp_params.get('dropout1_rate', 0.5)),
+            Dropout(config.EVAL_MLP_DROPOUT1_RATE),
+
             Dense(
-                self.mlp_params.get('dense2_units', 64),
+                config.EVAL_MLP_DENSE2_UNITS,
                 activation='relu',
-                kernel_regularizer=l2(self.mlp_params.get('l2_reg', 1e-5))
+                kernel_regularizer=l2(config.EVAL_MLP_L2_REG2)
             ),
-            Dropout(self.mlp_params.get('dropout2_rate', 0.5)),
+            Dropout(config.EVAL_MLP_DROPOUT2_RATE),
+
             Dense(1, activation='sigmoid')
         ])
 
+        optimizer = Adam(learning_rate=config.EVAL_MLP_LEARNING_RATE)
         model.compile(
-            optimizer=Adam(learning_rate=self.learning_rate),
+            optimizer=optimizer,
             loss='binary_crossentropy',
-            metrics=[
-                'accuracy',
-                tf.keras.metrics.AUC(name='auc'),
-                tf.keras.metrics.Precision(name='precision'),
-                tf.keras.metrics.Recall(name='recall')
-            ]
+            metrics=['accuracy']
         )
         return model

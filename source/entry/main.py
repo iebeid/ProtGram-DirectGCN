@@ -19,7 +19,7 @@ project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
 from typing import List, Dict
-
+from source.utils.post.embedding_processor import EmbeddingProcessor
 import mlflow
 import tensorflow as tf
 # --- Local Application Imports ---
@@ -56,14 +56,22 @@ class PipelineOrchestrator:
         """Configures GPU settings for TensorFlow."""
         gpus = tf.config.list_physical_devices('GPU')
         if gpus:
-            # --- DEFINITIVE FIX: Handle different TensorFlow versions for mixed_precision import ---
+            # *** MODIFICATION START ***
+            # This logic is updated to correctly import mixed_precision from the
+            # standalone tf_keras package, which is the standard for modern TF.
             try:
-                # For newer TensorFlow versions (e.g., >= 2.9)
+                # First, try the modern, direct TensorFlow import
                 from tensorflow import mixed_precision
             except ImportError:
-                # Fallback for older TensorFlow versions
-                from tensorflow.keras import mixed_precision
-            policy = mixed_precision.Policy('mixed_float16') # noqa
+                try:
+                    # If that fails, try the new standard tf_keras package
+                    from tf_keras import mixed_precision
+                except ImportError:
+                    # As a last resort, try the legacy path for older TF versions
+                    from tensorflow.keras import mixed_precision
+            # *** MODIFICATION END ***
+
+            policy = mixed_precision.Policy('mixed_float16')
             mixed_precision.set_global_policy(policy)
             try:
                 for gpu in gpus:
@@ -73,6 +81,10 @@ class PipelineOrchestrator:
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
         tf.get_logger().setLevel('WARNING')
 
+    # Add this import with the other local application imports at the top of the file
+
+
+    # Replace the existing function with this corrected version
     def _run_main_embedding_pipelines(self, config: Config, checkpoint_manager: CheckpointManager) -> List[Dict[str, str]]:
         """Runs the main embedding generation pipelines with checkpointing and user prompts."""
         pipelines = [
@@ -94,14 +106,20 @@ class PipelineOrchestrator:
                 if checkpoint_data:
                     generated_files.extend(checkpoint_data)
                     continue
-                # --- NEW: Add robust error handling for each pipeline ---
-                # This prevents a single failing pipeline (e.g., Word2Vec) from crashing the entire run.
                 try:
-                    result = p_config["runner"]()
-                    if result:
-                        formatted_result = p_config["formatter"](result)
-                        checkpoint_manager.save_checkpoint(p_config['name'], formatted_result)
-                        generated_files.extend(formatted_result)
+                    raw_result = p_config["runner"]()
+                    if raw_result:
+                        formatted_raw_results = p_config["formatter"](raw_result)
+
+                        standardized_files = []
+                        for file_info in formatted_raw_results:
+                            # Standardize each file immediately after it's created
+                            standardized_path = EmbeddingProcessor.standardize_embedding_file(file_info["path"])
+                            standardized_files.append({"name": file_info["name"], "path": standardized_path})
+
+                        checkpoint_manager.save_checkpoint(p_config['name'], standardized_files)
+                        generated_files.extend(standardized_files)
+
                         if not self.ui_manager.prompt_to_continue(p_config['name']):
                             sys.exit(0)
                     else:

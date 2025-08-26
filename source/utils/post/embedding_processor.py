@@ -20,6 +20,13 @@ from tqdm.auto import tqdm
 from source.utils.fs.file_utils import FileUtils
 from gensim.models import Word2Vec
 from source.utils.post.embedding_loader import EmbeddingLoader
+from pathlib import Path
+from typing import Dict, Any
+
+import h5py
+
+from configuration.config import Config
+from source.utils.data.id_mapper import IDMapper
 
 if TYPE_CHECKING:
     from configuration.config import Config
@@ -30,6 +37,58 @@ class EmbeddingProcessor:
     """
     A class for handling common processing tasks for embeddings.
     """
+
+
+
+    def standardize_embedding_file(raw_embedding_path: str) -> str:
+        """
+        Creates a new, standardized HDF5 embedding file by applying an ID map.
+
+        This function is the single, centralized point for ID mapping. It takes
+        a path to an H5 file with raw IDs, applies the mapping, and saves a new
+        file with a '_standardized' suffix.
+
+        Args:
+            raw_embedding_path: Path to the input H5 file with raw protein IDs.
+
+        Returns:
+            The path to the newly created standardized HDF5 file.
+        """
+        config = Config()
+        if config.ID_MAPPING_MODE == 'none':
+            return raw_embedding_path
+
+        mapper = IDMapper(config)
+        id_map = mapper.get_map()
+
+        if not id_map:
+            print(f"  - WARNING: No ID map found. Skipping standardization for {Path(raw_embedding_path).name}.")
+            return raw_embedding_path
+
+        print(f"  Standardizing embedding file: {Path(raw_embedding_path).name}")
+
+        raw_path = Path(raw_embedding_path)
+        standardized_path = raw_path.with_name(f"{raw_path.stem}_standardized.h5")
+
+        try:
+            with h5py.File(raw_path, 'r') as raw_h5, h5py.File(standardized_path, 'w') as std_h5:
+                # Handle both old (one dataset per protein) and new (batched) HDF5 formats
+                if 'ids' in raw_h5 and 'embeddings' in raw_h5:
+                    ids = [s.decode('utf-8') for s in raw_h5['ids'][:]]
+                    embeddings = raw_h5['embeddings'][:]
+                    for i, original_id in enumerate(ids):
+                        standardized_id = id_map.get(original_id, original_id)
+                        std_h5.create_dataset(standardized_id, data=embeddings[i])
+                else:  # Old format
+                    for original_id, embedding in raw_h5.items():
+                        standardized_id = id_map.get(original_id, original_id)
+                        std_h5.create_dataset(standardized_id, data=embedding[...])
+
+            print(f"    - Saved standardized embeddings to: {standardized_path.name}")
+            return str(standardized_path)
+        except Exception as e:
+            print(f"  - ❌ ERROR during standardization of {raw_path.name}: {e}")
+            return raw_embedding_path  # Return original path on failure
 
     @staticmethod
     def apply_pca(

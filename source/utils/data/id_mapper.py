@@ -1,30 +1,33 @@
+# ==============================================================================
+# MODULE: source/utils/data/id_mapper.py
+# PURPOSE: Manages the creation and application of protein ID maps.
+# VERSION: 3.0 (Streamlined to use direct DAT-to-Pickle conversion)
+# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
+# ==============================================================================
+
 import gc
+import logging
 from pathlib import Path
 from typing import Dict, Mapping, Optional, Any
 
 import dask.dataframe as dd
-import pandas as pd
-from Bio import SeqIO
 from dask.diagnostics import ProgressBar
+from Bio import SeqIO
 from tqdm.auto import tqdm
 
+
 from configuration.config import Config
-from source.utils.data.data_utils import DataUtils
 from source.utils.data.fasta_utils import FastaUtils
 from source.utils.fs.file_utils import FileUtils
 
-# ==============================================================================
-# 3. Protein ID Mapping Utilities
-# ==============================================================================
 
 class IDMapper:
     """
-    A singleton class to manage loading and applying protein ID maps.
+    A singleton class to manage loading and applying the protein ID map.
 
-    This class ensures that the ID mapping dictionary is loaded from disk only
-    once per application run, providing a consistent and efficient way for all
-    pipelines to access it. It relies on the DataManager to have already
-    generated the necessary cache files during the initial setup.
+    This class handles the one-time, efficient creation of an ID mapping
+    dictionary from the raw 'idmapping.dat' file. It ensures the map is
+    loaded only once from its pickle cache for all subsequent uses.
     """
     _instance = None
     _id_map: Optional[Dict[str, str]] = None
@@ -33,13 +36,12 @@ class IDMapper:
     def __new__(cls, config: Config):
         if cls._instance is None:
             cls._instance = super(IDMapper, cls).__new__(cls)
-            # Store config on first creation, but don't re-initialize the map
             cls._instance.config = config
         return cls._instance
 
     @classmethod
     def reset(cls):
-        """Resets the singleton instance. Primarily for testing purposes."""
+        """Resets the singleton instance for testing purposes."""
         cls._instance = None
         cls._id_map = None
         cls._mode_used = None
@@ -51,23 +53,17 @@ class IDMapper:
         This method is idempotent. It loads the map from the appropriate
         pickle file on the first call and returns the cached-in-memory
         dictionary on subsequent calls.
-
-        Returns:
-            A mapping dictionary or None if mapping is disabled.
         """
         mode = self.config.ID_MAPPING_MODE
 
         if mode == 'none':
             return None
 
-        # If map is already loaded and mode hasn't changed, return cached version
         if self._id_map is not None and self._mode_used == mode:
             return self._id_map
 
-        # Load the map from the correct pickle file
         self._mode_used = mode
         cache_filename = f"{mode}_map_cache.pkl"
-        # --- DEFINITIVE FIX: Check for the cache file in the project root, where DataManager places it. ---
         cache_path = self.config.PROJECT_ROOT / cache_filename
 
         if cache_path.exists():
@@ -77,7 +73,7 @@ class IDMapper:
                 print(f"  - ❌ ERROR: Failed to load or unpickle cached ID map '{cache_path.name}'.")
         else:
             print(f"  - ❌ ERROR: ID map cache file not found: '{cache_path.name}'. The data setup process may have failed.")
-            self._id_map = None
+            self._id_map = {} # Return empty dict to prevent crashes
 
         return self._id_map
 
@@ -99,7 +95,7 @@ class IDMapper:
 
         id_map = {}
         if mode == 'file':
-            id_map = self._generate_from_file()
+            id_map = self._generate_from_dat_file_direct()
         elif mode == 'regex':
             id_map = self._generate_from_regex()
         elif mode == 'api':
@@ -109,31 +105,45 @@ class IDMapper:
             print(f"  Saving newly generated ID map to local cache: {local_cache_path.name}")
             FileUtils.save_object(id_map, local_cache_path)
 
-    def _generate_from_file(self) -> Dict[str, str]:
-        """Generates the ID map dictionary from the large Parquet file."""
-        print("  Generating ID map dictionary from Parquet file (one-time operation)...")
-        mapping_ddf = self._get_mapping_dask_dataframe()
-        if mapping_ddf is None:
+    def _generate_from_dat_file_direct(self) -> Dict[str, str]:
+        """
+        Directly creates the ID map from the raw `idmapping.dat` file using Dask.
+        """
+        print("  INFO: Starting direct conversion of 'idmapping.dat' to dictionary...")
+        source_dat_path = Path(self.config.PERSISTENT_DATA_CACHE) / 'idmapping.dat'
+
+        if not source_dat_path.exists():
+            logging.error(f"'idmapping.dat' not found at expected location: {source_dat_path}")
+            print(f"  - ❌ ERROR: 'idmapping.dat' not found. Cannot generate map.")
             return {}
 
-        # --- DEFINITIVE FIX for Slow ID Map Generation: Use parallel partition processing ---
-        # The previous method loaded the entire dataframe into the client's memory,
-        # which is a bottleneck. This new approach uses Dask's `to_bag` and `fold`
-        # to create and merge dictionaries in parallel on the workers, which is
-        # significantly faster and more memory-efficient.
-        with ProgressBar():
-            def part_to_dict(df):
-                return dict(zip(df['original_id'], df['mapped_id']))
+        try:
+            with ProgressBar(dt=5.0):
+                ddf = dd.read_csv(
+                    source_dat_path,
+                    sep='\t',
+                    header=None,
+                    names=['uniprot_id', 'db_type', 'db_id'],
+                    usecols=['uniprot_id', 'db_type', 'db_id'],
+                    dtype={'uniprot_id': 'string', 'db_type': 'string', 'db_id': 'string'},
+                    on_bad_lines='warn',
+                    blocksize='128MB'
+                )
 
-            def merge_dicts(d1, d2):
-                d1.update(d2)
-                return d1
+                uniprotkb_ac = ddf[ddf['db_type'] == 'UniProtKB-AC']
+                print("  - Dask is now processing the file in parallel. This may take a while...")
+                computed_df = uniprotkb_ac.compute()
 
-            id_map = mapping_ddf[['original_id', 'mapped_id']].to_bag(format='df').map(part_to_dict).fold(merge_dicts, initial={}).compute()
+            print("  - Aggregating computed results into the final dictionary...")
+            id_map = dict(zip(computed_df['db_id'], computed_df['uniprot_id']))
+            del ddf, computed_df
+            gc.collect()
 
-        del mapping_ddf
-        gc.collect()
-        return id_map
+            print(f"  - ✅ Success! Generated ID map with {len(id_map)} entries.")
+            return id_map
+        except Exception as e:
+            logging.error(f"Failed during direct DAT-to-dictionary conversion: {e}", exc_info=True)
+            return {}
 
     def _generate_from_regex(self) -> Dict[str, str]:
         """Performs ID mapping by parsing FASTA headers with regular expressions."""
@@ -155,17 +165,6 @@ class IDMapper:
                 print(f"An error during regex mapping on {fasta_file}: {e}")
         print(f"  Regex mapping complete. Found {len(id_map)} potential mappings.")
         return id_map
-
-    def _get_mapping_dask_dataframe(self) -> Optional[dd.DataFrame]:
-        """Loads the large mapping file into a Dask DataFrame."""
-        source_parquet_path = self.config.ID_MAPPING_PATH
-        if not source_parquet_path or not source_parquet_path.exists():
-            print(f"ERROR: Processed mapping file not found at {source_parquet_path}.")
-            return None
-
-        ddf = dd.read_parquet(source_parquet_path)
-        ddf = ddf.rename(columns={'other_id': 'original_id', 'uniprot_id': 'mapped_id'})
-        return ddf.persist()
 
     @staticmethod
     def apply_mapping(embeddings: Dict[str, Any], id_map: Optional[Mapping[str, str]]) -> Dict[str, Any]:

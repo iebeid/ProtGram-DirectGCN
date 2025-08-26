@@ -67,73 +67,25 @@ class ProtGramXGCNTrainer:
     def run(self) -> Dict[str, str]:
         """
         Main execution function. Loops through n-gram levels, trains models,
-        and generates final protein-level embeddings.
+        and generates final protein-level embeddings with raw IDs.
         """
         DataUtils.print_header("PIPELINE STEP: Training ProtGram Models & Generating Embeddings")
 
         final_protein_embeddings_per_model: Dict[str, Dict[str, np.ndarray]] = {}
-        all_attention_data_per_model: Dict[str, Dict[str, Any]] = {}
-        # --- REFACTOR: Use the new singleton IDMapper to get the map once. ---
-        id_map = IDMapper(self.config).get_map()
-
-        # --- ANTICIPATORY DEBUGGING: Parse sequences once to avoid redundant I/O ---
         protein_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
 
         for model_type in self.config.PROTGRAM_MODELS_TO_TRAIN:
             DataUtils.print_header(f"Processing Model Type: {model_type.upper()}")
-            ngram_embeddings_per_level, hierarchical_attention = self._train_gnns_hierarchically(model_type)
+            ngram_embeddings_per_level, _ = self._train_gnns_hierarchically(model_type)
 
-            final_protein_embeddings, protein_pooling_attention = self._pool_to_protein_level(
+            final_protein_embeddings, _ = self._pool_to_protein_level(
                 ngram_embeddings_per_level, protein_sequences,
                 level_ngram_to_idx=self._get_level_ngram_maps()
             )
-
-            # Apply mapping using the new centralized helper
-            final_protein_embeddings = IDMapper.apply_mapping(final_protein_embeddings, id_map)
-
             final_protein_embeddings_per_model[model_type] = final_protein_embeddings
-            all_attention_data_per_model[model_type] = {
-                "hierarchical": hierarchical_attention,
-                "protein_pooling": protein_pooling_attention
-            }
 
+        # This function now saves the raw (unmapped) embeddings and returns their paths.
         output_paths = self._save_final_embeddings(final_protein_embeddings_per_model)
-
-        # --- FIX: Only save/visualize attention if enabled in the config ---
-        if self.config.PROTGRAM_LOG_ATTENTION_WEIGHTS:
-            # --- FIX: Call the correct utility methods from EvaluationReporter ---
-            # The _save_and_visualize_attention method was removed in a refactor.
-            # This block correctly re-implements the logic using the existing utilities.
-            DataUtils.print_header("Saving and Visualizing Attention Weights")
-            reporter = EvaluationReporter(
-                base_output_dir=str(self.config.RESULTS_EVALUATION_DIR),
-                k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE
-            )
-            attention_dir = self.config.RESULTS_EVALUATION_DIR / "attention_weights"
-            attention_dir.mkdir(parents=True, exist_ok=True)
-
-            for model_name, attention_data in all_attention_data_per_model.items():
-                print(f"  Processing attention for model: {model_name}")
-                hierarchical_data = attention_data.get("hierarchical")
-                if hierarchical_data:
-                    hierarchical_json_path = attention_dir / f"hierarchical_attention_{model_name}.json"
-                    # --- DEFINITIVE FIX for OOM Crash: Save as JSONL for scalable reading ---
-                    FileUtils.save_json(hierarchical_data, hierarchical_json_path, json_lines=True)
-                    reporter.generate_hierarchical_attention_plot(hierarchical_json_path, model_name)
-                pooling_data = attention_data.get("protein_pooling")
-                if pooling_data:
-                    pooling_json_path = attention_dir / f"pooling_attention_{model_name}.json"
-                    FileUtils.save_json(pooling_data, pooling_json_path, json_lines=True)
-                    reporter.generate_pooling_attention_plot(pooling_json_path, model_name)
-
-        if self.config.PROTGRAM_RUN_SANITY_CHECK_PPI:
-            main_model_name_raw = self.config.PROTGRAM_MODELS_TO_TRAIN[0]
-            main_model_key = f"ProtGram{main_model_name_raw.capitalize()}"
-            # --- FIX: Prioritize the original, non-PCA'd file for the sanity check ---
-            # The evaluation pipeline will handle its own PCA, so we avoid double-processing.
-            embedding_path_for_check = output_paths.get(main_model_key, output_paths.get(f"{main_model_key}_pca"))
-            if embedding_path_for_check:
-                self._run_sanity_check_ppi(embedding_path_for_check)
 
         DataUtils.print_header("ProtGram Embedding PIPELINE STEP FINISHED")
         return output_paths

@@ -13,12 +13,12 @@ from contextlib import nullcontext
 from pathlib import Path
 import random
 from typing import Dict, Optional, Tuple, Any, Mapping
-
+import torch
 import mlflow
 import tensorflow as tf
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
-
+import numpy as np
 from configuration.config import Config
 from source.utils.data.data_utils import DataUtils
 from source.utils.data.fasta_utils import FastaUtils
@@ -135,59 +135,33 @@ class TransformerEmbedder:
     def run(self) -> Dict[str, Path]:
         """
         Main entry point for the Transformer embedding generation pipeline.
-        This method efficiently processes the sequence file by loading each model
-        only once and then iterating through chunks of data.
         """
         DataUtils.print_header("PIPELINE STEP: Generating Embeddings from Transformers")
         self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
         generated_paths: Dict[str, Path] = {}
-        # --- NEW: In-memory cache for models within a single run of this pipeline step ---
         _model_cache: Dict[str, Tuple] = {}
 
-        if tf.config.list_physical_devices('GPU'):
-            print("  TensorFlow: GPU available.")
-        else:
-            print("  TensorFlow: No GPU detected. Using CPU.")
-
-        # --- REFACTOR: Use the new singleton IDMapper to get the map once. ---
-        # This is now a fast, in-memory lookup after the first call.
-        id_map = IDMapper(self.config).get_map()
-        mlflow_active = self.config.USE_MLFLOW
-
-        # --- NEW: Optional sampling for faster inference runs ---
         all_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
         sample_fraction = getattr(self.config, 'TRANSFORMER_INFERENCE_SAMPLE_FRACTION', 1.0)
 
         if 0.0 < sample_fraction < 1.0:
             num_to_sample = int(len(all_sequences) * sample_fraction)
-            print(f"\n--- SAMPLING ENABLED: Running Transformer inference on a random sample of {num_to_sample} sequences ({sample_fraction:.1%}) ---")
             random.seed(self.config.RANDOM_STATE)
             sequences_to_process = random.sample(all_sequences, num_to_sample)
+            print(f"  INFO: Using a random sample of {len(sequences_to_process)} sequences ({sample_fraction:.1%}) for Transformer inference.")
         else:
             sequences_to_process = all_sequences
+        del all_sequences
 
-        del all_sequences # Free up memory
-
-        # --- NEW: Wrap the entire model processing loop in a try/finally to ensure cache cleanup ---
         try:
-            # --- Main Efficient Loop: Iterate through MODELS first ---
             for model_config_item in self.config.TRANSFORMER_MODELS_TO_RUN:
                 model_name = model_config_item["name"]
                 hf_id = model_config_item["hf_id"]
-                is_t5 = model_config_item["is_t5"]
-                batch_size_multiplier = model_config_item.get("batch_size_multiplier", 1.0)
-                batch_size = max(1, int(self.config.TRANSFORMER_BASE_BATCH_SIZE * batch_size_multiplier))
-
                 all_protein_embeddings_for_model = {}
 
                 try:
                     DataUtils.print_header(f"Starting Transformer Embedding Generation: {model_name} ({hf_id})")
-                    print(
-                        f"  Config: Batch Size={batch_size}, Max Length={self.config.TRANSFORMER_MAX_LENGTH}, Pooling='{self.config.TRANSFORMER_POOLING_STRATEGY}'")
-
-                    # --- NEW: Check cache before loading model ---
                     if hf_id in _model_cache:
-                        print(f"  Reusing cached model: {model_name}")
                         model, tokenizer, inference_func, embedding_dim = _model_cache[hf_id]
                     else:
                         model, tokenizer, inference_func, embedding_dim = self._load_transformer_model(model_config_item)
@@ -195,100 +169,48 @@ class TransformerEmbedder:
                             _model_cache[hf_id] = (model, tokenizer, inference_func, embedding_dim)
 
                     if not model or not tokenizer or not inference_func:
-                        continue  # Skip to the next model if loading failed
-
-                    # --- Inner Loop: Iterate through DATA CHUNKS ---
-                    chunk_num = 0
-                    while True:
-                        chunk_num += 1
-                        start_idx = (chunk_num - 1) * self.config.TRANSFORMER_CHUNK_SIZE
-                        chunk = sequences_to_process[start_idx : start_idx + self.config.TRANSFORMER_CHUNK_SIZE]
-                        if not chunk:
-                            break
-
-                        sorted_sequences = sorted(chunk, key=lambda x: len(x[1]))
-
-                        for i in tqdm(range(0, len(sorted_sequences), batch_size), desc=f"    Generating Embeddings"):
-                            batch = sorted_sequences[i:i + batch_size]
-                            if not batch: continue
-
-                            batch_ids = [item[0] for item in batch]
-                            batch_sequences_text = [" ".join(list(item[1])) for item in batch]
-
-                            inputs = tokenizer(
-                                batch_sequences_text,
-                                padding="longest",
-                                truncation=True,
-                                return_tensors="tf",
-                                max_length=self.config.TRANSFORMER_MAX_LENGTH
-                            )
-
-                            # --- DEFINITIVE FIX: Re-introduce the missing embedding processing logic ---
-                            # The previous version called the model but did nothing with the output.
-                            # This block correctly processes the raw output into pooled protein embeddings.
-                            outputs = inference_func(inputs)
-                            raw_batch_output = (
-                                outputs.encoder_last_hidden_state if is_t5 else outputs.last_hidden_state).numpy()
-
-                            for j, prot_id in enumerate(batch_ids):
-                                seq_len_original = int(tf.reduce_sum(inputs['attention_mask'][j]))
-                                residue_embeds = EmbeddingProcessor.extract_transformer_residue_embeddings(
-                                    raw_batch_output[j], seq_len_original, is_t5)
-                                if residue_embeds.size > 0:
-                                    pooled_vec = EmbeddingProcessor.pool_residue_embeddings(
-                                        residue_embeds,
-                                        self.config.TRANSFORMER_POOLING_STRATEGY,
-                                        embedding_dim
-                                    )
-                                    if pooled_vec.size > 0:
-                                        all_protein_embeddings_for_model[prot_id] = pooled_vec
-
-                    # --- After all chunks are processed for this model ---
-                    if not all_protein_embeddings_for_model:
-                        print(f"  No embeddings were generated for {model_name}. Skipping save.")
                         continue
 
-                    print(f"\n  Generated {len(all_protein_embeddings_for_model)} total protein embeddings for {model_name}.")
+                    # Determine batch size based on config and model-specific multiplier
+                    batch_size_multiplier = model_config_item.get('batch_size_multiplier', 1.0)
+                    effective_batch_size = int(self.config.TRANSFORMER_BASE_BATCH_SIZE * batch_size_multiplier)
 
-                    # Apply ID mapping
-                    all_protein_embeddings_for_model = IDMapper.apply_mapping(all_protein_embeddings_for_model, id_map)
+                    # Group sequences by length to minimize padding
+                    sorted_sequences = sorted(sequences_to_process, key=lambda x: len(x[1]))
 
-                    # Save the final aggregated embeddings for this model
-                    # A run is nested if there's already an active run.
-                    nested_run_context = mlflow.start_run(run_name=model_name, nested=mlflow.active_run() is not None) if mlflow_active else nullcontext()
-                    with nested_run_context:
-                        output_filename = f"{model_name}_{self.config.TRANSFORMER_POOLING_STRATEGY}_dim{embedding_dim}.h5"
-                        output_path = self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR / output_filename
-                        print(f"  Saving final aggregated embeddings for {model_name}...")
-                        FileUtils.write_h5(all_protein_embeddings_for_model, output_path,
-                                           f"Writing H5 for {model_name}")
-                        generated_paths[model_name] = output_path
+                    with tqdm(total=len(sorted_sequences), desc=f"  Processing {model_name}") as pbar:
+                        for i in range(0, len(sorted_sequences), effective_batch_size):
+                            batch = sorted_sequences[i:i + effective_batch_size]
+                            batch_ids = [seq[0] for seq in batch]
+                            batch_sequences = [seq[1] for seq in batch]
 
-                        if mlflow_active:
-                            mlflow.log_params({
-                                "hf_id": hf_id,
-                                "is_t5": is_t5,
-                                "pooling_strategy": self.config.TRANSFORMER_POOLING_STRATEGY
-                            })
-                            mlflow.log_artifact(str(output_path), "final_embeddings")
+                            embeddings = inference_func(model, tokenizer, batch_sequences, self.config.TRANSFORMER_POOLING_STRATEGY)
+
+                            for prot_id, embedding in zip(batch_ids, embeddings):
+                                all_protein_embeddings_for_model[prot_id] = embedding.numpy().astype(np.float16)
+
+                            pbar.update(len(batch))
+
+                    output_filename = f"{model_name}_{self.config.TRANSFORMER_POOLING_STRATEGY}_dim{embedding_dim}.h5"
+                    output_path = self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR / output_filename
+                    FileUtils.write_h5(all_protein_embeddings_for_model, output_path, f"Writing H5 for {model_name}")
+                    generated_paths[model_name] = output_path
 
                 except Exception as e:
-                    print(f"\nFATAL ERROR during processing for model {model_name}: {e}")
+                    print(f"\n--- ❌ ERROR processing model {model_name}: {e} ---")
+                    import traceback
                     traceback.print_exc()
                 finally:
-                    # --- NEW: Per-model cleanup logic ---
-                    # This block runs after each model is processed, regardless of success or failure.
-                    # It cleans up temporary data structures to free memory for the next model.
-                    print(f"--- Finished processing for Transformer: {model_name} ---")
-                    del all_protein_embeddings_for_model
+                    # Clean up to free memory
+                    if hf_id in _model_cache:
+                        del _model_cache[hf_id]
+                    if 'model' in locals(): del model
+                    if 'tokenizer' in locals(): del tokenizer
                     gc.collect()
-                    if tf.executing_eagerly():
-                        tf.keras.backend.clear_session()
-                    DataUtils.report_memory_usage(f"After cleaning up {model_name}")
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
 
         finally:
-            # --- This block ensures that all cached models are cleared from memory at the end ---
-            print("\n--- Cleaning up Transformer model cache ---")
             del _model_cache
             gc.collect()
 

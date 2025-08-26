@@ -157,14 +157,12 @@ class LSTMBasedEmbedder:
         self._build_model()
         self._train_model()
 
-        # --- PyTorch Inference for Embeddings ---
         print("\n  LSTM training complete. Generating embeddings...")
         assert self.model is not None, "Model must be trained before inference."
         self.model.eval()
         protein_embeddings = {}
         batch_size = self.config.LSTM_BATCH_SIZE
 
-        print("  Sorting sequences by length for efficient batching...")
         sorted_sequences = sorted(self.sequences, key=lambda x: len(x[1]))
 
         with torch.no_grad():
@@ -175,31 +173,24 @@ class LSTMBasedEmbedder:
                 batch_ids = [item[0] for item in batch]
                 batch_seqs_text = [item[1] for item in batch]
 
-                # --- REFACTOR: More efficient tokenization and batching ---
                 tokenized_batch = [
                     torch.tensor([self.char_to_int[c] for c in seq if c in self.char_to_int], dtype=torch.long)
                     for seq in batch_seqs_text
                 ]
-                # Filter out any empty sequences that might result from unknown characters
                 valid_indices = [i for i, t in enumerate(tokenized_batch) if len(t) > 0]
                 if not valid_indices: continue
 
                 tokenized_batch = [tokenized_batch[i] for i in valid_indices]
                 batch_ids = [batch_ids[i] for i in valid_indices]
 
-                # Pad sequences for batch processing
                 padded_batch = pad_sequence(tokenized_batch, batch_first=True, padding_value=0).to(self.device)
 
-                # --- REFACTOR: Get embeddings for the whole batch in one efficient forward pass ---
                 _, batch_embeddings = self.model(padded_batch)
                 for j, prot_id in enumerate(batch_ids):
                     protein_embeddings[prot_id] = batch_embeddings[j].cpu().numpy().astype(np.float16)
 
-        # --- NEW: Apply consistent ID mapping at the end of the pipeline ---
-        id_map = IDMapper(self.config).get_map()
-        protein_embeddings = IDMapper.apply_mapping(protein_embeddings, id_map)
-
         output_path = self.config.RESULTS_LSTM_EMBEDDINGS_DIR / "lstm_generated_embeddings.h5"
         FileUtils.write_h5(protein_embeddings, output_path, "Writing LSTM Embeddings")
+
         print(f"\nSUCCESS: LSTM embeddings saved to: {output_path}")
         return str(output_path)

@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: configuration/manager.py
 # PURPOSE: Handles the verification and acquisition of all external data files.
-# VERSION: 8.0 (Added fail-fast error handling to setup)
+# VERSION: 8.1 (Streamlined ID Mapping to bypass Parquet generation)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -21,7 +21,6 @@ from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 from tqdm.auto import tqdm
 
 from .processor import DataProcessor
-# --- REFACTOR: Import the new, centralized IDMapper ---
 from source.utils.data.id_mapper import IDMapper
 
 # Conditionally import gdown to avoid making it a hard dependency
@@ -37,7 +36,7 @@ class DataManager:
     """
     Handles the download, processing, and validation of all project data.
     This class orchestrates the creation of a clean, analysis-ready set of
-    Parquet files from various raw data sources.
+    data files from various raw sources.
     """
 
     def __init__(self, config):
@@ -77,16 +76,11 @@ class DataManager:
 
     def _pregenerate_and_cache_id_map(self):
         """
-        Calls the IDMapper to pre-generate its cache and then copies
-        that cache to the persistent cache directory. This is a critical step
-        to prevent slow, repeated processing during the main application run.
+        Calls the IDMapper to pre-generate its cache from the raw .dat file
+        and then copies that cache to the persistent cache directory.
         """
-        print("\n--- Step 2d: Pre-generating and caching the ID Map pickle ---")
+        print("\n--- Step 2a: Pre-generating and caching the ID Map pickle from raw data ---")
         try:
-            # --- DEFINITIVE FIX: Make this step idempotent. ---
-            # If the cache file already exists in the project root (e.g., from a
-            # previous partial run), don't regenerate it. Just copy it to the
-            # persistent cache if needed.
             cache_filename = f"{self.config.ID_MAPPING_MODE}_map_cache.pkl"
             local_cache_path = self.config.PROJECT_ROOT / cache_filename
             if local_cache_path.exists():
@@ -95,8 +89,16 @@ class DataManager:
                 return
 
             mapper = IDMapper(self.config)
-            mapper.pregenerate_caches()  # This is the slow, one-time operation.
-            self._copy_to_cache(self.config.PROJECT_ROOT / f"{self.config.ID_MAPPING_MODE}_map_cache.pkl")
+            # This is the slow, one-time operation that now reads the .dat file directly
+            mapper.pregenerate_caches()
+
+            # After generation, copy the resulting pickle file to the persistent cache
+            generated_pickle_path = self.config.PROJECT_ROOT / f"{self.config.ID_MAPPING_MODE}_map_cache.pkl"
+            if generated_pickle_path.exists():
+                self._copy_to_cache(generated_pickle_path)
+            else:
+                print(f"  - ❌ WARNING: ID map cache was expected at '{generated_pickle_path}' after generation, but was not found.")
+
         except Exception as e:
             print(f"  - ❌ ERROR: Failed to pre-generate ID map cache: {e}")
             traceback.print_exc()
@@ -106,13 +108,10 @@ class DataManager:
         Executes the entire data pipeline: download, process, and create manifest.
         If any critical step fails, the entire process will abort.
         """
-        # --- DEFINITIVE FIX: Use a try...finally block to guarantee cleanup ---
-        # This ensures that downloaded archives are removed even if a later step fails.
         try:
             print("\n--- Running Data Setup and Processing ---")
             print("  - Ensuring project data directory structure exists...")
 
-            # 1. Download all raw source files
             if not self._download_all_sources():
                 print("\n" + "!" * 80)
                 print("!!! FATAL: Data download failed. Cannot proceed with setup. !!!")
@@ -120,12 +119,10 @@ class DataManager:
                 print("!" * 80)
                 sys.exit(1)
 
-            # 2. Process raw files into final Parquet format and cache them
             processor = DataProcessor(self.config)
             try:
-                print("\n--- Step 2a: Processing UniProt ID Mapping File ---")
-                processor._process_uniprot_mapping()
-                self._copy_to_cache(self.config.ID_MAPPING_PATH)
+                # This is the new, streamlined workflow.
+                self._pregenerate_and_cache_id_map()
 
                 print("\n--- Step 2b: Processing Negative Interaction Files ---")
                 processor._process_negative_interactions()
@@ -135,8 +132,6 @@ class DataManager:
                 processor._process_biogrid_interactions()
                 self._copy_to_cache(self.config.POS_INTERACTIONS_PATH)
 
-                # --- REFACTOR: Pre-generate and cache the ID map pickle file here ---
-                self._pregenerate_and_cache_id_map()
             except Exception as e:
                 print("\n" + "!" * 80)
                 print(f"!!! FATAL: Data processing failed: {e} !!!")
@@ -146,10 +141,8 @@ class DataManager:
                 traceback.print_exc()
                 sys.exit(1)
 
-            # 3. Generate manifest of all data files
             self._generate_manifest(processor)
         finally:
-            # 4. Clean up intermediate files
             self._cleanup_intermediate_files()
 
         print("\n--- Data Setup and Processing Finished Successfully ---")
@@ -157,16 +150,10 @@ class DataManager:
     def is_setup_complete(self) -> bool:
         """
         Performs a comprehensive check to see if the data setup is truly complete.
-        This is more robust than just checking the manifest, as it also verifies
-        that critical derivative files (like the ID map cache) exist.
-
-        Returns:
-            True if the manifest is valid AND all critical files exist, False otherwise.
         """
         if not self.validate_data_from_manifest():
             return False
 
-        # Also check for the existence of the crucial ID map pickle file.
         id_map_mode = self.config.ID_MAPPING_MODE
         if id_map_mode != 'none':
             expected_cache_file = self.config.PROJECT_ROOT / f"{id_map_mode}_map_cache.pkl"
@@ -243,8 +230,6 @@ class DataManager:
                 if processed_file_name in processed_files_in_cache:
                     raw_dependency_names = dep_info["dependencies"]
                     raw_files_to_skip.update(raw_dependency_names)
-                    # --- DEFINITIVE FIX: If we skip the raw files, we MUST restore the processed file. ---
-                    # This logic now correctly gets the destination directory from the config.
                     cached_processed_path = self.config.PERSISTENT_DATA_CACHE / processed_file_name
                     destination_dir_attr = dep_info["destination_dir_attr"]
                     project_destination_dir = getattr(self.config, destination_dir_attr)
@@ -254,7 +239,6 @@ class DataManager:
                         project_processed_path.parent.mkdir(parents=True, exist_ok=True)
                         if cached_processed_path.is_dir():
                             shutil.copytree(cached_processed_path, project_processed_path)
-                            # --- DEFINITIVE FIX: Log all restored sub-files to prevent re-checking ---
                             for root, _, files in os.walk(project_processed_path):
                                 for name in files:
                                     restored_path = Path(root) / name
@@ -280,9 +264,9 @@ class DataManager:
                     project_file_path.parent.mkdir(parents=True, exist_ok=True)
 
                     if cached_file_path.is_dir():
-                        shutil.copytree(cached_file_path, project_file_path)
+                        shutil.copytree(cached_file_path, project_processed_path)
                     else:
-                        shutil.copy(cached_file_path, project_file_path)
+                        shutil.copy(cached_file_path, project_processed_path)
                     files_restored += 1
                 else:
                     if not project_file_path.exists():
@@ -299,14 +283,11 @@ class DataManager:
         Checks for a valid file locally or in the cache and restores if found.
         Returns True if the file is successfully made available, False otherwise.
         """
-        # Case 1: Valid file already exists in the project data directory.
         if DataProcessor._is_file_valid(final_path):
             print(f"☑ Found and verified raw file: {final_path.relative_to(self.config.PROJECT_ROOT)}")
-            # Ensure it's also in the cache for future resets.
             self._copy_to_cache(final_path)
             return True
 
-        # Case 2: File not in project, but a valid cached version exists.
         if cache_path and DataProcessor._is_file_valid(cache_path):
             print(f"☑ Found cached file: {cache_path}. Copying to project directory...")
             final_path.parent.mkdir(parents=True, exist_ok=True)
@@ -324,7 +305,6 @@ class DataManager:
             self.config.PERSISTENT_DATA_CACHE.mkdir(parents=True, exist_ok=True)
 
         for key, source_info in self.config.DATA_SOURCES.items():
-            # --- DEFINITIVE FIX: Unify PyG dataset downloading into the main loop ---
             if source_info.get("type") == "pyg_dataset":
                 dataset_root = self.config.DATA_STANDARD_DATASETS_DIR
                 dataset_root.mkdir(parents=True, exist_ok=True)
@@ -342,7 +322,7 @@ class DataManager:
                     self._copy_to_cache(dataset_root / name)
                 except Exception as e:
                     print(f"    - WARNING: Failed to download PyG dataset '{name}': {e}")
-                continue  # Move to the next source
+                continue
 
             final_path = Path(source_info['path'])
             is_critical = source_info.get('critical', True)
@@ -353,8 +333,6 @@ class DataManager:
 
             post_process_type = source_info.get('post_process')
             download_target_path = final_path
-            # --- DEFINITIVE FIX: Use the URL to determine the correct archive filename ---
-            # This correctly handles both .zip and .gz files instead of assuming .zip
             if post_process_type in ['ungzip', 'unzip'] and source_info.get('url'):
                 from urllib.parse import urlparse
                 download_target_path = final_path.parent / Path(urlparse(source_info['url']).path).name
@@ -384,16 +362,10 @@ class DataManager:
                             response.raise_for_status()
                         except requests.exceptions.SSLError:
                             print("    - WARNING: SSL verification failed. Retrying without verification. This is insecure and should only be used if the target server has a known certificate issue.")
-                            # The original script had verify=False, so we maintain this as a fallback.
                             response = requests.get(url, stream=True, headers=headers, verify=False)
                             response.raise_for_status()
 
                         content_type = response.headers.get('content-type', '')
-
-                        # --- DEFINITIVE FIX: Relax the content-type check for zip files ---
-                        # Some servers (like BioGRID's) send a generic 'application/download'
-                        # instead of a specific zip type. We'll now log a warning but proceed,
-                        # relying on the zipfile library to fail if it's truly not a zip file.
                         if post_process_type == 'unzip' and 'application/zip' not in content_type and 'application/x-zip-compressed' not in content_type:
                             print(f"    - WARNING: Server reported Content-Type as '{content_type}', not a standard zip type. Proceeding based on file extension.")
                         total_size = int(response.headers.get('content-length', 0))
@@ -438,13 +410,11 @@ class DataManager:
             for f in filenames:
                 files_to_manifest.append(Path(dirpath) / f)
 
-        # --- DEFINITIVE FIX: Add known ad-hoc cache files to the manifest ---
-        # This ensures they are tracked and can be restored from cache.
         ad_hoc_files_to_find = [
             "file_map_cache.pkl",
             "regex_map_cache.pkl"
         ]
-        for filename in set(ad_hoc_files_to_find):  # Use set to avoid duplicates
+        for filename in set(ad_hoc_files_to_find):
             path = self.config.PROJECT_ROOT / filename
             if path.exists():
                 files_to_manifest.append(path)

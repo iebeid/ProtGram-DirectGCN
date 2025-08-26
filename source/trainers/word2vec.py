@@ -29,15 +29,33 @@ class Word2VecEmbedder:
 
     def run(self) -> Optional[str]:
         """
-        Main entry point for the Word2Vec pipeline. It handles ID mapping
-        and then executes the core embedding generation logic.
+        Main entry point for the Word2Vec pipeline.
         """
         DataUtils.print_header("PIPELINE STEP: Training Word2Vec & Generating Embeddings")
         self.config.RESULTS_W2V_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
-        # --- REFACTOR: Use the new singleton IDMapper to get the map once. ---
-        id_map = IDMapper(self.config).get_map()
 
-        return self._execute_embedding_logic(id_map)
+        fasta_paths = self.config.SEQUENCE_FILE_PATHS
+        if not fasta_paths:
+            print("ERROR: No FASTA files configured for Word2Vec.")
+            return None
+
+        fasta_files = [str(p) for p in fasta_paths]
+        corpus = FastaUtils.FastaCorpus(fasta_files)
+
+        w2v_model = self._train_w2v_model(corpus)
+        protein_embeddings = self._generate_protein_embeddings(w2v_model, fasta_files)
+
+        if not protein_embeddings:
+            return None
+
+        output_h5_path = self.config.RESULTS_W2V_EMBEDDINGS_DIR / f"word2vec_dim{self.config.W2V_VECTOR_SIZE}_{self.config.W2V_POOLING_STRATEGY}.h5"
+        FileUtils.write_h5(protein_embeddings, output_h5_path, "Writing Word2Vec H5 File")
+
+        del w2v_model, corpus, protein_embeddings
+        gc.collect()
+
+        DataUtils.print_header("Word2Vec Embedding PIPELINE STEP FINISHED")
+        return str(output_h5_path)
 
     def _train_w2v_model(self, corpus: FastaUtils.FastaCorpus) -> Word2Vec:
         """Trains the Word2Vec model on the provided corpus."""
