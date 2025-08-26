@@ -56,7 +56,7 @@ class PipelineOrchestrator:
         """Configures GPU settings for TensorFlow."""
         gpus = tf.config.list_physical_devices('GPU')
         if gpus:
-            from tensorflow.keras import mixed_precision
+            from tensorflow import mixed_precision
             policy = mixed_precision.Policy('mixed_float16')
             mixed_precision.set_global_policy(policy)
             try:

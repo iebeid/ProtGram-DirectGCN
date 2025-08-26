@@ -44,18 +44,21 @@ class MLP:
         """
         model = Sequential([
             InputLayer(input_shape=(self.input_shape,)),
+            # --- DEFINITIVE FIX: Use .get() for robust parameter access ---
+            # This prevents KeyErrors if a parameter is missing from the config
+            # and makes the model builder more self-contained and resilient.
             Dense(
-                self.mlp_params['dense1_units'],
+                self.mlp_params.get('dense1_units', 128),
                 activation='relu',
-                kernel_regularizer=l2(self.mlp_params['l2_reg'])
+                kernel_regularizer=l2(self.mlp_params.get('l2_reg', 1e-5))
             ),
-            Dropout(self.mlp_params['dropout1_rate']),
+            Dropout(self.mlp_params.get('dropout1_rate', 0.5)),
             Dense(
-                self.mlp_params['dense2_units'],
+                self.mlp_params.get('dense2_units', 64),
                 activation='relu',
-                kernel_regularizer=l2(self.mlp_params['l2_reg'])
+                kernel_regularizer=l2(self.mlp_params.get('l2_reg', 1e-5))
             ),
-            Dropout(self.mlp_params['dropout2_rate']),
+            Dropout(self.mlp_params.get('dropout2_rate', 0.5)),
             Dense(1, activation='sigmoid')
         ])
 

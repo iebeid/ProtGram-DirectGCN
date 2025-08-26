@@ -134,16 +134,20 @@ class GraphCoarsener:
         print(f"  - Spectral Comparison (comparing top {k_eigenvals} smallest eigenvalues of the Laplacian):")
         try:
             L_orig_index, L_orig_weight = get_laplacian(original_edge_index, original_edge_weight, normalization='sym', num_nodes=num_original_nodes)
-            L_orig_scipy = to_scipy_sparse_matrix(L_orig_index, L_orig_weight, num_nodes=num_original_nodes)
             L_coarsened_index, L_coarsened_weight = get_laplacian(coarsened_edge_index, coarsened_edge_weight, normalization='sym', num_nodes=num_coarsened_nodes)
+            L_orig_scipy = to_scipy_sparse_matrix(L_orig_index, L_orig_weight, num_nodes=num_original_nodes)
             L_coarsened_scipy = to_scipy_sparse_matrix(L_coarsened_index, L_coarsened_weight, num_nodes=num_coarsened_nodes)
 
-            # --- DEFINITIVE FIX for Numerical Stability ---
-            # Use eigsh for symmetric matrices like the Laplacian. It's faster and more stable.
-        eigvals_orig = np.sort(sp_linalg.eigsh(L_orig_scipy, k=k_eigenvals, which='SM', return_eigenvectors=False))
-        eigvals_coarsened = np.sort(sp_linalg.eigsh(L_coarsened_scipy, k=k_eigenvals, which='SM', return_eigenvectors=False))
-            spectral_distance = np.linalg.norm(eigvals_orig - eigvals_coarsened)
-            print(f"    - Spectral Distance (L2):  {spectral_distance:.4f} (Lower is better)")
+            # --- DEFINITIVE FIX: Prevent eigsh from failing on small graphs ---
+            # The 'k' parameter for eigsh must be less than the matrix dimension (N-1).
+            if k_eigenvals >= num_original_nodes or k_eigenvals >= num_coarsened_nodes:
+                print(f"    - Spectral comparison skipped: k ({k_eigenvals}) is too large for graph sizes ({num_original_nodes}, {num_coarsened_nodes}).")
+            else:
+                # Use eigsh for symmetric matrices like the Laplacian. It's faster and more stable.
+                eigvals_orig = np.sort(sp_linalg.eigsh(L_orig_scipy, k=k_eigenvals, which='SM', return_eigenvectors=False))
+                eigvals_coarsened = np.sort(sp_linalg.eigsh(L_coarsened_scipy, k=k_eigenvals, which='SM', return_eigenvectors=False))
+                spectral_distance = np.linalg.norm(eigvals_orig - eigvals_coarsened)
+                print(f"    - Spectral Distance (L2):  {spectral_distance:.4f} (Lower is better)")
         except Exception as e:
             print(f"    - Spectral comparison failed: {e}")
         print("--- Coarsening Validation Finished ---")

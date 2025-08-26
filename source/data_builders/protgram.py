@@ -11,7 +11,7 @@ import random
 import shutil
 import time # noqa
 from functools import partial
-from typing import Tuple, Iterator
+from typing import Tuple, Iterator, List, Dict
 from pathlib import Path
 import dask.bag as db
 import dask.dataframe as dd
