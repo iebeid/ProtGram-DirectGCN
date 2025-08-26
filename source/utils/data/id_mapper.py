@@ -109,22 +109,14 @@ class IDMapper:
         if mapping_ddf is None:
             return {}
 
-        # --- DEFINITIVE FIX for Memory Usage: Process the Dask DataFrame in partitions ---
-        # The previous .compute() call loaded the entire mapping file into memory,
-        # which could cause OOM errors. This new approach processes one partition
-        # at a time, creating smaller dictionaries that are then merged.
+        # --- DEFINITIVE FIX for Slow ID Map Generation ---
+        # The previous map_partitions approach was inefficient. This new method
+        # directly computes the two relevant series and zips them into a dictionary
+        # in a single, highly optimized operation.
         with ProgressBar():
-            def to_dict_partition(df):
-                return dict(zip(df['original_id'], df['mapped_id']))
+            id_map = dict(zip(mapping_ddf['original_id'].compute(), mapping_ddf['mapped_id'].compute()))
 
-            # This creates a Dask Bag, where each element is a dictionary from one partition
-            dict_bag = mapping_ddf.map_partitions(to_dict_partition, meta=dict)
-            # This computes the result into a tuple of dictionaries
-            list_of_dicts = dict_bag.compute()
-
-        # Merge the dictionaries from all partitions
-        id_map = {k: v for d in list_of_dicts for k, v in d.items()}
-        del list_of_dicts, mapping_ddf
+        del mapping_ddf
         gc.collect()
         return id_map
 
