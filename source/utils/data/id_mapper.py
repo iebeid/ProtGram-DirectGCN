@@ -109,12 +109,12 @@ class IDMapper:
         if mapping_ddf is None:
             return {}
 
-        # --- DEFINITIVE FIX for Slow ID Map Generation ---
-        # The previous map_partitions approach was inefficient. This new method
-        # directly computes the two relevant series and zips them into a dictionary
-        # in a single, highly optimized operation.
+        # --- DEFINITIVE FIX for Slow ID Map Generation: Perform a single compute pass ---
+        # Calling .compute() on each column separately forces Dask to read the entire
+        # dataset twice. This new method computes both columns in a single, optimized pass.
         with ProgressBar():
-            id_map = dict(zip(mapping_ddf['original_id'].compute(), mapping_ddf['mapped_id'].compute()))
+            mapping_df = mapping_ddf[['original_id', 'mapped_id']].compute()
+            id_map = dict(zip(mapping_df['original_id'], mapping_df['mapped_id']))
 
         del mapping_ddf
         gc.collect()
