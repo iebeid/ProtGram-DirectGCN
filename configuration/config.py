@@ -448,9 +448,18 @@ class Config:
         # This maps a processed file to the raw source file(s) it replaces.
         # The key is the name of the processed file, the value is a list of raw file names.
         self.PROCESSED_FILE_DEPENDENCIES = {
-            self.ID_MAPPING_PATH.name: [Path(self.DATA_SOURCES['UNIPROT_ID_MAPPING']['path']).name],
-            self.POS_INTERACTIONS_PATH.name: [Path(self.DATA_SOURCES['BIOGRID_INTERACTIONS']['path']).name],
-            self.NEG_INTERACTIONS_PATH.name: [v['path'].name for k, v in self.DATA_SOURCES.items() if k.startswith('NEG_INTERACTIONS')]
+            self.ID_MAPPING_PATH.name: {
+                "dependencies": [Path(self.DATA_SOURCES['UNIPROT_ID_MAPPING']['path']).name],
+                "destination_dir_attr": "DATA_MAPPINGS_DIR"
+            },
+            self.POS_INTERACTIONS_PATH.name: {
+                "dependencies": [Path(self.DATA_SOURCES['BIOGRID_INTERACTIONS']['path']).name],
+                "destination_dir_attr": "DATA_GROUND_TRUTH_DIR"
+            },
+            self.NEG_INTERACTIONS_PATH.name: {
+                "dependencies": [v['path'].name for k, v in self.DATA_SOURCES.items() if k.startswith('NEG_INTERACTIONS')],
+                "destination_dir_attr": "DATA_GROUND_TRUTH_DIR"
+            }
         }
 
     def _setup_gcn_params(self):

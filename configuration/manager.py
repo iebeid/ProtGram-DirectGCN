@@ -238,14 +238,16 @@ class DataManager:
                 if (self.config.PERSISTENT_DATA_CACHE / name).exists()
             }
             raw_files_to_skip = set()
-            for processed_file_name, raw_dependency_names in self.config.PROCESSED_FILE_DEPENDENCIES.items():
+            for processed_file_name, dep_info in self.config.PROCESSED_FILE_DEPENDENCIES.items():
                 if processed_file_name in processed_files_in_cache:
+                    raw_dependency_names = dep_info["dependencies"]
                     raw_files_to_skip.update(raw_dependency_names)
                     # --- DEFINITIVE FIX: If we skip the raw files, we MUST restore the processed file. ---
-                    # This was the missing step. We need to copy the processed file from the
-                    # cache to the project's data directory.
+                    # This logic now correctly gets the destination directory from the config.
                     cached_processed_path = self.config.PERSISTENT_DATA_CACHE / processed_file_name
-                    project_processed_path = self.config.DATA_MAPPINGS_DIR / processed_file_name
+                    destination_dir_attr = dep_info["destination_dir_attr"]
+                    project_destination_dir = getattr(self.config, destination_dir_attr)
+                    project_processed_path = project_destination_dir / processed_file_name
                     if not project_processed_path.exists():
                         print(f"  Smart Restore: Restoring processed file '{processed_file_name}' from cache...")
                         project_processed_path.parent.mkdir(parents=True, exist_ok=True)
