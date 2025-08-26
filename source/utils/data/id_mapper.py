@@ -37,6 +37,13 @@ class IDMapper:
             cls._instance.config = config
         return cls._instance
 
+    @classmethod
+    def reset(cls):
+        """Resets the singleton instance. Primarily for testing purposes."""
+        cls._instance = None
+        cls._id_map = None
+        cls._mode_used = None
+
     def get_map(self) -> Optional[Mapping[str, str]]:
         """
         Gets the ID mapping dictionary based on the configuration.

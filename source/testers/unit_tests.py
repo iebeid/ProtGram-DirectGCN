@@ -52,6 +52,11 @@ def run_all_tests(suites_to_run=None, verbosity=2):
     runner = unittest.TextTestRunner(verbosity=verbosity)
     runner.run(suite)
 
+    # --- DEFINITIVE FIX for Singleton State Leakage ---
+    # Reset any singletons that may have been polluted with test-specific configs.
+    from source.utils.data.id_mapper import IDMapper
+    IDMapper.reset()
+
     return gpu_ok
 
 
