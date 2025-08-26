@@ -122,7 +122,7 @@ class IDMapper:
                 d1.update(d2)
                 return d1
 
-            id_map = mapping_ddf[['original_id', 'mapped_id']].to_bag(format='df').map(part_to_dict).fold(merge_dicts).compute()
+            id_map = mapping_ddf[['original_id', 'mapped_id']].to_bag(format='df').map(part_to_dict).fold(merge_dicts, initial={}).compute()
 
         del mapping_ddf
         gc.collect()
