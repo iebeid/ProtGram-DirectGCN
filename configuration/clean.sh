@@ -17,6 +17,12 @@ echo "  - Removing '$PROJECT_ROOT/results' directory..."
 rm -rf "$PROJECT_ROOT/results"
 echo "  - Removing '$PROJECT_ROOT/mlruns' directory..."
 rm -rf "$PROJECT_ROOT/mlruns"
+
+# --- DEFINITIVE FIX: Remove all generated parquet files to prevent using corrupt data from a failed previous run ---
+echo "  - Removing processed data files (*.parquet)..."
+rm -rf "$PROJECT_ROOT"/data/mappings/*.parquet
+rm -rf "$PROJECT_ROOT"/data/ground_truth/*.parquet
+
 echo "  - Removing local ID map cache files from project root..."
 rm -f "$PROJECT_ROOT"/*_map_cache.pkl
 echo "SUCCESS: Project directories cleaned."
