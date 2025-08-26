@@ -103,13 +103,11 @@ gnn_benchmarking:
 # 6. ProtGram-DirectGCN PIPELINE PARAMETERS
 protgram_gcn:
   PROTGRAM_NGRAM_MAX_N: 3
-  # --- NEW: Specify which FASTA file to use for the main pipelines ---
-  FASTA_FILE_TO_PROCESS: "UNIPROT_SPROT_FASTA" # Options: "UNIPROT_SPROT_FASTA", "UNIREF_50_FASTA"
-  ID_MAPPING_MODE: 'file' # Options: 'regex', 'file', 'api', 'none'
-  # --- NEW: Options for the smart ID mapping prompter ---
-  ENABLE_SMART_MAPPING_PROMPT: true # If true, will check FASTA headers and prompt to use 'regex' if compatible.
-  REGEX_CONFIDENCE_THRESHOLD: 0.95 # The compatibility threshold (95%) to trigger the prompt.
-  REGEX_COMPATIBILITY_SAMPLE_SIZE: 1000 # Number of FASTA headers to sample for the check.
+  FASTA_FILE_TO_PROCESS: "UNIPROT_SPROT_FASTA"
+  ID_MAPPING_MODE: 'file'
+  ENABLE_SMART_MAPPING_PROMPT: true
+  REGEX_CONFIDENCE_THRESHOLD: 0.95
+  REGEX_COMPATIBILITY_SAMPLE_SIZE: 1000
   API_MAPPING_FROM_DB: null
   API_MAPPING_TO_DB: "UniProtKB"
   PROTGRAM_MODELS_TO_TRAIN: ['directgcn']
@@ -130,12 +128,10 @@ protgram_gcn:
   PROTGRAM_USE_EARLY_STOPPING: true
   PROTGRAM_EARLY_STOPPING_PATIENCE: 50
   PROTGRAM_EARLY_STOPPING_MIN_DELTA: 0.00001
-  PROTGRAM_GRADIENT_ACCUMULATION_STEPS: 1 # Set > 1 to enable. Simulates a larger batch size for GNN training.
+  PROTGRAM_GRADIENT_ACCUMULATION_STEPS: 1
   PROTGRAM_TASK_TYPES_PER_LEVEL: {1: "community", 2: "next_node", 3: "next_node"}
   PROTGRAM_DEFAULT_TASK_TYPE: "community"
   GCN_HETEROPHILY_THRESHOLD: 0.6
-  # A small value added for numerical stability in the DirectGCN propagation matrix calculation.
-  # Adjust this if you encounter NaN loss issues during training.
   GCN_PROPAGATION_EPSILON: 1.0e-9
   PROTGRAM_CLOSEST_AA_K_HOPS: 3
   PROTGRAM_MASKED_NODE_FRACTION: 0.15
@@ -145,14 +141,13 @@ protgram_gcn:
   PROTGRAM_FASTA_ALPHABET: 'protein'
   PROTGRAM_USE_CLUSTER_TRAINING: true
   PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES: 5000
-  # --- NEW: Add partitioning method control ---
-  PROTGRAM_PARTITIONING_METHOD: 'graclus' # 'louvain' or 'graclus'
-  PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING: 1 # Number of coarsening levels if using graclus
+  PROTGRAM_PARTITIONING_METHOD: 'graclus'
+  PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING: 1
   PROTGRAM_VALIDATE_COARSENING: true
   PROTGRAM_TARGET_NODES_PER_CLUSTER: 2000
   PROTGRAM_MIN_CLUSTERS: 2
   PROTGRAM_MAX_CLUSTERS: 500
-  PROTGRAM_CLUSTER_GROUP_SIZE: 5 # Number of clusters to group into a single mini-batch, as per Cluster-GCN paper.
+  PROTGRAM_CLUSTER_GROUP_SIZE: 5
   PCA_TARGET_DIMENSION: 64
   PROTGRAM_PROTEIN_POOLING_STRATEGY: 'attention'
   PROTGRAM_HIERARCHICAL_POOLING_STRATEGY: 'attention'
@@ -180,7 +175,6 @@ transformer:
   BASE_BATCH_SIZE: 16
   CHUNK_SIZE: 10000
   POOLING_STRATEGY: 'mean'
-  # --- NEW: Set to a value < 1.0 (e.g., 0.1 for 10%) to run inference on a random sample of sequences. ---
   TRANSFORMER_INFERENCE_SAMPLE_FRACTION: 1.0
   USE_XLA_COMPILATION: true
 
