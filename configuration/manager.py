@@ -24,7 +24,6 @@ from .processor import DataProcessor
 # --- REFACTOR: Import the new, centralized IDMapper ---
 from source.utils.data.id_mapper import IDMapper
 
-
 # Conditionally import gdown to avoid making it a hard dependency
 try:
     import gdown
@@ -96,7 +95,7 @@ class DataManager:
                 return
 
             mapper = IDMapper(self.config)
-            mapper.pregenerate_caches() # This is the slow, one-time operation.
+            mapper.pregenerate_caches()  # This is the slow, one-time operation.
             self._copy_to_cache(self.config.PROJECT_ROOT / f"{self.config.ID_MAPPING_MODE}_map_cache.pkl")
         except Exception as e:
             print(f"  - ❌ ERROR: Failed to pre-generate ID map cache: {e}")
@@ -238,6 +237,8 @@ class DataManager:
                 if (self.config.PERSISTENT_DATA_CACHE / name).exists()
             }
             raw_files_to_skip = set()
+            restored_by_smart_logic = set()
+
             for processed_file_name, dep_info in self.config.PROCESSED_FILE_DEPENDENCIES.items():
                 if processed_file_name in processed_files_in_cache:
                     raw_dependency_names = dep_info["dependencies"]
@@ -251,7 +252,16 @@ class DataManager:
                     if not project_processed_path.exists():
                         print(f"  Smart Restore: Restoring processed file '{processed_file_name}' from cache...")
                         project_processed_path.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copytree(cached_processed_path, project_processed_path) if cached_processed_path.is_dir() else shutil.copy(cached_processed_path, project_processed_path)
+                        if cached_processed_path.is_dir():
+                            shutil.copytree(cached_processed_path, project_processed_path)
+                            # --- DEFINITIVE FIX: Log all restored sub-files to prevent re-checking ---
+                            for root, _, files in os.walk(project_processed_path):
+                                for name in files:
+                                    restored_path = Path(root) / name
+                                    restored_by_smart_logic.add(restored_path.relative_to(self.config.PROJECT_ROOT).as_posix())
+                        else:
+                            shutil.copy(cached_processed_path, project_processed_path)
+                        restored_by_smart_logic.add(project_processed_path.relative_to(self.config.PROJECT_ROOT).as_posix())
 
             if raw_files_to_skip:
                 print(f"  Smart Restore: Will skip restoring raw files: {raw_files_to_skip}")
@@ -259,8 +269,7 @@ class DataManager:
             files_restored = 0
             for relative_path_str, properties in manifest.items():
                 project_file_path = self.config.PROJECT_ROOT / relative_path_str
-                
-                if project_file_path.exists():
+                if project_file_path.exists() or relative_path_str in restored_by_smart_logic:
                     continue
 
                 cached_file_path = self.config.PERSISTENT_DATA_CACHE / Path(relative_path_str).name
@@ -333,7 +342,7 @@ class DataManager:
                     self._copy_to_cache(dataset_root / name)
                 except Exception as e:
                     print(f"    - WARNING: Failed to download PyG dataset '{name}': {e}")
-                continue # Move to the next source
+                continue  # Move to the next source
 
             final_path = Path(source_info['path'])
             is_critical = source_info.get('critical', True)
@@ -411,7 +420,7 @@ class DataManager:
                     print(f"Error acquiring file for '{key}' on attempt {attempt + 1}/{max_retries}: {e}")
                     if attempt + 1 < max_retries:
                         time.sleep(5)
-            
+
             if not download_success and is_critical:
                 print(f"  - ❌ FATAL: Failed to download CRITICAL file: {key}. Aborting setup.")
                 return False
@@ -435,7 +444,7 @@ class DataManager:
             "file_map_cache.pkl",
             "regex_map_cache.pkl"
         ]
-        for filename in set(ad_hoc_files_to_find): # Use set to avoid duplicates
+        for filename in set(ad_hoc_files_to_find):  # Use set to avoid duplicates
             path = self.config.PROJECT_ROOT / filename
             if path.exists():
                 files_to_manifest.append(path)
@@ -451,7 +460,7 @@ class DataManager:
                     'sha256': checksum
                 }
             elif file_path.is_dir():
-                 manifest[relative_path.as_posix()] = {
+                manifest[relative_path.as_posix()] = {
                     'type': 'directory',
                     'size': sum(f.stat().st_size for f in file_path.glob('**/*') if f.is_file()),
                     'sha256': "skipped_for_directory"
