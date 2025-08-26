@@ -140,8 +140,8 @@ class GraphCoarsener:
 
             # --- DEFINITIVE FIX for Numerical Stability ---
             # Use eigsh for symmetric matrices like the Laplacian. It's faster and more stable.
-            eigvals_orig = np.sort(sp_linalg.eigsh(L_orig_scipy, k=k_eigenvals, which='SM', return_eigenvectors=False))
-            eigvals_coarsened = np.sort(sp_linalg.eigsh(L_coarsened_scipy, k=k_eigenvals, which='SM', return_eigenvectors=False))
+        eigvals_orig = np.sort(sp_linalg.eigsh(L_orig_scipy, k=k_eigenvals, which='SM', return_eigenvectors=False))
+        eigvals_coarsened = np.sort(sp_linalg.eigsh(L_coarsened_scipy, k=k_eigenvals, which='SM', return_eigenvectors=False))
             spectral_distance = np.linalg.norm(eigvals_orig - eigvals_coarsened)
             print(f"    - Spectral Distance (L2):  {spectral_distance:.4f} (Lower is better)")
         except Exception as e:

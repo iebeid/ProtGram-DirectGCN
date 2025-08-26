@@ -96,19 +96,25 @@ class FileUtils:
     def write_h5(embeddings_dict: Dict, uri: Union[str, Path], desc: str):
         """Helper function to write a dictionary of embeddings to an HDF5 file in any fsspec-supported location."""
         fs, final_path = fs_manager.get_fs_and_path(str(uri))
-        # --- DEFINITIVE FIX for io.UnsupportedOperation: read ---
-        # This error occurs when h5py tries to perform complex I/O on a file-like object
-        # from fsspec that doesn't support all expected operations (like simultaneous read/write/seek).
-        # The standard, robust solution is to write to a temporary local file first,
-        # and then use the filesystem manager to move the completed file to its final destination.
         with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as tmp_f:
             temp_local_path = tmp_f.name
 
         try:
-            with h5py.File(temp_local_path, 'w') as hf:
-                for key, value in tqdm(embeddings_dict.items(), desc=f"  {desc}"):
-                    if value is not None and value.size > 0:
-                        hf.create_dataset(key, data=value, chunks=True, compression="gzip")
+            # --- DEFINITIVE FIX for Slow HDF5 I/O ---
+            # Writing millions of small datasets is extremely inefficient.
+            # Instead, we write two large, contiguous datasets: one for IDs and one for vectors.
+            # This is orders of magnitude faster.
+            with h5py.File(temp_local_path, 'w') as hf, tqdm(total=2, desc=f"  {desc}") as pbar:
+                protein_ids = list(embeddings_dict.keys())
+                embedding_vectors = np.array(list(embeddings_dict.values()), dtype=np.float16)
+
+                # Store IDs as a variable-length UTF-8 string dataset
+                hf.create_dataset('ids', data=np.array(protein_ids, dtype=h5py.string_dtype('utf-8')))
+                pbar.update(1)
+
+                # Store embeddings as a single, large numerical dataset
+                hf.create_dataset('embeddings', data=embedding_vectors, chunks=True, compression="gzip")
+                pbar.update(1)
 
             # Move the completed local file to the final destination URI
             final_dir = os.path.dirname(final_path)
@@ -116,7 +122,7 @@ class FileUtils:
                 fs.makedirs(final_dir, exist_ok=True)
             fs.put(temp_local_path, final_path)
         except Exception as e:
-            print(f"  ERROR: Could not write HDF5 file to {uri}: {e.__class__.__name__}")
+            print(f"  ERROR: Could not write HDF5 file to {uri}: {e}")
         finally:
             if os.path.exists(temp_local_path):
                 os.remove(temp_local_path)

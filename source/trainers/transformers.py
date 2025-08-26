@@ -223,11 +223,14 @@ class TransformerEmbedder:
                                 max_length=self.config.TRANSFORMER_MAX_LENGTH
                             )
 
+                            # --- DEFINITIVE FIX: Re-introduce the missing embedding processing logic ---
+                            # The previous version called the model but did nothing with the output.
+                            # This block correctly processes the raw output into pooled protein embeddings.
                             outputs = inference_func(inputs)
                             raw_batch_output = (
                                 outputs.encoder_last_hidden_state if is_t5 else outputs.last_hidden_state).numpy()
 
-                            for j in range(len(batch_ids)):
+                            for j, prot_id in enumerate(batch_ids):
                                 seq_len_original = int(tf.reduce_sum(inputs['attention_mask'][j]))
                                 residue_embeds = EmbeddingProcessor.extract_transformer_residue_embeddings(
                                     raw_batch_output[j], seq_len_original, is_t5)
@@ -238,7 +241,7 @@ class TransformerEmbedder:
                                         embedding_dim
                                     )
                                     if pooled_vec.size > 0:
-                                        all_protein_embeddings_for_model[batch_ids[j]] = pooled_vec
+                                        all_protein_embeddings_for_model[prot_id] = pooled_vec
 
                     # --- After all chunks are processed for this model ---
                     if not all_protein_embeddings_for_model:

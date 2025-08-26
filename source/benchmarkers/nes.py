@@ -15,6 +15,7 @@ import torch
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 from torch_geometric.data import Data
+from tqdm.auto import tqdm
 from torch_geometric.nn import Node2Vec
 
 from configuration.config import Config
@@ -96,13 +97,18 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
         loader = node2vec_model.loader(batch_size=128, shuffle=True, num_workers=0)
         optimizer = torch.optim.SparseAdam(list(node2vec_model.parameters()), lr=0.01)
 
-        for _ in range(self.config.BENCHMARK_NE_EPOCHS):
+        # --- REFACTOR: Add tqdm progress bar and loss logging for better visibility ---
+        for epoch in range(self.config.BENCHMARK_NE_EPOCHS):
             node2vec_model.train()
-            for pos_rw, neg_rw in loader:
+            total_loss = 0
+            for pos_rw, neg_rw in tqdm(loader, desc=f"  Epoch {epoch+1}/{self.config.BENCHMARK_NE_EPOCHS}", leave=False):
                 optimizer.zero_grad()
                 loss = node2vec_model.loss(pos_rw.to(self.device), neg_rw.to(self.device))
                 loss.backward()
                 optimizer.step()
+                total_loss += loss.item()
+            if self.config.DEBUG_VERBOSE:
+                print(f"    Epoch {epoch+1}: Avg. Loss = {total_loss / len(loader):.4f}")
 
         # 2. Get the final embeddings
         with torch.no_grad():
@@ -157,12 +163,6 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
                     print(f"ERROR during benchmarking of {model_name} on {dataset_name}: {e}")
                     traceback.print_exc()
                     all_results.append({"dataset": dataset_name, "model": model_name, "error": str(e)})
-
-        # --- FIX: Force garbage collection after the benchmark loop ---
-        import gc
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
         summary_df = pd.DataFrame(all_results)
         # The full summary is now handled by main.py

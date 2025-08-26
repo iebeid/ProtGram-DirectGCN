@@ -276,12 +276,20 @@ class PipelineOrchestrator:
                             checkpoint_dir_uri = os.path.join(str(config.BASE_OUTPUT_DIR), "checkpoints", dataset_name)
                             checkpoint_manager = CheckpointManager(checkpoint_dir_uri)
 
-                            DataUtils.print_header("Building all n-gram graphs for the main pipeline")
-                            ProtGramDataBuilder(config).run()
-                            if not self.ui_manager.prompt_to_continue("Graph Building"):
-                                continue
+                            # --- DEFINITIVE FIX: Add checkpointing for major pipeline stages ---
+                            # This prevents long-running steps from being re-executed unnecessarily.
+                            if not checkpoint_manager.get_checkpoint("GraphBuilding"):
+                                DataUtils.print_header("Building all n-gram graphs for the main pipeline")
+                                ProtGramDataBuilder(config).run()
+                                checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "completed"})
+                            if not self.ui_manager.prompt_to_continue("Graph Building"): continue
 
-                            if self._run_pre_analysis_and_prompt(config, fasta_file_path):
+                            pre_analysis_checkpoint = checkpoint_manager.get_checkpoint("PreAnalysis")
+                            if not pre_analysis_checkpoint:
+                                if self._run_pre_analysis_and_prompt(config, fasta_file_path):
+                                    checkpoint_manager.save_checkpoint("PreAnalysis", {"status": "completed"})
+                                else:
+                                    continue # User chose to stop
 
                                 generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)
                                 generated_files = generated_files if isinstance(generated_files, list) else []

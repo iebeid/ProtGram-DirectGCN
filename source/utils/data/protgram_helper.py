@@ -41,35 +41,32 @@ class ProtgramDaskHelpers:
         return pid, f"{modified_seq_text} "
 
     @staticmethod
-    def extract_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int) -> Iterator[str]:
-        """Extracts n-grams from a single processed sequence."""
-        _, processed_seq_text = seq_tuple
-        if len(processed_seq_text) >= n_val:
-            for i in range(len(processed_seq_text) - n_val + 1):
-                yield processed_seq_text[i:i + n_val]
+    def extract_all_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_max: int) -> List[Tuple[int, str]]:
+        """Extracts all n-grams from n=1 to n_max from a single sequence."""
+        _, sequence = seq_tuple
+        all_ngrams = []
+        for n in range(1, n_max + 1):
+            if len(sequence) >= n:
+                for i in range(len(sequence) - n + 1):
+                    all_ngrams.append((n, sequence[i:i + n]))
+        return all_ngrams
 
     @staticmethod
-    def extract_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_val: int,
-                                          ngram_to_id_map: Dict[str, int]) -> Iterator[str]:
-        """Extracts n-gram transitions (edges) from a single processed sequence."""
-        _, processed_seq_text = seq_tuple
-        if len(processed_seq_text) >= n_val + 1:
-            for i in range(len(processed_seq_text) - n_val):
-                source_id = ngram_to_id_map.get(processed_seq_text[i:i + n_val])
-                target_id = ngram_to_id_map.get(processed_seq_text[i + 1:i + 1 + n_val])
-                if source_id is not None and target_id is not None:
-                    # Yield a string representation for easy writing to text files
-                    yield f"{source_id} {target_id}"
-
-    @staticmethod
-    def extract_edge_ngram_pairs(seq_tuple: Tuple[str, str], n_val: int) -> Iterator[Tuple[str, str]]:
-        """Extracts n-gram transition pairs (source_ngram, target_ngram) from a single processed sequence."""
-        _, processed_seq_text = seq_tuple
-        if len(processed_seq_text) >= n_val + 1:
-            for i in range(len(processed_seq_text) - n_val):
-                source_ngram = processed_seq_text[i:i + n_val]
-                target_ngram = processed_seq_text[i + 1:i + 1 + n_val]
-                yield source_ngram, target_ngram
+    def extract_all_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_max: int, all_ngram_maps: Dict[int, Dict[str, int]]) -> List[Tuple[int, int, int]]:
+        """Extracts all edges for all n-gram levels from a single sequence."""
+        _, sequence = seq_tuple
+        all_edges = []
+        for n in range(1, n_max + 1):
+            ngram_map = all_ngram_maps.get(n, {})
+            if len(sequence) >= n + 1:
+                for i in range(len(sequence) - n):
+                    source_ngram = sequence[i:i + n]
+                    target_ngram = sequence[i + 1:i + 1 + n]
+                    source_id = ngram_map.get(source_ngram)
+                    target_id = ngram_map.get(target_ngram)
+                    if source_id is not None and target_id is not None:
+                        all_edges.append((n, source_id, target_id))
+        return all_edges
 
     @staticmethod
     def prepare_pyg_data_from_protgram_graph(model_type: str, graph: 'DirectedNgramGraph', features: torch.Tensor,

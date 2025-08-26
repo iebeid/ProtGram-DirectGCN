@@ -26,10 +26,10 @@ from tqdm.auto import tqdm
 
 from configuration.config import Config
 from source.models.fnn.mlp import MLP
-# Refactored: FileUtils is now DataUtils and lives in manager.py
+# --- FIX: Import the correct factory for dummy data ---
+from source.testers.dummy import DummyDataFactory
 from source.utils.data.data_utils import DataUtils
 from source.utils.data.ground_truth_loader import GroundTruthLoader
-# Refactored: Dummy data creation is now in a dedicated helper file
 from source.utils.post.embedding_loader import EmbeddingLoader
 from source.utils.post.embedding_processor import EmbeddingProcessor
 from source.utils.results.evaluation_reporter import EvaluationReporter
@@ -190,16 +190,20 @@ class PPIPipeline:
             gc.collect()
             tf.keras.backend.clear_session()
 
-    def _run_cv_workflow(self, embedding_name: str, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+    def _run_cv_workflow(
+            self,
+            embedding_name: str, all_pairs: List[Tuple[str, str, int]],
+            embedding_loader: EmbeddingLoader
+    ) -> Dict[str, Any]:
         """
         Manages the cross-validation process, including splitting data into folds,
         calling the training/evaluation logic for each fold, and aggregating results.
         """
         cv_start_time = time.monotonic()
-        print(f"Starting CV workflow for {embedding_name}. Total samples: {len(X)}")
+        print(f"Starting CV workflow for {embedding_name}. Total samples: {len(all_pairs)}")
         aggregated_results: Dict[str, Any] = {'embedding_name': embedding_name, 'history_dict_fold1': {}, 'notes': ""}
 
-        # --- REFACTOR: y is now passed directly ---
+        y = np.array([p[2] for p in all_pairs])
         if len(np.unique(y)) < 2:
             note = "Single class in dataset for CV. Cannot perform meaningful stratified CV or calculate some metrics."
             print(f"  Warning: {note}")
@@ -217,24 +221,23 @@ class PPIPipeline:
                 [f'ndcg_at_{k}' for k in self.config.EVAL_K_VALUES_FOR_TABLE]
         )
 
-        # --- NEW: Proactive memory check before starting CV ---
-        # Estimate memory needed for the full dataset's features (a rough upper bound).
-        # float16 = 2 bytes per element.
-        estimated_gb_needed = (X.nbytes) / (1024**3)
-        if not DataUtils.has_enough_memory(estimated_gb_needed, f"PPI CV for {embedding_name}"):
-            aggregated_results['notes'] = "Skipped due to insufficient available memory."
-            print(f"  Skipping CV for {embedding_name} due to memory constraints.")
-            return aggregated_results
+        # Convert all_pairs to a NumPy array for efficient indexing
+        all_pairs_np = np.array(all_pairs, dtype=object)
 
         # Loop through each cross-validation fold.
-        for fold_num, (train_idx, val_idx) in enumerate(tqdm(skf.split(X, y), total=self.config.EVAL_N_FOLDS, desc=f"  CV Folds for {embedding_name}", leave=False)):
+        for fold_num, (train_idx, val_idx) in enumerate(tqdm(skf.split(all_pairs_np, y), total=self.config.EVAL_N_FOLDS, desc=f"  CV Folds for {embedding_name}", leave=False)):
             fold_start_time = time.monotonic()
             print(f"\n  --- Fold {fold_num + 1}/{self.config.EVAL_N_FOLDS} for {embedding_name} ---")
 
             # --- ANTICIPATORY DEBUGGING: Add exception handling for individual folds to make the pipeline more robust. ---
             try:
-                X_train, X_val = X[train_idx], X[val_idx]
-                y_train, y_val = y[train_idx], y[val_idx]
+                # --- DEFINITIVE FIX for Memory Usage: Generate features just-in-time for each fold ---
+                # This avoids creating the massive feature matrix for the entire dataset at once.
+                train_pairs = all_pairs_np[train_idx].tolist()
+                val_pairs = all_pairs_np[val_idx].tolist()
+
+                X_train, y_train = EmbeddingProcessor.create_edge_features(train_pairs, embedding_loader, self.config.EVAL_EDGE_EMBEDDING_METHOD)
+                X_val, y_val = EmbeddingProcessor.create_edge_features(val_pairs, embedding_loader, self.config.EVAL_EDGE_EMBEDDING_METHOD)
 
                 # Train and evaluate the model for the current fold.
                 fold_metrics, history = self._train_and_evaluate_fold(
@@ -294,13 +297,13 @@ class PPIPipeline:
                 dummy_data_dir.mkdir(parents=True, exist_ok=True)
                 print(f"Creating dummy data in: {dummy_data_dir}")
 
-                # --- REFACTOR: Use DataUtils to create all test data ---
+                # --- FIX: Use the correct DummyDataFactory ---
                 protein_ids = [f"DUMMY_P{i:04d}" for i in range(50)]
-                dummy_emb_file = DataUtils.create_dummy_embedding_file(
-                    str(dummy_data_dir), "dummy_embeddings.h5", protein_ids, 16
+                dummy_emb_file = DummyDataFactory.create_h5_embeddings(
+                    str(dummy_data_dir), "dummy_embeddings.h5", protein_ids=protein_ids, dim=16
                 )
-                pos_fp, neg_fp = DataUtils.create_dummy_interaction_files(
-                    str(dummy_data_dir), protein_ids, num_pos=100, num_neg=100
+                pos_fp, neg_fp = DummyDataFactory.create_interaction_files(
+                    str(dummy_data_dir), num_pairs=100, num_proteins=len(protein_ids)
                 )
                 emb_configs = [{"path": str(dummy_emb_file), "name": "DummyEmb"}]
             else:
@@ -357,17 +360,12 @@ class PPIPipeline:
                                 neg_fp, 0, available_ids, sample_n=num_pos_for_sampling, random_state=self.config.RANDOM_STATE
                             )
 
-                            # --- REFACTOR: Create the full feature matrix once before CV ---
-                            X, y = EmbeddingProcessor.create_edge_features(
-                                pos_pairs + neg_pairs, protein_embeddings_loader, self.config.EVAL_EDGE_EMBEDDING_METHOD
-                            )
-                            if X.shape[0] == 0:
+                            all_pairs = pos_pairs + neg_pairs
+                            if not all_pairs:
                                 print(f"  No interaction pairs remain after filtering against available embeddings for {emb_name}. Skipping CV.")
                                 continue
 
-                            print(f"  Proceeding to CV with {X.shape[0]} filtered pairs for {emb_name}.")
-
-                            results = self._run_cv_workflow(emb_name, X, y)
+                            results = self._run_cv_workflow(emb_name, all_pairs, protein_embeddings_loader)
                             all_cv_results_list.append(results)
 
                             if mlflow_active and run and results:

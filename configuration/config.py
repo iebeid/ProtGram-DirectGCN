@@ -44,8 +44,14 @@ class PipelineFlags(BaseModel):
     CLEANUP_DUMMY_DATA: bool
     ENABLE_FILE_LOGGING: bool
 
-class GNNBenchmarkingParams(BaseModel):
-    DATASETS: List[str]
+class BaseGNNTrainingParams(BaseModel):
+    """A base model for shared GNN training hyperparameters to ensure consistency."""
+    EPOCHS: int = Field(gt=0)
+    LEARNING_RATE: float = Field(gt=0)
+    WEIGHT_DECAY: float = Field(default=5e-4, ge=0.0)
+
+class GNNBenchmarkingParams(BaseGNNTrainingParams):
+    BENCHMARK_NODE_CLASSIFICATION_DATASETS: List[str] = Field(alias='DATASETS')
     GNN_MODELS_TO_RUN: List[str]
     NE_MODELS_TO_RUN: List[str]
     SAVE_EMBEDDINGS: bool
@@ -67,9 +73,6 @@ class GNNBenchmarkingParams(BaseModel):
     GAT_HEADS: int = Field(gt=0)
     GAT_DROPOUT_RATE: float = Field(ge=0.0, lt=1.0)
     CHEBNET_K: int = Field(gt=0)
-    GNN_LEARNING_RATE: float = Field(gt=0)
-    GNN_WEIGHT_DECAY: float = Field(default=5e-4, ge=0.0)
-    GNN_EPOCHS: int = Field(gt=0)
     RGCN_NUM_RELATIONS: int = Field(gt=0)
     DIRECTGCN_HIDDEN_LAYER_DIMS: List[int]
     GNN_INIT_DIM: int = Field(gt=0)
@@ -163,10 +166,8 @@ class LSTMParams(BaseModel):
     DROPOUT_RATE: float = Field(default=0.5, ge=0.0, lt=1.0)
     EARLY_STOPPING_MIN_DELTA: float = Field(ge=0.0)
 
-class SingletonEvalParams(BaseModel):
-    EPOCHS: int = Field(gt=0)
+class SingletonEvalParams(BaseGNNTrainingParams):
     TEST_SPLIT: float = Field(gt=0, lt=1.0)
-    LR: float = Field(gt=0)
     MODELS_TO_RUN: List[str]
     GNN_HIDDEN_CHANNELS: int = Field(gt=0)
     GNN_NUM_LAYERS: int = Field(gt=0)
@@ -350,7 +351,7 @@ class Config:
     def _setup_benchmarking_params(self):
         """Sets GNN benchmarking parameters statically from the YAML config."""
         params = self._config['gnn_benchmarking']
-        self.BENCHMARK_NODE_CLASSIFICATION_DATASETS = params['DATASETS']
+        self.BENCHMARK_NODE_CLASSIFICATION_DATASETS = params['BENCHMARK_NODE_CLASSIFICATION_DATASETS']
         self.BENCHMARK_GNN_MODELS_TO_RUN = params['GNN_MODELS_TO_RUN']
         self.BENCHMARK_NE_MODELS_TO_RUN = params['NE_MODELS_TO_RUN']
         self.BENCHMARK_SAVE_EMBEDDINGS = params['SAVE_EMBEDDINGS']
@@ -372,9 +373,7 @@ class Config:
         self.BENCHMARK_GAT_HEADS = params['GAT_HEADS']
         self.BENCHMARK_GAT_DROPOUT_RATE = params['GAT_DROPOUT_RATE']
         self.BENCHMARK_CHEBNET_K = params['CHEBNET_K']
-        self.BENCHMARK_GNN_LEARNING_RATE = params['GNN_LEARNING_RATE']
-        self.BENCHMARK_GNN_WEIGHT_DECAY = params['GNN_WEIGHT_DECAY']
-        self.BENCHMARK_GNN_EPOCHS = params['GNN_EPOCHS']
+        self.BENCHMARK_GNN_LEARNING_RATE = params['LEARNING_RATE']
         self.BENCHMARK_RGCN_NUM_RELATIONS = params['RGCN_NUM_RELATIONS']
         self.BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS = params['DIRECTGCN_HIDDEN_LAYER_DIMS']
         self.BENCHMARK_GNN_INIT_DIM = params['GNN_INIT_DIM']
@@ -559,10 +558,10 @@ class Config:
 
     def _setup_singleton_eval_params(self):
         """Sets Singleton evaluation parameters statically from the YAML config."""
-        params = self._config['singleton_eval']
-        self.SINGLETON_EVAL_EPOCHS = params['EPOCHS']
+        params = self._config['singleton_eval'] # --- REFACTOR: Rename LR to be consistent ---
+        params['LEARNING_RATE'] = params.pop('LR')
+        self.SINGLETON_EVAL_EPOCHS = params['EPOCHS'] # Keep this for clarity if needed elsewhere
         self.SINGLETON_EVAL_TEST_SPLIT = params['TEST_SPLIT']
-        self.SINGLETON_EVAL_LR = params['LR']
         self.SINGLETON_EVAL_MODELS_TO_RUN = params['MODELS_TO_RUN']
         self.SINGLETON_GNN_HIDDEN_CHANNELS = params['GNN_HIDDEN_CHANNELS']
         self.SINGLETON_GNN_NUM_LAYERS = params['GNN_NUM_LAYERS']

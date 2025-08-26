@@ -135,8 +135,10 @@ class SingletonXGCNTrainer:
 
                 elif model_name == "RGCN":
                     # RGCN needs a standard edge_index and an edge_type tensor.
-                    edge_index_forward = self.graph.A_in.coalesce().indices()
-                    edge_index_backward = self.graph.A_out.coalesce().indices()
+                    # --- DEFINITIVE FIX: Use the weighted matrices to get the unweighted indices ---
+                    # The unweighted A_in/A_out attributes are not created by default.
+                    edge_index_forward = self.graph.A_out_w.coalesce().indices()
+                    edge_index_backward = self.graph.A_in_w.coalesce().indices()
                     data_for_model.edge_index = torch.cat([edge_index_forward, edge_index_backward], dim=1)
                     data_for_model.edge_type = torch.cat([
                         torch.zeros(edge_index_forward.size(1), dtype=torch.long),

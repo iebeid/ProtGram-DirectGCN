@@ -241,7 +241,16 @@ class DataManager:
             for processed_file_name, raw_dependency_names in self.config.PROCESSED_FILE_DEPENDENCIES.items():
                 if processed_file_name in processed_files_in_cache:
                     raw_files_to_skip.update(raw_dependency_names)
-            
+                    # --- DEFINITIVE FIX: If we skip the raw files, we MUST restore the processed file. ---
+                    # This was the missing step. We need to copy the processed file from the
+                    # cache to the project's data directory.
+                    cached_processed_path = self.config.PERSISTENT_DATA_CACHE / processed_file_name
+                    project_processed_path = self.config.DATA_MAPPINGS_DIR / processed_file_name
+                    if not project_processed_path.exists():
+                        print(f"  Smart Restore: Restoring processed file '{processed_file_name}' from cache...")
+                        project_processed_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copytree(cached_processed_path, project_processed_path) if cached_processed_path.is_dir() else shutil.copy(cached_processed_path, project_processed_path)
+
             if raw_files_to_skip:
                 print(f"  Smart Restore: Will skip restoring raw files: {raw_files_to_skip}")
 

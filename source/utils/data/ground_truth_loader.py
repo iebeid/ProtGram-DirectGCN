@@ -7,6 +7,8 @@ import pandas as pd
 from tqdm.auto import tqdm
 
 from configuration.config import Config
+# --- NEW: Import DataUtils for reservoir sampling ---
+from source.utils.data.data_utils import DataUtils
 
 # ==============================================================================
 # 3. Interaction Data Loading
@@ -128,9 +130,8 @@ class GroundTruthLoader:
             yield batch
 
     @staticmethod
-    def _stream_filter_pairs(filepath: Path, label: int, available_ids: Set[str]) -> List[Tuple[str, str, int]]:
-        """The core streaming logic, extracted into a helper."""
-        filtered_pairs = []
+    def _stream_filter_pairs(filepath: Path, label: int, available_ids: Set[str]) -> Iterator[Tuple[str, str, int]]:
+        """The core streaming logic, refactored to be a true generator."""
         try:
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in tqdm(f, desc=f"    Scanning {filepath.name}", leave=False):
@@ -140,13 +141,12 @@ class GroundTruthLoader:
                     if len(parts) >= 2:
                         p1, p2 = parts[0], parts[1]
                         if p1 in available_ids and p2 in available_ids:
-                            filtered_pairs.append((p1, p2, label))
+                            yield (p1, p2, label) # Use yield to make it a generator
         except Exception as e:
             print(f"    ERROR: Could not load or filter interaction file '{filepath.name}'.")
             print(f"    Please check the file format and integrity.")
             print(f"    Details: {e}")
-            return []
-        return filtered_pairs
+            return # Stop the generator on error
 
     @staticmethod
     def load_interaction_pairs_filtered(filepath: Union[str, Path], label: int, available_ids: Set[str],
@@ -182,15 +182,19 @@ class GroundTruthLoader:
         else:
             # Fallback to memory-efficient streaming for low-memory mode
             print(f"  Streaming-filtering pairs from: {filepath.name} (label: {label})...")
-            filtered_pairs = GroundTruthLoader._stream_filter_pairs(filepath, label, available_ids)
+            # --- DEFINITIVE FIX: Consume the generator correctly ---
+            # This makes the low-memory path truly memory-efficient.
+            pair_iterator = GroundTruthLoader._stream_filter_pairs(filepath, label, available_ids)
+
+            if sample_n is not None and sample_n > 0:
+                print(f"    Applying reservoir sampling to keep up to {sample_n} pairs...")
+                # Use reservoir sampling on the iterator to avoid loading all pairs into memory
+                filtered_pairs = DataUtils.reservoir_sample(pair_iterator, sample_n, random_state)
+            else:
+                # If not sampling, consume the entire iterator into a list
+                filtered_pairs = list(pair_iterator)
 
         num_found = len(filtered_pairs)
         print(f"    Found {num_found} pairs with available embeddings.")
-
-        if sample_n is not None and 0 < sample_n < num_found:
-            print(f"    Sampling {sample_n} pairs from the {num_found} found.")
-            if random_state is not None:
-                random.seed(random_state)
-            return random.sample(filtered_pairs, sample_n)
 
         return filtered_pairs

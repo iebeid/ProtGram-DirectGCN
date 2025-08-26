@@ -8,11 +8,15 @@
 # VERSION: 1.0
 # ==============================================================================
 
+# --- Get the directory of this script, then find the project root (one level up) ---
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 echo "--- Cleaning project directories and cache files ---"
-echo "  - Removing 'results' directory..."
-rm -rf results
-echo "  - Removing 'mlruns' directory..."
-rm -rf mlruns
-echo "  - Removing local ID map cache files (*_map_cache.pkl)..."
-rm -f *_map_cache.pkl
+echo "  - Removing '$PROJECT_ROOT/results' directory..."
+rm -rf "$PROJECT_ROOT/results"
+echo "  - Removing '$PROJECT_ROOT/mlruns' directory..."
+rm -rf "$PROJECT_ROOT/mlruns"
+echo "  - Removing local ID map cache files from project root..."
+rm -f "$PROJECT_ROOT"/*_map_cache.pkl
 echo "SUCCESS: Project directories cleaned."

@@ -90,38 +90,56 @@ class XGCNDataBuilder:
         return torch.tensor(labels_list, dtype=torch.long), num_nodes
 
     def _generate_closest_amino_acid_labels(self, graph: 'DirectedNgramGraph', k_hops: int) -> Tuple[
-        torch.Tensor, int]:
-        """Generates labels by finding the shortest path distance to a randomly chosen amino acid."""
+        torch.Tensor, int
+    ]:
+        """
+        Generates labels by finding the shortest path distance to the nearest node
+        containing a randomly chosen amino acid. This is done efficiently with a
+        single multi-source Breadth-First Search (BFS).
+        """
         num_nodes = graph.number_of_nodes
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), k_hops + 1
         labels = torch.full((num_nodes,), k_hops, dtype=torch.long)
         print(f"    Generating closest_aa labels for all {num_nodes} nodes (k={k_hops}).")
-        adj_out = graph.A_out_w.cpu()
+
+        # --- DEFINITIVE FIX: Use a single multi-source BFS for massive performance improvement ---
+        # The previous implementation ran a separate BFS for each node, which is O(V*(V+E)).
+        # This new approach runs a single BFS, which is O(V+E).
+
+        # 1. Pick one target amino acid for the entire graph.
+        target_aa = random.choice(FastaUtils.AMINO_ACID_ALPHABET)
+        print(f"      - Target Amino Acid for this graph: '{target_aa}'")
+
+        # 2. Initialize distances and the BFS queue with all "goal" nodes.
+        q = collections.deque()
         node_names = graph.node_names
-        for start_node in tqdm(range(num_nodes), desc="      Generating closest_aa labels", leave=False,
-                               disable=not self.config.DEBUG_VERBOSE):
-            target_aa = random.choice(FastaUtils.AMINO_ACID_ALPHABET)
-            if target_aa in str(node_names[start_node]):
-                labels[start_node] = 0
-                continue
-            q = collections.deque([(start_node, 0)])
-            visited = {start_node}
-            found_at_hop = -1
+        for i in range(num_nodes):
+            if target_aa in str(node_names[i]):
+                labels[i] = 0
+                q.append((i, 0))  # (node_index, hop_distance)
+
+        # 3. Perform the multi-source BFS.
+        # We use the IN-DEGREE adjacency matrix (A_in_w) to traverse edges backwards,
+        # from the target nodes outwards to all other nodes.
+        adj_in = graph.A_in_w.cpu()
+        visited = {node_idx for node_idx, _ in q}  # Keep track of visited nodes to avoid cycles
+
+        with tqdm(total=num_nodes, desc="      - Running multi-source BFS", leave=False, disable=not self.config.DEBUG_VERBOSE) as pbar:
+            pbar.update(len(q))
             while q:
                 curr, hop = q.popleft()
-                if hop >= k_hops: break
-                row_mask = (adj_out.indices()[0] == curr)
-                for neighbor in adj_out.indices()[1][row_mask]:
+                if hop >= k_hops: continue
+
+                # Find all nodes that have an edge *to* the current node
+                row_mask = (adj_in.indices()[0] == curr)
+                for neighbor in adj_in.indices()[1][row_mask]:
                     n_idx = neighbor.item()
                     if n_idx not in visited:
                         visited.add(n_idx)
-                        if target_aa in str(node_names[n_idx]):
-                            found_at_hop = hop + 1
-                            break
+                        labels[n_idx] = hop + 1
                         q.append((n_idx, hop + 1))
-                if found_at_hop != -1: break
-            if found_at_hop != -1:
-                labels[start_node] = found_at_hop
+                        pbar.update(1)
+
         return labels, k_hops + 1
 
     def generate_masked_node_task(self, graph_obj: 'DirectedNgramGraph', features: torch.Tensor, *,

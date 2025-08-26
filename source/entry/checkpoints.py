@@ -50,12 +50,18 @@ class CheckpointManager:
         """Saves the output data for a specific pipeline step, including file checksums."""
         serializable_data = self._make_serializable_paths_to_str(data)
 
-        # Add checksums for file-based checkpoints
+        # --- DEFINITIVE FIX: Handle both single-file and list-of-files checkpoints symmetrically ---
+        # This ensures that a checksum is added regardless of whether a step returns one file or many.
+        files_to_checksum = []
         if isinstance(serializable_data, list):
-            for item in serializable_data:
-                if isinstance(item, dict) and "path" in item:
-                    # FileUtils.calculate_sha256 is already cloud-aware and expects a URI
-                    item["sha256"] = FileUtils.calculate_sha256(item["path"])
+            files_to_checksum.extend(serializable_data)
+        elif isinstance(serializable_data, dict) and "path" in serializable_data:
+            files_to_checksum.append(serializable_data)
+
+        for item in files_to_checksum:
+            if isinstance(item, dict) and "path" in item:
+                # FileUtils.calculate_sha256 is already cloud-aware and expects a URI
+                item["sha256"] = FileUtils.calculate_sha256(item["path"])
 
         self.data[step_name] = serializable_data
         # --- DEFINITIVE FIX: Implement atomic write to prevent corruption ---

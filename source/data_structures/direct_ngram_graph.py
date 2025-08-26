@@ -150,18 +150,19 @@ class DirectedNgramGraph(Graph):
         source_tensor = torch.from_numpy(source_indices)
         target_tensor = torch.from_numpy(target_indices)
         edge_indices_tensor = torch.stack([source_tensor, target_tensor]).long()
-        del source_tensor, target_tensor
-        gc.collect()
 
         edge_weights_tensor = torch.from_numpy(weights).float()
         del weights
         gc.collect()
 
         self.A_out_w = torch.sparse_coo_tensor(edge_indices_tensor, edge_weights_tensor, size).coalesce()
-        del edge_indices_tensor, edge_weights_tensor
+        # --- DEFINITIVE FIX: Correctly create the in-degree matrix ---
+        # The in-degree matrix is not just the transpose of the out-degree matrix for a directed graph.
+        # It must be constructed by swapping the source and target indices.
+        edge_indices_in_tensor = torch.stack([target_tensor, source_tensor]).long()
+        self.A_in_w = torch.sparse_coo_tensor(edge_indices_in_tensor, edge_weights_tensor, size).coalesce()
+        del source_tensor, target_tensor, edge_indices_tensor, edge_indices_in_tensor, edge_weights_tensor
         gc.collect()
-
-        self.A_in_w = self.A_out_w.t().coalesce()
 
     @property
     def A_undirected_norm_sparse(self) -> Optional[torch.Tensor]:

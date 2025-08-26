@@ -49,8 +49,8 @@ resource_management:
 
 # --- NEW: Shared GNN Hyperparameters using YAML Anchors ---
 # This block defines common GNN parameters once to avoid duplication.
-# It is merged into the gnn_benchmarking and singleton_eval sections below.
-_shared_gnn_params: &gnn_hyperparams
+# It is merged into the gnn_benchmarking and singleton_eval sections below. # --- REFACTOR: Create a more comprehensive shared anchor ---
+_base_gnn_params: &base_gnn_params
   GNN_HIDDEN_CHANNELS: 64
   GNN_NUM_LAYERS: 2
   GNN_DROPOUT_RATE: 0.5
@@ -59,6 +59,9 @@ _shared_gnn_params: &gnn_hyperparams
   CHEBNET_K: 3
   RGCN_NUM_RELATIONS: 2
   DIRECTGCN_HIDDEN_LAYER_DIMS: [64, 64]
+  EPOCHS: 100
+  LEARNING_RATE: 0.01
+  WEIGHT_DECAY: 0.0005
 
 # 5. GNN BENCHMARKING PARAMETERS
 gnn_benchmarking:
@@ -94,17 +97,14 @@ gnn_benchmarking:
   NE_CLASSIFIER_C: 1.0
   NE_CLASSIFIER_MAX_ITER: 1000
   NE_CLASSIFIER_SOLVER: 'lbfgs'
-  GNN_LEARNING_RATE: 0.01
-  GNN_WEIGHT_DECAY: 0.0005
-  GNN_EPOCHS: 100
   GNN_INIT_DIM: 64
-  <<: *gnn_hyperparams # Merge the shared GNN parameters
+  <<: *base_gnn_params # Merge the shared GNN parameters
 
 # 6. ProtGram-DirectGCN PIPELINE PARAMETERS
 protgram_gcn:
   PROTGRAM_NGRAM_MAX_N: 3
   # --- NEW: Specify which FASTA file to use for the main pipelines ---
-  FASTA_FILE_TO_PROCESS: "UNIREF_50_FASTA" # Options: "UNIPROT_SPROT_FASTA", "UNIREF_50_FASTA"
+  FASTA_FILE_TO_PROCESS: "UNIPROT_SPROT_FASTA" # Options: "UNIPROT_SPROT_FASTA", "UNIREF_50_FASTA"
   ID_MAPPING_MODE: 'file' # Options: 'regex', 'file', 'api', 'none'
   # --- NEW: Options for the smart ID mapping prompter ---
   ENABLE_SMART_MAPPING_PROMPT: true # If true, will check FASTA headers and prompt to use 'regex' if compatible.
@@ -203,16 +203,14 @@ lstm:
 
 # 9.5. SINGLETON EVALUATION PARAMETERS
 singleton_eval:
-  EPOCHS: 100
   TEST_SPLIT: 0.2
-  LR: 0.01
   MODELS_TO_RUN:
     - "DirectGCN"
     - "GCN"
     - "RGCN"
     - "DirGNN"
   GRADIENT_ACCUMULATION_STEPS: 1
-  <<: *gnn_hyperparams # Merge the shared GNN parameters
+  <<: *base_gnn_params # Merge the shared GNN parameters
 
 # 10. PPI EVALUATION PARAMETERS
 ppi_evaluation:

@@ -44,6 +44,10 @@ else
     echo "Skipping system dependency installation as requested. The build may fail if dependencies are missing."
 fi
 
+# --- DEFINITIVE FIX: Ensure git-lfs is configured after installation ---
+echo "INFO: Running 'git lfs install' to configure Git hooks..."
+git lfs install
+
 # --- Configuration ---
 ENV_NAME="ppi-env"
 REPO_URL="https://github.com/iebeid/ProtGram-DirectGCN.git"

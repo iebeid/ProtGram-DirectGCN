@@ -9,7 +9,7 @@ import gc
 import os
 import random
 import shutil
-import time
+import time # noqa
 from functools import partial
 from typing import Tuple, Iterator
 from pathlib import Path
@@ -24,6 +24,36 @@ from source.data_structures.direct_ngram_graph import DirectedNgramGraph
 from source.utils.data.data_utils import DataUtils
 from source.utils.data.fasta_utils import FastaUtils
 from source.utils.data.protgram_helper import ProtgramDaskHelpers
+
+
+# --- NEW HELPER FUNCTIONS (to be moved to protgram_helper.py) ---
+# These are included here to make the diff self-contained.
+
+def _extract_all_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_max: int) -> List[Tuple[int, str]]:
+    """Extracts all n-grams from n=1 to n_max from a single sequence."""
+    _, sequence = seq_tuple
+    all_ngrams = []
+    for n in range(1, n_max + 1):
+        if len(sequence) >= n:
+            for i in range(len(sequence) - n + 1):
+                all_ngrams.append((n, sequence[i:i + n]))
+    return all_ngrams
+
+def _extract_all_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_max: int, all_ngram_maps: Dict[int, Dict[str, int]]) -> List[Tuple[int, int, int]]:
+    """Extracts all edges for all n-gram levels from a single sequence."""
+    _, sequence = seq_tuple
+    all_edges = []
+    for n in range(1, n_max + 1):
+        ngram_map = all_ngram_maps.get(n, {})
+        if len(sequence) >= n + 1:
+            for i in range(len(sequence) - n):
+                source_ngram = sequence[i:i + n]
+                target_ngram = sequence[i + 1:i + 1 + n]
+                source_id = ngram_map.get(source_ngram)
+                target_id = ngram_map.get(target_ngram)
+                if source_id is not None and target_id is not None:
+                    all_edges.append((n, source_id, target_id))
+    return all_edges
 
 
 class ProtGramDataBuilder:
@@ -164,64 +194,44 @@ class ProtGramDataBuilder:
             except Exception:
                 print("--- WARNING: Could not compute initial sequence count. Proceeding with build. ---")
 
-            # --- DEFINITIVE FIX: Restore the main processing loop for each n-gram level ---
+            # --- REFACTOR: Implement a 2-pass Dask pipeline for massive performance improvement ---
+            # Pass 1: Generate all n-gram maps for all levels in a single pass over the data.
+            DataUtils.print_header("Phase 1: Generating All N-Gram Maps")
+            phase1_start_time = time.monotonic()
+            extract_all_ngrams_partial = partial(_extract_all_ngrams_from_sequence_tuple, n_max=self.n_max)
+            all_ngrams_bag = final_preprocessed_input_bag.map(extract_all_ngrams_partial).flatten()
+            all_ngrams_ddf = all_ngrams_bag.to_dataframe(meta={'n': 'i4', 'ngram': 'str'})
+
+            all_ngram_maps_in_memory = {}
             for n in tqdm(n_values, desc="Building N-Gram Levels"):
-                DataUtils.print_header(f"Processing N-gram Level: n = {n}")
-                level_start_time = time.monotonic()
-
-                # 1. Generate all n-grams and create a unique, indexed map on disk
-                print(f"  [n={n}] Generating and mapping unique n-grams...")
-                extract_ngrams_partial = partial(ProtgramDaskHelpers.extract_ngrams_from_sequence_tuple, n_val=n)
-                ngrams_bag = final_preprocessed_input_bag.map(extract_ngrams_partial).flatten()
-                # --- DEFINITIVE FIX: Remove the 'columns' argument to comply with the updated Dask API ---
-                ngrams_ddf = ngrams_bag.to_dataframe(meta=pd.DataFrame({'ngram': pd.Series(dtype='str')}))
-
-                # Use Dask to find unique n-grams and create an ID map
-                ngram_map_ddf = ngrams_ddf.drop_duplicates(split_out=num_partitions_for_bag).reset_index(drop=True)
+                print(f"  - Creating map for n={n}...")
+                ngrams_for_n_ddf = all_ngrams_ddf[all_ngrams_ddf['n'] == n]
+                ngram_map_ddf = ngrams_for_n_ddf[['ngram']].drop_duplicates().reset_index(drop=True)
                 ngram_map_ddf['id'] = ngram_map_ddf.index
-
                 output_ngram_map_path = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
                 ngram_map_ddf.to_parquet(output_ngram_map_path, write_index=False, engine='pyarrow', overwrite=True)
+                all_ngram_maps_in_memory[n] = ngram_map_ddf.compute().set_index('ngram')['id'].to_dict()
+                print(f"    Unique n-gram map for n={n} (size: {len(all_ngram_maps_in_memory[n])}) created.")
+            print(f"<<< Phase 1 finished in {time.monotonic() - phase1_start_time:.2f}s.")
 
-                # Persist the map in memory for the merge operations.
-                ngram_map_ddf = ngram_map_ddf.persist()
-                ngram_to_id_map = ngram_map_ddf.compute().set_index('ngram')['id'].to_dict()
-                print(f"    Unique n-gram map for n={n} (size: {len(ngram_to_id_map)}) computed and loaded into memory.")
+            # Pass 2: Generate all edges for all levels in a single pass over the data.
+            DataUtils.print_header("Phase 2: Generating All Edges")
+            phase2_start_time = time.monotonic()
+            extract_all_edges_partial = partial(_extract_all_edges_from_sequence_tuple, n_max=self.n_max, all_ngram_maps=all_ngram_maps_in_memory)
+            all_edges_bag = final_preprocessed_input_bag.map(extract_all_edges_partial).flatten()
+            all_edges_ddf = all_edges_bag.to_dataframe(meta={'n': 'i4', 'source': 'i8', 'target': 'i8'})
 
-                # 2. Generate edge pairs and map to IDs
-                print(f"  [n={n}] Generating edge pairs and mapping to IDs simultaneously...")
-                extract_edges_partial = partial(
-                    ProtgramDaskHelpers.extract_edges_from_sequence_tuple, n_val=n, ngram_to_id_map=ngram_to_id_map
-                )
-                edge_id_str_bag = final_preprocessed_input_bag.map(extract_edges_partial).flatten()
-
-                # 3. Save edge pairs to Parquet
-                temp_edge_parts_dir = os.path.join(self.temp_dir, f"edge_parts_n{n}")
-                if os.path.exists(temp_edge_parts_dir):
-                    shutil.rmtree(temp_edge_parts_dir)
-
-                edge_id_dict_bag = edge_id_str_bag.map(lambda s: {'source': int(s.split()[0]), 'target': int(s.split()[1])})
-                edge_id_ddf_from_bag = edge_id_dict_bag.to_dataframe()
-                edge_id_ddf_from_bag.to_parquet(temp_edge_parts_dir, engine='pyarrow', overwrite=True)
-
-                # 4. Aggregate edge weights
-                edge_id_ddf = dd.read_parquet(temp_edge_parts_dir, engine='pyarrow')
-                print(f"  [n={n}] Aggregating edge weights...")
-                weighted_edges_ddf = edge_id_ddf.groupby(['source', 'target']).size().to_frame('weight')
-
-                # 5. Save the final aggregated edges to disk
+            for n in tqdm(n_values, desc="Aggregating Edges"):
+                print(f"  - Aggregating edges for n={n}...")
+                edges_for_n_ddf = all_edges_ddf[all_edges_ddf['n'] == n][['source', 'target']]
+                weighted_edges_ddf = edges_for_n_ddf.groupby(['source', 'target']).size().to_frame('weight')
                 temp_edge_file_path = os.path.join(self.temp_dir, f"aggregated_edges_n{n}.parquet")
-                print(f"  [n={n}] Saving final aggregated edges to disk...")
                 weighted_edges_ddf.to_parquet(temp_edge_file_path, engine='pyarrow', write_index=True, overwrite=True)
-
-                print(f"  Level n={n} processing finished in {time.monotonic() - level_start_time:.2f}s.")
-                shutil.rmtree(temp_edge_parts_dir)
-                del ngrams_bag, ngrams_ddf, ngram_map_ddf, edge_id_str_bag, edge_id_dict_bag, edge_id_ddf, weighted_edges_ddf, ngram_to_id_map
-                gc.collect()
+            print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.")
 
             # --- Phase 2: Build and save final graph objects ---
-            DataUtils.print_header("Phase 2: Building and saving final graph objects")
-            phase2_start_time = time.monotonic()
+            DataUtils.print_header("Phase 3: Building and saving final graph objects")
+            phase3_start_time = time.monotonic()
             for n in tqdm(n_values, desc="Saving Final Graph Objects"):
                 print(f"\n--- Processing n = {n} for final graph object ---")
                 ngram_map_file = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
@@ -257,20 +267,20 @@ class ProtGramDataBuilder:
                 graph_object.save_to_dir(output_dir_path)
                 print(f"  Graph for n={n} saved to {output_dir_path}")
 
-                del graph_object, idx_to_node
+                del graph_object, idx_to_node # noqa
                 gc.collect()
 
-            print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.")
+            print(f"<<< Phase 3 finished in {time.monotonic() - phase3_start_time:.2f}s.")
 
         # --- DEFINITIVE FIX: Ensure cleanup runs by placing it in the finally block ---
         # --- FIX: Move cleanup to a finally block to ensure it always runs ---
         finally:
             # --- Phase 3: Cleanup ---
-            DataUtils.print_header("Phase 3: Cleaning up temporary files")
-            phase3_start_time = time.monotonic()
+            DataUtils.print_header("Phase 4: Cleaning up temporary files")
+            phase4_start_time = time.monotonic()
             if os.path.exists(self.temp_dir):
                 shutil.rmtree(self.temp_dir)
                 print(f"  Temporary directory {self.temp_dir} cleaned up.")
-            print(f"<<< Phase 3 finished in {time.monotonic() - phase3_start_time:.2f}s.")
+            print(f"<<< Phase 4 finished in {time.monotonic() - phase4_start_time:.2f}s.")
 
         DataUtils.print_header(f"N-gram Graph Building FINISHED in {time.monotonic() - overall_start_time:.2f}s")

@@ -17,6 +17,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from torch_geometric.data import Data
 from tqdm.auto import tqdm
+from source.utils.fs.file_utils import FileUtils
 from gensim.models import Word2Vec
 from source.utils.post.embedding_loader import EmbeddingLoader
 
@@ -146,25 +147,28 @@ class EmbeddingProcessor:
 
             # --- Phase 2: Transform the data in chunks and write to new H5 file ---
             print("  Phase 2: Transforming data and writing to new HDF5 file...")
-            with EmbeddingLoader(input_h5_path) as loader, h5py.File(output_h5_path, 'w') as hf_out:
+            # --- DEFINITIVE FIX: Accumulate results and use the efficient FileUtils.write_h5 ---
+            # This ensures the output format is consistent with the rest of the pipeline.
+            transformed_embeddings_dict = {}
+            with EmbeddingLoader(input_h5_path) as loader:
                 keys = list(loader.get_keys())
                 for i in tqdm(range(0, len(keys), batch_size), desc="  - Transforming & Writing"):
                     batch_keys = keys[i:i + batch_size]
                     valid_keys = []
                     valid_embeddings_list = []
                     for k in batch_keys:
-                        emb = loader[k]
-                        if emb.size > 0 and not np.isnan(emb).any():
+                        # The loader already handles NaN checks implicitly by skipping them
+                        if k in loader:
+                            emb = loader[k]
                             valid_keys.append(k)
                             valid_embeddings_list.append(emb)
-                    if not valid_embeddings_list:
-                        continue
+                    if valid_embeddings_list:
+                        batch_embeddings = np.array(valid_embeddings_list, dtype=np.float32)
+                        transformed_batch = ipca.transform(scaler.transform(batch_embeddings))
+                        for key, transformed_vec in zip(valid_keys, transformed_batch):
+                            transformed_embeddings_dict[key] = transformed_vec.astype(np.float16)
 
-                    batch_embeddings = np.array(valid_embeddings_list, dtype=np.float32)
-                    transformed_batch = ipca.transform(scaler.transform(batch_embeddings))
-                    for key, transformed_vec in zip(valid_keys, transformed_batch):
-                        hf_out.create_dataset(key, data=transformed_vec.astype(np.float16), chunks=True, compression="gzip")
-
+            FileUtils.write_h5(transformed_embeddings_dict, output_h5_path, "Writing PCA-Transformed H5")
             print(f"  Successfully saved PCA-transformed embeddings to '{output_h5_path.name}'")
             return output_h5_path
 

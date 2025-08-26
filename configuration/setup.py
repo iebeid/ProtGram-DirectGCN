@@ -155,11 +155,17 @@ if __name__ == "__main__":
          f"\"tensorflow<2.16\" tf-keras "
          f"torch=={PYTORCH_VERSION} torchvision=={TORCHVISION_VERSION} torchaudio=={TORCHAUDIO_VERSION} --extra-index-url https://download.pytorch.org/whl/cu{CUDA_VERSION.replace('.', '')}"
          ),
-        "# --- MAINTENANCE NOTE: The following command is version-specific. ---",
-        "# If you change the CUDA_VERSION variable above, you MUST update the 'cu12' suffix",
-        "# in the package names below to match your new CUDA version (e.g., 'cu11' for CUDA 11.x).",
         "echo '--- Stage 2.5: Forcing library consistency by removing ALL pip-installed CUDA libs ---'",
-        "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 nvidia-nccl-cu12 nvidia-nvtx-cu12 nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-cupti-cu12 nvidia-nvjitlink-cu12 2>/dev/null || true",
+        # --- DEFINITIVE FIX: Dynamically generate the uninstall command ---
+        # This makes the script robust to changes in the CUDA_VERSION variable.
+        f"CUDA_SUFFIX=cu{CUDA_VERSION.split('.')[0]}",
+        "PACKAGES_TO_UNINSTALL=("
+        "    nvidia-cudnn-$CUDA_SUFFIX nvidia-cublas-$CUDA_SUFFIX nvidia-cufft-$CUDA_SUFFIX "
+        "    nvidia-curand-$CUDA_SUFFIX nvidia-cusolver-$CUDA_SUFFIX nvidia-cusparse-$CUDA_SUFFIX "
+        "    nvidia-nccl-$CUDA_SUFFIX nvidia-nvtx-$CUDA_SUFFIX nvidia-cuda-nvrtc-$CUDA_SUFFIX "
+        "    nvidia-cuda-runtime-$CUDA_SUFFIX nvidia-cuda-cupti-$CUDA_SUFFIX nvidia-nvjitlink-$CUDA_SUFFIX"
+        ")",
+        "pip uninstall -y ${PACKAGES_TO_UNINSTALL[@]} 2>/dev/null || true",
 
         # STAGE 3: PYCUDA INSTALL
         "echo '--- Stage 3: Building PyCUDA from source ---'",

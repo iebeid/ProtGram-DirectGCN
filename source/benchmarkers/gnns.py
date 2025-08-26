@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 from torch_geometric.data import Data
 from torch_geometric.utils import homophily
 
@@ -306,6 +306,16 @@ class GNNBenchmarker(BaseBenchmarker):
             dataset_original = self._get_dataset(dataset_name)
             if dataset_original:
                 dataset_results.extend(self._run_on_dataset_variant(dataset_original, f"{dataset_name}_Original"))
+
+            # --- DEFINITIVE FIX: Implement the logic for the BENCHMARK_TEST_ON_UNDIRECTED flag ---
+            # This was a missing feature. The pipeline will now run a second evaluation
+            # on a strictly undirected version of the graph if the flag is set.
+            if self.config.BENCHMARK_TEST_ON_UNDIRECTED and dataset_original:
+                from torch_geometric.utils import to_undirected
+                data_undirected = dataset_original[0].clone()
+                # Create a truly undirected graph by removing self-loops and adding reverse edges
+                data_undirected.edge_index = to_undirected(data_undirected.edge_index, data_undirected.num_nodes)
+                dataset_results.extend(self._run_on_dataset_variant([data_undirected], f"{dataset_name}_Undirected"))
 
             # --- Save summary for the current dataset ---
             if dataset_results:

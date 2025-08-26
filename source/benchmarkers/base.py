@@ -42,7 +42,9 @@ class BaseBenchmarker(ABC):
     def _create_link_or_copy_dir(self, source: Path, dest: Path):
         """Creates a symlink for a directory, falling back to a copy if needed."""
         try:
-            os.symlink(source, dest, target_is_directory=True)
+            # --- REFACTOR: Use pathlib's symlink_to for better cross-platform compatibility ---
+            # This is generally more robust than os.symlink, especially on Windows.
+            dest.symlink_to(source, target_is_directory=True)
         except (OSError, AttributeError, NotImplementedError):
             print(f"    Symlink failed. Falling back to copying directory (this may take a moment)...")
             shutil.copytree(source, dest)

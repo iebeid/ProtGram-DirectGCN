@@ -36,6 +36,9 @@ class EmbeddingLoader:
         self._h5_file: Optional[h5py.File] = None
         self._keys: Optional[Set[str]] = None
         self._in_memory_data: Optional[Dict[str, np.ndarray]] = None
+        # --- NEW: Add attributes to handle the new, efficient HDF5 format ---
+        self.is_new_format = False
+        self.id_to_idx_map: Dict[str, int] = {}
 
     def __enter__(self) -> 'EmbeddingLoader':
         if not self.h5_path.exists():
@@ -59,22 +62,32 @@ class EmbeddingLoader:
                 print(f"  Memory Strategy ('dynamic'): File '{self.h5_path.name}' ({file_size_gb:.2f} GB) is too large for available RAM ({available_mem_gb:.2f} GB). Using lazy loading.")
 
         if should_load_to_memory:
-            try:
-                with h5py.File(self.h5_path, 'r') as hf:
+            print(f"  Memory Strategy ('high'): Loading '{self.h5_path.name}' into RAM for faster access.")
+            with h5py.File(self.h5_path, 'r') as hf:
+                # --- DEFINITIVE FIX: Detect and handle the new HDF5 format ---
+                if 'ids' in hf and 'embeddings' in hf:
+                    print(f"  Detected new, efficient HDF5 format for '{self.h5_path.name}'.")
+                    ids = [s.decode('utf-8') for s in hf['ids'][:]]
+                    vectors = hf['embeddings'][:].astype(np.float16)
+                    self._in_memory_data = dict(zip(ids, vectors))
+                else: # Fallback to old format
                     self._in_memory_data = {key: hf[key][:].astype(np.float16) for key in hf.keys()}
-                self._keys = set(self._in_memory_data.keys())
-                self._h5_file = None  # Ensure we don't use the file handle
-            except (MemoryError, OSError) as e:
-                print(f"  WARNING: Failed to load '{self.h5_path.name}' into memory (Error: {e}). Falling back to lazy loading.")
-                self._in_memory_data = None
-                self._h5_file = h5py.File(self.h5_path, 'r')
-                self._keys = set(self._h5_file.keys())
+            self._keys = set(self._in_memory_data.keys())
+            self._h5_file = None
         else:
             # Default lazy loading
             if strategy == 'low':
                 print(f"  Memory Strategy ('low'): Using lazy loading for '{self.h5_path.name}'.")
             self._h5_file = h5py.File(self.h5_path, 'r')
-            self._keys = set(self._h5_file.keys())
+            # --- DEFINITIVE FIX: Detect and handle the new HDF5 format for lazy loading ---
+            if 'ids' in self._h5_file and 'embeddings' in self._h5_file:
+                self.is_new_format = True
+                print(f"  Detected new, efficient HDF5 format for '{self.h5_path.name}'.")
+                id_list = [s.decode('utf-8') for s in self._h5_file['ids'][:]]
+                self.id_to_idx_map = {protein_id: i for i, protein_id in enumerate(id_list)}
+                self._keys = set(id_list)
+            else: # Fallback to old format
+                self._keys = set(self._h5_file.keys())
             self._in_memory_data = None
 
         return self
@@ -99,12 +112,16 @@ class EmbeddingLoader:
 
         # --- FIX: Handle both in-memory and lazy-loading strategies ---
         if self._in_memory_data is not None:
-            # High-memory mode: get from dict
             if key in self._in_memory_data:
                 return self._in_memory_data[key]
         elif self._h5_file is not None:
-            # Low-memory (lazy) mode: get from file
-            return self._h5_file[key][:].astype(np.float16)
+            # --- DEFINITIVE FIX: Handle lazy loading for both formats ---
+            if self.is_new_format:
+                idx = self.id_to_idx_map.get(key)
+                if idx is not None:
+                    return self._h5_file['embeddings'][idx].astype(np.float16)
+            else: # Fallback for old format
+                return self._h5_file[key][:].astype(np.float16)
         raise KeyError(f"Key '{key}' not found in {self.h5_path}")
 
     def __len__(self) -> int:

@@ -74,20 +74,16 @@ class UIManager:
         # The Config class now ensures that ORIGINAL_SEQUENCE_FILE_PATHS contains only the single,
         # user-specified FASTA file. This method now only needs to handle the downsampling logic.
 
-        # Downsampling logic
         should_downsample = config.SEQUENCE_DOWNSAMPLE_FRACTION and 0 < config.SEQUENCE_DOWNSAMPLE_FRACTION < 1.0
         if should_downsample:
             DataUtils.print_header(f"Downsampling FASTA files ({config.SEQUENCE_DOWNSAMPLE_FRACTION:.1%})")
-            random.seed(config.RANDOM_STATE)
             files_to_process = []
             for original_path in config.ORIGINAL_SEQUENCE_FILE_PATHS:
-                with open(original_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    total_sequences = sum(1 for line in f if line.startswith('>'))
-                if total_sequences == 0:
-                    print(f"  - WARNING: No sequences found in {original_path.name}. Skipping.")
-                    continue
-                sample_size = int(total_sequences * config.SEQUENCE_DOWNSAMPLE_FRACTION)
-                print(f"  - Sampling {sample_size} of {total_sequences} sequences...")
+                # --- DEFINITIVE FIX: Use a single-pass probabilistic sampler for efficiency ---
+                # The previous method read the file twice (once to count, once to sample).
+                # This new method reads the file only once, yielding sequences with a given
+                # probability, which is much faster for large files.
+                print(f"  - Applying probabilistic sampling to '{original_path.name}'...")
                 sequence_iterator = FastaUtils.parse_sequences(
                     [original_path],
                     perform_cleaning=config.PROTGRAM_CLEAN_FASTA_ON_PARSE,
@@ -95,7 +91,14 @@ class UIManager:
                     max_len=config.PROTGRAM_FASTA_MAX_LEN,
                     alphabet_type=config.PROTGRAM_FASTA_ALPHABET
                 )
-                sampled_sequences = DataUtils.reservoir_sample(sequence_iterator, sample_size, config.RANDOM_STATE)
+
+                def probabilistic_sampler(iterator, fraction, seed):
+                    rng = random.Random(seed)
+                    for item in iterator:
+                        if rng.random() < fraction:
+                            yield item
+
+                sampled_sequences = probabilistic_sampler(sequence_iterator, config.SEQUENCE_DOWNSAMPLE_FRACTION, config.RANDOM_STATE)
                 temp_fasta_path = temp_dir / f"{original_path.stem}_sampled.fasta"
                 with open(temp_fasta_path, "w") as f:
                     for seq_id, sequence in sampled_sequences:
