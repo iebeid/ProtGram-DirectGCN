@@ -127,7 +127,7 @@ class IDMapper:
                     usecols=['uniprot_id', 'db_type', 'db_id'],
                     dtype={'uniprot_id': 'string', 'db_type': 'string', 'db_id': 'string'},
                     on_bad_lines='warn',
-                    blocksize='256MB'
+                    blocksize='64MB'
                 )
 
                 # --- DEFINITIVE FIX: Remove the incorrect filter ---
