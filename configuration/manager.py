@@ -99,6 +99,11 @@ class DataManager:
                 id_map_artifact = self.config.ID_MAPPING_PATH if self.config.ID_MAPPING_MODE == 'file' else self.config.PROJECT_ROOT / f"{self.config.ID_MAPPING_MODE}_map_cache.pkl"
                 if id_map_artifact.exists():
                     self._copy_to_cache(id_map_artifact)
+                    # --- DEFINITIVE FIX for Orphan File Bug ---
+                    # After copying the temporary cache file (e.g., regex_map_cache.pkl)
+                    # to the persistent cache, remove the original from the project root.
+                    if self.config.ID_MAPPING_MODE != 'file':
+                        id_map_artifact.unlink()
 
                 print("\n--- Step 2b: Processing Negative Interaction Files ---")
                 processor._process_negative_interactions()
@@ -302,7 +307,10 @@ class DataManager:
                         Actor(root=str(dataset_root))
                     elif name == 'KarateClub':
                         KarateClub()
-                    self._copy_to_cache(dataset_root / name)
+                    # --- DEFINITIVE FIX for Redundant Cache Bug ---
+                    # The BaseBenchmarker has its own, more sophisticated logic for caching
+                    # these datasets in a dedicated 'benchmarks' subdirectory. We let it handle
+                    # the caching to avoid creating a redundant copy in the cache root.
                 except Exception as e:
                     print(f"    - WARNING: Failed to download PyG dataset '{name}': {e}")
                 continue

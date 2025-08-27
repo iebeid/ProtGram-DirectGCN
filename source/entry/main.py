@@ -188,173 +188,173 @@ class PipelineOrchestrator:
     def run(self):
         """Executes the entire pipeline."""
         script_start_time = time.monotonic()
-        logger = FileLogger(self.base_config.LOG_DIR, enabled=self.base_config.ENABLE_FILE_LOGGING)
+        # --- DEFINITIVE FIX for Duplicate Logs ---
+        # The FileLogger is now created and managed by the main `run.py` script.
+        # We remove the redundant logger here to prevent the creation of a second log file.
+        try:
+            DataUtils.print_header("Starting Protein-Protein Interaction Meta-Pipeline")
 
-        with logger:
-            try:
-                DataUtils.print_header("Starting Protein-Protein Interaction Meta-Pipeline")
-
-                data_manager = DataManager(self.base_config)
-                print("\n--- Verifying local data integrity ---")
-                # --- DEFINITIVE FIX: Use the more robust setup check ---
-                if not data_manager.is_setup_complete():
-                    print("\n--- Local data is invalid or incomplete. Attempting to restore from cache... ---")
-                    # Try to restore source files. This is just an optimization.
-                    if data_manager.restore_data_from_cache():
-                        print("  - ✅ Successfully restored source data from cache.")
-                    else:
-                        print("  - ℹ️ Could not restore from cache. Will proceed with full download.")
-
-                    # Now, run the full setup. It's idempotent and will handle everything.
-                    # If files were restored, it will skip downloading and just process.
-                    # If restore failed, it will download and then process.
-                    # This guarantees that the ID map cache is created.
-                    print("\n--- Data setup is incomplete. Running full setup to generate derived files... ---")
-                    data_manager.run_full_setup()
-
-                    if not data_manager.is_setup_complete():
-                        print("FATAL: Data validation failed even after a full setup. Please check logs.")
-                        sys.exit(1)
+            data_manager = DataManager(self.base_config)
+            print("\n--- Verifying local data integrity ---")
+            # --- DEFINITIVE FIX: Use the more robust setup check ---
+            if not data_manager.is_setup_complete():
+                print("\n--- Local data is invalid or incomplete. Attempting to restore from cache... ---")
+                # Try to restore source files. This is just an optimization.
+                if data_manager.restore_data_from_cache():
+                    print("  - ✅ Successfully restored source data from cache.")
                 else:
-                    print("  - ✅ Local data is valid.")
+                    print("  - ℹ️ Could not restore from cache. Will proceed with full download.")
 
-                # --- NEW: Add dynamic system resource checks at the start ---
-                DataUtils.report_system_resources(self.base_config.BASE_OUTPUT_DIR)
+                # Now, run the full setup. It's idempotent and will handle everything.
+                # If files were restored, it will skip downloading and just process.
+                # If restore failed, it will download and then process.
+                # This guarantees that the ID map cache is created.
+                print("\n--- Data setup is incomplete. Running full setup to generate derived files... ---")
+                data_manager.run_full_setup()
 
-                if self.base_config.DEBUG_VERBOSE:
-                    print("--- Full Configuration Values ---")
-                    for key, value in sorted(vars(self.base_config).items()):
-                        if not key.startswith('_'): print(f"  {key:<40} | {value}")
-                    print("--------------------------")
+                if not data_manager.is_setup_complete():
+                    print("FATAL: Data validation failed even after a full setup. Please check logs.")
+                    sys.exit(1)
+            else:
+                print("  - ✅ Local data is valid.")
 
-                if self.base_config.USE_MLFLOW:
-                    mlflow.set_tracking_uri(self.base_config.MLFLOW_TRACKING_URI)
+            # --- NEW: Add dynamic system resource checks at the start ---
+            DataUtils.report_system_resources(self.base_config.BASE_OUTPUT_DIR)
 
-                if self.base_config.RUN_INTEGRATED_TESTS:
-                    DataUtils.print_header("Running Integrated Test Suite")
-                    gpu_is_ok = run_all_tests()
-                    DataUtils.print_header("Integrated Test Suite Finished.")
-                    if not gpu_is_ok:
-                        print("\n" + "!" * 80)
-                        print("!!! WARNING: GPU verification failed. Pipeline will run on CPU. !!!")
-                        print("!" * 80 + "\n")
-                        if sys.stdin.isatty():
-                            response = input("Continue with CPU-only execution? (y/n): ").lower().strip()
-                            if response not in ['y', 'yes']: sys.exit(1)
-                    if not self.ui_manager.prompt_to_continue("Integrated Tests"): sys.exit(0)
+            if self.base_config.DEBUG_VERBOSE:
+                print("--- Full Configuration Values ---")
+                for key, value in sorted(vars(self.base_config).items()):
+                    if not key.startswith('_'): print(f"  {key:<40} | {value}")
+                print("--------------------------")
 
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    files_to_process = self.ui_manager.get_fasta_files_to_process(self.base_config, Path(temp_dir))
-                    if not files_to_process:
-                        print("\nERROR: No sequence files defined. Cannot run experiments.")
-                        return
+            if self.base_config.USE_MLFLOW:
+                mlflow.set_tracking_uri(self.base_config.MLFLOW_TRACKING_URI)
 
-                    if self.base_config.RUN_TRANSFORMER_PIPELINE:
-                        DataUtils.print_header("Verifying Transformer Model Availability")
-                        from huggingface_hub import model_info
-                        for model_cfg in self.base_config.TRANSFORMER_MODELS_TO_RUN:
-                            model_id = model_cfg['hf_id']
-                            local_path = self.base_config.DATA_MODELS_DIR / model_id
-                            if not (local_path.exists() and (local_path / "tf_model.h5").exists()):
-                                try:
-                                    info = model_info(model_id)
-                                    is_pytorch_only = "tensorflow" not in info.tags and "tf" not in info.tags
-                                    if is_pytorch_only:
-                                        print(f"\n--- ACTION: Model '{model_id}' requires conversion. ---")
-                                        # --- DEFINITIVE FIX: Invoke the converter as a module (-m) ---
-                                        # This is the standard, robust way to run a script from within a package,
-                                        # as it correctly handles the Python path and avoids ModuleNotFoundError.
-                                        module_path = "source.utils.models.model_converter"
-                                        subprocess.run([sys.executable, "-m", module_path, model_id], check=True)
-                                except Exception as e:
-                                    print(f"  Warning: Could not verify or convert model '{model_id}': {e}")
+            if self.base_config.RUN_INTEGRATED_TESTS:
+                DataUtils.print_header("Running Integrated Test Suite")
+                gpu_is_ok = run_all_tests()
+                DataUtils.print_header("Integrated Test Suite Finished.")
+                if not gpu_is_ok:
+                    print("\n" + "!" * 80)
+                    print("!!! WARNING: GPU verification failed. Pipeline will run on CPU. !!!")
+                    print("!" * 80 + "\n")
+                    if sys.stdin.isatty():
+                        response = input("Continue with CPU-only execution? (y/n): ").lower().strip()
+                        if response not in ['y', 'yes']: sys.exit(1)
+                if not self.ui_manager.prompt_to_continue("Integrated Tests"): sys.exit(0)
 
-                    for fasta_file_path in files_to_process:
-                        # --- NEW: Add robust error handling for each dataset ---
-                        # This prevents a failure on one FASTA file from stopping the entire orchestration.
-                        try:
-                            config = copy.deepcopy(self.base_config)
-                            dataset_name = fasta_file_path.stem
-                            DataUtils.print_header(f"PROCESSING DATASET: {dataset_name.upper()}")
-                            config.SEQUENCE_FILE_PATHS = [fasta_file_path]
+            with tempfile.TemporaryDirectory() as temp_dir:
+                files_to_process = self.ui_manager.get_fasta_files_to_process(self.base_config, Path(temp_dir))
+                if not files_to_process:
+                    print("\nERROR: No sequence files defined. Cannot run experiments.")
+                    return
 
-                            paths_to_specialize = [
-                                'RESULTS_GRAPH_OBJECTS_DIR', 'RESULTS_GCN_EMBEDDINGS_DIR',
-                                'RESULTS_W2V_EMBEDDINGS_DIR', 'RESULTS_LSTM_EMBEDDINGS_DIR',
-                                'RESULTS_TRANSFORMER_EMBEDDINGS_DIR', 'RESULTS_EVALUATION_DIR'
-                            ]
-                            for path_attr in paths_to_specialize:
-                                if hasattr(config, path_attr):
-                                    original_path = getattr(self.base_config, path_attr)
-                                    setattr(config, path_attr, original_path / dataset_name)
+                if self.base_config.RUN_TRANSFORMER_PIPELINE:
+                    DataUtils.print_header("Verifying Transformer Model Availability")
+                    from huggingface_hub import model_info
+                    for model_cfg in self.base_config.TRANSFORMER_MODELS_TO_RUN:
+                        model_id = model_cfg['hf_id']
+                        local_path = self.base_config.DATA_MODELS_DIR / model_id
+                        if not (local_path.exists() and (local_path / "tf_model.h5").exists()):
+                            try:
+                                info = model_info(model_id)
+                                is_pytorch_only = "tensorflow" not in info.tags and "tf" not in info.tags
+                                if is_pytorch_only:
+                                    print(f"\n--- ACTION: Model '{model_id}' requires conversion. ---")
+                                    # --- DEFINITIVE FIX: Invoke the converter as a module (-m) ---
+                                    # This is the standard, robust way to run a script from within a package,
+                                    # as it correctly handles the Python path and avoids ModuleNotFoundError.
+                                    module_path = "source.utils.models.model_converter"
+                                    subprocess.run([sys.executable, "-m", module_path, model_id], check=True)
+                            except Exception as e:
+                                print(f"  Warning: Could not verify or convert model '{model_id}': {e}")
 
-                            checkpoint_dir_uri = os.path.join(str(config.BASE_OUTPUT_DIR), "checkpoints", dataset_name)
-                            checkpoint_manager = CheckpointManager(checkpoint_dir_uri)
+                for fasta_file_path in files_to_process:
+                    # --- NEW: Add robust error handling for each dataset ---
+                    # This prevents a failure on one FASTA file from stopping the entire orchestration.
+                    try:
+                        config = copy.deepcopy(self.base_config)
+                        dataset_name = fasta_file_path.stem
+                        DataUtils.print_header(f"PROCESSING DATASET: {dataset_name.upper()}")
+                        config.SEQUENCE_FILE_PATHS = [fasta_file_path]
 
-                            # --- DEFINITIVE FIX: Add checkpointing for major pipeline stages ---
-                            # This prevents long-running steps from being re-executed unnecessarily.
-                            if not checkpoint_manager.get_checkpoint("GraphBuilding"):
-                                DataUtils.print_header("Building all n-gram graphs for the main pipeline")
-                                ProtGramDataBuilder(config).run()
-                                checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "completed"})
-                            if not self.ui_manager.prompt_to_continue("Graph Building"): continue
+                        paths_to_specialize = [
+                            'RESULTS_GRAPH_OBJECTS_DIR', 'RESULTS_GCN_EMBEDDINGS_DIR',
+                            'RESULTS_W2V_EMBEDDINGS_DIR', 'RESULTS_LSTM_EMBEDDINGS_DIR',
+                            'RESULTS_TRANSFORMER_EMBEDDINGS_DIR', 'RESULTS_EVALUATION_DIR'
+                        ]
+                        for path_attr in paths_to_specialize:
+                            if hasattr(config, path_attr):
+                                original_path = getattr(self.base_config, path_attr)
+                                setattr(config, path_attr, original_path / dataset_name)
 
-                            # --- DEFINITIVE FIX: Decouple main embedding generation from pre-analysis ---
-                            # The main embedding pipelines have their own internal checkpointing and should
-                            # always be run to ensure the list of files to evaluate is populated.
-                            generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)
-                            generated_files = generated_files if isinstance(generated_files, list) else []
-                            config.LP_EMBEDDING_FILES_TO_EVALUATE = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_files
+                        checkpoint_dir_uri = os.path.join(str(config.BASE_OUTPUT_DIR), "checkpoints", dataset_name)
+                        checkpoint_manager = CheckpointManager(checkpoint_dir_uri)
 
-                            # Now, run the optional pre-analysis/benchmarking step, gated by its own checkpoint.
-                            if not checkpoint_manager.get_checkpoint("PreAnalysis"):
-                                if not self._run_pre_analysis_and_prompt(config, fasta_file_path):
-                                    continue  # User chose to stop after pre-analysis
-                                checkpoint_manager.save_checkpoint("PreAnalysis", {"status": "completed"})
+                        # --- DEFINITIVE FIX: Add checkpointing for major pipeline stages ---
+                        # This prevents long-running steps from being re-executed unnecessarily.
+                        if not checkpoint_manager.get_checkpoint("GraphBuilding"):
+                            DataUtils.print_header("Building all n-gram graphs for the main pipeline")
+                            ProtGramDataBuilder(config).run()
+                            checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "completed"})
+                        if not self.ui_manager.prompt_to_continue("Graph Building"): continue
 
-                            # --- Run Hyperparameter Optimization ---
-                            if config.RUN_HPO:
-                                DataUtils.print_header("Running Hyperparameter Optimization")
-                                optimizer = HyperparameterOptimizer(config)
-                                target_model_name = config.HPO_TARGET_EMBEDDING_MODEL
-                                target_embedding_path = None
-                                for emb_file in config.LP_EMBEDDING_FILES_TO_EVALUATE:
-                                    if emb_file['name'] == target_model_name:
-                                        target_embedding_path = emb_file['path']
-                                        break
+                        # --- DEFINITIVE FIX: Decouple main embedding generation from pre-analysis ---
+                        # The main embedding pipelines have their own internal checkpointing and should
+                        # always be run to ensure the list of files to evaluate is populated.
+                        generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)
+                        generated_files = generated_files if isinstance(generated_files, list) else []
+                        config.LP_EMBEDDING_FILES_TO_EVALUATE = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_files
 
-                                if target_embedding_path:
-                                    optimizer.optimize_ppi_mlp(str(target_embedding_path), target_model_name)
-                                else:
-                                    print(f"  Warning: HPO target embedding '{target_model_name}' not found in generated/configured files. Skipping HPO.")
+                        # Now, run the optional pre-analysis/benchmarking step, gated by its own checkpoint.
+                        if not checkpoint_manager.get_checkpoint("PreAnalysis"):
+                            if not self._run_pre_analysis_and_prompt(config, fasta_file_path):
+                                continue  # User chose to stop after pre-analysis
+                            checkpoint_manager.save_checkpoint("PreAnalysis", {"status": "completed"})
 
-                            # --- Run Main PPI Evaluation ---
-                            if config.RUN_MAIN_PPI_EVALUATION:
-                                DataUtils.print_header(f"Running Main Evaluation for Dataset: {dataset_name}")
-                                if not checkpoint_manager.get_checkpoint("PPI_Evaluation"):
-                                    if config.LP_EMBEDDING_FILES_TO_EVALUATE:
-                                        ppi_evaluator = PPIPipeline(config)
-                                        ppi_evaluator.run(use_dummy_data=config.RUN_DUMMY_TEST)
-                                        checkpoint_manager.save_checkpoint("PPI_Evaluation", {"status": "completed"})
+                        # --- Run Hyperparameter Optimization ---
+                        if config.RUN_HPO:
+                            DataUtils.print_header("Running Hyperparameter Optimization")
+                            optimizer = HyperparameterOptimizer(config)
+                            target_model_name = config.HPO_TARGET_EMBEDDING_MODEL
+                            target_embedding_path = None
+                            for emb_file in config.LP_EMBEDDING_FILES_TO_EVALUATE:
+                                if emb_file['name'] == target_model_name:
+                                    target_embedding_path = emb_file['path']
+                                    break
 
-                        # --- FIX: Add the missing 'except' block for the per-dataset try block ---
-                        # This ensures that if one dataset fails, the pipeline can continue to the next.
-                        except Exception as e:
-                            print(f"\n--- ❌ ERROR processing dataset: {dataset_name} ---")
-                            print(f"  This dataset will be skipped. The pipeline will continue with the next one.")
-                            print(f"  Error details: {e}")
-                            import traceback
-                            traceback.print_exc()
+                            if target_embedding_path:
+                                optimizer.optimize_ppi_mlp(str(target_embedding_path), target_model_name)
+                            else:
+                                print(f"  Warning: HPO target embedding '{target_model_name}' not found in generated/configured files. Skipping HPO.")
+
+                        # --- Run Main PPI Evaluation ---
+                        if config.RUN_MAIN_PPI_EVALUATION:
+                            DataUtils.print_header(f"Running Main Evaluation for Dataset: {dataset_name}")
+                            if not checkpoint_manager.get_checkpoint("PPI_Evaluation"):
+                                if config.LP_EMBEDDING_FILES_TO_EVALUATE:
+                                    ppi_evaluator = PPIPipeline(config)
+                                    ppi_evaluator.run(use_dummy_data=config.RUN_DUMMY_TEST)
+                                    checkpoint_manager.save_checkpoint("PPI_Evaluation", {"status": "completed"})
+
+                    # --- FIX: Add the missing 'except' block for the per-dataset try block ---
+                    # This ensures that if one dataset fails, the pipeline can continue to the next.
+                    except Exception as e:
+                        print(f"\n--- ❌ ERROR processing dataset: {dataset_name} ---")
+                        print(f"  This dataset will be skipped. The pipeline will continue with the next one.")
+                        print(f"  Error details: {e}")
+                        import traceback
+                        traceback.print_exc()
 
 
-                DataUtils.print_header(f"Full Orchestration Finished in {time.monotonic() - script_start_time:.2f} seconds.")
-                self.ui_manager.launch_mlflow_ui(self.base_config)
+            DataUtils.print_header(f"Full Orchestration Finished in {time.monotonic() - script_start_time:.2f} seconds.")
+            self.ui_manager.launch_mlflow_ui(self.base_config)
 
-            except Exception as e:
-                print(f"\n--- PIPELINE FAILED ---: {e}")
-                import traceback
-                traceback.print_exc()
-                raise
+        except Exception as e:
+            print(f"\n--- PIPELINE FAILED ---: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
 
 if __name__ == '__main__':
