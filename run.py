@@ -7,6 +7,7 @@
 
 import argparse
 import sys
+import subprocess
 
 # --- FIX: Suppress the Hugging Face Tokenizers parallelism warning ---
 # This is a common warning in multiprocessing environments. Setting this environment
@@ -48,6 +49,30 @@ def is_environment_valid() -> bool:
         print("--- Assuming setup is required. ---")
         return False
 
+def run_setup():
+    """Executes the main setup script to build the Conda environment."""
+    print("\n" + "="*80)
+    print("--- Environment is incomplete. Running setup script... ---")
+    print("--- This is a one-time process and may take several minutes. ---")
+    print("="*80 + "\n")
+    try:
+        # Use sys.executable to ensure we use the python from the current (minimal) env
+        # to run the setup script. This is the most robust method.
+        setup_script_path = "configuration/setup.py"
+        result = subprocess.run([sys.executable, setup_script_path], check=True)
+        if result.returncode == 0:
+            print("\n" + "="*80)
+            print("--- ✅ Environment setup completed successfully. ---")
+            print("--- The application will now start. ---")
+            print("="*80 + "\n")
+            return True
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print("\n" + "!"*80)
+        print(f"--- ❌ FATAL: Environment setup script failed: {e} ---")
+        print("--- Please check the logs above for details. ---")
+        print("!"*80 + "\n")
+    return False
+
 if __name__ == "__main__":
     # --- DEFINITIVE FIX: This script is now just an environment validator or a simple launcher ---
     parser = argparse.ArgumentParser(description="Run pipeline or validate environment.")
@@ -60,8 +85,12 @@ if __name__ == "__main__":
         else:
             sys.exit(1)  # Failure
     else:
-        # Default behavior: run the main application logic.
-        # This assumes the environment is already valid.
+        # --- DEFINITIVE FIX: Validate the environment and run setup if needed ---
+        if not is_environment_valid():
+            if not run_setup():
+                sys.exit(1) # Exit if the setup process failed
+
+        # Now, we can safely assume the environment is valid and proceed.
         base_config = Config()
         logger = FileLogger(base_config.LOG_DIR, enabled=base_config.ENABLE_FILE_LOGGING)
         with logger:
