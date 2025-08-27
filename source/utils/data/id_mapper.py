@@ -48,13 +48,16 @@ class IDMapper:
 
     def get_map(self) -> Optional[Mapping[str, str]]:
         """
-        Gets the ID mapping dictionary based on the configuration.
-
-        This method is idempotent. It loads the map from the appropriate
-        pickle file on the first call and returns the cached-in-memory
-        dictionary on subsequent calls.
+        Gets the ID mapping dictionary. NOTE: For 'file' mode, this is now
+        deprecated due to memory constraints and will return an empty dict.
+        The mapping is now handled on-demand by the EmbeddingProcessor.
         """
         mode = self.config.ID_MAPPING_MODE
+
+        if mode == 'file':
+            print("  WARNING: IDMapper.get_map() was called in 'file' mode. This is deprecated.")
+            print("  Returning an empty map to prevent OOM errors. On-demand mapping should be used instead.")
+            return {}
 
         if mode == 'none':
             return None
@@ -86,26 +89,26 @@ class IDMapper:
         if mode == 'none':
             return
 
-        cache_filename = f"{mode}_map_cache.pkl"
-        local_cache_path = self.config.PROJECT_ROOT / cache_filename
-
-        if local_cache_path.exists():
-            print(f"  INFO: ID map cache '{local_cache_path.name}' already exists. Skipping generation.")
-            return
-
-        id_map = {}
         if mode == 'file':
-            id_map = self._generate_from_dat_file_direct()
+            # Check if the final parquet file exists.
+            if self.config.ID_MAPPING_PATH.exists():
+                print(f"  INFO: ID map Parquet file '{self.config.ID_MAPPING_PATH.name}' already exists. Skipping generation.")
+                return
+            self._generate_from_dat_file_direct()
         elif mode == 'regex':
+            cache_filename = f"{mode}_map_cache.pkl"
+            local_cache_path = self.config.PROJECT_ROOT / cache_filename
+            if local_cache_path.exists():
+                print(f"  INFO: ID map cache '{local_cache_path.name}' already exists. Skipping generation.")
+                return
             id_map = self._generate_from_regex()
+            if id_map:
+                print(f"  Saving newly generated ID map to local cache: {local_cache_path.name}")
+                FileUtils.save_object(id_map, local_cache_path)
         elif mode == 'api':
             raise NotImplementedError("The 'api' mapping mode is configured but not yet implemented.")
 
-        if id_map:
-            print(f"  Saving newly generated ID map to local cache: {local_cache_path.name}")
-            FileUtils.save_object(id_map, local_cache_path)
-
-    def _generate_from_dat_file_direct(self) -> Dict[str, str]:
+    def _generate_from_dat_file_direct(self):
         """
         Directly creates the ID map from the raw `idmapping.dat` file using Dask.
         """
@@ -130,23 +133,20 @@ class IDMapper:
                     blocksize='128MB'
                 )
 
-                # --- DEFINITIVE FIX: Remove the incorrect filter ---
-                # The previous logic only mapped UniProt IDs to themselves, resulting in an
-                # incomplete (and in this case, empty) map. The correct behavior is to
-                # map ALL database IDs in the file to their canonical UniProt ID.
                 print("  - Dask is now processing the file in parallel. This may take a while...")
-                computed_df = ddf.compute()
 
-            print("  - Aggregating computed results into the final dictionary...")
-            id_map = dict(zip(computed_df['db_id'], computed_df['uniprot_id']))
-            del ddf, computed_df
-            gc.collect()
+                # --- DEFINITIVE FIX for OOM Error: Save directly to a queryable Parquet file ---
+                # This avoids materializing the entire (massive) ID map in memory.
+                output_path = self.config.ID_MAPPING_PATH
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                # Select and rename columns for a clean output
+                final_ddf = ddf[['db_id', 'uniprot_id']]
+                final_ddf.to_parquet(output_path, engine='pyarrow', overwrite=True)
+                print(f"  - ✅ Success! Generated ID map Parquet file at {output_path}.")
 
-            print(f"  - ✅ Success! Generated ID map with {len(id_map)} entries.")
-            return id_map
         except Exception as e:
             logging.error(f"Failed during direct DAT-to-dictionary conversion: {e}", exc_info=True)
-            return {}
+            # No return value needed as we write to disk
 
     def _generate_from_regex(self) -> Dict[str, str]:
         """Performs ID mapping by parsing FASTA headers with regular expressions."""

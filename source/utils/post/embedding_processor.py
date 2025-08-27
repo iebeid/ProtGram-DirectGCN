@@ -57,36 +57,54 @@ class EmbeddingProcessor:
         if config.ID_MAPPING_MODE == 'none':
             return raw_embedding_path
 
-        mapper = IDMapper(config)
-        id_map = mapper.get_map()
+        # --- DEFINITIVE FIX for OOM Error: Use on-demand mapping for 'file' mode ---
+        if config.ID_MAPPING_MODE == 'file':
+            print(f"  Standardizing embedding file using on-demand mapping: {Path(raw_embedding_path).name}")
+            id_mapping_parquet_path = config.ID_MAPPING_PATH
+            if not id_mapping_parquet_path.exists():
+                print(f"  - ❌ ERROR: ID mapping Parquet file not found at {id_mapping_parquet_path}. Cannot standardize. Returning original file.")
+                return raw_embedding_path
 
-        if not id_map:
-            print(f"  - WARNING: No ID map found. Skipping standardization for {Path(raw_embedding_path).name}.")
-            return raw_embedding_path
+            # 1. Get the keys from the embedding file we need to translate
+            with EmbeddingLoader(raw_embedding_path, config=config) as loader:
+                keys_to_map = loader.get_keys()
 
-        print(f"  Standardizing embedding file: {Path(raw_embedding_path).name}")
+            if not keys_to_map:
+                print("  - WARNING: No embeddings found in the source file. Nothing to standardize.")
+                return raw_embedding_path
+
+            # 2. Load the mapping parquet and filter it to only the keys we need
+            print(f"  Loading relevant mappings for {len(keys_to_map)} IDs from Parquet file...")
+            try:
+                import dask.dataframe as dd
+                map_ddf = dd.read_parquet(id_mapping_parquet_path)
+                filtered_map_ddf = map_ddf[map_ddf['db_id'].isin(list(keys_to_map))]
+                filtered_map_df = filtered_map_ddf.compute()
+                id_map = dict(zip(filtered_map_df['db_id'], filtered_map_df['uniprot_id']))
+                print(f"  Successfully created a specific ID map with {len(id_map)} entries.")
+            except Exception as e:
+                print(f"  - ❌ ERROR: Failed to load or filter the ID mapping Parquet file: {e}")
+                return raw_embedding_path
+        else: # Handle other modes like 'regex' which are small enough for memory
+            mapper = IDMapper(config)
+            id_map = mapper.get_map()
+            if not id_map:
+                print(f"  - WARNING: No ID map found for mode '{config.ID_MAPPING_MODE}'. Skipping standardization for {Path(raw_embedding_path).name}.")
+                return raw_embedding_path
 
         raw_path = Path(raw_embedding_path)
         standardized_path = raw_path.with_name(f"{raw_path.stem}_standardized.h5")
 
+        # 3. Now proceed with the original standardization logic using the (now much smaller) id_map
         try:
-            # --- DEFINITIVE FIX: Handle new and old HDF5 formats correctly and efficiently ---
-            with h5py.File(raw_path, 'r') as raw_h5:
-                # Check if the file is in the new, efficient format
-                if 'ids' in raw_h5 and 'embeddings' in raw_h5:
-                    print("    - Detected new HDF5 format. Applying mapping efficiently.")
-                    ids = [s.decode('utf-8') for s in raw_h5['ids'][:]]
-                    embeddings = raw_h5['embeddings'][:]
-                    standardized_ids = [id_map.get(original_id, original_id) for original_id in ids]
-                    standardized_embeddings_dict = dict(zip(standardized_ids, embeddings))
-                    FileUtils.write_h5(standardized_embeddings_dict, standardized_path, "Writing Standardized H5")
-                else:  # Handle the old format (one dataset per protein)
-                    print("    - Detected old HDF5 format. Applying mapping.")
-                    standardized_embeddings_dict = {}
-                    for original_id, embedding_dataset in raw_h5.items():
-                        standardized_id = id_map.get(original_id, original_id)
-                        standardized_embeddings_dict[standardized_id] = embedding_dataset[:]
-                    FileUtils.write_h5(standardized_embeddings_dict, standardized_path, "Writing Standardized H5")
+            standardized_embeddings_dict = {}
+            # Use the EmbeddingLoader to handle both HDF5 formats transparently
+            with EmbeddingLoader(raw_path, config=config) as loader:
+                for original_id in loader.get_keys():
+                    standardized_id = id_map.get(original_id, original_id)
+                    standardized_embeddings_dict[standardized_id] = loader[original_id]
+
+            FileUtils.write_h5(standardized_embeddings_dict, standardized_path, "Writing Standardized H5")
 
             print(f"    - Saved standardized embeddings to: {standardized_path.name}")
             return str(standardized_path)

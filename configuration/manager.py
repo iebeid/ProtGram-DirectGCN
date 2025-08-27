@@ -74,41 +74,6 @@ class DataManager:
         else:
             shutil.copy(source_path, cache_path)
 
-    def _pregenerate_and_cache_id_map(self):
-        """
-        Calls the IDMapper to pre-generate its cache from the raw .dat file
-        and then copies that cache to the persistent cache directory.
-        """
-        # --- NEW: Add guard for 'none' mode ---
-        # This prevents the method from trying to find a "none_map_cache.pkl" file
-        # and printing a confusing warning when no mapping is intended.
-        if self.config.ID_MAPPING_MODE == 'none':
-            print("  INFO: ID_MAPPING_MODE is 'none'. Skipping ID map pre-generation.")
-            return
-        print("\n--- Step 2a: Pre-generating and caching the ID Map pickle from raw data ---")
-        try:
-            cache_filename = f"{self.config.ID_MAPPING_MODE}_map_cache.pkl"
-            local_cache_path = self.config.PROJECT_ROOT / cache_filename
-            if local_cache_path.exists():
-                print(f"  INFO: ID map cache '{local_cache_path.name}' already exists. Skipping generation.")
-                self._copy_to_cache(local_cache_path)
-                return
-
-            mapper = IDMapper(self.config)
-            # This is the slow, one-time operation that now reads the .dat file directly
-            mapper.pregenerate_caches()
-
-            # After generation, copy the resulting pickle file to the persistent cache
-            generated_pickle_path = self.config.PROJECT_ROOT / f"{self.config.ID_MAPPING_MODE}_map_cache.pkl"
-            if generated_pickle_path.exists():
-                self._copy_to_cache(generated_pickle_path)
-            else:
-                print(f"  - ❌ WARNING: ID map cache was expected at '{generated_pickle_path}' after generation, but was not found.")
-
-        except Exception as e:
-            print(f"  - ❌ ERROR: Failed to pre-generate ID map cache: {e}")
-            traceback.print_exc()
-
     def run_full_setup(self):
         """
         Executes the entire data pipeline: download, process, and create manifest.
@@ -127,8 +92,13 @@ class DataManager:
 
             processor = DataProcessor(self.config)
             try:
-                # This is the new, streamlined workflow.
-                self._pregenerate_and_cache_id_map()
+                # --- REFACTOR: Streamlined workflow for ID mapping ---
+                print("\n--- Step 2a: Pre-generating ID Map ---")
+                IDMapper(self.config).pregenerate_caches()
+                # Now that the parquet or pickle file is created, copy it to the persistent cache
+                id_map_artifact = self.config.ID_MAPPING_PATH if self.config.ID_MAPPING_MODE == 'file' else self.config.PROJECT_ROOT / f"{self.config.ID_MAPPING_MODE}_map_cache.pkl"
+                if id_map_artifact.exists():
+                    self._copy_to_cache(id_map_artifact)
 
                 print("\n--- Step 2b: Processing Negative Interaction Files ---")
                 processor._process_negative_interactions()
