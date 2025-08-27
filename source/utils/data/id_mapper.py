@@ -130,9 +130,12 @@ class IDMapper:
                     blocksize='128MB'
                 )
 
-                uniprotkb_ac = ddf[ddf['db_type'] == 'UniProtKB-AC']
+                # --- DEFINITIVE FIX: Remove the incorrect filter ---
+                # The previous logic only mapped UniProt IDs to themselves, resulting in an
+                # incomplete (and in this case, empty) map. The correct behavior is to
+                # map ALL database IDs in the file to their canonical UniProt ID.
                 print("  - Dask is now processing the file in parallel. This may take a while...")
-                computed_df = uniprotkb_ac.compute()
+                computed_df = ddf.compute()
 
             print("  - Aggregating computed results into the final dictionary...")
             id_map = dict(zip(computed_df['db_id'], computed_df['uniprot_id']))
