@@ -17,6 +17,7 @@ import torch
 import mlflow
 import tensorflow as tf
 from tqdm.auto import tqdm
+import tf_keras # For mixed precision policy
 from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
 import numpy as np
 from configuration.config import Config
@@ -46,13 +47,6 @@ class TransformerEmbedder:
                 decoder_input_ids = tf.fill((num_seqs, 1), tf.cast(decoder_start_id, inputs_dict_tf['input_ids'].dtype))
                 return model(input_ids=inputs_dict_tf['input_ids'], attention_mask=inputs_dict_tf['attention_mask'],
                              decoder_input_ids=decoder_input_ids)
-            elif is_esm_model:
-                # --- DEFINITIVE FIX for ESM Model TypeError ---
-                # The ESM model has an internal incompatibility with the mixed_float16 policy.
-                # Temporarily switching to a float32 policy for this specific call resolves the
-                # "type float16 that does not match type float32" error.
-                with tf.keras.mixed_precision.Policy('float32').as_default():
-                    return model(input_ids=inputs_dict_tf['input_ids'], attention_mask=inputs_dict_tf['attention_mask'])
             else:
                 return model(inputs_dict_tf)
 
@@ -68,7 +62,21 @@ class TransformerEmbedder:
                 'token_type_ids': tf.TensorSpec(shape=[None, None], dtype=tf.int32)
             }
 
-        concrete_function = model_call.get_concrete_function(input_signature)
+        # --- DEFINITIVE FIX for ESM Model TypeError ---
+        # The ESM model has an internal incompatibility with the mixed_float16 policy.
+        # We must temporarily switch to a float32 policy during the JIT compilation step.
+        if is_esm_model:
+            original_policy = tf_keras.mixed_precision.global_policy()
+            try:
+                print("  Temporarily setting policy to float32 for ESM model compilation...")
+                tf_keras.mixed_precision.set_global_policy('float32')
+                concrete_function = model_call.get_concrete_function(input_signature)
+            finally:
+                print("  Restoring original mixed precision policy...")
+                tf_keras.mixed_precision.set_global_policy(original_policy)
+        else:
+            concrete_function = model_call.get_concrete_function(input_signature)
+
         # --- DEFINITIVE FIX for ESM Model TypeError ---
         # The ESM model has an internal incompatibility with the mixed_float16 policy when
         # JIT compilation is enabled. We disable XLA specifically for this model to prevent the crash.

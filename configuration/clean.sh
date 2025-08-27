@@ -13,9 +13,13 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 echo "--- Cleaning project directories and cache files ---"
-echo "  - Removing '$PROJECT_ROOT/results' directory..."
-rm -rf "$PROJECT_ROOT/results"
-echo "  - Removing '$PROJECT_ROOT/mlruns' directory..."
+# --- DEFINITIVE FIX: Preserve the logs directory during cleanup ---
+# Instead of deleting the entire 'results' directory, this now selectively
+# removes all subdirectories within 'results' EXCEPT for the 'logs' directory.
+# This ensures that logs from previous runs are preserved.
+echo "  - Removing previous run's output directories (excluding logs)..."
+find "$PROJECT_ROOT/results" -mindepth 1 -maxdepth 1 -type d ! -name "logs" -exec rm -rf {} +
+echo "  - Removing '$PROJECT_ROOT/mlruns' directory..." # MLflow runs should always be cleared for a fresh start.
 rm -rf "$PROJECT_ROOT/mlruns"
 
 # --- DEFINITIVE FIX: Remove all generated parquet files to prevent using corrupt data from a failed previous run ---
