@@ -131,10 +131,16 @@ class DataManager:
             return False
 
         id_map_mode = self.config.ID_MAPPING_MODE
+        # --- DEFINITIVE FIX: Check for the correct artifact based on the mapping mode ---
+        # The previous logic always checked for a .pkl file, which is incorrect for 'file' mode.
         if id_map_mode != 'none':
-            expected_cache_file = self.config.PROJECT_ROOT / f"{id_map_mode}_map_cache.pkl"
-            if not expected_cache_file.exists():
-                print(f"  - Validation FAILED: Manifest is valid, but critical ID map cache '{expected_cache_file.name}' is missing.")
+            if id_map_mode == 'file':
+                expected_artifact = self.config.ID_MAPPING_PATH
+            else: # e.g., 'regex' mode
+                expected_artifact = self.config.PROJECT_ROOT / f"{id_map_mode}_map_cache.pkl"
+
+            if not expected_artifact.exists():
+                print(f"  - Validation FAILED: Manifest is valid, but critical ID map artifact '{expected_artifact.name}' is missing.")
                 return False
 
         return True
