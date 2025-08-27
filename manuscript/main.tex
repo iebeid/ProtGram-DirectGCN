@@ -126,13 +126,18 @@
 	\begin{equation}
 		H_{undir}^{(l+1)} = \left( \tilde{A}_{undir} (H^{(l)} W_{main,undir}^{(l)}) + b_{main,undir}^{(l)} \right) + \left( H^{(l)} W_{shared}^{(l)} + b_{shared,undir}^{(l)} \right)
 	\end{equation}
-	where $W_{main,*}$ are path-specific weight matrices and $W_{shared}$ is a single weight matrix shared across all three paths, acting on the original node features.
-	
-	These three processed signals are then combined using a learnable, node-wise gating mechanism alongside a seperate learnable feature vector that captures the node positional identity in the graph. Eventually the model resembles an algebriac multivariate first order polynomial linear combination of features that represent sepearte yet integrated graph properties $aX + bY + cZ + d$:
+	In addition we model the idea of positional encoding which ensures that the model has some notion of time and sequence. We do that by adding a non transformed learnable embedding layer that gives each node (n-gram) its positional identity:
 	\begin{equation}
-		H_{pre-activation}^{(l+1)} = \left( C_{undir}^{(l)} \odot H_{undir}^{(l+1)} \right) + \left( C_{in}^{(l)} \odot H_{in}^{(l+1)} \right) + \left( C_{out}^{(l)} \odot H_{out}^{(l+1)} \right) + b_{const}^{(l)}
+		B_{const}^{(l)} \in R^{n \times d}
 	\end{equation}
-	where $C_*^{(l)}$ are learnable gating vectors and $b_{const}^{(l)}$ is a learnable node-specific bias term encoding positional identity. Finally, a residual connection is added before applying a Leaky ReLU activation function:
+	where $W_{main,*}$ are path-specific weight matrices and $W_{shared}$ is a single weight matrix shared across all three paths, acting on the original node features. In addition $d$ is a chosen dimension.
+	These five processed signals are then combined using a learnable, node-wise gating mechanism alongside a seperate learnable feature vector that captures the node positional identity in the graph. Eventually the model resembles an algebriac multivariate first order polynomial linear combination of features that represent sepearte yet integrated graph properties $aX + bY + cZ + d$:
+	\begin{multline}
+		H_{\text{pre-activation}}^{(l+1)} = \left( C_{\text{undir}}^{(l)} \odot H_{\text{undir}}^{(l+1)} \right) + \left( C_{\text{in}}^{(l)} \odot H_{\text{in}}^{(l+1)} \right) \\
+		+ \left( C_{\text{out}}^{(l)} \odot H_{\text{out}}^{(l+1)} \right) + \left( C_{\text{homo}}^{(l)} \odot H_{\text{homo}}^{(l+1)} \right) \\
+		+ \left( C_{\text{hetero}}^{(l)} \odot H_{\text{hetero}}^{(l+1)} \right) + B_{\text{const}}^{(l)}
+	\end{multline}
+	where $C_*^{(l)}$ are learnable gating vectors. Finally, a residual connection is added before applying a Leaky ReLU activation function:
 	\begin{equation}
 		H^{(l+1)} = \sigma_{LReLU}\left(H_{pre-activation}^{(l+1)} + H^{(l)}W_{res}^{(l)}\right)
 	\end{equation}
