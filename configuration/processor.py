@@ -74,6 +74,11 @@ class DataProcessor:
             final_ddf.to_parquet(self.config.POS_INTERACTIONS_PATH, engine='pyarrow', overwrite=True)
 
     @staticmethod
+    def _is_file_valid(file_path: Path) -> bool:
+        """Checks if a file exists and is not empty."""
+        return file_path.exists() and file_path.stat().st_size > 0
+
+    @staticmethod
     def _calculate_sha256(file_path: Path) -> str:
         sha256_hash = hashlib.sha256()
         with open(file_path, "rb") as f:
