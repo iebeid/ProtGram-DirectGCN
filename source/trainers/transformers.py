@@ -64,7 +64,10 @@ class TransformerEmbedder:
             }
 
         concrete_function = model_call.get_concrete_function(input_signature)
-        if use_xla:
+        # --- DEFINITIVE FIX for ESM Model TypeError ---
+        # The ESM model has an internal incompatibility with the mixed_float16 policy when
+        # JIT compilation is enabled. We disable XLA specifically for this model to prevent the crash.
+        if use_xla and not is_esm_model:
             print("  JIT Compiling concrete function with XLA...")
             concrete_function = tf.function(concrete_function, jit_compile=True)
 

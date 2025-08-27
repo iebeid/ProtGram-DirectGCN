@@ -67,10 +67,12 @@ class Word2VecPipelineTests(unittest.TestCase):
 
         with mlflow.start_run(run_name="Word2Vec_Embedder_SMOKE_TEST"):
             embedder = Word2VecEmbedder(self.config)
-            result_path = embedder.run()
+            result_paths = embedder.run()
 
-        self.assertIsNotNone(result_path)
-        self.assertIsInstance(result_path, str, "The run method should return a string path.")
-        self.assertTrue(os.path.exists(result_path))
+        # --- DEFINITIVE FIX: Update test to handle the new dictionary return type ---
+        self.assertIsNotNone(result_paths)
+        self.assertIsInstance(result_paths, dict, "The run method should return a dictionary of paths.")
+        self.assertIn("Word2Vec-Generated", result_paths)
+        self.assertTrue(os.path.exists(result_paths["Word2Vec-Generated"]))
         print("\n  Word2VecEmbedder smoke test ran successfully.")
         print("--- Word2Vec Pipeline Smoke Test Complete ---")

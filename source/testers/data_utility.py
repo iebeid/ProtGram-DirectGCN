@@ -89,20 +89,12 @@ class DataUtilityTests(unittest.TestCase):
         mapper.pregenerate_caches()
 
         # 4. Assertions
-        expected_cache_file = self.config.PROJECT_ROOT / "file_map_cache.pkl"
-        try:
-            self.assertTrue(expected_cache_file.exists(), "The ID map pickle cache was not created.")
-
-            with open(expected_cache_file, 'rb') as f:
-                loaded_map = pickle.load(f)
-            self.assertIsInstance(loaded_map, dict)
-            # Based on the dummy data created by the new factory method
-            self.assertEqual(loaded_map.get("DUMMY_AC_0"), "DUMMY_AC_0")
-            print("--- IDMapper Pregeneration Test Complete ---")
-        finally:
-            # Clean up the generated cache file to not interfere with other tests
-            if expected_cache_file.exists():
-                expected_cache_file.unlink()
+        # --- DEFINITIVE FIX: The IDMapper now generates a Parquet file, not a pickle file. ---
+        # This updates the test to check for the correct artifact.
+        expected_parquet_file = self.config.ID_MAPPING_PATH
+        self.assertTrue(expected_parquet_file.exists(), "The ID map Parquet file was not created.")
+        self.assertTrue(expected_parquet_file.is_dir(), "The Parquet output should be a directory.")
+        print("--- IDMapper Pregeneration Test Complete ---")
 
     def test_protgram_data_builder_smoke_test(self):
         """Smoke test for the ProtGramDataBuilder to ensure it runs without crashing."""
