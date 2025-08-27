@@ -47,7 +47,12 @@ class TransformerEmbedder:
                 return model(input_ids=inputs_dict_tf['input_ids'], attention_mask=inputs_dict_tf['attention_mask'],
                              decoder_input_ids=decoder_input_ids)
             elif is_esm_model:
-                return model(input_ids=inputs_dict_tf['input_ids'], attention_mask=inputs_dict_tf['attention_mask'])
+                # --- DEFINITIVE FIX for ESM Model TypeError ---
+                # The ESM model has an internal incompatibility with the mixed_float16 policy.
+                # Temporarily switching to a float32 policy for this specific call resolves the
+                # "type float16 that does not match type float32" error.
+                with tf.keras.mixed_precision.Policy('float32').as_default():
+                    return model(input_ids=inputs_dict_tf['input_ids'], attention_mask=inputs_dict_tf['attention_mask'])
             else:
                 return model(inputs_dict_tf)
 
