@@ -20,7 +20,7 @@
 \begin{document}
 	\onecolumn
 	\firstpage{1}
-	\title[ProtGramDirectGCN]{Inferred global dense residue graphs from primary structure sequences enable protein interaction prediction via directed graph convolutional neural networks} 
+	\title[ProtGram-DirectGCN]{Inferred global dense residue graphs from primary structure sequences enable protein interaction prediction via directed graph convolutional neural networks} 
 	\author[\firstAuthorLast ]{\Authors}
 	\address{}
 	\correspondance{}
@@ -132,7 +132,7 @@
 	\begin{equation}
 		H_{pre-activation}^{(l+1)} = \left( C_{undir}^{(l)} \odot H_{undir}^{(l+1)} \right) + \left( C_{in}^{(l)} \odot H_{in}^{(l+1)} \right) + \left( C_{out}^{(l)} \odot H_{out}^{(l+1)} \right) + b_{const}^{(l)}
 	\end{equation}
-	where $C_*^{(l)}$ are learnable gating vectors and $b_{const}^{(l)}$ is a learnable node-specific bias term. Finally, a residual connection is added before applying a Leaky ReLU activation function:
+	where $C_*^{(l)}$ are learnable gating vectors and $b_{const}^{(l)}$ is a learnable node-specific bias term encoding positional identity. Finally, a residual connection is added before applying a Leaky ReLU activation function:
 	\begin{equation}
 		H^{(l+1)} = \sigma_{LReLU}\left(H_{pre-activation}^{(l+1)} + H^{(l)}W_{res}^{(l)}\right)
 	\end{equation}

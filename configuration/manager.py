@@ -428,6 +428,12 @@ class DataManager:
 
         print(f"  - Generating checksums for {len(files_to_manifest)} items...")
         for file_path in tqdm(files_to_manifest, desc="  Calculating Checksums"):
+            # --- DEFINITIVE FIX: Exclude intermediate files from the manifest ---
+            # The manifest should only represent the final, analysis-ready state of the
+            # data directory. This prevents validation from failing on files that are
+            # correctly cleaned up after processing.
+            if file_path in self.files_to_cleanup:
+                continue
             relative_path = file_path.relative_to(self.config.PROJECT_ROOT)
             if file_path.is_file():
                 checksum = "skipped_due_to_size" if processor.is_huge_file(file_path) else DataProcessor._calculate_sha256(file_path)
