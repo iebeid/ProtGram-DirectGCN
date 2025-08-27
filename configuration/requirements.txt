@@ -2,3 +2,4 @@ PyYAML
 pydantic
 psutil
 numpy
+h5py
