@@ -17,7 +17,7 @@ import torch
 import mlflow
 import tensorflow as tf
 from tqdm.auto import tqdm
-import tf_keras # For mixed precision policy
+from tf_keras import mixed_precision
 from transformers import AutoTokenizer, TFAutoModel, T5Tokenizer
 import numpy as np
 from configuration.config import Config
@@ -62,24 +62,10 @@ class TransformerEmbedder:
                 'token_type_ids': tf.TensorSpec(shape=[None, None], dtype=tf.int32)
             }
 
-        # --- DEFINITIVE FIX for ESM Model TypeError ---
-        # The ESM model has an internal incompatibility with the mixed_float16 policy.
-        # We must temporarily switch to a float32 policy during the JIT compilation step.
-        if is_esm_model:
-            original_policy = tf_keras.mixed_precision.global_policy()
-            try:
-                print("  Temporarily setting policy to float32 for ESM model compilation...")
-                tf_keras.mixed_precision.set_global_policy('float32')
-                concrete_function = model_call.get_concrete_function(input_signature)
-            finally:
-                print("  Restoring original mixed precision policy...")
-                tf_keras.mixed_precision.set_global_policy(original_policy)
-        else:
-            concrete_function = model_call.get_concrete_function(input_signature)
+        # The policy is now handled at a higher level in _load_transformer_model
+        concrete_function = model_call.get_concrete_function(input_signature)
 
-        # --- DEFINITIVE FIX for ESM Model TypeError ---
-        # The ESM model has an internal incompatibility with the mixed_float16 policy when
-        # JIT compilation is enabled. We disable XLA specifically for this model to prevent the crash.
+        # XLA is disabled for ESM models due to the same underlying type incompatibility.
         if use_xla and not is_esm_model:
             print("  JIT Compiling concrete function with XLA...")
             concrete_function = tf.function(concrete_function, jit_compile=True)
@@ -94,40 +80,36 @@ class TransformerEmbedder:
         model_name = model_config_item["name"]
         hf_id = model_config_item["hf_id"]
         is_t5 = model_config_item["is_t5"]
+        is_esm_model = 'esm' in hf_id.lower()
 
         DataUtils.print_header(f"Loading Transformer Model: {model_name} ({hf_id})")
         model_load_start_time = time.time()
 
+        # --- DEFINITIVE FIX for ESM Model TypeError: Manage policy during loading ---
+        # The ESM model must be loaded and compiled while the global policy is float32.
+        # We wrap the entire process in a try/finally block to ensure the original
+        # mixed_float16 policy is always restored for other models.
+        original_policy = None
+        if is_esm_model:
+            print("  Temporarily setting policy to float32 for ESM model loading and compilation...")
+            original_policy = mixed_precision.global_policy()
+            mixed_precision.set_global_policy('float32')
+
         try:
-            # The pre-conversion step in main.py ensures that if a model *can* be local, it *will* be.
             local_model_path = self.config.DATA_MODELS_DIR / hf_id
             if local_model_path.exists() and (local_model_path / "tf_model.h5").exists():
                 print(f"  Found locally pre-converted TensorFlow model at: {local_model_path}")
-                print("  Loading from local path (fast and memory-efficient)...")
+                print("  Loading from local path...")
                 tokenizer = AutoTokenizer.from_pretrained(local_model_path)
                 model = TFAutoModel.from_pretrained(local_model_path)
             else:
-                # If not local, it must be a native TF model on the Hub.
-                # The OSError for from_pt=True will now be caught here if the pre-conversion failed or was skipped.
-                print("  No local model found. Attempting to download native TF model from Hugging Face Hub...")
-                tokenizer_class = T5Tokenizer if is_t5 else AutoTokenizer
-                tokenizer = tokenizer_class.from_pretrained(hf_id)
-                try:
-                    # First, try to load as a native TF model
-                    model = TFAutoModel.from_pretrained(hf_id)
-                except OSError as e:
-                    # --- FIX: If loading fails because it's a PT model, retry with conversion ---
-                    if "from_pt=True" in str(e):
-                        print(f"  Could not load native TF model for {model_name}. Attempting to convert from PyTorch weights...")
-                        model = TFAutoModel.from_pretrained(hf_id, from_pt=True)
-                    else:
-                        # Re-raise any other OS errors
-                        raise e
+                print("  No local model found. Downloading from Hugging Face Hub...")
+                tokenizer = AutoTokenizer.from_pretrained(hf_id)
+                model = TFAutoModel.from_pretrained(hf_id)
 
             if model is None or tokenizer is None:
                 raise RuntimeError("Model or tokenizer could not be loaded. The pre-conversion step may have failed.")
 
-            # If model loading was successful, proceed
             inference_func = self._get_model_inference_function(
                 model, hf_id, is_t5, self.config.USE_XLA_COMPILATION)
 
@@ -143,10 +125,14 @@ class TransformerEmbedder:
             return model, tokenizer, inference_func, embedding_dim
 
         except Exception as e:
-            # This is the single, outer catch-all for any failure in the loading process.
             print(f"\nFATAL ERROR during model loading for {model_name}: {e}")
             traceback.print_exc()
             return None, None, None, 0
+        finally:
+            # Restore the original policy if it was changed
+            if original_policy:
+                print("  Restoring original mixed precision policy...")
+                mixed_precision.set_global_policy(original_policy)
 
     def run(self) -> Dict[str, Path]:
         """

@@ -95,18 +95,28 @@ class DummyDataFactory:
 
     @staticmethod
     def create_dummy_id_map_cache(config, num_ids: int = 10) -> None:
-        """
-        Creates a dummy ID map pickle cache file for testing purposes.
-        This simulates the output of the IDMapper's pregeneration step, allowing
-        tests to bypass the generation logic and focus on consumption.
-        """
+        """Creates a dummy ID map artifact for testing, respecting the configured mode."""
         mode = config.ID_MAPPING_MODE
         if mode == 'none':
             return
 
-        cache_filename = f"{mode}_map_cache.pkl"
-        cache_path = config.PROJECT_ROOT / cache_filename
-        dummy_map = {f"protein_{i}": f"P{i:05d}" for i in range(num_ids)}
-        with open(cache_path, 'wb') as f:
-            pickle.dump(dummy_map, f)
-        print(f"  Created dummy ID map cache: {cache_path.name}")
+        # --- DEFINITIVE FIX: Create the correct artifact based on the mapping mode ---
+        # This makes the test environment consistent with the main pipeline.
+        if mode == 'file':
+            # In 'file' mode, the main pipeline expects a Parquet file.
+            parquet_path = config.ID_MAPPING_PATH
+            # Ensure the parent directory exists within the temporary test directory
+            parquet_path.parent.mkdir(parents=True, exist_ok=True)
+
+            ids = [f"DUMMY_ID_{i}" for i in range(num_ids)]
+            uniprot_ids = [f"P{i:05d}" for i in range(num_ids)]
+            df = pd.DataFrame({'db_id': ids, 'uniprot_id': uniprot_ids})
+            df.to_parquet(parquet_path)
+            print(f"  Created dummy ID map parquet file: {parquet_path.name}")
+        else:  # 'regex' mode
+            cache_filename = f"{mode}_map_cache.pkl"
+            cache_path = config.PROJECT_ROOT / cache_filename
+            dummy_map = {f"protein_{i}": f"P{i:05d}" for i in range(num_ids)}
+            with open(cache_path, 'wb') as f:
+                pickle.dump(dummy_map, f)
+            print(f"  Created dummy ID map cache: {cache_path.name}")

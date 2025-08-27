@@ -59,8 +59,8 @@ class GNNBenchmarkerTests(unittest.TestCase):
             results = benchmarker.run()
             self.assertIsInstance(results, pd.DataFrame, "Benchmarker did not return a pandas DataFrame.")
             self.assertFalse(results.empty, "Benchmarker returned an empty DataFrame.")
-            # --- DEFINITIVE FIX: Make assertion aware of the number of graph variants ---
-            # The test runs on both original and undirected graphs if configured.
+            # --- DEFINITIVE FIX: Make assertion aware of the number of graph variants --- # noqa
+            # The test runs on both original and undirected graphs if configured. # noqa
             num_variants = 2 if self.config.BENCHMARK_TEST_ON_UNDIRECTED else 1
             expected_len = len(self.config.BENCHMARK_GNN_MODELS_TO_RUN) * num_variants
             self.assertEqual(len(results), expected_len, f"Expected {expected_len} results, but got {len(results)}.")
