@@ -5,13 +5,13 @@
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
-# *** MODIFICATION START ***
-# The import paths are changed from tensorflow.keras to the standalone tf_keras package.
+# --- DEFINITIVE FIX: Use the standalone tf_keras package for consistency ---
+# The setup script explicitly installs `tf-keras`. To avoid namespace conflicts
+# with the Keras bundled in TensorFlow, we will consistently use the `tf_keras` package.
 from tf_keras.layers import InputLayer, Dense, Dropout
 from tf_keras.models import Sequential
 from tf_keras.optimizers import Adam
 from tf_keras.regularizers import l2
-# *** MODIFICATION END ***
 
 
 class MLP:
@@ -35,14 +35,14 @@ class MLP:
             Dense(
                 config.EVAL_MLP_DENSE1_UNITS,
                 activation='relu',
-                kernel_regularizer=l2(config.EVAL_MLP_L2_REG1)
+                kernel_regularizer=l2(config.EVAL_MLP_L2_REG)
             ),
             Dropout(config.EVAL_MLP_DROPOUT1_RATE),
 
             Dense(
                 config.EVAL_MLP_DENSE2_UNITS,
                 activation='relu',
-                kernel_regularizer=l2(config.EVAL_MLP_L2_REG2)
+                kernel_regularizer=l2(config.EVAL_MLP_L2_REG)
             ),
             Dropout(config.EVAL_MLP_DROPOUT2_RATE),
 

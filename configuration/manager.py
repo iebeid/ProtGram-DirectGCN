@@ -79,6 +79,12 @@ class DataManager:
         Calls the IDMapper to pre-generate its cache from the raw .dat file
         and then copies that cache to the persistent cache directory.
         """
+        # --- NEW: Add guard for 'none' mode ---
+        # This prevents the method from trying to find a "none_map_cache.pkl" file
+        # and printing a confusing warning when no mapping is intended.
+        if self.config.ID_MAPPING_MODE == 'none':
+            print("  INFO: ID_MAPPING_MODE is 'none'. Skipping ID map pre-generation.")
+            return
         print("\n--- Step 2a: Pre-generating and caching the ID Map pickle from raw data ---")
         try:
             cache_filename = f"{self.config.ID_MAPPING_MODE}_map_cache.pkl"
@@ -261,12 +267,13 @@ class DataManager:
                 if cached_file_path.exists() and cached_file_path.name not in raw_files_to_skip:
                     print(f"  Restoring '{project_file_path.name}' from cache...")
 
-                    project_file_path.parent.mkdir(parents=True, exist_ok=True)
-
+                    project_file_path.parent.mkdir(parents=True, exist_ok=True) # --- DEFINITIVE FIX: Use the correct destination path variable ---
+                    # The original code was using `project_processed_path` from the previous loop's scope.
+                    # The correct destination is `project_file_path`.
                     if cached_file_path.is_dir():
-                        shutil.copytree(cached_file_path, project_processed_path)
+                        shutil.copytree(cached_file_path, project_file_path)
                     else:
-                        shutil.copy(cached_file_path, project_processed_path)
+                        shutil.copy(cached_file_path, project_file_path)
                     files_restored += 1
                 else:
                     if not project_file_path.exists():
@@ -437,13 +444,24 @@ class DataManager:
                 }
 
         manifest_path = self.config.DATA_MANIFEST_PATH
+        # --- NEW: Implement atomic write to prevent corruption ---
+        # Write to a temporary file first, then rename. This ensures the main
+        # manifest file is never in a partially-written, corrupted state if the
+        # process is interrupted.
+        temp_manifest_path = manifest_path.with_suffix(".json.tmp")
         try:
             manifest_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(manifest_path, 'w') as f:
+            with open(temp_manifest_path, 'w') as f:
                 json.dump(manifest, f, indent=2)
+            # The rename operation is atomic on most filesystems
+            os.rename(temp_manifest_path, manifest_path)
             print(f"  - ✅ Manifest saved to: {manifest_path}")
         except IOError as e:
             print(f"  - ❌ ERROR: Could not save manifest file: {e}")
+        finally:
+            # Ensure the temporary file is cleaned up on success or failure
+            if temp_manifest_path.exists():
+                os.remove(temp_manifest_path)
 
     def _cleanup_intermediate_files(self):
         """Removes only the downloaded archive files."""

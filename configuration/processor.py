@@ -82,4 +82,6 @@ class DataProcessor:
         return sha256_hash.hexdigest()
 
     def is_huge_file(self, file_path: Path) -> bool:
-        return file_path.stat().st_size > self.config.HUGE_FILE_THRESHOLD_GB * (1024 ** 3)
+        # --- DEFINITIVE FIX: Use the correct configuration attribute and compare bytes to bytes ---
+        # The previous logic was comparing bytes to gigabytes and using a non-existent config variable.
+        return file_path.stat().st_size > self.config.CHECKSUM_SKIP_SIZE_BYTES

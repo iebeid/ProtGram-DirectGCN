@@ -55,7 +55,9 @@ def run_all_tests(suites_to_run=None, verbosity=2):
     # --- DEFINITIVE FIX for Singleton State Leakage ---
     # Reset any singletons that may have been polluted with test-specific configs.
     from source.utils.data.id_mapper import IDMapper
+    from source.models.factory import ModelFactory
     IDMapper.reset()
+    ModelFactory.reset_cache()
 
     return gpu_ok
 

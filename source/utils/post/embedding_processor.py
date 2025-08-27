@@ -38,8 +38,7 @@ class EmbeddingProcessor:
     A class for handling common processing tasks for embeddings.
     """
 
-
-
+    @staticmethod
     def standardize_embedding_file(raw_embedding_path: str) -> str:
         """
         Creates a new, standardized HDF5 embedding file by applying an ID map.
@@ -71,18 +70,23 @@ class EmbeddingProcessor:
         standardized_path = raw_path.with_name(f"{raw_path.stem}_standardized.h5")
 
         try:
-            with h5py.File(raw_path, 'r') as raw_h5, h5py.File(standardized_path, 'w') as std_h5:
-                # Handle both old (one dataset per protein) and new (batched) HDF5 formats
+            # --- DEFINITIVE FIX: Handle new and old HDF5 formats correctly and efficiently ---
+            with h5py.File(raw_path, 'r') as raw_h5:
+                # Check if the file is in the new, efficient format
                 if 'ids' in raw_h5 and 'embeddings' in raw_h5:
+                    print("    - Detected new HDF5 format. Applying mapping efficiently.")
                     ids = [s.decode('utf-8') for s in raw_h5['ids'][:]]
                     embeddings = raw_h5['embeddings'][:]
-                    for i, original_id in enumerate(ids):
+                    standardized_ids = [id_map.get(original_id, original_id) for original_id in ids]
+                    standardized_embeddings_dict = dict(zip(standardized_ids, embeddings))
+                    FileUtils.write_h5(standardized_embeddings_dict, standardized_path, "Writing Standardized H5")
+                else:  # Handle the old format (one dataset per protein)
+                    print("    - Detected old HDF5 format. Applying mapping.")
+                    standardized_embeddings_dict = {}
+                    for original_id, embedding_dataset in raw_h5.items():
                         standardized_id = id_map.get(original_id, original_id)
-                        std_h5.create_dataset(standardized_id, data=embeddings[i])
-                else:  # Old format
-                    for original_id, embedding in raw_h5.items():
-                        standardized_id = id_map.get(original_id, original_id)
-                        std_h5.create_dataset(standardized_id, data=embedding[...])
+                        standardized_embeddings_dict[standardized_id] = embedding_dataset[:]
+                    FileUtils.write_h5(standardized_embeddings_dict, standardized_path, "Writing Standardized H5")
 
             print(f"    - Saved standardized embeddings to: {standardized_path.name}")
             return str(standardized_path)
@@ -215,10 +219,12 @@ class EmbeddingProcessor:
                     batch_keys = keys[i:i + batch_size]
                     valid_keys = []
                     valid_embeddings_list = []
+                    # --- DEFINITIVE FIX: Add the missing NaN check to the transform loop ---
+                    # The fitting loop correctly checks for NaNs, but the transform loop was
+                    # missing it, which could propagate NaNs into the final PCA file.
                     for k in batch_keys:
-                        # The loader already handles NaN checks implicitly by skipping them
-                        if k in loader:
-                            emb = loader[k]
+                        emb = loader[k]
+                        if emb.size > 0 and not np.isnan(emb).any():
                             valid_keys.append(k)
                             valid_embeddings_list.append(emb)
                     if valid_embeddings_list:

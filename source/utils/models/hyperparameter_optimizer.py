@@ -46,17 +46,11 @@ class HyperparameterOptimizer:
         else:
             raise ValueError(f"Unsupported Optuna suggestion type: {param_type}")
 
-    def optimize_ppi_mlp(self, embedding_path: str, embedding_name: str) -> Optional[Dict[str, Any]]:
+    def _prepare_hpo_data(self, embedding_path: str) -> Optional[tuple]:
         """
-        Runs an Optuna study to find the best hyperparameters for the PPI MLP model
-        for a given set of embeddings.
-
-        Returns:
-            A dictionary of the best hyperparameters found, or None on failure.
+        A helper method to load, filter, split, and create feature matrices for the HPO study.
+        This centralizes the data preparation logic.
         """
-        DataUtils.print_header(f"Starting HPO for PPI MLP on '{embedding_name}'")
-
-        # 1. Load data once to be shared across all trials
         print("  Loading and splitting data for HPO study...")
         with EmbeddingLoader(embedding_path, config=self.base_config) as loader:
             available_ids = loader.get_keys()
@@ -79,7 +73,6 @@ class HyperparameterOptimizer:
             )
             print(f"  Data split: {len(train_pairs)} training pairs, {len(val_pairs)} validation pairs.")
 
-            # --- DEFINITIVE FIX: Pre-compute feature matrices to match the new PPIPipeline interface ---
             print("  Pre-computing feature matrices for HPO study...")
             X_train, y_train = EmbeddingProcessor.create_edge_features(
                 train_pairs, loader, self.base_config.EVAL_EDGE_EMBEDDING_METHOD
@@ -88,43 +81,60 @@ class HyperparameterOptimizer:
                 val_pairs, loader, self.base_config.EVAL_EDGE_EMBEDDING_METHOD
             )
             print(f"  Feature matrices created. X_train shape: {X_train.shape}")
+            return X_train, y_train, X_val, y_val
 
-            # 2. Define the objective function for Optuna
-            def objective(trial: optuna.Trial) -> float:
-                trial_config = copy.deepcopy(self.base_config)
-                search_space = self.base_config.HPO_PPI_MLP_SEARCH_SPACE
+    def optimize_ppi_mlp(self, embedding_path: str, embedding_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Runs an Optuna study to find the best hyperparameters for the PPI MLP model
+        for a given set of embeddings.
 
-                trial_config.EVAL_LEARNING_RATE = self._get_trial_param(trial, 'LEARNING_RATE', search_space)
-                trial_config.EVAL_MLP_DENSE1_UNITS = self._get_trial_param(trial, 'DENSE1_UNITS', search_space)
-                trial_config.EVAL_MLP_DROPOUT1_RATE = self._get_trial_param(trial, 'DROPOUT1_RATE', search_space)
-                trial_config.EVAL_MLP_DENSE2_UNITS = self._get_trial_param(trial, 'DENSE2_UNITS', search_space)
-                trial_config.EVAL_MLP_DROPOUT2_RATE = self._get_trial_param(trial, 'DROPOUT2_RATE', search_space)
-                trial_config.EVAL_MLP_L2_REG = self._get_trial_param(trial, 'L2_REG', search_space)
-                trial_config.EVAL_BATCH_SIZE = self._get_trial_param(trial, 'BATCH_SIZE', search_space)
+        Returns:
+            A dictionary of the best hyperparameters found, or None on failure.
+        """
+        DataUtils.print_header(f"Starting HPO for PPI MLP on '{embedding_name}'")
 
-                ppi_pipeline = PPIPipeline(trial_config)
+        # 1. Prepare data once to be shared across all trials
+        data_tuple = self._prepare_hpo_data(embedding_path)
+        if data_tuple is None:
+            return None
+        X_train, y_train, X_val, y_val = data_tuple
 
-                try:
-                    metrics, _ = ppi_pipeline._train_and_evaluate_fold(
-                        X_train=X_train, y_train=y_train,
-                        X_val=X_val, y_val=y_val,
-                        embedding_name=embedding_name, fold_num=trial.number
-                    )
-                    return float(metrics.get('auc_sklearn', 0.0))
-                except Exception as e:
-                    print(f"  Trial {trial.number} failed with error: {e}")
-                    return 0.0
+        # 2. Define the objective function for Optuna
+        def objective(trial: optuna.Trial) -> float:
+            trial_config = copy.deepcopy(self.base_config)
+            search_space = self.base_config.HPO_PPI_MLP_SEARCH_SPACE
 
-            # 3. Run the study
-            study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=self.base_config.RANDOM_STATE))
-            study.optimize(objective, n_trials=self.base_config.HPO_N_TRIALS, show_progress_bar=True)
+            trial_config.EVAL_MLP_LEARNING_RATE = self._get_trial_param(trial, 'MLP_LEARNING_RATE', search_space)
+            trial_config.EVAL_MLP_DENSE1_UNITS = self._get_trial_param(trial, 'DENSE1_UNITS', search_space)
+            trial_config.EVAL_MLP_DROPOUT1_RATE = self._get_trial_param(trial, 'DROPOUT1_RATE', search_space)
+            trial_config.EVAL_MLP_DENSE2_UNITS = self._get_trial_param(trial, 'DENSE2_UNITS', search_space)
+            trial_config.EVAL_MLP_DROPOUT2_RATE = self._get_trial_param(trial, 'DROPOUT2_RATE', search_space)
+            trial_config.EVAL_MLP_L2_REG = self._get_trial_param(trial, 'L2_REG', search_space)
+            trial_config.EVAL_BATCH_SIZE = self._get_trial_param(trial, 'BATCH_SIZE', search_space)
 
-            # 4. Report the results
-            DataUtils.print_header("Hyperparameter Optimization Finished")
-            print(f"  Number of finished trials: {len(study.trials)}")
-            best_trial = study.best_trial
-            print(f"  Best trial value (AUC): {best_trial.value:.4f}")
-            print("  Best hyperparameters found:")
-            for key, value in best_trial.params.items():
-                print(f"    - {key}: {value}")
-            return best_trial.params
+            ppi_pipeline = PPIPipeline(trial_config)
+
+            try:
+                metrics, _ = ppi_pipeline._train_and_evaluate_fold(
+                    X_train=X_train, y_train=y_train,
+                    X_val=X_val, y_val=y_val,
+                    embedding_name=embedding_name, fold_num=trial.number
+                )
+                return float(metrics.get('auc_sklearn', 0.0))
+            except Exception as e:
+                print(f"  Trial {trial.number} failed with error: {e}")
+                return 0.0
+
+        # 3. Run the study
+        study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=self.base_config.RANDOM_STATE))
+        study.optimize(objective, n_trials=self.base_config.HPO_N_TRIALS, show_progress_bar=True)
+
+        # 4. Report the results
+        DataUtils.print_header("Hyperparameter Optimization Finished")
+        print(f"  Number of finished trials: {len(study.trials)}")
+        best_trial = study.best_trial
+        print(f"  Best trial value (AUC): {best_trial.value:.4f}")
+        print("  Best hyperparameters found:")
+        for key, value in best_trial.params.items():
+            print(f"    - {key}: {value}")
+        return best_trial.params

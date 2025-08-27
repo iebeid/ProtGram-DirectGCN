@@ -35,11 +35,10 @@ class DirectedNgramGraph(Graph):
 
         super().__init__(nodes=nodes, edges=[])
 
-        # --- FIX: Extract params from kwargs to support both building and loading ---
+        # Extract params from kwargs to support both building and loading
         self.epsilon_propagation = kwargs.get('epsilon_propagation', 1e-9)
         self.n_value: Optional[int] = kwargs.get('n_value')
         edge_file_path = kwargs.get('edge_file_path')
-        dir_path = kwargs.get('dir_path')
 
         # Initialize all matrix attributes
         self.A_out_w: Optional[torch.Tensor] = None
@@ -53,17 +52,9 @@ class DirectedNgramGraph(Graph):
         self._mathcal_A_out: Optional[torch.Tensor] = None
         self._mathcal_A_in: Optional[torch.Tensor] = None
 
-        # --- FIX: Dispatch to either load from directory or build from scratch ---
-        if dir_path:
-            # We are in "load from directory" mode
-            self._load_sparse_tensors_from_dir(Path(dir_path))
-            # Verify that loading was successful, otherwise initialize empty
-            if self.A_out_w is None:
-                print("  - Warning: Loading from directory did not find any valid sparse tensors. Initializing an empty graph.")
-                self._initialize_empty_matrices()
-
-        elif self.number_of_nodes > 0 and edge_file_path and os.path.exists(edge_file_path):
-            # We are in "build from scratch" mode
+        # The constructor's only job is to build from scratch if an edge file is provided.
+        # If not (e.g., when called from load_from_dir), it initializes an empty graph.
+        if self.number_of_nodes > 0 and edge_file_path and os.path.exists(edge_file_path):
             print(f"    Loading edges from {os.path.basename(edge_file_path)}...")
             try:
                 # --- FIX: Avoid pd.read_parquet to prevent loading the entire edge file into memory. ---
@@ -99,31 +90,6 @@ class DirectedNgramGraph(Graph):
                 self._initialize_empty_matrices()
         else:
             self._initialize_empty_matrices()
-
-    def _load_sparse_tensors_from_dir(self, dir_path: Path):
-        """
-        Loads sparse tensor components from .npy files in a directory by reading
-        the metadata file to discover which tensors to reconstruct.
-        """
-        print(f"  Reconstructing graph by loading sparse tensors from directory: {dir_path}")
-        metadata_path = dir_path / "metadata.json"
-        if not metadata_path.exists():
-            return
-
-        with open(metadata_path, 'r') as f:
-            metadata = json.load(f)
-
-        tensor_names_to_load = [k.replace('_shape', '') for k in metadata.keys() if k.endswith('_shape')]
-        for attr_name in tensor_names_to_load:
-            indices_path = dir_path / f"{attr_name}_indices.npy"
-            values_path = dir_path / f"{attr_name}_values.npy"
-            shape = metadata.get(f"{attr_name}_shape")
-
-            if indices_path.exists() and values_path.exists() and shape:
-                indices = torch.from_numpy(np.load(indices_path))
-                values = torch.from_numpy(np.load(values_path))
-                sparse_tensor = torch.sparse_coo_tensor(indices, values, torch.Size(shape)).coalesce()
-                setattr(self, attr_name, sparse_tensor)
 
     def _initialize_empty_matrices(self):
         """Helper to set all matrices to empty sparse tensors."""
@@ -165,6 +131,17 @@ class DirectedNgramGraph(Graph):
         gc.collect()
 
     @property
+    def A_undirected_w(self) -> Optional[torch.Tensor]:
+        """
+        Creates a symmetric, un-normalized, weighted adjacency matrix.
+        This is the sum of the directed in- and out-degree matrices.
+        """
+        if self.A_out_w is None or self.A_in_w is None:
+            return None
+        # The .coalesce() is important to sum duplicate entries for undirected edges
+        return (self.A_out_w + self.A_in_w).coalesce()
+
+    @property
     def A_undirected_norm_sparse(self) -> Optional[torch.Tensor]:
         """
         Creates a symmetric, degree-normalized adjacency matrix (D^-0.5 * A * D^-0.5),
@@ -176,11 +153,10 @@ class DirectedNgramGraph(Graph):
         if self._A_undirected_norm_sparse is not None:
             return self._A_undirected_norm_sparse
 
-        print(f"  Creating undirected normalized adjacency matrix for n={self.n_value}...")
-        if self.number_of_nodes == 0 or self.A_out_w is None or self.A_in_w is None:
+        A_undir_w = self.A_undirected_w
+        if self.number_of_nodes == 0 or A_undir_w is None:
             return self._initialize_empty_matrices()
-
-        A_undir_w = (self.A_out_w + self.A_in_w).coalesce()
+        print(f"  Creating undirected normalized adjacency matrix for n={self.n_value}...")
 
         edge_index, edge_weight = add_self_loops(
             A_undir_w.indices(), A_undir_w.values(),

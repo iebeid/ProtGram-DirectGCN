@@ -238,66 +238,41 @@ class DirectGCN(nn.Module):
 
     def __init__(self, layer_dims: List[int], num_graph_nodes: Optional[int], task_num_output_classes: int,
                  n_gram_len: int, use_homo_hetero_paths: bool,
-                 one_gram_dim: int, max_pe_len: int, dropout: float, gating_mode: str,
-                 l2_eps: float = 1e-12, disable_pe: bool = False):
+                 dropout_rate: float, gating_mode: str,
+                 l2_eps: float = 1e-12):
         super().__init__()
         self.n_gram_len = n_gram_len
-        self.one_gram_dim = one_gram_dim
-        self.dropout = dropout
+        self.dropout_rate = dropout_rate
         self.l2_eps = l2_eps
         self.embedding_output = None
         self.use_homo_hetero_paths = use_homo_hetero_paths
-        self.disable_pe = disable_pe
-
-        self.pe_layer = None
-        if one_gram_dim > 0 and max_pe_len > 0:
-            self.pe_layer = nn.Embedding(max_pe_len, one_gram_dim)
 
         self.convs = nn.ModuleList()
         self.res_projs = nn.ModuleList()
         self.layer_norms = nn.ModuleList()
 
         if not layer_dims or len(layer_dims) < 2:
-            raise ValueError("layer_dims must contain at least input and output dimensions (length >= 2).")
+            raise ValueError("layer_dims must contain at least input and one hidden/output dimension (length >= 2).") # noqa
 
         for i in range(len(layer_dims) - 1):
             in_dim, out_dim = layer_dims[i], layer_dims[i + 1]
             current_num_nodes = num_graph_nodes if num_graph_nodes is not None else 0
             self.convs.append(
                 DirectGCNLayer(in_dim, out_dim, current_num_nodes, gating_mode, use_homo_hetero_paths))
-            self.res_projs.append(nn.Linear(in_dim, out_dim) if in_dim != out_dim else nn.Identity())
+            # The residual projection must match the original input dimension, not the PE-enhanced one.
+            self.res_projs.append(nn.Linear(layer_dims[i], out_dim) if layer_dims[i] != out_dim else nn.Identity())
             self.layer_norms.append(nn.LayerNorm(out_dim))
 
-        # --- REFACTOR for Benchmarking ---
-        # The complex decoder is specific to the main ProtGram pipeline. For a fair
-        # benchmark comparison, we replace it with a simple linear layer, making
-        # its architecture consistent with the other GNNs.
-        if num_graph_nodes is not None: # This check implies it's a benchmark context
+        if num_graph_nodes is not None:  # This check implies a benchmark or singleton context
             final_embedding_dim = layer_dims[-1]
             self.decoder_fc = nn.Linear(final_embedding_dim, task_num_output_classes)
-        else: # Main pipeline context
+        else:  # Main pipeline context
             final_embedding_dim = layer_dims[-1]
             decoder_hidden_dim = final_embedding_dim // 2 if final_embedding_dim > 1 else 1
             self.decoder_fc = nn.Sequential(
                 nn.Linear(final_embedding_dim, decoder_hidden_dim), nn.ReLU(),
                 nn.Dropout(p=0.5), nn.Linear(decoder_hidden_dim, task_num_output_classes)
             )
-
-    def _apply_pe(self, x: torch.Tensor) -> torch.Tensor:
-        """Applies positional embeddings to the input features if applicable."""
-        if self.disable_pe or (self.pe_layer is None):
-            return x
-        # --- FIX: Only apply PE when n > 1 to avoid applying it to random features in benchmarks ---
-        if self.n_gram_len > 1 and self.one_gram_dim > 0 and x.shape[1] == self.n_gram_len * self.one_gram_dim:
-            x_with_pe = x.clone()
-            x_reshaped = x_with_pe.view(-1, self.n_gram_len, self.one_gram_dim)
-            pos_to_enc = min(self.n_gram_len, self.pe_layer.num_embeddings)
-            if pos_to_enc > 0:
-                pos_indices = torch.arange(0, pos_to_enc, device=x.device, dtype=torch.long)
-                pe_values = self.pe_layer(pos_indices)
-                x_reshaped[:, :pos_to_enc, :] += pe_values.unsqueeze(0)
-            return x_reshaped.view(-1, self.n_gram_len * self.one_gram_dim)
-        return x
 
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
         x = getattr(data, 'x', None)
@@ -315,17 +290,17 @@ class DirectGCN(nn.Module):
             if not hasattr(data, key):
                 raise ValueError(f"DirectGCN requires '{key}' in the Data object when use_homo_hetero_paths is {self.use_homo_hetero_paths}.")
 
-        h = self._apply_pe(x)
+        h = x
 
         for i in range(len(self.convs)):
             h_res = h
             gcn_layer, res_layer, norm_layer = self.convs[i], self.res_projs[i], self.layer_norms[i]
-            # Pass the entire data object to the layer
-            h_pre_act = gcn_layer(h_res, data) + res_layer(h_res)
+
+            h_pre_act = gcn_layer(h, data) + res_layer(h_res)
             # --- DEFINITIVE FIX: Apply LayerNorm BEFORE activation to prevent NaN loss ---
             h_norm = norm_layer(h_pre_act)
             h = F.leaky_relu(h_norm)
-            h = F.dropout(h, p=self.dropout, training=self.training)
+            h = F.dropout(h, p=self.dropout_rate, training=self.training)
 
         final_embed_for_task = h
         self.embedding_output = final_embed_for_task  # For consistency with other models

@@ -56,20 +56,10 @@ class PipelineOrchestrator:
         """Configures GPU settings for TensorFlow."""
         gpus = tf.config.list_physical_devices('GPU')
         if gpus:
-            # *** MODIFICATION START ***
-            # This logic is updated to correctly import mixed_precision from the
-            # standalone tf_keras package, which is the standard for modern TF.
-            try:
-                # First, try the modern, direct TensorFlow import
-                from tensorflow import mixed_precision
-            except ImportError:
-                try:
-                    # If that fails, try the new standard tf_keras package
-                    from tf_keras import mixed_precision
-                except ImportError:
-                    # As a last resort, try the legacy path for older TF versions
-                    from tensorflow.keras import mixed_precision
-            # *** MODIFICATION END ***
+            # --- DEFINITIVE FIX: Use the standalone tf_keras package for consistency ---
+            # The setup script explicitly installs `tf-keras`. To avoid namespace conflicts
+            # with the Keras bundled in TensorFlow, we will consistently use the `tf_keras` package.
+            from tf_keras import mixed_precision
 
             policy = mixed_precision.Policy('mixed_float16')
             mixed_precision.set_global_policy(policy)
@@ -90,8 +80,9 @@ class PipelineOrchestrator:
         pipelines = [
             {"name": "ProtGram-XGCN", "flag": "RUN_GCN_PIPELINE", "runner": lambda: ProtGramXGCNTrainer(config).run(),
              "formatter": lambda paths: [{"name": name, "path": path} for name, path in paths.items()]},
-            {"name": "Word2Vec", "flag": "RUN_WORD2VEC_PIPELINE", "runner": lambda: Word2VecEmbedder(config).run(),
-             "formatter": lambda path: [{"name": "Word2Vec-Generated", "path": str(path)}]},
+            # --- FIX: Update formatter to handle a dictionary of paths (main + optional PCA) ---
+            {"name": "Word2Vec", "flag": "RUN_WORD2VEC_PIPELINE", "runner": lambda: Word2VecEmbedder(config).run(), # noqa
+             "formatter": lambda paths: [{"name": name, "path": path} for name, path in paths.items()]},
             {"name": "LSTM", "flag": "RUN_LSTM_PIPELINE", "runner": lambda: LSTMBasedEmbedder(config).run(),
              "formatter": lambda path: [{"name": "LSTM-Generated", "path": str(path)}]},
             {"name": "Transformer", "flag": "RUN_TRANSFORMER_PIPELINE", "runner": lambda: TransformerEmbedder(config).run(),
@@ -308,42 +299,44 @@ class PipelineOrchestrator:
                                 checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "completed"})
                             if not self.ui_manager.prompt_to_continue("Graph Building"): continue
 
-                            pre_analysis_checkpoint = checkpoint_manager.get_checkpoint("PreAnalysis")
-                            if not pre_analysis_checkpoint:
-                                if self._run_pre_analysis_and_prompt(config, fasta_file_path):
-                                    checkpoint_manager.save_checkpoint("PreAnalysis", {"status": "completed"})
+                            # --- DEFINITIVE FIX: Decouple main embedding generation from pre-analysis ---
+                            # The main embedding pipelines have their own internal checkpointing and should
+                            # always be run to ensure the list of files to evaluate is populated.
+                            generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)
+                            generated_files = generated_files if isinstance(generated_files, list) else []
+                            config.LP_EMBEDDING_FILES_TO_EVALUATE = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_files
+
+                            # Now, run the optional pre-analysis/benchmarking step, gated by its own checkpoint.
+                            if not checkpoint_manager.get_checkpoint("PreAnalysis"):
+                                if not self._run_pre_analysis_and_prompt(config, fasta_file_path):
+                                    continue  # User chose to stop after pre-analysis
+                                checkpoint_manager.save_checkpoint("PreAnalysis", {"status": "completed"})
+
+                            # --- Run Hyperparameter Optimization ---
+                            if config.RUN_HPO:
+                                DataUtils.print_header("Running Hyperparameter Optimization")
+                                optimizer = HyperparameterOptimizer(config)
+                                target_model_name = config.HPO_TARGET_EMBEDDING_MODEL
+                                target_embedding_path = None
+                                for emb_file in config.LP_EMBEDDING_FILES_TO_EVALUATE:
+                                    if emb_file['name'] == target_model_name:
+                                        target_embedding_path = emb_file['path']
+                                        break
+
+                                if target_embedding_path:
+                                    optimizer.optimize_ppi_mlp(str(target_embedding_path), target_model_name)
                                 else:
-                                    continue # User chose to stop
+                                    print(f"  Warning: HPO target embedding '{target_model_name}' not found in generated/configured files. Skipping HPO.")
 
-                                generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)
-                                generated_files = generated_files if isinstance(generated_files, list) else []
-                                config.LP_EMBEDDING_FILES_TO_EVALUATE = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_files
+                            # --- Run Main PPI Evaluation ---
+                            if config.RUN_MAIN_PPI_EVALUATION:
+                                DataUtils.print_header(f"Running Main Evaluation for Dataset: {dataset_name}")
+                                if not checkpoint_manager.get_checkpoint("PPI_Evaluation"):
+                                    if config.LP_EMBEDDING_FILES_TO_EVALUATE:
+                                        ppi_evaluator = PPIPipeline(config)
+                                        ppi_evaluator.run(use_dummy_data=config.RUN_DUMMY_TEST)
+                                        checkpoint_manager.save_checkpoint("PPI_Evaluation", {"status": "completed"})
 
-                                # --- NEW: Run Hyperparameter Optimization ---
-                                if config.RUN_HPO:
-                                    DataUtils.print_header("Running Hyperparameter Optimization")
-                                    optimizer = HyperparameterOptimizer(config)
-                                    target_model_name = config.HPO_TARGET_EMBEDDING_MODEL
-                                    target_embedding_path = None
-                                    for emb_file in config.LP_EMBEDDING_FILES_TO_EVALUATE:
-                                        if emb_file['name'] == target_model_name:
-                                            target_embedding_path = emb_file['path']
-                                            break
-
-                                    if target_embedding_path:
-                                        optimizer.optimize_ppi_mlp(str(target_embedding_path), target_model_name)
-                                    else:
-                                        print(f"  Warning: HPO target embedding '{target_model_name}' not found in generated/configured files. Skipping HPO.")
-
-                                if config.RUN_MAIN_PPI_EVALUATION:
-                                    DataUtils.print_header(f"Running Main Evaluation for Dataset: {dataset_name}")
-                                    if not checkpoint_manager.get_checkpoint("PPI_Evaluation"):
-                                        if config.LP_EMBEDDING_FILES_TO_EVALUATE:
-                                            ppi_evaluator = PPIPipeline(config)
-                                            # --- FIX: Pass the use_dummy_data flag to the pipeline ---
-                                            # This ensures the evaluation runs on the correct dataset.
-                                            ppi_evaluator.run(use_dummy_data=config.RUN_DUMMY_TEST)
-                                            checkpoint_manager.save_checkpoint("PPI_Evaluation", {"status": "completed"})
                         # --- FIX: Add the missing 'except' block for the per-dataset try block ---
                         # This ensures that if one dataset fails, the pipeline can continue to the next.
                         except Exception as e:

@@ -165,15 +165,3 @@ class IDMapper:
                 print(f"An error during regex mapping on {fasta_file}: {e}")
         print(f"  Regex mapping complete. Found {len(id_map)} potential mappings.")
         return id_map
-
-    @staticmethod
-    def apply_mapping(embeddings: Dict[str, Any], id_map: Optional[Mapping[str, str]]) -> Dict[str, Any]:
-        """Applies the ID mapping to a dictionary of embeddings at the end of a pipeline."""
-        if not id_map or not embeddings:
-            return embeddings
-
-        print("  INFO: Applying ID mapping to generated embeddings...")
-        original_count = len(embeddings)
-        mapped_embeddings = {id_map.get(k, k): v for k, v in embeddings.items()}
-        print(f"    - Original IDs: {original_count}, Final Mapped IDs: {len(mapped_embeddings)}")
-        return mapped_embeddings

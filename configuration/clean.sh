@@ -25,4 +25,11 @@ rm -rf "$PROJECT_ROOT"/data/ground_truth/*.parquet
 
 echo "  - Removing local ID map cache files from project root..."
 rm -f "$PROJECT_ROOT"/*_map_cache.pkl
+
+# --- NEW: Add cleanup for Python bytecode cache ---
+# This ensures that any changes to the source code are picked up on the next run,
+# preventing issues with stale, cached .pyc files.
+echo "  - Removing Python bytecode cache (__pycache__, *.pyc)..."
+find "$PROJECT_ROOT" -type d -name "__pycache__" -exec rm -rf {} +
+find "$PROJECT_ROOT" -type f -name "*.pyc" -delete
 echo "SUCCESS: Project directories cleaned."

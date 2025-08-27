@@ -38,7 +38,9 @@ class GNNBenchmarker(BaseBenchmarker):
         print(f"    Extracting embeddings for {model.__class__.__name__}...")
         with torch.no_grad():
             model.eval()
-            _, embeddings = model(data.to(self.device))
+            # The 'data' object is already on the correct device when this is called
+            # from _train_and_evaluate, so we can pass it directly.
+            _, embeddings = model(data)
         if embeddings is None:
             print("    Warning: Could not extract embeddings.")
             return

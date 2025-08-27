@@ -58,7 +58,7 @@ _base_gnn_params: &base_gnn_params
   GAT_DROPOUT_RATE: 0.5
   CHEBNET_K: 3
   RGCN_NUM_RELATIONS: 2
-  DIRECTGCN_HIDDEN_LAYER_DIMS: [64, 64]
+  DIRECTGCN_HIDDEN_LAYER_DIMS: [64] # Use a single hidden layer for a 2-layer benchmark model
   EPOCHS: 100
   LEARNING_RATE: 0.01
   WEIGHT_DECAY: 0.0005
@@ -88,6 +88,8 @@ gnn_benchmarking:
   TEST_ON_UNDIRECTED: true
   SPLIT_RATIOS: {train: 0.1, val: 0.1, test: 0.8}
   PCA_TARGET_DIM: 64
+  NE_LEARNING_RATE: 0.01
+  NE_BATCH_SIZE: 128
   NE_EPOCHS: 5
   NE_EMBEDDING_DIM: 128
   NE_WALK_LENGTH: 20
@@ -113,11 +115,9 @@ protgram_gcn:
   PROTGRAM_MODELS_TO_TRAIN: ['directgcn']
   DIRECTGCN_HIDDEN_LAYER_DIMS: [512, 256, 128, 64]
   PROTGRAM_1GRAM_INIT_DIM: 512
-  PROTGRAM_MAX_PE_LEN: 512
   PROTGRAM_GNN_HIDDEN_CHANNELS: 64
   PROTGRAM_GNN_NUM_LAYERS: 2
   PROTGRAM_GATING_COEFF_MODE: "vector"
-  PROTGRAM_USE_POSITIONAL_EMBEDDING: true
   PROTGRAM_EPOCHS_PER_LEVEL: 500
   PROTGRAM_LR: 0.005
   PROTGRAM_DROPOUT_RATE: 0.5
@@ -221,7 +221,7 @@ ppi_evaluation:
   MLP_L2_REG: 0.00001
   BATCH_SIZE: 2048
   EPOCHS: 10
-  LEARNING_RATE: 0.001
+  MLP_LEARNING_RATE: 0.001
   K_VALUES_FOR_TABLE: [50, 100]
   MAIN_EMBEDDING_FOR_STATS: "ProtGramDirectgcn"
   STATISTICAL_TEST_ALPHA: 0.05
@@ -240,7 +240,7 @@ hyperparameter_optimization:
   HPO_TARGET_EMBEDDING_MODEL: "ProtGramDirectgcn" # Which embedding to optimize the MLP for
   # Search space for the PPI evaluation MLP
   HPO_PPI_MLP_SEARCH_SPACE:
-    LEARNING_RATE: {type: 'loguniform', low: 1.0e-5, high: 1.0e-2}
+    MLP_LEARNING_RATE: {type: 'loguniform', low: 1.0e-5, high: 1.0e-2}
     DENSE1_UNITS: {type: 'int', low: 32, high: 512, step: 32}
     DROPOUT1_RATE: {type: 'uniform', low: 0.1, high: 0.6}
     DENSE2_UNITS: {type: 'int', low: 16, high: 256, step: 16}

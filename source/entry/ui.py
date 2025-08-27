@@ -50,16 +50,19 @@ class UIManager:
 
     @staticmethod
     def prompt_for_fast_id_mapping(confidence_score: float) -> bool:
-        """Asks the user if they want to switch to the faster regex mapping mode."""
+        """Asks the user if they want to switch to the faster regex mapping mode, using a robust readline prompt."""
         if not sys.stdin.isatty():
             print("--- Non-interactive session detected. Using configured ID mapping mode. ---")
             return False # Default to the configured (slower) mode
 
         while True:
             try:
-                prompt = (f"\n💡 Smart Mapping Suggestion: Your FASTA file appears to be {confidence_score:.1%} compatible with the fast 'regex' parser.\n"
-                          f"   Would you like to use the fast 'regex' mode for this run instead of the slow 'file' mode? (y/n): ")
-                response = input(prompt).lower().strip()
+                # --- REFACTOR: Use direct stdin/stdout for consistency with other prompts ---
+                prompt = (f"\n💡 Smart Mapping Suggestion: Your FASTA file appears to be {confidence_score:.1%} compatible with the fast 'regex' parser.\n" # noqa
+                          f"   Would you like to use the fast 'regex' mode for this run instead of the slow 'file' mode? (y/n): ") # noqa
+                sys.stdout.write(prompt)
+                sys.stdout.flush()
+                response = sys.stdin.readline().strip().lower()
                 if response in ['y', 'yes']: return True
                 if response in ['n', 'no']: return False
                 print("  Invalid input. Please enter 'y' or 'n'.")

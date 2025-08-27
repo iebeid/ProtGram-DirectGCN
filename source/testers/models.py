@@ -21,11 +21,13 @@ class ModelBuildTests(unittest.TestCase):
         DataUtils.print_header("MLP Model Build Test")
         print("=" * 80)
         config_instance = Config()
-        mlp_params = {'dense1_units': 32, 'dropout1_rate': 0.1, 'dense2_units': 16, 'dropout2_rate': 0.1, 'l2_reg': 0.001}
         input_dim = 128
 
-        mlp_builder = MLP(input_shape=input_dim, mlp_params=mlp_params, learning_rate=config_instance.EVAL_LEARNING_RATE)
-        model = mlp_builder.build()
+        # --- DEFINITIVE FIX: Call the static `build` method correctly ---
+        # The previous implementation was trying to instantiate the MLP class, which
+        # has no __init__ method and would cause a TypeError. This now correctly
+        # calls the static build method, which is the intended use.
+        model = MLP.build(input_dim=input_dim, config=config_instance)
 
         self.assertIsNotNone(model, "MLP model build failed, model is None.")
         self.assertEqual(model.input_shape, (None, input_dim), "MLP input shape mismatch.")

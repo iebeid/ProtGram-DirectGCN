@@ -53,7 +53,9 @@ class XGCNDataBuilder:
         if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1
         print(f"    Generating community labels for all {num_nodes} nodes.")
 
-        coo = graph.A_undirected_norm_sparse.cpu().coalesce()
+        # --- DEFINITIVE FIX: Use the un-normalized weighted matrix for community detection ---
+        # The Louvain algorithm works best with raw edge weights (counts), not normalized weights.
+        coo = graph.A_undirected_w.cpu().coalesce()
         if coo._nnz() == 0: return torch.zeros(num_nodes, dtype=torch.long), 1
 
         nx_graph = to_networkx(Data(edge_index=coo.indices(), edge_attr=coo.values(), num_nodes=num_nodes),

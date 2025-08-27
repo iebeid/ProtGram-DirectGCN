@@ -94,8 +94,13 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
         # 1. The main script hangs before an input() prompt, waiting for background processes.
         # 2. It introduces non-determinism unless a specific `worker_init_fn` is used.
         # Setting num_workers=0 forces data loading to happen in the main thread, resolving both.
-        loader = node2vec_model.loader(batch_size=128, shuffle=True, num_workers=0)
-        optimizer = torch.optim.SparseAdam(list(node2vec_model.parameters()), lr=0.01)
+        # --- FIX: Use configurable hyperparameters instead of hardcoded values ---
+        loader = node2vec_model.loader(
+            batch_size=self.config.BENCHMARK_NE_BATCH_SIZE, shuffle=True, num_workers=0
+        )
+        optimizer = torch.optim.SparseAdam(
+            list(node2vec_model.parameters()), lr=self.config.BENCHMARK_NE_LEARNING_RATE
+        )
 
         # --- REFACTOR: Add tqdm progress bar and loss logging for better visibility ---
         for epoch in range(self.config.BENCHMARK_NE_EPOCHS):

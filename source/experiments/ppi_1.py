@@ -20,6 +20,15 @@ import mlflow
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+# --- DEFINITIVE FIX: Use the standalone tf_keras package for consistency ---
+# This avoids namespace conflicts with the Keras bundled in TensorFlow.
+import tf_keras
+# --- NEW: Import SHAP and KMeans for improved model explainability ---
+try:
+    import shap
+    from sklearn.cluster import KMeans
+except ImportError:
+    shap = None
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score, roc_curve
 from sklearn.model_selection import StratifiedKFold
 from tqdm.auto import tqdm
@@ -126,11 +135,11 @@ class PPIPipeline:
         print(f"    Train class distribution: Pos={np.sum(y_train == 1)}, Neg={np.sum(y_train == 0)}")
 
         # Build and compile the MLP model for this fold.
-        # --- Build and Train Model ---
-        # FIX: Pass config object to MLP builder
-        mlp_params = {'dense1_units': self.config.EVAL_MLP_DENSE1_UNITS, 'dropout1_rate': self.config.EVAL_MLP_DROPOUT1_RATE, 'dense2_units': self.config.EVAL_MLP_DENSE2_UNITS,
-                      'dropout2_rate': self.config.EVAL_MLP_DROPOUT2_RATE, 'l2_reg': self.config.EVAL_MLP_L2_REG}
-        model = MLP(X_train.shape[1], mlp_params, self.config.EVAL_LEARNING_RATE).build()
+        # --- DEFINITIVE FIX: Call the static `build` method correctly ---
+        # The previous implementation (`MLP(...).build()`) was incorrect as MLP has no
+        # constructor. This now uses the static method as intended and passes the
+        # full config object, from which the build method pulls all its parameters.
+        model = MLP.build(input_dim=X_train.shape[1], config=self.config)
         print(f"    MLP model built with input shape: {X_train.shape[1]}")
 
         # Calculate class weights to handle imbalanced datasets.
@@ -142,25 +151,28 @@ class PPIPipeline:
         try:
             # Train the model with optional early stopping.
             print(f"    Starting model training for {self.config.EVAL_EPOCHS} epochs...")
-            history = model.fit(X_train, y_train, epochs=self.config.EVAL_EPOCHS,
-                                validation_data=(X_val, y_val), batch_size=self.config.EVAL_BATCH_SIZE,
-                                verbose=1 if self.config.DEBUG_VERBOSE else 0, class_weight=class_weight,
-                                callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=self.config.EARLY_STOPPING_PATIENCE, restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else [])
+            callbacks = [tf_keras.callbacks.EarlyStopping(monitor='val_loss', patience=self.config.EARLY_STOPPING_PATIENCE, restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else []
+            history = model.fit(X_train, y_train, epochs=self.config.EVAL_EPOCHS, validation_data=(X_val, y_val),
+                                batch_size=self.config.EVAL_BATCH_SIZE, verbose=1 if self.config.DEBUG_VERBOSE else 0,
+                                class_weight=class_weight, callbacks=callbacks)
             print("    Model training finished.")
 
             # --- ANTICIPATORY DEBUGGING: Make slow/heavy analysis optional and robust. ---
             # Generate SHAP summary plot only for the first fold of the main embedding, if configured.
             try:
-                is_main_embedding = (embedding_name == self.config.EVAL_MAIN_EMBEDDING_FOR_STATS)
-                if self.config.EVAL_GENERATE_SHAP_SUMMARY and fold_num == 0 and is_main_embedding:
-                    # --- FIX: Use a more representative background dataset for SHAP ---
-                    # Instead of just the first few batches, create a summarized background dataset
-                    # using k-means, which is a standard practice for large datasets.
+                is_main_embedding = (embedding_name == self.config.EVAL_MAIN_EMBEDDING_FOR_STATS) # noqa
+                if self.config.EVAL_GENERATE_SHAP_SUMMARY and fold_num == 0 and is_main_embedding and shap is not None:
+                    # --- DEFINITIVE FIX: Implement K-Means summarization for SHAP background ---
+                    # The previous implementation used random sampling. This new approach uses
+                    # K-Means to create a summarized background dataset, which is a more
+                    # robust and standard practice for explaining models on large datasets.
                     print(f"    Generating SHAP summary for main model '{embedding_name}' on fold {fold_num + 1}...")
-                    train_features_for_shap = X_train
+                    # Use a sample for k-means fitting if the training set is huge
+                    shap_sample = shap.sample(X_train, 1000) if len(X_train) > 1000 else X_train
+                    background_summary = shap.kmeans(shap_sample, 50).data # Summarize with 50 centroids
                     reporter = EvaluationReporter(str(self.config.RESULTS_EVALUATION_DIR), self.config.EVAL_K_VALUES_FOR_TABLE)
                     reporter.generate_shap_summary(
-                        model=model, background_data=train_features_for_shap,
+                        model=model, background_data=background_summary,
                         model_name=embedding_name, fold_num=fold_num + 1
                     )
             except Exception as e_shap:
@@ -188,7 +200,7 @@ class PPIPipeline:
         finally:
             del model
             gc.collect()
-            tf.keras.backend.clear_session()
+            tf_keras.backend.clear_session()
 
     def _run_cv_workflow(
             self,

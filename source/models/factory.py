@@ -59,6 +59,12 @@ class ModelFactory:
 
         return decorator
 
+    @classmethod
+    def reset_cache(cls):
+        """Clears the internal instance cache. For testing purposes."""
+        print("  - Resetting ModelFactory instance cache.")
+        cls._instance_cache.clear()
+
     def _get_params(self, model_name_lower: str) -> Dict[str, Any]:
         """
         Gets the appropriate GNN parameters from the config based on the context
@@ -83,28 +89,25 @@ class ModelFactory:
             elif model_name_lower == 'directgcn':
                 params['layer_dims_config'] = getattr(self.config, f'{prefix}DIRECTGCN_HIDDEN_LAYER_DIMS')
 
-        elif self.context == 'protgram':
-            params = {
-                'hidden_channels': self.config.PROTGRAM_GNN_HIDDEN_CHANNELS,
-                'num_layers': self.config.PROTGRAM_GNN_NUM_LAYERS,
-                'dropout_rate': self.config.PROTGRAM_DROPOUT_RATE,
-            }
-            if model_name_lower == 'rgcn':
-                params['num_relations'] = 2  # Default for protgram context
-            elif model_name_lower == 'directgcn':
-                params['layer_dims_config'] = self.config.DIRECTGCN_HIDDEN_LAYER_DIMS
+        elif self.context == 'protgram': # --- REFACTOR: Consolidate DirectGCN parameter logic ---
+            params = {'hidden_channels': self.config.PROTGRAM_GNN_HIDDEN_CHANNELS, 'num_layers': self.config.PROTGRAM_GNN_NUM_LAYERS,
+                      'dropout_rate': self.config.PROTGRAM_DROPOUT_RATE, }
+            if model_name_lower == 'rgcn': params['num_relations'] = 2
+            elif model_name_lower == 'directgcn': params['layer_dims_config'] = self.config.DIRECTGCN_HIDDEN_LAYER_DIMS
 
         # Add common DirectGCN parameters if it's the requested model
         if model_name_lower == 'directgcn':
-            params.update({
-                'one_gram_dim': self.config.PROTGRAM_1GRAM_INIT_DIM,
-                'max_pe_len': self.config.PROTGRAM_MAX_PE_LEN,
-                'dropout': self.config.PROTGRAM_DROPOUT_RATE,
-                'gating_mode': self.config.PROTGRAM_GATING_COEFF_MODE,
-                'disable_pe': not self.config.PROTGRAM_USE_POSITIONAL_EMBEDDING
-            })
-        # --- DEFINITIVE FIX: Ensure use_homo_hetero_paths is always present for DirectGCN ---
-        if model_name_lower == 'directgcn':
+            if self.context == 'protgram':
+                params.update({
+                    'dropout_rate': self.config.PROTGRAM_DROPOUT_RATE,
+                    'gating_mode': self.config.PROTGRAM_GATING_COEFF_MODE,
+                })
+            else:  # benchmark or singleton context
+                prefix = 'BENCHMARK_' if self.context == 'benchmark' else 'SINGLETON_'
+                params.update({
+                    'dropout_rate': getattr(self.config, f'{prefix}GNN_DROPOUT_RATE'),
+                    'gating_mode': 'vector',  # A reasonable default for benchmarks
+                })
             params.setdefault('use_homo_hetero_paths', False)
         return params
 

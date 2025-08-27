@@ -54,7 +54,9 @@ class ReportingTests(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.test_output_dir, "plots", "history_Model_A_Fold1.png")))
         self.assertTrue(os.path.exists(os.path.join(self.test_output_dir, "plots", "comparison_roc_curves.png")))
         self.assertTrue(os.path.exists(os.path.join(self.test_output_dir, "plots", "comparison_metrics_barchart.png")))
-        self.assertTrue(os.path.exists(os.path.join(self.test_output_dir, "evaluation_summary.csv")))
+        # --- FIX: Assert that both the CSV and TXT summary files are created ---
+        self.assertTrue(os.path.exists(os.path.join(self.test_output_dir, "evaluation_summary.csv")), "CSV summary file was not created.")
+        self.assertTrue(os.path.exists(os.path.join(self.test_output_dir, "evaluation_summary.txt")), "TXT summary file was not created.")
 
         print(f"  Example reporting complete. Check '{self.test_output_dir}' directory.")
         print("--- EvaluationReporter Test Complete ---")

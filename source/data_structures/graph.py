@@ -156,17 +156,3 @@ class Graph:
                     setattr(instance, attr_name, sparse_tensor)
 
         return instance
-
-        # --- DEFINITIVE FIX: Load and reconstruct sparse tensors ---
-        for attr_name_base, shape in metadata.items():
-            if attr_name_base.endswith("_shape"):
-                attr_name = attr_name_base.replace("_shape", "")
-                indices_path = dir_path / f"{attr_name}_indices.npy"
-                values_path = dir_path / f"{attr_name}_values.npy"
-                if indices_path.exists() and values_path.exists():
-                    indices = torch.from_numpy(np.load(indices_path))
-                    values = torch.from_numpy(np.load(values_path))
-                    sparse_tensor = torch.sparse_coo_tensor(indices, values, torch.Size(shape)).coalesce()
-                    setattr(instance, attr_name, sparse_tensor)
-
-        return instance

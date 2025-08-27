@@ -24,15 +24,20 @@ class TransformerPipelineTests(unittest.TestCase):
         self.base_test_dir = Path(tempfile.mkdtemp())
         self.config = Config()
         self.original_base_output_dir = self.config.BASE_OUTPUT_DIR
-        # --- DEFINITIVE FIX: Isolate the test's "project root" to its temp directory ---
+        # --- DEFINITIVE FIX: Isolate all relevant paths for true test isolation ---
         self.original_project_root = self.config.PROJECT_ROOT
+        self.original_persistent_cache = self.config.PERSISTENT_DATA_CACHE
+
         self.config.BASE_OUTPUT_DIR = self.base_test_dir
         self.config.PROJECT_ROOT = self.base_test_dir
+        self.config.PERSISTENT_DATA_CACHE = self.base_test_dir / ".cache"
         self.config._setup_paths()
 
     def tearDown(self):
         self.config.BASE_OUTPUT_DIR = self.original_base_output_dir
         self.config.PROJECT_ROOT = self.original_project_root
+        # --- DEFINITIVE FIX: Restore all original paths ---
+        self.config.PERSISTENT_DATA_CACHE = self.original_persistent_cache
         self.config._setup_paths()
         shutil.rmtree(self.base_test_dir)
 

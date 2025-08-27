@@ -8,7 +8,6 @@
 import os
 from typing import Tuple, Any
 import fsspec
-from urllib.parse import urlparse
 
 
 class FileSystemManager:
@@ -46,10 +45,11 @@ class FileSystemManager:
         A convenience method to get both the filesystem object and the
         protocol-stripped path string from a URI.
         """
-        protocol = self.get_protocol(uri)
-        fs = fsspec.filesystem(protocol, **self.storage_options.get(protocol, {}))
-        path = str(uri).split('://', 1)[-1] if '://' in uri else str(uri)
-        return fs, path
+        # --- REFACTOR: Use fsspec.open() for idiomatic URI parsing ---
+        # This is the most robust way to get the filesystem and path, as it
+        # correctly handles all URI schemes and edge cases supported by fsspec.
+        open_file = fsspec.open(str(uri), **self.storage_options)
+        return open_file.fs, open_file.path
 
 # Create a global instance for easy access throughout the application
 fs_manager = FileSystemManager()

@@ -53,6 +53,20 @@ class DummyDataFactory:
         return pos_path, neg_path
 
     @staticmethod
+    def create_dummy_idmapping_dat(directory: str, filename: str = "idmapping.dat", num_ids: int = 5):
+        """Creates a small dummy idmapping.dat file for testing."""
+        os.makedirs(directory, exist_ok=True)
+        dat_path = os.path.join(directory, filename)
+        with open(dat_path, "w") as f:
+            # Format: UniProtKB-AC <tab> DB_Type <tab> DB_ID
+            for i in range(num_ids):
+                # Create a mapping from a dummy ID to a UniProt ID
+                f.write(f"DUMMY_AC_{i}\tUniProtKB-AC\tDUMMY_AC_{i}\n")
+                # Add some other irrelevant lines
+                f.write(f"DUMMY_AC_{i}\tGeneID\t1234{i}\n")
+        return dat_path
+
+    @staticmethod
     def create_dummy_id_mapping_parquet(directory: str, filename: str = "dummy_id_mapping.parquet", num_ids: int = 5):
         """Creates a small dummy ID mapping Parquet file for testing."""
         os.makedirs(directory, exist_ok=True)

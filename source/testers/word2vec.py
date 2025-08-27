@@ -27,23 +27,25 @@ class Word2VecPipelineTests(unittest.TestCase):
         self.original_base_output_dir = self.config.BASE_OUTPUT_DIR
         self.original_epochs = self.config.W2V_EPOCHS
         # --- DEFINITIVE FIX: Override min sequence length and isolate all paths ---
-        self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN
-        self.original_w2v_dir = self.config.RESULTS_W2V_EMBEDDINGS_DIR
-        # --- DEFINITIVE FIX: Isolate the test's "project root" to its temp directory ---
-        # This prevents the test from writing cache files to the actual project root
-        # and interfering with the main application run.
+        self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN # --- DEFINITIVE FIX: Isolate all relevant paths for true test isolation ---
+        self.original_w2v_dir = self.config.RESULTS_W2V_EMBEDDINGS_DIR # This prevents the test from writing cache files to the actual project root
+        # or reading from the user's real persistent cache, ensuring the test is
+        # fully self-contained and reproducible.
         self.original_project_root = self.config.PROJECT_ROOT
+        self.original_persistent_cache = self.config.PERSISTENT_DATA_CACHE
 
         self.config.PROTGRAM_FASTA_MIN_LEN = 1
         self.config.RESULTS_W2V_EMBEDDINGS_DIR = self.base_test_dir / "word2vec_embeddings"
         self.config.PROJECT_ROOT = self.base_test_dir
+        self.config.PERSISTENT_DATA_CACHE = self.base_test_dir / ".cache"
 
     def tearDown(self):
         self.config.BASE_OUTPUT_DIR = self.original_base_output_dir
         self.config.W2V_EPOCHS = self.original_epochs
         self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
         self.config.RESULTS_W2V_EMBEDDINGS_DIR = self.original_w2v_dir
-        self.config.PROJECT_ROOT = self.original_project_root
+        self.config.PROJECT_ROOT = self.original_project_root # --- DEFINITIVE FIX: Restore all original paths ---
+        self.config.PERSISTENT_DATA_CACHE = self.original_persistent_cache
         shutil.rmtree(self.base_test_dir)
 
     def test_word2vec_pipeline_run(self):

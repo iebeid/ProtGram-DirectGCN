@@ -58,6 +58,8 @@ class GNNBenchmarkingParams(BaseGNNTrainingParams):
     TEST_ON_UNDIRECTED: bool
     SPLIT_RATIOS: Dict[str, float]
     PCA_TARGET_DIM: int = Field(gt=0)
+    NE_LEARNING_RATE: float = Field(gt=0)
+    NE_BATCH_SIZE: int = Field(gt=0)
     NE_EPOCHS: int = Field(gt=0)
     NE_EMBEDDING_DIM: int = Field(gt=0)
     NE_WALK_LENGTH: int = Field(gt=0)
@@ -89,7 +91,6 @@ class ProtGramGCNParams(BaseModel):
     PROTGRAM_MODELS_TO_TRAIN: List[str]
     DIRECTGCN_HIDDEN_LAYER_DIMS: List[int]
     PROTGRAM_1GRAM_INIT_DIM: int = Field(gt=0)
-    PROTGRAM_MAX_PE_LEN: int = Field(gt=0)
     PROTGRAM_GNN_HIDDEN_CHANNELS: int = Field(gt=0)
     PROTGRAM_GNN_NUM_LAYERS: int = Field(gt=0)
     PROTGRAM_GATING_COEFF_MODE: str
@@ -193,7 +194,7 @@ class PPIEvaluationParams(BaseModel):
     MLP_L2_REG: float = Field(ge=0.0)
     BATCH_SIZE: int = Field(gt=0)
     EPOCHS: int = Field(gt=0)
-    LEARNING_RATE: float = Field(gt=0)
+    MLP_LEARNING_RATE: float = Field(gt=0)
     K_VALUES_FOR_TABLE: List[int]
     MAIN_EMBEDDING_FOR_STATS: str
     STATISTICAL_TEST_ALPHA: float = Field(gt=0, lt=1.0)
@@ -358,6 +359,8 @@ class Config:
         self.BENCHMARK_TEST_ON_UNDIRECTED = params['TEST_ON_UNDIRECTED']
         self.BENCHMARK_SPLIT_RATIOS = params['SPLIT_RATIOS']
         self.BENCHMARK_PCA_TARGET_DIM = params['PCA_TARGET_DIM']
+        self.BENCHMARK_NE_LEARNING_RATE = params['NE_LEARNING_RATE']
+        self.BENCHMARK_NE_BATCH_SIZE = params['NE_BATCH_SIZE']
         self.BENCHMARK_NE_EPOCHS = params['NE_EPOCHS']
         self.BENCHMARK_NE_EMBEDDING_DIM = params['NE_EMBEDDING_DIM']
         self.BENCHMARK_NE_WALK_LENGTH = params['NE_WALK_LENGTH']
@@ -430,6 +433,14 @@ class Config:
         self.DATA_MANIFEST_PATH = self.PERSISTENT_DATA_CACHE / "data_manifest.json"
         self.PROTT5_MODEL_PATH = self.DATA_SOURCES['PROTT5_MODEL']['path']
 
+        # --- NEW: Define raw data paths for the processor ---
+        # These attributes were being used by the DataProcessor but were never defined.
+        self.BIOGRID_RAW_PATH = self.DATA_SOURCES['BIOGRID_INTERACTIONS']['path']
+        self.NEG_INTERACTIONS_RAW_PATHS = [
+            v['path'] for k, v in self.DATA_SOURCES.items() if k.startswith('NEG_INTERACTIONS')
+        ]
+
+
         # --- REFACTOR: Use the configured FASTA file key to select the single file to process ---
         fasta_key = self.FASTA_FILE_TO_PROCESS
         if fasta_key in self.DATA_SOURCES and str(self.DATA_SOURCES[fasta_key]['path']).endswith(('.fasta', '.fa')):
@@ -468,6 +479,8 @@ class Config:
         cpu_cores = os.cpu_count()
         self.PROTGRAM_NGRAM_MAX_N = params['PROTGRAM_NGRAM_MAX_N']
         self.FASTA_FILE_TO_PROCESS = params['FASTA_FILE_TO_PROCESS']
+        # --- NEW: Add missing Dask configuration ---
+        self.DASK_N_PARTITIONS = os.cpu_count() or 1
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1
         self.ID_MAPPING_MODE = params['ID_MAPPING_MODE']
         # --- FIX: Load smart mapping options from the correct (top) level ---
@@ -479,7 +492,6 @@ class Config:
         self.PROTGRAM_MODELS_TO_TRAIN = params['PROTGRAM_MODELS_TO_TRAIN']
         self.DIRECTGCN_HIDDEN_LAYER_DIMS = params['DIRECTGCN_HIDDEN_LAYER_DIMS']
         self.PROTGRAM_1GRAM_INIT_DIM = params['PROTGRAM_1GRAM_INIT_DIM']
-        self.PROTGRAM_MAX_PE_LEN = params['PROTGRAM_MAX_PE_LEN']
         self.PROTGRAM_GNN_HIDDEN_CHANNELS = params['PROTGRAM_GNN_HIDDEN_CHANNELS']
         self.PROTGRAM_GNN_NUM_LAYERS = params['PROTGRAM_GNN_NUM_LAYERS']
         self.PROTGRAM_GATING_COEFF_MODE = params['PROTGRAM_GATING_COEFF_MODE']
@@ -598,7 +610,7 @@ class Config:
         self.EVAL_MLP_L2_REG = params['MLP_L2_REG']
         self.EVAL_BATCH_SIZE = params['BATCH_SIZE']
         self.EVAL_EPOCHS = params['EPOCHS']
-        self.EVAL_LEARNING_RATE = params['LEARNING_RATE']
+        self.EVAL_MLP_LEARNING_RATE = params['MLP_LEARNING_RATE']
         self.EVAL_K_VALUES_FOR_TABLE = params['K_VALUES_FOR_TABLE']
         self.EVAL_MAIN_EMBEDDING_FOR_STATS = params['MAIN_EMBEDDING_FOR_STATS']
         self.EVAL_STATISTICAL_TEST_ALPHA = params['STATISTICAL_TEST_ALPHA']

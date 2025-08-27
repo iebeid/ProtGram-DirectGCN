@@ -22,10 +22,14 @@ class GraphBuilderTests(unittest.TestCase):
         self.original_graph_objects_dir = self.config.RESULTS_GRAPH_OBJECTS_DIR
         self.original_downsample = self.config.SEQUENCE_DOWNSAMPLE_FRACTION
         self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN
+        # --- NEW: Store the original project root for restoration ---
+        self.original_project_root = self.config.PROJECT_ROOT
 
         # --- DEFINITIVE FIX: Manually override all relevant paths for true isolation ---
         self.config.BASE_OUTPUT_DIR = Path(self.temp_dir)
         self.config.RESULTS_GRAPH_OBJECTS_DIR = Path(self.temp_dir) / "graph_objects"
+        # --- NEW: Isolate the project root to the temporary directory ---
+        self.config.PROJECT_ROOT = Path(self.temp_dir)
 
         # Now, apply other test-specific overrides
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = None
@@ -41,6 +45,8 @@ class GraphBuilderTests(unittest.TestCase):
         self.config.RESULTS_GRAPH_OBJECTS_DIR = self.original_graph_objects_dir
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = self.original_downsample
         self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
+        # --- NEW: Restore the original project root ---
+        self.config.PROJECT_ROOT = self.original_project_root
         shutil.rmtree(self.temp_dir)
 
     def test_graph_builder_smoke(self):

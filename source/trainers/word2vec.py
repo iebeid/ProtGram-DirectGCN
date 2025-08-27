@@ -7,8 +7,8 @@
 
 import gc
 import os
-import time
-from typing import Dict, Optional, Mapping, List
+import time # noqa
+from typing import Dict, Optional, List
 
 import numpy as np
 from gensim.models import Word2Vec
@@ -17,7 +17,6 @@ from tqdm.auto import tqdm
 from configuration.config import Config
 from source.utils.data.data_utils import DataUtils
 from source.utils.data.fasta_utils import FastaUtils
-from source.utils.data.id_mapper import IDMapper
 from source.utils.fs.file_utils import FileUtils
 from source.utils.post.embedding_processor import EmbeddingProcessor
 
@@ -27,7 +26,7 @@ class Word2VecEmbedder:
         self.config = config
         DataUtils.print_header("Word2VecEmbedder Initialized")
 
-    def run(self) -> Optional[str]:
+    def run(self) -> Optional[Dict[str, str]]:
         """
         Main entry point for the Word2Vec pipeline.
         """
@@ -45,17 +44,15 @@ class Word2VecEmbedder:
         w2v_model = self._train_w2v_model(corpus)
         protein_embeddings = self._generate_protein_embeddings(w2v_model, fasta_files)
 
-        if not protein_embeddings:
-            return None
-
-        output_h5_path = self.config.RESULTS_W2V_EMBEDDINGS_DIR / f"word2vec_dim{self.config.W2V_VECTOR_SIZE}_{self.config.W2V_POOLING_STRATEGY}.h5"
-        FileUtils.write_h5(protein_embeddings, output_h5_path, "Writing Word2Vec H5 File")
+        # --- REFACTOR: Use a dedicated helper to save embeddings and handle PCA ---
+        # This makes the logic consistent with the ProtGram-XGCN trainer.
+        output_paths = self._save_embeddings_and_apply_pca(protein_embeddings)
 
         del w2v_model, corpus, protein_embeddings
         gc.collect()
 
         DataUtils.print_header("Word2Vec Embedding PIPELINE STEP FINISHED")
-        return str(output_h5_path)
+        return output_paths
 
     def _train_w2v_model(self, corpus: FastaUtils.FastaCorpus) -> Word2Vec:
         """Trains the Word2Vec model on the provided corpus."""
@@ -98,46 +95,29 @@ class Word2VecEmbedder:
 
         return protein_embeddings
 
-    def _execute_embedding_logic(self, id_map: Optional[Mapping]) -> Optional[str]:
-        """The core logic for Word2Vec, now accepting a mapper object."""
-        DataUtils.print_header("Step 1: Preparing FASTA Corpus for Word2Vec")
-        fasta_paths = self.config.SEQUENCE_FILE_PATHS
-        if not fasta_paths:
-            print("ERROR: No FASTA files configured in 'config.SEQUENCE_FILE_PATHS' for Word2Vec.")
-            return None
+    def _save_embeddings_and_apply_pca(self, embeddings: Dict[str, np.ndarray]) -> Dict[str, str]:
+        """Saves final protein embeddings and their PCA versions to H5 files."""
+        output_paths = {}
+        if not embeddings:
+            print("  No embeddings generated for Word2Vec. Skipping save.")
+            return output_paths
 
-        fasta_files = [str(p) for p in fasta_paths]
-        print(f"  Found {len(fasta_files)} FASTA file(s) for corpus: {[os.path.basename(f) for f in fasta_files]}")
-        corpus = FastaUtils.FastaCorpus(fasta_files)
+        model_name = "Word2Vec-Generated"
+        output_dir = self.config.RESULTS_W2V_EMBEDDINGS_DIR
+        dim = self.config.W2V_VECTOR_SIZE
+        pooling = self.config.W2V_POOLING_STRATEGY
 
-        # --- REFACTOR: Use helper methods for training and embedding generation ---
-        w2v_model = self._train_w2v_model(corpus)
-        protein_embeddings = self._generate_protein_embeddings(w2v_model, fasta_files)
+        output_path = output_dir / f"word2vec_dim{dim}_{pooling}.h5"
+        FileUtils.write_h5(embeddings, output_path, f"Writing H5 for {model_name}")
+        output_paths[model_name] = str(output_path)
 
-        if not protein_embeddings:
-            return None
-
-        # Apply ID mapping to the entire dictionary at once
-        protein_embeddings = IDMapper.apply_mapping(protein_embeddings, id_map)
-
-        print(f"  Generated {len(protein_embeddings)} protein embeddings using Word2Vec.")
-
-        output_h5_path = self.config.RESULTS_W2V_EMBEDDINGS_DIR / f"word2vec_dim{self.config.W2V_VECTOR_SIZE}_{self.config.W2V_POOLING_STRATEGY}.h5"
-        FileUtils.write_h5(protein_embeddings, output_h5_path, "Writing Word2Vec H5 File")
-
-        # --- NEW: Apply PCA for consistency with other embedding pipelines ---
-        final_path = output_h5_path
         if self.config.APPLY_PCA_TO_W2V and self.config.PCA_TARGET_DIMENSION > 0:
-            final_path = EmbeddingProcessor.apply_pca_to_h5(
-                input_h5_path=output_h5_path,
-                output_dir=self.config.RESULTS_W2V_EMBEDDINGS_DIR,
+            pca_path = EmbeddingProcessor.apply_pca_to_h5(
+                input_h5_path=output_path,
+                output_dir=output_dir,
                 target_dimension=self.config.PCA_TARGET_DIMENSION,
                 random_seed=self.config.RANDOM_STATE
             )
-
-        print(f"\nSUCCESS: Word2Vec embeddings processing complete. Final file: {final_path}")
-
-        del w2v_model, corpus, protein_embeddings
-        gc.collect()
-        DataUtils.print_header("Word2Vec Embedding PIPELINE STEP FINISHED")
-        return str(final_path)
+            if str(pca_path) != str(output_path):
+                output_paths[f"{model_name}_pca"] = str(pca_path)
+        return output_paths

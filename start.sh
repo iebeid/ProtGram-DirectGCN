@@ -97,24 +97,10 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 # running Transformer models on the GPU.
 export XLA_FLAGS="--xla_gpu_cuda_data_dir=$ENV_PATH"
 
-# --- DEFINITIVE FIX: Separate environment validation from the main application run ---
-# 1. Validate both the environment and the data setup. If either fails, run the full setup.
-DATA_MANIFEST_PATH="$HOME/.cache/protgram_directgcn/data_manifest.json"
-
-# --- DEFINITIVE FIX: Separate validation checks for clearer logging ---
-if ! "$ENV_PYTHON" run.py --validate-env-only; then
-    echo "--- Environment validation FAILED. Critical Python packages are missing. ---"
-    echo "--- Running full setup script... ---"
-    # The setup script will handle both package installation and data download.
-    "$ENV_PYTHON" -u configuration/setup.py
-elif [ ! -f "$DATA_MANIFEST_PATH" ]; then
-    echo "--- Data validation FAILED. The data manifest is missing. ---"
-    echo "--- Running full setup script... ---"
-    "$ENV_PYTHON" -u configuration/setup.py
-fi
-
-# 2. Now that the environment is guaranteed to be valid, run the main application.
-echo "--- Environment and data are now valid. Starting main application... ---"
+# --- REFACTOR: Delegate all validation to the Python application ---
+# The run.py script is now the single source of truth for validating the environment
+# and data, and for triggering the setup if needed. This simplifies the shell script.
+echo "--- Launching main application. Python script will handle all further validation... ---"
 "$ENV_PYTHON" -u run.py
 
 echo -e "\n--- SCRIPT FINISHED ---"

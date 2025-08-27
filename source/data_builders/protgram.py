@@ -26,36 +26,6 @@ from source.utils.data.fasta_utils import FastaUtils
 from source.utils.data.protgram_helper import ProtgramDaskHelpers
 
 
-# --- NEW HELPER FUNCTIONS (to be moved to protgram_helper.py) ---
-# These are included here to make the diff self-contained.
-
-def _extract_all_ngrams_from_sequence_tuple(seq_tuple: Tuple[str, str], n_max: int) -> List[Tuple[int, str]]:
-    """Extracts all n-grams from n=1 to n_max from a single sequence."""
-    _, sequence = seq_tuple
-    all_ngrams = []
-    for n in range(1, n_max + 1):
-        if len(sequence) >= n:
-            for i in range(len(sequence) - n + 1):
-                all_ngrams.append((n, sequence[i:i + n]))
-    return all_ngrams
-
-def _extract_all_edges_from_sequence_tuple(seq_tuple: Tuple[str, str], n_max: int, all_ngram_maps: Dict[int, Dict[str, int]]) -> List[Tuple[int, int, int]]:
-    """Extracts all edges for all n-gram levels from a single sequence."""
-    _, sequence = seq_tuple
-    all_edges = []
-    for n in range(1, n_max + 1):
-        ngram_map = all_ngram_maps.get(n, {})
-        if len(sequence) >= n + 1:
-            for i in range(len(sequence) - n):
-                source_ngram = sequence[i:i + n]
-                target_ngram = sequence[i + 1:i + 1 + n]
-                source_id = ngram_map.get(source_ngram)
-                target_id = ngram_map.get(target_ngram)
-                if source_id is not None and target_id is not None:
-                    all_edges.append((n, source_id, target_id))
-    return all_edges
-
-
 class ProtGramDataBuilder:
     """
     A memory-efficient, scalable graph builder using a Dask-based architecture.
@@ -197,14 +167,14 @@ class ProtGramDataBuilder:
             # --- REFACTOR: Implement a 2-pass Dask pipeline for massive performance improvement ---
             # Pass 1: Generate all n-gram maps for all levels in a single pass over the data.
             DataUtils.print_header("Phase 1: Generating All N-Gram Maps")
-            phase1_start_time = time.monotonic()
-            extract_all_ngrams_partial = partial(_extract_all_ngrams_from_sequence_tuple, n_max=self.n_max)
+            phase1_start_time = time.monotonic() # --- DEFINITIVE FIX: Remove redundant local functions and use the centralized helpers ---
+            extract_all_ngrams_partial = partial(ProtgramDaskHelpers.extract_all_ngrams_from_sequence_tuple, n_max=self.n_max)
             all_ngrams_bag = final_preprocessed_input_bag.map(extract_all_ngrams_partial).flatten()
             all_ngrams_ddf = all_ngrams_bag.to_dataframe(meta={'n': 'i4', 'ngram': 'str'})
 
             all_ngram_maps_in_memory = {}
             for n in tqdm(n_values, desc="Building N-Gram Levels"):
-                print(f"  - Creating map for n={n}...")
+                print(f"  - Creating map for n={n}...") # noqa
                 ngrams_for_n_ddf = all_ngrams_ddf[all_ngrams_ddf['n'] == n]
                 ngram_map_ddf = ngrams_for_n_ddf[['ngram']].drop_duplicates().reset_index(drop=True)
                 ngram_map_ddf['id'] = ngram_map_ddf.index
@@ -216,8 +186,8 @@ class ProtGramDataBuilder:
 
             # Pass 2: Generate all edges for all levels in a single pass over the data.
             DataUtils.print_header("Phase 2: Generating All Edges")
-            phase2_start_time = time.monotonic()
-            extract_all_edges_partial = partial(_extract_all_edges_from_sequence_tuple, n_max=self.n_max, all_ngram_maps=all_ngram_maps_in_memory)
+            phase2_start_time = time.monotonic() # --- DEFINITIVE FIX: Use the centralized helper for edge extraction ---
+            extract_all_edges_partial = partial(ProtgramDaskHelpers.extract_all_edges_from_sequence_tuple, n_max=self.n_max, all_ngram_maps=all_ngram_maps_in_memory)
             all_edges_bag = final_preprocessed_input_bag.map(extract_all_edges_partial).flatten()
             all_edges_ddf = all_edges_bag.to_dataframe(meta={'n': 'i4', 'source': 'i8', 'target': 'i8'})
 

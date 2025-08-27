@@ -174,6 +174,10 @@ class GroundTruthLoader:
                 # Vectorized filtering is much faster than iterating
                 mask = df['p1'].isin(available_ids) & df['p2'].isin(available_ids)
                 filtered_df = df[mask]
+                # --- DEFINITIVE FIX: Add the missing sampling logic to the high-memory path ---
+                if sample_n is not None and 0 < sample_n < len(filtered_df):
+                    print(f"    Applying random sampling to keep up to {sample_n} pairs...")
+                    filtered_df = filtered_df.sample(n=sample_n, random_state=random_state)
                 filtered_pairs = [(row.p1, row.p2, label) for row in filtered_df.itertuples(index=False)]
             except Exception as e:
                 print(f"    ERROR: Could not load or filter interaction file '{filepath.name}' with Pandas.")

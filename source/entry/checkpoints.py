@@ -60,8 +60,11 @@ class CheckpointManager:
 
         for item in files_to_checksum:
             if isinstance(item, dict) and "path" in item:
-                # FileUtils.calculate_sha256 is already cloud-aware and expects a URI
-                item["sha256"] = FileUtils.calculate_sha256(item["path"])
+                # --- DEFINITIVE FIX: Handle checksum failures explicitly ---
+                # If checksum calculation fails (e.g., for a directory), store a
+                # specific marker. This prevents the "" == "" bug during validation.
+                checksum = FileUtils.calculate_sha256(item["path"])
+                item["sha256"] = checksum if checksum is not None else "checksum_failed"
 
         self.data[step_name] = serializable_data
         # --- DEFINITIVE FIX: Implement atomic write to prevent corruption ---
@@ -86,6 +89,11 @@ class CheckpointManager:
             print(f"  - No checkpoint found for step: '{step_name}'.")
             return None
 
+        # --- REFACTOR: Handle simple status checkpoints first for clarity ---
+        if isinstance(checkpoint_data, dict) and "status" in checkpoint_data:
+            print(f"  ✅ Found valid status checkpoint for step: '{step_name}'. Skipping execution.")
+            return checkpoint_data
+
         # --- NEW: Validate file-based checkpoints using checksums ---
         files_to_validate = []
         if isinstance(checkpoint_data, list):
@@ -96,10 +104,6 @@ class CheckpointManager:
         elif isinstance(checkpoint_data, dict) and "path" in checkpoint_data and "sha256" in checkpoint_data:
             # --- ANTICIPATORY DEBUGGING: Handle checkpoints that are a single file dictionary ---
             files_to_validate.append(checkpoint_data)
-        elif isinstance(checkpoint_data, dict) and "status" in checkpoint_data:
-            # This handles simple status checkpoints like {"status": "completed"}
-            print(f"  ✅ Found valid status checkpoint for step: '{step_name}'. Skipping execution.")
-            return checkpoint_data
 
         if not files_to_validate:
             # If it's not a file list and not a status dict, it's some other valid data.
@@ -109,6 +113,12 @@ class CheckpointManager:
         for file_info in files_to_validate:
             file_uri = file_info["path"]
             expected_checksum = file_info["sha256"]
+
+            # --- DEFINITIVE FIX: Invalidate if checksum calculation failed during save ---
+            if expected_checksum == "checksum_failed":
+                print(f"  - Checkpoint for '{step_name}' is INVALID. Checksum could not be generated for '{os.path.basename(file_uri)}'. Re-running.")
+                return None
+
             # --- FIX: Use the filesystem manager to validate the file at its URI ---
             file_fs, file_path_str = fs_manager.get_fs_and_path(file_uri)
 

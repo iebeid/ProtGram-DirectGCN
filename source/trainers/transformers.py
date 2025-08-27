@@ -184,10 +184,36 @@ class TransformerEmbedder:
                             batch_ids = [seq[0] for seq in batch]
                             batch_sequences = [seq[1] for seq in batch]
 
-                            embeddings = inference_func(model, tokenizer, batch_sequences, self.config.TRANSFORMER_POOLING_STRATEGY)
+                            # --- DEFINITIVE FIX: Implement the correct tokenization, inference, and pooling logic ---
+                            # The previous implementation had a placeholder call that was incorrect.
+                            # 1. Tokenize the batch of sequences.
+                            inputs = tokenizer(
+                                batch_sequences,
+                                return_tensors="tf",
+                                padding="longest",
+                                truncation=True,
+                                max_length=self.config.TRANSFORMER_MAX_LENGTH
+                            )
+                            # 2. Run inference using the compiled TF function.
+                            model_output = inference_func(inputs)
+                            raw_embeddings = model_output.last_hidden_state.numpy()
 
-                            for prot_id, embedding in zip(batch_ids, embeddings):
-                                all_protein_embeddings_for_model[prot_id] = embedding.numpy().astype(np.float16)
+                            # 3. Process each sequence in the batch.
+                            for j, prot_id in enumerate(batch_ids):
+                                original_seq_len = len(batch_sequences[j])
+                                # 4. Extract residue embeddings (handles CLS token).
+                                residue_embeddings = EmbeddingProcessor.extract_transformer_residue_embeddings(
+                                    raw_model_output=raw_embeddings[j],
+                                    original_sequence_length=original_seq_len,
+                                    is_t5_model=model_config_item["is_t5"]
+                                )
+                                # 5. Pool to get a single protein embedding.
+                                pooled_embedding = EmbeddingProcessor.pool_residue_embeddings(
+                                    residue_embeddings,
+                                    strategy=self.config.TRANSFORMER_POOLING_STRATEGY,
+                                    embedding_dim_if_empty=embedding_dim
+                                )
+                                all_protein_embeddings_for_model[prot_id] = pooled_embedding.astype(np.float16)
 
                             pbar.update(len(batch))
 

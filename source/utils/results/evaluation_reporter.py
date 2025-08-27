@@ -27,6 +27,7 @@ except ImportError:
     shap = None
 
 from sklearn.manifold import TSNE
+from source.utils.post.embedding_loader import EmbeddingLoader
 
 # --- Configuration for t-SNE plotting ---
 TSNE_PERPLEXITY = 30
@@ -216,13 +217,13 @@ class EvaluationReporter:
         print(f"  Generating SHAP summary plot for {model_name}...")
 
         try:
-            # SHAP works best with a sample of the background data
-            background_sample = shap.sample(background_data, 100)  # Use a sample of 100 for the background
+            # The background data is now pre-summarized (e.g., by k-means)
+            # before being passed to this function, so we can use it directly.
 
             # --- REFACTOR: Use DeepExplainer for TensorFlow models ---
             # DeepExplainer is significantly faster and optimized for deep learning models.
-            explainer = shap.DeepExplainer(model, background_sample)
-            shap_values = explainer.shap_values(background_sample)  # Explain the same sample
+            explainer = shap.DeepExplainer(model, background_data)
+            shap_values = explainer.shap_values(background_data)  # Explain the background data
 
             # For a single-output model, shap_values is a list with one array.
             if isinstance(shap_values, list):
@@ -230,7 +231,7 @@ class EvaluationReporter:
 
             plt.figure()
             # --- NEW: Limit the number of features displayed for clarity ---
-            shap.summary_plot(shap_values, background_sample, show=False, plot_type="bar", max_display=20)
+            shap.summary_plot(shap_values, background_data, show=False, plot_type="bar", max_display=20)
             plt.title(f"SHAP Feature Importance\n({model_name} - Fold {fold_num})")
             plt.tight_layout()
             plt.savefig(plot_filename)
@@ -385,27 +386,27 @@ class EvaluationReporter:
             return None
 
         try:
-            with h5py.File(h5_path, 'r') as hf:
-                all_keys = list(hf.keys())
+            # --- DEFINITIVE FIX for OOM Error: Use EmbeddingLoader to sample keys before loading ---
+            # The previous implementation loaded the entire H5 file into memory, which
+            # would crash on large embedding files. This new approach samples the keys
+            # first and then loads only the required embeddings.
+            with EmbeddingLoader(h5_path) as loader:
+                all_keys = list(loader.get_keys())
                 if not all_keys:
-                    print(f"  Error: No datasets found in the H5 file.")
+                    print("  Error: No embeddings found in the H5 file.")
                     return None
 
-                print(f"  Found {len(all_keys)} items. Processing as '{embedding_type}'.")
+                num_embeddings = len(all_keys)
+                print(f"  Found {num_embeddings} items. Processing as '{embedding_type}'.")
 
-                embeddings_list = [hf[key_id][:] for key_id in all_keys if hf[key_id][:].ndim == 1]
+                if num_embeddings > SAMPLE_N_FOR_COMBINED_TSNE:
+                    print(f"  Sampling {SAMPLE_N_FOR_COMBINED_TSNE} points from {num_embeddings} for performance.")
+                    random.seed(TSNE_RANDOM_STATE)
+                    keys_to_load = random.sample(all_keys, SAMPLE_N_FOR_COMBINED_TSNE)
+                else:
+                    keys_to_load = all_keys
 
-                if not embeddings_list:
-                    raise ValueError("No valid 1D embeddings found for t-SNE plot.")
-
-                embeddings_array = np.vstack(embeddings_list)
-
-                if embeddings_array.shape[0] > SAMPLE_N_FOR_COMBINED_TSNE:
-                    print(f"  Sampling {SAMPLE_N_FOR_COMBINED_TSNE} points from {embeddings_array.shape[0]} for performance.")
-                    # --- FIX: Seed the random choice for reproducible plots ---
-                    np.random.seed(TSNE_RANDOM_STATE)
-                    indices = np.random.choice(embeddings_array.shape[0], SAMPLE_N_FOR_COMBINED_TSNE, replace=False)
-                    embeddings_array = embeddings_array[indices]
+                embeddings_array = np.array([loader[key] for key in keys_to_load])
 
                 base_filename = os.path.splitext(os.path.basename(h5_path))[0]
                 title = f"t-SNE of Per-Protein Embeddings\n(Source: {base_filename})"

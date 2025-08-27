@@ -20,6 +20,7 @@ from source.data_structures.direct_ngram_graph import DirectedNgramGraph
 from source.data_builders.xgcn import XGCNDataBuilder
 from torch_geometric.data import Data
 from source.utils.data.data_utils import DataUtils
+from source.utils.data.protgram_helper import ProtgramDaskHelpers
 from source.models.factory import ModelFactory
 
 
@@ -46,13 +47,18 @@ class SingletonXGCNTrainer:
         """
         if not self.graph or self.graph.number_of_nodes == 0:
             print("  Singleton Trainer: Graph is empty or invalid. Cannot proceed.")
-            return pd.DataFrame()
+            return pd.DataFrame()  # All code after this in this block is unreachable if this triggers
 
         task_type = self.config.PROTGRAM_TASK_TYPES_PER_LEVEL.get(1, self.config.PROTGRAM_DEFAULT_TASK_TYPE)
         labels, num_classes = self.label_generator.generate_task_labels(self.graph, task_type)
 
+        # --- DEFINITIVE FIX for "Zero Results" on Small/Simple Graphs ---
+        # This guard is the reason the subsequent code may appear "unreachable".
+        # It correctly prevents a pointless evaluation when no meaningful classification
+        # task can be defined (e.g., only one community was found).
         if task_type != 'masked_node' and num_classes <= 1:
-            print("  Singleton Trainer: Only one community found. Cannot perform meaningful classification.")
+            print(f"\n  SKIPPING SINGLETON EVALUATION: The task '{task_type}' resulted in only {num_classes} class(es).")
+            print("  This is expected for very small or simple graphs. Returning empty results.")
             return pd.DataFrame()
 
         is_heterophilic = False
@@ -86,20 +92,26 @@ class SingletonXGCNTrainer:
                 node_indices, test_size=self.config.SINGLETON_EVAL_TEST_SPLIT, random_state=self.config.RANDOM_STATE
             )
 
+        # --- DEFINITIVE FIX for "Zero Results" on Small Graphs ---
+        # If the graph is too small, train_test_split can produce an empty test set.
+        # This guard prevents running the entire training loop only to find there's
+        # nothing to evaluate, which previously resulted in an empty metrics table.
+        if len(test_idx) == 0:
+            print(f"  Singleton Trainer: The train/test split resulted in an empty test set (graph size: {self.graph.number_of_nodes}, test_split: {self.config.SINGLETON_EVAL_TEST_SPLIT}).")
+            print("  This is expected for very small graphs. Cannot perform meaningful evaluation.")
+            return pd.DataFrame()
+
         train_mask = torch.zeros(self.graph.number_of_nodes, dtype=torch.bool).scatter_(0, torch.from_numpy(train_idx), 1)
         test_mask = torch.zeros(self.graph.number_of_nodes, dtype=torch.bool).scatter_(0, torch.from_numpy(test_idx), 1)
 
         all_results = []
         for model_name in tqdm(self.config.SINGLETON_EVAL_MODELS_TO_RUN, desc="Evaluating Singleton Models"):
             print(f"\n--- Evaluating Singleton Model: {model_name} ---")
-            # --- NEW: Add robust error handling for each model ---
-            # This prevents a single failing model from crashing the entire benchmark suite.
             try:
                 A_homo_norm, A_hetero_norm = None, None
                 use_homo_hetero_for_this_model = is_heterophilic if model_name.lower() == 'directgcn' else False
                 if use_homo_hetero_for_this_model and labels is not None:
                     print("  -> Enabling specialized homophily/heterophily paths for DirectGCN.")
-                    # --- FIX: Call as a static method, passing the required graph attributes ---
                     split_result = DirectedNgramGraph.split_edges_by_homophily(
                         self.graph.A_out_w, self.graph.number_of_nodes, labels
                     )
@@ -109,72 +121,37 @@ class SingletonXGCNTrainer:
                     model_name=model_name, in_channels=initial_features.shape[1], num_classes=num_classes,
                     graph_obj=self.graph, use_homo_hetero_paths=use_homo_hetero_for_this_model, n_val=1
                 )
-                if model is None: continue
+
                 print(model)
                 model.to(self.device)
                 optimizer = torch.optim.Adam(model.parameters(), lr=self.config.SINGLETON_EVAL_LR)
 
-                # --- DEFINITIVE FIX: Prepare the Data object with the specific attributes each model expects ---
-                # This resolves the various 'edge_index' and attribute errors by constructing a valid
-                # Data object tailored to the model being evaluated in each loop iteration.
-                data_for_model = Data(x=initial_features, y=y_for_stratify, train_mask=train_mask, test_mask=test_mask)
-
-                if model_name == "DirectGCN":
-                    # DirectGCN requires all specialized matrices.
-                    data_for_model.edge_index_mathcal_in = self.graph.mathcal_A_in.coalesce().indices()
-                    data_for_model.edge_weight_mathcal_in = self.graph.mathcal_A_in.coalesce().values()
-                    data_for_model.edge_index_mathcal_out = self.graph.mathcal_A_out.coalesce().indices()
-                    data_for_model.edge_weight_mathcal_out = self.graph.mathcal_A_out.coalesce().values()
-                    data_for_model.edge_index_undirected_norm = self.graph.A_undirected_norm_sparse.coalesce().indices()
-                    data_for_model.edge_weight_undirected_norm = self.graph.A_undirected_norm_sparse.coalesce().values()
-                    if use_homo_hetero_for_this_model and A_homo_norm is not None and A_hetero_norm is not None:
-                        data_for_model.edge_index_homo_norm = A_homo_norm.coalesce().indices()
-                        data_for_model.edge_weight_homo_norm = A_homo_norm.coalesce().values()
-                        data_for_model.edge_index_hetero_norm = A_hetero_norm.coalesce().indices()
-                        data_for_model.edge_weight_hetero_norm = A_hetero_norm.coalesce().values()
-
-                elif model_name == "RGCN":
-                    # RGCN needs a standard edge_index and an edge_type tensor.
-                    # --- DEFINITIVE FIX: Use the weighted matrices to get the unweighted indices ---
-                    # The unweighted A_in/A_out attributes are not created by default.
-                    edge_index_forward = self.graph.A_out_w.coalesce().indices()
-                    edge_index_backward = self.graph.A_in_w.coalesce().indices()
-                    data_for_model.edge_index = torch.cat([edge_index_forward, edge_index_backward], dim=1)
-                    data_for_model.edge_type = torch.cat([
-                        torch.zeros(edge_index_forward.size(1), dtype=torch.long),
-                        torch.ones(edge_index_backward.size(1), dtype=torch.long)
-                    ]).to(self.device)
-
-                else: # For GCN, GAT, GraphSAGE, DirGNN, etc.
-                    # These models typically expect a single, undirected edge_index.
-                    undirected_adj = self.graph.A_undirected_norm_sparse.coalesce()
-                    data_for_model.edge_index = undirected_adj.indices()
-                    data_for_model.edge_attr = undirected_adj.values()
-
-                data_for_model = data_for_model.to(self.device)
+                # --- REFACTOR: Use the centralized data preparation utility ---
+                # This replaces the large if/elif/else block and ensures consistency
+                # with the main ProtGram trainer.
+                data_for_model = ProtgramDaskHelpers.prepare_pyg_data_from_protgram_graph(
+                    model_type=model_name, graph=self.graph, features=initial_features, labels=y_for_stratify,
+                    A_homo_norm=A_homo_norm, A_hetero_norm=A_hetero_norm,
+                    train_mask=train_mask, test_mask=test_mask
+                ).to(self.device)
 
                 optimizer.zero_grad()
                 for epoch in tqdm(range(self.config.SINGLETON_EVAL_EPOCHS), desc=f"  Training {model_name}", leave=False):
                     model.train()
 
-                    # --- Forward pass ---
                     if task_type == 'masked_node':
-                        # For masked node, we need new masks each time, so it's inside the loop
                         masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=test_mask)
-                        # Create a new Data object for this epoch with the masked features
                         epoch_data = data_for_model.clone()
                         epoch_data.x = masked_features
                         logits, _ = model(epoch_data)
                         loss = F.cross_entropy(logits[masked_indices], original_node_ids.to(self.device))
                     else:
-                        # For node classification, data is static
                         logits, _ = model(data_for_model)
                         if data_for_model.train_mask.sum() > 0:
                             loss = F.cross_entropy(logits[data_for_model.train_mask], data_for_model.y[data_for_model.train_mask].long())
                         else:
                             loss = torch.tensor(0.0, device=self.device)
 
-                    # --- Backward pass & Optimizer Step ---
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     optimizer.step()
@@ -186,7 +163,6 @@ class SingletonXGCNTrainer:
                         masked_features, masked_indices, original_node_ids = self.label_generator.generate_masked_node_task(
                             self.graph, initial_features, masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION, exclude_mask=train_mask
                         )
-                        # Create a new Data object for evaluation with the masked features
                         eval_data = data_for_model.clone()
                         eval_data.x = masked_features
                         logits, _ = model(eval_data)
@@ -215,7 +191,6 @@ class SingletonXGCNTrainer:
             except Exception as e:
                 print(f"  ❌ ERROR during evaluation of {model_name}: {e}")
                 traceback.print_exc()
-                # Log the error so it appears in the final summary table
                 all_results.append({
                     "Model": model_name, "Accuracy": 0.0, "F1-Score (Macro)": 0.0,
                     "Precision (Macro)": 0.0, "Recall (Macro)": 0.0, "error": str(e)

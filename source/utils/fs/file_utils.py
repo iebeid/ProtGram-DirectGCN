@@ -140,34 +140,58 @@ class FileUtils:
         try:
             with fs.open(path, 'rb') as f:
                 with h5py.File(f, 'r') as hf:
-                    keys = list(hf.keys())
-                    if not keys:
-                        print("  HDF5 check: File is empty.")
-                        return
-                    print(f"Found {len(keys)} total embeddings. Inspecting up to {num_samples_to_check} samples:")
-                    sample_keys = random.sample(keys, min(len(keys), num_samples_to_check))
-                    for i, key in enumerate(sample_keys):
-                        dataset = hf.get(key)
-                        if not isinstance(dataset, h5py.Dataset): continue
-                        emb = dataset[:]
-                        print(f"    - Sample {i + 1}: Key='{key}', Shape={emb.shape}, DType={emb.dtype}")
-                        if np.isnan(emb).any(): print("      - WARNING: Embedding contains NaN values.")
-                        if np.isinf(emb).any(): print("      - WARNING: Embedding contains Inf values.")
+                    # --- DEFINITIVE FIX: Handle both new and old HDF5 formats ---
+                    if 'ids' in hf and 'embeddings' in hf:
+                        # New, efficient format
+                        ids = [s.decode('utf-8') for s in hf['ids'][:]]
+                        embeddings_dataset = hf['embeddings']
+                        num_embeddings = embeddings_dataset.shape[0]
+                        print(f"  HDF5 check (new format): Found {num_embeddings} embeddings. Inspecting up to {num_samples_to_check} samples:")
+                        if num_embeddings == 0:
+                            return
+
+                        sample_indices = random.sample(range(num_embeddings), min(num_embeddings, num_samples_to_check))
+                        for i, idx in enumerate(sample_indices):
+                            key = ids[idx]
+                            emb = embeddings_dataset[idx]
+                            print(f"    - Sample {i + 1}: Key='{key}', Shape={emb.shape}, DType={emb.dtype}")
+                            if np.isnan(emb).any(): print("      - WARNING: Embedding contains NaN values.")
+                            if np.isinf(emb).any(): print("      - WARNING: Embedding contains Inf values.")
+                    else:
+                        # Old format (one dataset per protein)
+                        keys = list(hf.keys())
+                        if not keys:
+                            print("  HDF5 check (old format): File is empty.")
+                            return
+                        print(f"  HDF5 check (old format): Found {len(keys)} total embeddings. Inspecting up to {num_samples_to_check} samples:")
+                        sample_keys = random.sample(keys, min(len(keys), num_samples_to_check))
+                        for i, key in enumerate(sample_keys):
+                            dataset = hf.get(key)
+                            if not isinstance(dataset, h5py.Dataset): continue
+                            emb = dataset[:]
+                            print(f"    - Sample {i + 1}: Key='{key}', Shape={emb.shape}, DType={emb.dtype}")
+                            if np.isnan(emb).any(): print("      - WARNING: Embedding contains NaN values.")
+                            if np.isinf(emb).any(): print("      - WARNING: Embedding contains Inf values.")
         except Exception as e:
             print(f"  ERROR: An error occurred while checking HDF5 file '{uri}': {e}")
 
     @staticmethod
-    def calculate_sha256(uri: Union[str, Path]) -> str:
+    def calculate_sha256(uri: Union[str, Path]) -> Optional[str]:
         """Calculates the SHA256 checksum of a file from any fsspec-supported location."""
         fs, path = fs_manager.get_fs_and_path(str(uri))
         sha256_hash = hashlib.sha256()
         try:
             if not fs.exists(path):
-                return ""
+                return None
+            # --- DEFINITIVE FIX: Explicitly handle directories to prevent silent failures ---
+            if fs.isdir(path):
+                print(f"  Warning: Cannot calculate checksum for a directory: {uri}")
+                return None
+
             with fs.open(path, "rb") as f:
                 for byte_block in iter(lambda: f.read(4096), b""):
                     sha256_hash.update(byte_block)
             return sha256_hash.hexdigest()
         except (IOError, OSError) as e:
             print(f"  Warning: Could not calculate checksum for {uri}: {e}")
-            return ""
+            return None

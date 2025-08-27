@@ -26,6 +26,7 @@ class DataUtilityTests(unittest.TestCase):
         self.original_graph_objects_dir = self.config.RESULTS_GRAPH_OBJECTS_DIR
         self.original_downsample = self.config.SEQUENCE_DOWNSAMPLE_FRACTION
         self.original_min_len = self.config.PROTGRAM_FASTA_MIN_LEN
+        self.original_persistent_cache = self.config.PERSISTENT_DATA_CACHE
         # --- DEFINITIVE FIX: Isolate the test's "project root" to its temp directory ---
         # This prevents the test from writing cache files to the actual project root
         # and interfering with the main application run.
@@ -35,6 +36,7 @@ class DataUtilityTests(unittest.TestCase):
         # This avoids calling _setup_paths() and its side effects.
         self.config.BASE_OUTPUT_DIR = Path(self.temp_dir)
         self.config.RESULTS_GRAPH_OBJECTS_DIR = Path(self.temp_dir) / "graph_objects"
+        self.config.PERSISTENT_DATA_CACHE = Path(self.temp_dir) / ".cache"
 
         # Now, apply other test-specific overrides
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = None
@@ -47,6 +49,7 @@ class DataUtilityTests(unittest.TestCase):
         self.config.RESULTS_GRAPH_OBJECTS_DIR = self.original_graph_objects_dir
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = self.original_downsample
         self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
+        self.config.PERSISTENT_DATA_CACHE = self.original_persistent_cache
         self.config.PROJECT_ROOT = self.original_project_root
         shutil.rmtree(self.temp_dir)
 
@@ -72,16 +75,14 @@ class DataUtilityTests(unittest.TestCase):
         print("\n" + "=" * 80)
         DataUtils.print_header("Testing: IDMapper Pregeneration")
         print("=" * 80)
-
-        # 1. Setup: Create a dummy source parquet file, which is the input for pre-generation.
-        input_dir = Path(self.temp_dir) / "input"
-        dummy_parquet_path = DummyDataFactory.create_dummy_id_mapping_parquet(
-            str(input_dir), "dummy_id_mapping.parquet", num_ids=5
+        # 1. Setup: Create a dummy source .dat file, which is the correct input.
+        # The previous implementation created a parquet file, which was never used.
+        DummyDataFactory.create_dummy_idmapping_dat(
+            str(self.config.PERSISTENT_DATA_CACHE), num_ids=5
         )
 
         # 2. Configure the test
         self.config.ID_MAPPING_MODE = 'file'
-        self.config.ID_MAPPING_PATH = Path(dummy_parquet_path)
 
         # 3. Run the pre-generation
         mapper = IDMapper(self.config)
@@ -95,8 +96,8 @@ class DataUtilityTests(unittest.TestCase):
             with open(expected_cache_file, 'rb') as f:
                 loaded_map = pickle.load(f)
             self.assertIsInstance(loaded_map, dict)
-            # Based on the dummy data created by the factory
-            self.assertEqual(loaded_map.get("DUMMY0001"), "DUMMY0001")
+            # Based on the dummy data created by the new factory method
+            self.assertEqual(loaded_map.get("DUMMY_AC_0"), "DUMMY_AC_0")
             print("--- IDMapper Pregeneration Test Complete ---")
         finally:
             # Clean up the generated cache file to not interfere with other tests

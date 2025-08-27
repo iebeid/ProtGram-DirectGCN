@@ -87,26 +87,25 @@ class EvaluationSummary:
 
         return metrics
 
-    def _create_performance_dataframe(self, results_list: List[Dict[str, Any]]) -> pd.DataFrame:
-        """Helper to create the main performance summary DataFrame."""
-        headers = ["Embedding Name", "AUC", "F1", "Precision", "Recall"]
-        for k in self.k_vals_table:
-            headers.extend([f"Hits@{k}", f"NDCG@{k}"])
-        headers.extend(["AUC StdDev", "F1 StdDev"])
-
+    def _create_performance_dataframe(self, results_list: List[Dict[str, Any]]) -> pd.DataFrame: # noqa
+        """Helper to create the main performance summary DataFrame with raw numeric data."""
         rows_data = []
         for res in results_list:
-            row = [res.get('embedding_name', 'N/A'), f"{res.get('test_auc_sklearn', 0):.4f}",
-                   f"{res.get('test_f1_sklearn', 0):.4f}", f"{res.get('test_precision_sklearn', 0):.4f}",
-                   f"{res.get('test_recall_sklearn', 0):.4f}"]
+            row = {
+                "Embedding Name": res.get('embedding_name', 'N/A'),
+                "AUC": res.get('test_auc_sklearn', 0.0),
+                "F1": res.get('test_f1_sklearn', 0.0),
+                "Precision": res.get('test_precision_sklearn', 0.0),
+                "Recall": res.get('test_recall_sklearn', 0.0),
+                "AUC StdDev": res.get('test_auc_sklearn_std', 0.0),
+                "F1 StdDev": res.get('test_f1_sklearn_std', 0.0)
+            }
             for k_val in self.k_vals_table:
-                row.append(f"{res.get(f'test_hits_at_{k_val}', 0):.4f}")
-                row.append(f"{res.get(f'test_ndcg_at_{k_val}', 0):.4f}")
-            row.append(f"{res.get('test_auc_sklearn_std', 0):.4f}")
-            row.append(f"{res.get('test_f1_sklearn_std', 0):.4f}")
+                row[f"Hits@{k_val}"] = res.get(f'test_hits_at_{k_val}', 0.0)
+                row[f"NDCG@{k_val}"] = res.get(f'test_ndcg_at_{k_val}', 0.0)
             rows_data.append(row)
 
-        return pd.DataFrame(rows_data, columns=headers)
+        return pd.DataFrame(rows_data)
 
     def _write_statistical_comparison(self, f, results_list: List[Dict[str, Any]], main_emb_name: str, test_metric: str,
                                       alpha: float):
@@ -153,17 +152,33 @@ class EvaluationSummary:
             print("Reporting: No results data provided for summary file.")
             return None
 
-        # --- REFACTOR: Save as a more useful CSV file instead of TXT ---
-        filepath = self.summary_file_output_dir / "evaluation_summary.csv"
+        # --- DEFINITIVE FIX: Save both a machine-readable CSV and a human-readable TXT report ---
+        # The previous implementation overwrote the CSV file with a text summary. This
+        # new approach creates two separate, clean files for different purposes.
+        csv_filepath = self.summary_file_output_dir / "evaluation_summary.csv"
+        txt_filepath = self.summary_file_output_dir / "evaluation_summary.txt"
+        # 1. Create the numeric DataFrame
         performance_df = self._create_performance_dataframe(results_list)
 
-        # Save the main performance table as a CSV
-        performance_df.to_csv(filepath, index=False)
+        try:
+            # 2. Save the clean, machine-readable CSV with formatted float precision
+            performance_df.to_csv(csv_filepath, index=False, float_format='%.4f')
+            print(f"Machine-readable results summary saved to {csv_filepath}")
 
-        with open(filepath, 'w') as f:
-            f.write(performance_df.to_string(index=False))
-            f.write("\n\n")
-            self._write_statistical_comparison(f, results_list, main_emb_name, test_metric, alpha)
+            # 3. Create a formatted version for the human-readable text report
+            formatted_df = performance_df.copy()
+            for col in formatted_df.select_dtypes(include=['float']).columns:
+                formatted_df[col] = formatted_df[col].apply(lambda x: f'{x:.4f}')
 
-        print(f"Results summary saved to {filepath}")
-        return filepath
+            # 4. Save the human-readable report
+            with open(txt_filepath, 'w') as f:
+                f.write("--- Performance Summary ---\n")
+                f.write(formatted_df.to_string(index=False))
+                f.write("\n\n")
+                self._write_statistical_comparison(f, results_list, main_emb_name, test_metric, alpha)
+            print(f"Human-readable report with stats saved to {txt_filepath}")
+        except IOError as e:
+            print(f"  ERROR: Could not write summary files: {e}")
+            return None
+
+        return txt_filepath  # Return path to the text report for consistency

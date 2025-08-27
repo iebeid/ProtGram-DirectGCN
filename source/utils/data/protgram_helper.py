@@ -87,17 +87,12 @@ class ProtgramDaskHelpers:
         }
         model_name_lower = model_type.lower()
 
-        # --- Definitive Fix for "Zeroes" Issue: Prevent Double-Normalization ---
-        # 1. Provide the RAW, un-normalized, undirected graph as the baseline. The models
-        #    themselves (GCN, GAT, etc.) are configured to perform normalization internally.
-        print(f"  Preparing data for '{model_type}' using RAW undirected graph as a baseline.")
-        A_undir_w = (graph.A_out_w + graph.A_in_w).coalesce()
-        data_dict['edge_index'] = A_undir_w.indices()
-        data_dict['edge_attr'] = A_undir_w.values()
-
-        # 2. Overwrite the default only for specialized models that require different graph structures.
+        # --- REFACTOR: Use an explicit if/elif/else block for clarity ---
+        # This avoids setting a baseline graph representation that is then immediately
+        # overwritten or ignored by the specialized models.
         if model_name_lower == 'directgcn':
             # DirectGCN requires multiple, specific graph views. We add them here.
+            print(f"  Preparing specialized graph views for '{model_type}'.")
             data_dict.update({
                 'edge_index_undirected_norm': graph.A_undirected_norm_sparse.indices(),
                 'edge_weight_undirected_norm': graph.A_undirected_norm_sparse.values(),
@@ -130,9 +125,18 @@ class ProtgramDaskHelpers:
         elif model_name_lower == 'dirgnn':
             # DirGNN needs the raw, directed forward edges for its message passing.
             print("    -> Overwriting baseline graph for DirGNN with raw directed edges.")
-            data_dict['edge_index'] = graph.A_out_w.indices()
-            data_dict['edge_attr'] = graph.A_out_w.values()
+            A_out_w = graph.A_out_w.coalesce()
+            data_dict['edge_index'] = A_out_w.indices()
+            data_dict['edge_attr'] = A_out_w.values()
             # DirGNN also needs the backward edges for its internal logic.
             data_dict['edge_index_backward'] = graph.A_in_w.indices()
+        else:
+            # Default case for standard GNNs (GCN, GAT, GraphSAGE, etc.)
+            # Provide the RAW, un-normalized, undirected graph. The models themselves
+            # are configured to perform normalization internally.
+            print(f"  Preparing standard undirected graph for '{model_type}'.")
+            A_undir_w = (graph.A_out_w + graph.A_in_w).coalesce()
+            data_dict['edge_index'] = A_undir_w.indices()
+            data_dict['edge_attr'] = A_undir_w.values()
 
         return Data.from_dict(data_dict)

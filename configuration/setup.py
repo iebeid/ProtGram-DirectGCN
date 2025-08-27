@@ -3,6 +3,7 @@
 # PURPOSE: Sets up the Python environment and generates a validation file.
 # VERSION: 29.0 (Ensures a clean data setup by removing old cache)
 # AUTHOR: Islam Ebeid
+# NOTE: This setup script is designed for Unix-like environments (Linux, macOS, WSL)
 # ==============================================================================
 
 import argparse
@@ -25,29 +26,23 @@ ENVIRONMENT_YML_FILE = "environment.yml"
 # --- End Configuration ---
 
 def create_setup_script(commands: list[str], project_root: Path) -> Path:
-    """Creates a platform-specific shell script from a list of commands."""
-    is_windows = platform.system() == "Windows"
-    script_extension = ".bat" if is_windows else ".sh"
-    script_path = project_root / f"temp_setup_script{script_extension}"
+    """Creates a shell script from a list of commands for Unix-like systems."""
+    script_path = project_root / "temp_setup_script.sh"
 
     with open(script_path, "w", encoding='utf-8') as f:
-        if not is_windows:
-            f.write("#!/bin/bash\n")
-            f.write("set -e\n")
+        f.write("#!/bin/bash\n")
+        f.write("set -e\n")
         for command in commands:
             f.write(command + "\n")
 
-    if not is_windows:
-        os.chmod(script_path, 0o755)
+    os.chmod(script_path, 0o755)
     return script_path
 
 def run_script(script_path: Path):
     """Executes the setup script and streams its output."""
-    is_windows = platform.system() == "Windows"
     print(f"--- Starting Environment Setup using temporary script: '{script_path.name}' ---")
     try:
-        executor = ['cmd', '/c'] if is_windows else []
-        command_to_run = executor + [str(script_path)]
+        command_to_run = [str(script_path)]
 
         process = subprocess.Popen(
             command_to_run,

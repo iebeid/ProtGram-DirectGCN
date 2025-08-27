@@ -71,7 +71,7 @@ class ProtGramXGCNTrainer:
         """
         DataUtils.print_header("PIPELINE STEP: Training ProtGram Models & Generating Embeddings")
 
-        final_protein_embeddings_per_model: Dict[str, Dict[str, np.ndarray]] = {}
+        final_protein_embeddings_per_model: Dict[str, Dict[str, np.ndarray]] = {} # noqa
         protein_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
 
         for model_type in self.config.PROTGRAM_MODELS_TO_TRAIN:
@@ -86,6 +86,14 @@ class ProtGramXGCNTrainer:
 
         # This function now saves the raw (unmapped) embeddings and returns their paths.
         output_paths = self._save_final_embeddings(final_protein_embeddings_per_model)
+
+        # --- NEW: Trigger the optional sanity check PPI evaluation ---
+        # This was previously dead code. It's now called after embeddings are generated.
+        if self.config.PROTGRAM_RUN_SANITY_CHECK_PPI:
+            for model_name, emb_path in output_paths.items():
+                # Only run the sanity check on the primary (non-PCA) embedding file.
+                if "_pca" not in model_name:
+                    self._run_sanity_check_ppi(emb_path)
 
         DataUtils.print_header("ProtGram Embedding PIPELINE STEP FINISHED")
         return output_paths

@@ -62,9 +62,9 @@ class BaseBenchmarker(ABC):
             project_benchmark_dir.rmdir()
             self._create_link_or_copy_dir(cache_benchmark_dir, project_benchmark_dir)
             print("  Migration complete.")
-        elif not project_benchmark_dir.exists():
+        elif not project_benchmark_dir.exists(): # --- FIX: Make log message more general to cover the copy fallback case ---
             self._create_link_or_copy_dir(cache_benchmark_dir, project_benchmark_dir)
-            print(f"  Symlinked project benchmark directory to persistent cache.")
+            print(f"  Project benchmark directory linked to persistent cache.")
         return str(project_benchmark_dir)
 
     def _get_dataset(self, name: str, **kwargs) -> Optional[Any]:

@@ -100,6 +100,9 @@ class EmbeddingLoader:
         self._h5_file = None
         self._keys = None
         self._in_memory_data = None
+        # --- NEW: Also reset format-specific state for robustness ---
+        self.is_new_format = False
+        self.id_to_idx_map = {}
 
     def __contains__(self, key: str) -> bool:
         if self._keys is None:
