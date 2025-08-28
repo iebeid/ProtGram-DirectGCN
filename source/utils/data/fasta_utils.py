@@ -95,10 +95,10 @@ class FastaUtils:
     @staticmethod
     def parse_sequences(
             fasta_filepaths: List[Union[str, Path]],
-            perform_cleaning: bool,
-            min_len: int,
-            max_len: int,
-            alphabet_type: str
+            perform_cleaning: bool = False,
+            min_len: int = 1,
+            max_len: int = 100000,
+            alphabet_type: str = 'protein'
     ) -> Iterator[Tuple[str, str]]:
         """
         Parses one or more FASTA files in parallel and yields sequences.

@@ -112,14 +112,18 @@ class Word2VecEmbedder:
         print(
             f"  Training Word2Vec model (vector_size={self.config.W2V_VECTOR_SIZE}, window={self.config.W2V_WINDOW}, epochs={self.config.W2V_EPOCHS})...")
         model_train_start_time = time.time()
+        # --- DEFINITIVE FIX: Use the correct two-step gensim training pattern ---
+        # 1. Initialize the model and build the vocabulary from the corpus iterator.
         w2v_model = Word2Vec(
-            # --- DEFINITIVE FIX: Provide BOTH sentences and corpus_file ---
-            # `sentences` is used once for the initial vocabulary build.
-            # `corpus_file` is used for the actual training epochs, which is much more efficient.
             sentences=PathLineSentences(corpus_path),
-            corpus_file=corpus_path, vector_size=self.config.W2V_VECTOR_SIZE, window=self.config.W2V_WINDOW,
+            vector_size=self.config.W2V_VECTOR_SIZE, window=self.config.W2V_WINDOW,
             min_count=self.config.W2V_MIN_COUNT, epochs=self.config.W2V_EPOCHS,
             workers=self.config.W2V_WORKERS, sg=1, hs=0, negative=5, seed=self.config.RANDOM_STATE
+        )
+        # 2. Train the model using the highly optimized `corpus_file` argument, which
+        #    re-reads the file from disk for each epoch.
+        w2v_model.train(
+            corpus_file=corpus_path, total_words=w2v_model.corpus_total_words, epochs=self.config.W2V_EPOCHS
         )
         print(f"  Word2Vec model training finished in {time.time() - model_train_start_time:.2f}s.")
         return w2v_model
