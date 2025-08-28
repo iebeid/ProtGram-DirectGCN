@@ -145,42 +145,45 @@
 		\end{equation}
 		A $LogSoftmax$ function is then applied to these logits for training with a negative log-likelihood loss. The final embeddings, $Z_{n-gram}$, are L2-normalized before extraction.
 	\end{itemize}
-
-\begin{figure*}[t!]
-	\centering
-	\begin{tabular}{c}
-		\includegraphics[width=0.7\linewidth]{images/ProtGram-DirectGCN-Part-1.png} \\
-		\textbf{(a)} $ProtGram$: our unique approach in modeling protein sequences. \label{fig:top} \\
-		\vspace{1em}
-		\begin{tabular}{cc}
-			\includegraphics[width=0.48\linewidth]{images/ProtGram-DirectGCN-Part-2.png} &
-			\includegraphics[width=0.48\linewidth]{images/ProtGram-DirectGCN-Part-3.png} \\
-			\begin{minipage}[t]{0.48\linewidth}
-				\centering
-				\textbf{(b)} $DirectGCN$: the layer is composite of multiple paths extracted from the graph; unstructured, directional, homophily in addition to a positional identity the paths are then aggregated and transformed via a final feed forward layer and is trained on a next node prediction classification task. \label{fig:bottom_left}
-			\end{minipage} &
-			\begin{minipage}[t]{0.48\linewidth}
-				\centering
-				\textbf{(c)} $PPI$: the final embedding are pooled via an attention pooling layer the passed down to the downstream task of classification based link prediction where a classifier is trained on a standard ground truth data. \label{fig:bottom_right}
-			\end{minipage} \\
+	\begin{figure*}[t!]
+		\centering
+		\begin{tabular}{c}
+			\includegraphics[width=0.7\linewidth]{images/ProtGram-DirectGCN-Part-1.png} \\
+			\textbf{(a)} $ProtGram$: our unique approach in modeling protein sequences. \label{fig:top} \\
+			\vspace{1em}
+			\begin{tabular}{cc}
+				\includegraphics[width=0.48\linewidth]{images/ProtGram-DirectGCN-Part-2.png} &   
+				\includegraphics[width=0.48\linewidth]{images/ProtGram-DirectGCN-Part-3.png} \\
+				\begin{minipage}[t]{0.48\linewidth}
+					\centering
+					\textbf{(b)} $DirectGCN$: the layer is composite of multiple paths extracted from the graph; unstructured, directional, homophily in addition to a positional identity the paths are then aggregated and transformed via a final feed forward layer and is trained on a next node prediction classification task. \label{fig:bottom_left}
+				\end{minipage}                                                               &   
+				\begin{minipage}[t]{0.48\linewidth}
+					\centering
+					\textbf{(c)} $PPI$: the final embedding are pooled via an attention pooling layer the passed down to the downstream task of classification based link prediction where a classifier is trained on a standard ground truth data. \label{fig:bottom_right}
+				\end{minipage} \\
+			\end{tabular}
 		\end{tabular}
-	\end{tabular}
-	\caption{$ProtGram-DirectGCN$}
-	\label{fig:three_images}
-	\vspace{1em}
-	\parbox{\textwidth}{%
-		\small \textit{Note:} The proposed architecture; for each of the 5 information paths (Incoming, Outgoing, Undirected, Homophilic, and Heterophilic), input features ($H^{(l)}$) are processed through two parallel paths: a path-specific GCN-style message passing transformation (e.g., using $W_{main,in}$) and an MLP-style shared transformation ($W_{shared}$). The results are aggregated and then combined via a learnable gating mechanism controlled by coefficients ($C$) before a final residual connection and activation.
-	}
-\end{figure*}
+		\caption{$ProtGram-DirectGCN$}
+		\label{fig:three_images}
+		\vspace{1em}
+		\parbox{\textwidth}{%
+			\small \textit{Note:} The proposed architecture; for each of the 5 information paths (Incoming, Outgoing, Undirected, Homophilic, and Heterophilic), input features ($H^{(l)}$) are processed through two parallel paths: a path-specific message passing transformation $W_{main,in}$ and a shared transformation $W_{shared}$. The results are aggregated and then combined via a learnable gating mechanism controlled by coefficients ($C$) before a final residual connection and activation.
+		}
+	\end{figure*}
 	
 	\section{Experiments}
-	This section outlines the experimental design employed to evaluate the proposed $ProtGramDirectGCN$ model. Our experiments are structured to: (1) assess the intrinsic performance of $ProtGramDirectGCN$ on standard graph benchmark datasets; (2) detail the construction of a hierarchy of global n-gram graphs $G_{n}$ from the UniProt sequence dataset; (3) evaluate the ability of $ProtGramDirectGCN$ to learn meaningful representations from these $G_{n}$ via a self-supervised pre-training task; (4) apply these learned representations, after pooling to the protein level, to the downstream task of PPI link prediction; and (5) compare the efficacy of our GNN-based protein embeddings against those derived from the state-of-the-art PLM, ProtT5.
+	This section outlines the experimental design employed to evaluate the proposed $ProtGram-DirectGCN$ model. Our experiments are structured to: (1) assess the intrinsic performance of $DirectGCN$ on standard graph benchmark datasets; (2) detail the construction of a hierarchy of global n-gram graphs $G_{n}$ from the UniProt sequence dataset a method we call $ProtGram$; (3) evaluate the ability of $ProtGram-DirectGCN$ to learn meaningful representations from these $G_{n}$ via a self-supervised pre-training task; (4) apply these learned representations, after pooling to the protein level, to the downstream task of $PPI$ link prediction; and (5) compare the efficacy of our protein embeddings against those derived from the state-of-the-art PLMs and other baselines.
 	
 	\subsection{Materials}
-	Our philosophy in this investigation is to minimize prior preprocessing of publicly available relied upon datasets as much as possible. In that sense we don't preprocess the sequence files whether the UNIPROT-SPROT nor the UNIREF50. We operate on the sequences right available right away after a proper official validated and automated download. Here prior processing just refers to the process of data cleaning prior to running any pipeline and the preprocessing just refers to the tokenization and removal of special characters from sequences before proceeding with the main pipeline described below. However for the the protein interaction prediction experiment we did prior preprocessing to the positive and negative ground truth links as decribed below. The prior preprocessing involved downloading the positive links from $BioGrid$ and extracting and converting the associated $BioGridID$ and converting them to $UniProtKBID$. A similar prior preprocessing has taken place also for the negative interaction set extracted from the official website of \cite{trabuco_negative_2012} also by converting the assiciated $GeneID$ to corresponding $UniProtKBID$. Both mappings were done via the official ID mapping database on $UniProt$. Additional data preparation details is in the appendix.
+	Our approach in this investigation is to minimize any cleaning or modification of publicly available datasets before running our main computational pipeline. UniProt-SPROT and UniRef50 are our main sources of protein sequences. All sequences are cleaned only after an official, validated, automated download. In this context, 'prior processing' refers specifically to any data cleaning or manipulation done before the computational pipeline starts. In contrast, 'preprocessing' refers to steps such as tokenization and the removal of special characters from sequences, which occur immediately before the main pipeline and as part of it. 
 	
-	\subsection{Intrinsic Evaluation of $ProtGramDirectGCN$}
-	To establish the general graph representation learning capabilities of the $ProtGramDirectGCN$ architecture, we first evaluated it on commonly used public benchmark datasets for node classification.
+	In the PPI experiment, we apply automated preprocessing to positive and negative ground truth links. Sequence cleaning is dynamic: when a pipeline component requests sequence data, the raw FASTA file is read and any character not representing one of the 20 standard amino acids (A, C, D, E, F, G, H, I, K, L, M, N, P, Q, R, S, T, V, W, Y) is filtered out. This standardizes the alphabet for all downstream models. Sequence lengths are capped at 10,000 characters to fit in memory and on the GPU. Tokenization, or preprocessing, occurs on the fly for all models tested, including our own. For models like Word2Vec or LSTMs, the cleaned sequence is used as a list of characters. For the ProtGram model, the cleaned sequence is split into overlapping n-grams.
+	
+	For PPI ground truth, positive links are automatically downloaded from BioGrid, and negative links are obtained from Trabuco et al. (2012). Identifiers from these raw datasets are converted to canonical UniProtKB IDs using a mapping database built directly from the official UniProt ID mapping database. The standardized interaction pairs are saved in Parquet format and serve as the definitive ground truth for all evaluation tasks. Further preparation details are in the appendix.
+	
+	\subsection{Intrinsic Evaluation of $DirectGCN$}
+	To establish the general graph representation learning capabilities of the  $DirectGCN$ architecture, we first evaluated it on commonly used public benchmark datasets for node classification. Though it  is very important to note that 
 	
 	\begin{itemize}
 		\item \textbf{Datasets}: We selected standard GNN benchmark datasets: Cora, CiteSeer, PubMed, Cornell, Texas, and Wisconsin. For each, we evaluated performance on both their original (potentially directed) and explicitly symmetrized (undirected) versions.
@@ -211,12 +214,12 @@
 		\caption{Model performance on directed datasets. Accuracy and F1-Score are reported as $mean \pm std$. (M) denotes macro average. Bold indicates best performance.}
 		\label{tab:benchmark_performance}\\
 		\toprule
-		Dataset & Model & Accuracy & F1-Score (M) & Precision (M) & Recall (M) \\
+		Dataset   & Model             & Accuracy                     & F1-Score (M)                 & Precision (M)   & Recall (M)      \\
 		\midrule
 		\endfirsthead
 		\caption[]{-- continued from previous page}\\
 		\toprule
-		Dataset & Model & Accuracy & F1-Score (M) & Precision (M) & Recall (M) \\
+		Dataset   & Model             & Accuracy                     & F1-Score (M)                 & Precision (M)   & Recall (M)      \\
 		\midrule
 		\endhead
 		\midrule
@@ -225,35 +228,35 @@
 		\bottomrule
 		\endlastfoot
 		
-		& GCN & 0.8722 $\pm$ 0.0088 & 0.8622 $\pm$ 0.0106 & 0.8629 & 0.8651 \\
-		& GAT & 0.8863 $\pm$ 0.0062 & 0.8754 $\pm$ 0.0099 & 0.8808 & 0.8723 \\
-		Cora & GIN & 0.8671 $\pm$ 0.0103 & 0.8588 $\pm$ 0.0134 & 0.8637 & 0.8575 \\
-		& ProtGramDirectGCN & 0.8590 $\pm$ 0.0189 & 0.8480 $\pm$ 0.0256 & 0.8493 & 0.8497 \\
-		& Tong et al. & 0.8530 $\pm$ 0.0142 & 0.8407 $\pm$ 0.0172 & 0.8449 & 0.8400 \\
+		& GCN               & 0.8722 $\pm$ 0.0088          & 0.8622 $\pm$ 0.0106          & 0.8629          & 0.8651          \\
+		& GAT               & 0.8863 $\pm$ 0.0062          & 0.8754 $\pm$ 0.0099          & 0.8808          & 0.8723          \\
+		Cora      & GIN               & 0.8671 $\pm$ 0.0103          & 0.8588 $\pm$ 0.0134          & 0.8637          & 0.8575          \\
+		& ProtGramDirectGCN & 0.8590 $\pm$ 0.0189          & 0.8480 $\pm$ 0.0256          & 0.8493          & 0.8497          \\
+		& Tong et al.       & 0.8530 $\pm$ 0.0142          & 0.8407 $\pm$ 0.0172          & 0.8449          & 0.8400          \\
 		\midrule
-		& GCN & 0.8631 $\pm$ 0.0047 & 0.8553 $\pm$ 0.0056 & 0.8573 & 0.8542 \\
-		& GAT & 0.8529 $\pm$ 0.0089 & 0.8456 $\pm$ 0.0103 & 0.8491 & 0.8445 \\
-		PubMed & GIN & 0.8716 $\pm$ 0.0052 & 0.8669 $\pm$ 0.0054 & 0.8652 & 0.8695 \\
-		& ProtGramDirectGCN & 0.8451 $\pm$ 0.0053 & 0.8370 $\pm$ 0.0067 & 0.8360 & 0.8392 \\
-		& Tong et al. & 0.8107 $\pm$ 0.0120 & 0.8000 $\pm$ 0.0116 & 0.8022 & 0.8007 \\
+		& GCN               & 0.8631 $\pm$ 0.0047          & 0.8553 $\pm$ 0.0056          & 0.8573          & 0.8542          \\
+		& GAT               & 0.8529 $\pm$ 0.0089          & 0.8456 $\pm$ 0.0103          & 0.8491          & 0.8445          \\
+		PubMed    & GIN               & 0.8716 $\pm$ 0.0052          & 0.8669 $\pm$ 0.0054          & 0.8652          & 0.8695          \\
+		& ProtGramDirectGCN & 0.8451 $\pm$ 0.0053          & 0.8370 $\pm$ 0.0067          & 0.8360          & 0.8392          \\
+		& Tong et al.       & 0.8107 $\pm$ 0.0120          & 0.8000 $\pm$ 0.0116          & 0.8022          & 0.8007          \\
 		\midrule
-		& GCN & 0.4101 $\pm$ 0.0608 & 0.2440 $\pm$ 0.0590 & 0.2406 & 0.2713 \\
-		& GAT & 0.4264 $\pm$ 0.0748 & 0.1684 $\pm$ 0.0432 & 0.1989 & 0.2202 \\
-		Cornell & GIN & 0.4862 $\pm$ 0.0770 & 0.3603 $\pm$ 0.0546 & 0.3682 & 0.3974 \\
+		& GCN               & 0.4101 $\pm$ 0.0608          & 0.2440 $\pm$ 0.0590          & 0.2406          & 0.2713          \\
+		& GAT               & 0.4264 $\pm$ 0.0748          & 0.1684 $\pm$ 0.0432          & 0.1989          & 0.2202          \\
+		Cornell   & GIN               & 0.4862 $\pm$ 0.0770          & 0.3603 $\pm$ 0.0546          & 0.3682          & 0.3974          \\
 		& ProtGramDirectGCN & \textbf{0.5571 $\pm$ 0.0499} & \textbf{0.4104 $\pm$ 0.0837} & \textbf{0.5182} & \textbf{0.4061} \\
-		& Tong et al. & 0.5520 $\pm$ 0.0316 & 0.2976 $\pm$ 0.0547 & 0.3096 & 0.3356 \\
+		& Tong et al.       & 0.5520 $\pm$ 0.0316          & 0.2976 $\pm$ 0.0547          & 0.3096          & 0.3356          \\
 		\midrule
-		& GCN & 0.3773 $\pm$ 0.0923 & 0.1640 $\pm$ 0.0403 & 0.1575 & 0.1770 \\
-		& GAT & 0.5464 $\pm$ 0.0567 & 0.2139 $\pm$ 0.0461 & 0.2163 & 0.2569 \\
-		Texas & GIN & 0.4045 $\pm$ 0.0585 & 0.2199 $\pm$ 0.0369 & 0.2305 & 0.2414 \\
+		& GCN               & 0.3773 $\pm$ 0.0923          & 0.1640 $\pm$ 0.0403          & 0.1575          & 0.1770          \\
+		& GAT               & 0.5464 $\pm$ 0.0567          & 0.2139 $\pm$ 0.0461          & 0.2163          & 0.2569          \\
+		Texas     & GIN               & 0.4045 $\pm$ 0.0585          & 0.2199 $\pm$ 0.0369          & 0.2305          & 0.2414          \\
 		& ProtGramDirectGCN & \textbf{0.6940 $\pm$ 0.0202} & \textbf{0.5212 $\pm$ 0.0831} & \textbf{0.6044} & \textbf{0.5071} \\
-		& Tong et al. & 0.5353 $\pm$ 0.0540 & 0.2310 $\pm$ 0.0496 & 0.2390 & 0.2703 \\
+		& Tong et al.       & 0.5353 $\pm$ 0.0540          & 0.2310 $\pm$ 0.0496          & 0.2390          & 0.2703          \\
 		\midrule
-		& GCN & 0.4224 $\pm$ 0.0627 & 0.2491 $\pm$ 0.0702 & 0.2600 & 0.2641 \\
-		& GAT & 0.4898 $\pm$ 0.0937 & 0.2413 $\pm$ 0.0686 & 0.3067 & 0.2635 \\
-		Wisconsin & GIN & 0.4219 $\pm$ 0.0625 & 0.2876 $\pm$ 0.0757 & 0.2910 & 0.3000 \\
+		& GCN               & 0.4224 $\pm$ 0.0627          & 0.2491 $\pm$ 0.0702          & 0.2600          & 0.2641          \\
+		& GAT               & 0.4898 $\pm$ 0.0937          & 0.2413 $\pm$ 0.0686          & 0.3067          & 0.2635          \\
+		Wisconsin & GIN               & 0.4219 $\pm$ 0.0625          & 0.2876 $\pm$ 0.0757          & 0.2910          & 0.3000          \\
 		& ProtGramDirectGCN & \textbf{0.6293 $\pm$ 0.0423} & \textbf{0.3833 $\pm$ 0.0584} & \textbf{0.3835} & \textbf{0.4079} \\
-		& Tong et al. & 0.4975 $\pm$ 0.1026 & 0.2695 $\pm$ 0.0784 & 0.2934 & 0.2814 \\
+		& Tong et al.       & 0.4975 $\pm$ 0.1026          & 0.2695 $\pm$ 0.0784          & 0.2934          & 0.2814          \\
 	\end{longtable}
 	
 	\subsection{Construction of Hierarchical $G_{n}$ Graphs}
@@ -271,10 +274,10 @@
 			\toprule
 			\textbf{n-gram Level (n)} & \textbf{\# Nodes (Unique n-grams)} & \textbf{\# Edges (Unique Transitions)} \\
 			\midrule
-			1 & 26 & 601 \\
-			2 & 601 & 10,669 \\
-			3 & 10,669 & 180,273 \\
-			4 & 180,273 & 3,240,330 \\
+			1                         & 26                                 & 601                                    \\
+			2                         & 601                                & 10,669                                 \\
+			3                         & 10,669                             & 180,273                                \\
+			4                         & 180,273                            & 3,240,330                              \\
 			\bottomrule
 		\end{tabular}
 	\end{table}
@@ -308,29 +311,29 @@
 		\label{fig:3}
 	\end{figure}
 	
-		\begin{figure}
+	\begin{figure}
 		\centering
 		\includegraphics[width=0.9\linewidth]{images/fig4.jpg}
 		\caption{The figure illustrates the model's learning progress during the self-supervised, next-node prediction task on an n-gram graph $G_{n}$, representing the results from the first fold of a cross-validation run. Left Panel (Model Loss): This plot tracks the training loss (blue) and validation loss (orange) over $20$ epochs. The steady decrease in training loss indicates the model is effectively learning from the data. The validation loss, while more volatile, generally follows the downward trend, suggesting the model is generalizing to unseen data within the graph. Right Panel (Model Accuracy): This plot shows the corresponding training and validation accuracy. Both metrics trend upward, demonstrating that the model's performance on the next-node prediction task improves as it is trained. Together, these plots confirm that the $ProtGramDirectGCN$ model was successfully trained, effectively learning the underlying sequential patterns within the n-gram graph to generate meaningful embeddings for the downstream PPI task.}
 		\label{fig:4}
 	\end{figure}
 	
-
-\begin{table*}[htbp]
-	\centering
-	\caption{Performance Comparison of Protein Embeddings on PPI Link Prediction (Averaged over 5 Folds)}
-	\label{tab:ppi_performance_results}
-	\resizebox{\textwidth}{!}{
-		\begin{tabular}{lcccc}
-			\toprule
-			\textbf{Embedding Method} & \textbf{AUC} & \textbf{F1} & \textbf{Precision} & \textbf{Recall} \\
-			\midrule
-			ProtT5 & 0.9325$\pm$0.0005 & 0.9490$\pm$0.0021 & 0.9957 & 0.9065 \\
-			ProtGramDirectGCN & 0.8138$\pm$0.0052 & 0.8481$\pm$0.0074 & 0.9927 & 0.7403 \\
-			\bottomrule
-		\end{tabular}
-	}
-\end{table*}
+	
+	\begin{table*}[htbp]
+		\centering
+		\caption{Performance Comparison of Protein Embeddings on PPI Link Prediction (Averaged over 5 Folds)}
+		\label{tab:ppi_performance_results}
+		\resizebox{\textwidth}{!}{
+			\begin{tabular}{lcccc}
+				\toprule
+				\textbf{Embedding Method} & \textbf{AUC}      & \textbf{F1}       & \textbf{Precision} & \textbf{Recall} \\
+				\midrule
+				ProtT5                    & 0.9325$\pm$0.0005 & 0.9490$\pm$0.0021 & 0.9957             & 0.9065          \\
+				ProtGramDirectGCN         & 0.8138$\pm$0.0052 & 0.8481$\pm$0.0074 & 0.9927             & 0.7403          \\
+				\bottomrule
+			\end{tabular}
+		}
+	\end{table*}
 	
 	\section{Discussion}
 	This study introduced and evaluated a novel $ProtGramDirectGCN$ model for learning representations from a globally constructed, directed, dense, and weighted graph of amino acid residues $G_{n}$ derived from the UniProt dataset. The primary objective was to assess the efficacy of this approach for generating informative protein embeddings applicable to downstream biological prediction tasks, particularly Protein-Protein Interaction (PPI) link prediction. This section discusses the main findings, their implications, the limitations of the current work, and promising avenues for future research.
@@ -408,7 +411,7 @@
 	
 	
 	\section*{Supplemental Data}
-    Please see supplementary material for more information.
+	Please see supplementary material for more information.
 	
 	\section*{Data Availability Statement}
 	The datasets and codes for this study can be found at \url{https://github.com/iebeid/ProtGram-DirectGCN/tree/v2}.
@@ -416,6 +419,6 @@
 	\bibliographystyle{Frontiers-Harvard}
 	\bibliography{references}
 	
-
+	
 	
 \end{document}
