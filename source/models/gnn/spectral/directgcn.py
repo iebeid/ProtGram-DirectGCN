@@ -251,17 +251,16 @@ class DirectGCN(nn.Module):
         self.res_projs = nn.ModuleList()
         self.layer_norms = nn.ModuleList()
 
-        # --- DEFINITIVE FIX for Model Alignment ---
-        # This standardizes the benchmark architecture to be a simple 2-layer stack,
-        # consistent with the other benchmark models like GCN and GAT.
-        # The complex multi-path logic is now only used for the main ProtGram pipeline.
-        is_benchmark_or_singleton = num_graph_nodes is not None
+        # --- DEFINITIVE FIX: Use a more robust check to distinguish contexts ---
+        # The previous check on `num_graph_nodes` was brittle. The length of the
+        # layer_dims list is a much more reliable indicator of the context.
+        is_benchmark_or_singleton = len(layer_dims) == 2
 
         if is_benchmark_or_singleton:
             hidden_dim = layer_dims[1] # The first element after input_dim
             self.convs.append(DirectGCNLayer(layer_dims[0], hidden_dim, num_graph_nodes, gating_mode, use_homo_hetero_paths))
             self.layer_norms.append(nn.LayerNorm(hidden_dim))
-            self.convs.append(DirectGCNLayer(hidden_dim, task_num_output_classes, num_graph_nodes, gating_mode, use_homo_hetero_paths))
+            # The final layer is now handled by the decoder_fc
         else: # Original logic for the main ProtGram pipeline
             for i in range(len(layer_dims) - 1):
                 in_dim, out_dim = layer_dims[i], layer_dims[i + 1]
@@ -269,7 +268,8 @@ class DirectGCN(nn.Module):
                 self.res_projs.append(nn.Linear(in_dim, out_dim) if in_dim != out_dim else nn.Identity())
                 self.layer_norms.append(nn.LayerNorm(out_dim))
 
-        if num_graph_nodes is not None:  # This check implies a benchmark or singleton context
+        # --- DEFINITIVE FIX: Use the robust context flag to build the correct decoder ---
+        if is_benchmark_or_singleton:
             final_embedding_dim = layer_dims[-1]
             self.decoder_fc = nn.Linear(final_embedding_dim, task_num_output_classes)
         else:  # Main pipeline context
@@ -304,8 +304,8 @@ class DirectGCN(nn.Module):
 
         if is_benchmark_or_singleton:
             # Standard 2-layer GCN-like forward pass
-            h = self.convs[0](h, data)
-            h = self.layer_norms[0](h)
+            h = self.convs0
+            h = self.layer_norms0
             h = F.relu(h)
             h = F.dropout(h, p=self.dropout_rate, training=self.training)
             self.embedding_output = h # Embedding is the output of the hidden layer
@@ -315,11 +315,14 @@ class DirectGCN(nn.Module):
             logits = self.decoder_fc(self.embedding_output)
             return logits, self.embedding_output.detach() # Return detached embeddings
         else: # Original logic for the main ProtGram pipeline
-            for i in range(len(self.convs)):
-                h_pre_act = self.convs[i](h, data) + self.res_projs[i](h)
-                h_norm = self.layer_norms[i](h_pre_act)
-            h = F.leaky_relu(h_norm)
-            h = F.dropout(h, p=self.dropout_rate, training=self.training)
+            # --- DEFINITIVE FIX: Correct the forward pass loop ---
+            # The previous implementation had the activation and dropout outside the loop,
+            # and did not update the hidden state `h` in each iteration.
+            for i, conv in enumerate(self.convs):
+                h_pre_act = conv(h, data) + self.res_projsi
+                h_norm = self.layer_normsi
+                h = F.leaky_relu(h_norm)
+                h = F.dropout(h, p=self.dropout_rate, training=self.training)
 
             self.embedding_output = h
             logits = self.decoder_fc(self.embedding_output)
