@@ -71,12 +71,8 @@ echo "SUCCESS: Project repository is up to date."
 # --- Step 3: Run the Main Application ---
 echo -e "\n--- STEP 3: Executing the main application via run.py ---"
 echo "INFO: The 'run.py' script will automatically validate local data and restore from cache if needed."
-# --- REFACTOR: Cleaning is now handled by run.py to ensure it always happens ---
-# The clean.sh script is no longer called from here.
-echo "--- Cleaning up stale Python cache files (.pyc, __pycache__) ---"
-find . -type d -name "__pycache__" -exec rm -rf {} +
-find . -type f -name "*.pyc" -delete
-echo "SUCCESS: Python cache cleared."
+# --- REFACTOR: All cleaning, including Python cache, is now handled by run.py ---
+# This makes the Python application the single source of truth for ensuring a clean state.
 
 # This ensures that TensorFlow and other programs can find the CUDA libraries (.so files)
 # that were installed by Conda. This resolves the "Cannot dlopen" errors at runtime.
