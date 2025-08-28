@@ -77,7 +77,7 @@ class UIManager:
                 return False
 
     @staticmethod
-    def get_fasta_files_to_process(config: Config, temp_dir: Path) -> List[Path]:
+    def get_fasta_files_to_process(config: 'Config', temp_dir: Path) -> List[Path]:
         """Handles logic for downsampling and selecting FASTA files."""
         # --- REFACTOR: The interactive prompt is removed. ---
         # The Config class now ensures that ORIGINAL_SEQUENCE_FILE_PATHS contains only the single,
