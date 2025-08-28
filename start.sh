@@ -71,13 +71,8 @@ echo "SUCCESS: Project repository is up to date."
 # --- Step 3: Run the Main Application ---
 echo -e "\n--- STEP 3: Executing the main application via run.py ---"
 echo "INFO: The 'run.py' script will automatically validate local data and restore from cache if needed."
-
-# --- NEW: Run the clean script to ensure a fresh state ---
-echo "--- Cleaning previous run's outputs to ensure a fresh start... ---"
-bash configuration/clean.sh
-
-# --- CRITICAL: Export the Conda environment's library path. ---
-# --- NEW: Clean up stale Python bytecode files to prevent caching issues ---
+# --- REFACTOR: Cleaning is now handled by run.py to ensure it always happens ---
+# The clean.sh script is no longer called from here.
 echo "--- Cleaning up stale Python cache files (.pyc, __pycache__) ---"
 find . -type d -name "__pycache__" -exec rm -rf {} +
 find . -type f -name "*.pyc" -delete

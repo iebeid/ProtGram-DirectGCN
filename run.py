@@ -13,6 +13,9 @@ import subprocess
 # This is a common warning in multiprocessing environments. Setting this environment
 # variable to 'false' silences the warning and is the recommended practice.
 import os
+# --- NEW: Import the cleaner and Path ---
+from pathlib import Path
+from source.utils.fs.cleaner import ProjectCleaner
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Local imports must come after the environment is validated and potentially set up.
 # We make an exception for Config and FileLogger which are needed for the bootstrapper itself.
@@ -85,6 +88,12 @@ if __name__ == "__main__":
         else:
             sys.exit(1)  # Failure
     else:
+        # --- NEW: Perform cleaning at the start of a run ---
+        # This makes the Python script the single source of truth for a clean run,
+        # removing the dependency on the user running the correct shell script.
+        project_root_path = Path(__file__).resolve().parent
+        ProjectCleaner.clean_project(project_root_path)
+
         # --- DEFINITIVE FIX: Validate the environment and run setup if needed ---
         if not is_environment_valid():
             if not run_setup():

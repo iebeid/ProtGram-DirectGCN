@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.data import Data
-from torch_geometric.nn import DirGNNConv, GCNConv
+from torch_geometric.nn import GCNConv
 
 
 class DirGNN(nn.Module):
@@ -24,6 +24,7 @@ class DirGNN(nn.Module):
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int,
                  num_layers: int = 2, dropout_rate: float = 0.5, **kwargs):
         super().__init__()
+        self.alpha = 0.5  # As specified in the original paper
         self.convs = nn.ModuleList()
         self.norms = nn.ModuleList()
         self.dropout_rate = dropout_rate
@@ -33,20 +34,16 @@ class DirGNN(nn.Module):
             raise ValueError("num_layers must be positive")
 
         if num_layers == 1:
-            base_conv = GCNConv(in_channels, out_channels)
-            self.convs.append(DirGNNConv(conv=base_conv, alpha=0.5))
+            self.convs.append(GCNConv(in_channels, out_channels))
         else:
-            base_conv_in = GCNConv(in_channels, hidden_channels)
-            self.convs.append(DirGNNConv(conv=base_conv_in, alpha=0.5))
+            self.convs.append(GCNConv(in_channels, hidden_channels))
             self.norms.append(nn.LayerNorm(hidden_channels))
 
             for _ in range(num_layers - 2):
-                base_conv_hidden = GCNConv(hidden_channels, hidden_channels)
-                self.convs.append(DirGNNConv(conv=base_conv_hidden, alpha=0.5))
+                self.convs.append(GCNConv(hidden_channels, hidden_channels))
                 self.norms.append(nn.LayerNorm(hidden_channels))
 
-            base_conv_out = GCNConv(hidden_channels, out_channels)
-            self.convs.append(DirGNNConv(conv=base_conv_out, alpha=0.5))
+            self.convs.append(GCNConv(hidden_channels, out_channels))
 
     def forward(self, data: Data) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -55,17 +52,19 @@ class DirGNN(nn.Module):
         x, edge_index, edge_index_backward = data.x, data.edge_index, getattr(data, 'edge_index_backward', None)
 
         for i in range(len(self.convs) - 1):
-            # --- DEFINITIVE FIX: Pass the backward edges to the DirGNNConv layer. ---
-            # The previous implementation was missing this crucial argument, causing the
-            # model to behave like a standard GCN instead of a directional GNN.
-            x = self.convs[i](x, edge_index, edge_index_backward)
+            # --- DEFINITIVE FIX: Manually implement the Dir-GNN logic ---
+            # This bypasses the problematic DirGNNConv wrapper.
+            h_forward = self.convs[i](x, edge_index)
+            h_backward = self.convs[i](x, edge_index_backward)
+            x = self.alpha * h_forward + (1 - self.alpha) * h_backward
             if i < len(self.norms):
                 x = self.norms[i](x)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
 
         self.embedding_output = x
-        # --- DEFINITIVE FIX: Also pass backward edges to the final layer. ---
-        logits = self.convs[-1](self.embedding_output, edge_index, edge_index_backward)
+        h_forward = self.convs[-1](self.embedding_output, edge_index)
+        h_backward = self.convs[-1](self.embedding_output, edge_index_backward)
+        logits = self.alpha * h_forward + (1 - self.alpha) * h_backward
 
         return logits, self.embedding_output

@@ -299,18 +299,18 @@ class PipelineOrchestrator:
                             checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "completed"})
                         if not self.ui_manager.prompt_to_continue("Graph Building"): continue
 
+                        # Now, run the optional pre-analysis/benchmarking step, gated by its own checkpoint.
+                        if not checkpoint_manager.get_checkpoint("PreAnalysis"):
+                            if not self._run_pre_analysis_and_prompt(config, fasta_file_path):
+                                continue  # User chose to stop after pre-analysis
+                            checkpoint_manager.save_checkpoint("PreAnalysis", {"status": "completed"})
+
                         # --- DEFINITIVE FIX: Decouple main embedding generation from pre-analysis ---
                         # The main embedding pipelines have their own internal checkpointing and should
                         # always be run to ensure the list of files to evaluate is populated.
                         generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)
                         generated_files = generated_files if isinstance(generated_files, list) else []
                         config.LP_EMBEDDING_FILES_TO_EVALUATE = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_files
-
-                        # Now, run the optional pre-analysis/benchmarking step, gated by its own checkpoint.
-                        if not checkpoint_manager.get_checkpoint("PreAnalysis"):
-                            if not self._run_pre_analysis_and_prompt(config, fasta_file_path):
-                                continue  # User chose to stop after pre-analysis
-                            checkpoint_manager.save_checkpoint("PreAnalysis", {"status": "completed"})
 
                         # --- Run Hyperparameter Optimization ---
                         if config.RUN_HPO:

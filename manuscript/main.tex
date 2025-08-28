@@ -5,10 +5,10 @@
 \usepackage{booktabs} % For professional quality tables
 \usepackage{longtable} % For tables that span multiple pages
 \usepackage{amsmath} % For advanced math environments
-% --- FIX: Added required packages for TikZ diagrams ---
+\usepackage{graphicx}
+\usepackage{subcaption}
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, calc}
-% --- END FIX ---
 \linenumbers
 \def\keyFont{\fontsize{8}{11}\helveticabold }
 \def\firstAuthorLast{Ebeid {et~al.}}
@@ -145,105 +145,50 @@
 		\end{equation}
 		A $LogSoftmax$ function is then applied to these logits for training with a negative log-likelihood loss. The final embeddings, $Z_{n-gram}$, are L2-normalized before extraction.
 	\end{itemize}
-	\begin{figure}
-		\centering
-		\includegraphics[width=0.8\linewidth]{images/fig2.jpg}
-		\caption{The proposed ProtGramDirectGCN layer architecture. For each of the three information channels (Incoming, Outgoing, Undirected), input features ($H^{(l)}$) are processed through two parallel paths: a path-specific GCN-style message passing transformation (e.g., using $W_{main,in}$) and an MLP-style shared transformation ($W_{shared}$). The results are aggregated and then combined via a learnable gating mechanism controlled by coefficients ($C$) before a final residual connection and activation.}
-		\label{fig:2}
-	\end{figure}
 
-
-
-	
-\begin{figure}[h!]
+\begin{figure*}[t!] % Use figure* to span both columns. [t!] places it at the top of the page.
 	\centering
-	\resizebox{\textwidth}{!}{%
-		\begin{tikzpicture}[
-			font=\sffamily,
-			% Styles for different types of blocks
-			input/.style={rectangle, draw, fill=blue!10, rounded corners, minimum height=3em, minimum width=6em, text centered},
-			encoder/.style={rectangle, draw, fill=green!10, rounded corners, minimum height=18em, minimum width=15em},
-			decoder/.style={rectangle, draw, fill=orange!10, rounded corners, minimum height=18em, minimum width=15em},
-			multihead/.style={rectangle, draw, fill=purple!10, minimum height=3.5em, minimum width=12em, text centered},
-			feedforward/.style={rectangle, draw, fill=cyan!10, minimum height=3.5em, minimum width=12em, text centered},
-			addnorm/.style={rectangle, draw, fill=gray!10, minimum height=2em, minimum width=12em, text centered},
-			softmax/.style={rectangle, draw, fill=red!10, rounded corners, minimum height=3em, minimum width=6em, text centered},
-			linear/.style={rectangle, draw, fill=yellow!10, rounded corners, minimum height=3em, minimum width=6em, text centered},
-			posenc/.style={rectangle, draw, fill=teal!10, minimum height=3em, text centered},
-			output/.style={rectangle, draw, fill=blue!10, rounded corners, minimum height=3em, minimum width=6em, text centered},
-			% Style for arrows
-			arrow/.style={-Latex, thick},
-			connector/.style={thick}
-			]
+	
+	% Use a tabular environment for robust layout control
+	\begin{tabular}{c}
+		
+		% --- TOP IMAGE ---
+		\includegraphics[width=0.7\linewidth]{images/ProtGram-DirectGCN-Part-1.png} \\ % Replace with your top image file
+		\textbf{(a)} This is the top image. \label{fig:top} \\
+		
+		\vspace{1em} % Add vertical space between rows
+		
+		% --- BOTTOM IMAGES (in a nested tabular) ---
+		\begin{tabular}{cc}
+			\includegraphics[width=0.48\linewidth]{images/ProtGram-DirectGCN-Part-2.png} & % Replace with bottom-left
+			\includegraphics[width=0.48\linewidth]{images/ProtGram-DirectGCN-Part-3.png} \\ % Replace with bottom-right
 			
-			% Left Side: Encoder Stack
-			\node[input] (inputs) {Inputs};
-			\node[posenc, below=0.5cm of inputs] (pos_enc_in) {Positional\\Encoding};
-			\node[encoder, below=1.5cm of pos_enc_in, label={[yshift=0.2cm]270:Encoder}] (encoder_block) {};
-			
-			% Components inside the Encoder
-			\node[multihead] (mha_enc) at (encoder_block.center) {Multi-Head\\Attention};
-			\node[addnorm, below=0.5cm of mha_enc] (addnorm_enc1) {Add \& Norm};
-			\node[feedforward, below=0.5cm of addnorm_enc1] (ff_enc) {Feed Forward};
-			\node[addnorm, below=0.5cm of ff_enc] (addnorm_enc2) {Add \& Norm};
-			
-			% Right Side: Decoder Stack
-			\node[output] (outputs) at (inputs -| encoder_block) [right=10cm of inputs] {Outputs\\(shifted right)};
-			\node[posenc, below=0.5cm of outputs] (pos_enc_out) {Positional\\Encoding};
-			\node[decoder, below=1.5cm of pos_enc_out, label={[yshift=0.2cm]270:Decoder}] (decoder_block) {};
-			\node[linear, below=2cm of decoder_block] (linear) {Linear};
-			\node[softmax, below=0.5cm of linear] (softmax) {Softmax};
-			\node[input, below=0.5cm of softmax] (out_prob) {Output\\Probabilities};
-			
-			% Components inside the Decoder
-			\node[multihead] (mha_dec_masked) at ($(decoder_block.north) + (0, -2.5em)$) {Masked\\Multi-Head\\Attention};
-			\node[addnorm, below=0.5cm of mha_dec_masked] (addnorm_dec1) {Add \& Norm};
-			\node[multihead, below=0.5cm of addnorm_dec1] (mha_dec) {Multi-Head\\Attention};
-			\node[addnorm, below=0.5cm of mha_dec] (addnorm_dec2) {Add \& Norm};
-			\node[feedforward, below=0.5cm of addnorm_dec2] (ff_dec) {Feed Forward};
-			\node[addnorm, below=0.5cm of ff_dec] (addnorm_dec3) {Add \& Norm};
-			
-			% Arrows for Encoder Path
-			\draw[arrow] (inputs.south) -- (pos_enc_in.north);
-			\draw[arrow] (pos_enc_in.south) -- ++(0, -0.5cm) -| (mha_enc.west);
-			\draw[arrow] (pos_enc_in.south) -- ++(0, -0.5cm) -| (addnorm_enc1.west);
-			\draw[arrow] (mha_enc.south) -- (addnorm_enc1.north);
-			\draw[arrow] (addnorm_enc1.south) -- (ff_enc.north);
-			\draw[arrow] (addnorm_enc1.south) -- ++(0,-0.5cm) -| (addnorm_enc2.west);
-			\draw[arrow] (ff_enc.south) -- (addnorm_enc2.north);
-			
-			% Arrows for Decoder Path
-			\draw[arrow] (outputs.south) -- (pos_enc_out.north);
-			\draw[arrow] (pos_enc_out.south) -- ++(0, -0.5cm) -| (mha_dec_masked.west);
-			\draw[arrow] (pos_enc_out.south) -- ++(0, -0.5cm) -| (addnorm_dec1.west);
-			\draw[arrow] (mha_dec_masked.south) -- (addnorm_dec1.north);
-			\draw[arrow] (addnorm_dec1.south) -- (mha_dec.west);
-			\draw[arrow] (addnorm_dec1.south) -- ++(0,-0.5cm) -| (addnorm_dec2.west);
-			\draw[arrow] (mha_dec.south) -- (addnorm_dec2.north);
-			\draw[arrow] (addnorm_dec2.south) -- (ff_dec.north);
-			\draw[arrow] (addnorm_dec2.south) -- ++(0,-0.5cm) -| (addnorm_dec3.west);
-			\draw[arrow] (ff_dec.south) -- (addnorm_dec3.north);
-			
-			% Final Output Path
-			\draw[arrow] (addnorm_dec3.south) -- (linear.north);
-			\draw[arrow] (linear.south) -- (softmax.north);
-			\draw[arrow] (softmax.south) -- (out_prob.north);
-			
-			% Cross-connections from Encoder to Decoder
-			\draw[connector] (addnorm_enc2.east) -| ++(1,0) node[pos=0.2, right] {K} |- (mha_dec.north);
-			\draw[connector] (addnorm_enc2.east) -| ++(1.5,0) node[pos=0.2, right] {V} |- (mha_dec.south);
-			\draw[arrow] ($(mha_dec.north) + (0, 0.5em)$) -- (mha_dec.north);
-			\draw[arrow] ($(mha_dec.south) + (0, -0.5em)$) -- (mha_dec.south);
-			
-			% Nx Labels
-			\node[left=0.5cm of encoder_block, font=\Huge] (Nx_enc) {Nx};
-			\node[left=0.5cm of decoder_block, font=\Huge] (Nx_dec) {Nx};
-			
-		\end{tikzpicture}%
+			% --- Manual Labels for bottom images ---
+			\begin{minipage}[t]{0.48\linewidth}
+				\centering
+				\textbf{(b)} This is the bottom-left image. \label{fig:bottom_left}
+			\end{minipage} &
+			\begin{minipage}[t]{0.48\linewidth}
+				\centering
+				\textbf{(c)} This is the bottom-right image. \label{fig:bottom_right}
+			\end{minipage} \\
+		\end{tabular}
+		
+	\end{tabular}
+	
+	% The main caption for the entire figure
+	\caption{This is the main caption for all three images.}
+	\label{fig:three_images}
+	
+	\vspace{1em} % Add some space before the detailed note
+	
+	% --- ADDITIONAL DETAILED CAPTION ---
+	\parbox{\textwidth}{%
+		\small \textit{Note:} The proposed ProtGramDirectGCN layer architecture. For each of the three information channels (Incoming, Outgoing, Undirected), input features ($H^{(l)}$) are processed through two parallel paths: a path-specific GCN-style message passing transformation (e.g., using $W_{main,in}$) and an MLP-style shared transformation ($W_{shared}$). The results are aggregated and then combined via a learnable gating mechanism controlled by coefficients ($C$) before a final residual connection and activation.
 	}
-	\caption{The Transformer Architecture (scaled to fit).}
-	\label{fig:transformer_scaled}
-\end{figure}
+\end{figure*}
+	
+
 	
 
 
