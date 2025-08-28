@@ -119,7 +119,7 @@ class UIManager:
             return config.ORIGINAL_SEQUENCE_FILE_PATHS.copy()
 
     @staticmethod
-    def launch_mlflow_ui(config: Config):
+    def launch_mlflow_ui(config: 'Config'):
         """Starts the MLflow UI and opens a browser if in a desktop environment."""
         if not config.USE_MLFLOW:
             return
