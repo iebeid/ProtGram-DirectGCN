@@ -111,7 +111,7 @@ class PipelineOrchestrator:
                         checkpoint_manager.save_checkpoint(p_config['name'], standardized_files)
                         generated_files.extend(standardized_files)
 
-                        if not self.ui_manager.prompt_to_continue(p_config['name']):
+                        if not self.ui_manager.prompt_to_continue(p_config['name'], config):
                             sys.exit(0)
                     else:
                         print(f"  Pipeline '{p_config['name']}' did not produce any output files.")
@@ -183,7 +183,7 @@ class PipelineOrchestrator:
         print("\n" + "#" * 80)
         print("### PRELIMINARY ANALYSIS COMPLETE ###")
         print("#" * 80)
-        return self.ui_manager.prompt_to_continue("Preliminary Analysis")
+        return self.ui_manager.prompt_to_continue("Preliminary Analysis", config)
 
     def run(self):
         """Executes the entire pipeline."""
@@ -239,9 +239,9 @@ class PipelineOrchestrator:
                     print("!!! WARNING: GPU verification failed. Pipeline will run on CPU. !!!")
                     print("!" * 80 + "\n")
                     if sys.stdin.isatty():
-                        response = input("Continue with CPU-only execution? (y/n): ").lower().strip()
-                        if response not in ['y', 'yes']: sys.exit(1)
-                if not self.ui_manager.prompt_to_continue("Integrated Tests"): sys.exit(0)
+                        response = input("Continue with CPU-only execution? (y/n): ").lower().strip() # noqa
+                        if response not in ['y', 'yes']: sys.exit(0)
+                if not self.ui_manager.prompt_to_continue("Integrated Tests", self.base_config): sys.exit(0)
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 files_to_process = self.ui_manager.get_fasta_files_to_process(self.base_config, Path(temp_dir))
@@ -297,7 +297,7 @@ class PipelineOrchestrator:
                             DataUtils.print_header("Building all n-gram graphs for the main pipeline")
                             ProtGramDataBuilder(config).run()
                             checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "completed"})
-                        if not self.ui_manager.prompt_to_continue("Graph Building"): continue
+                        if not self.ui_manager.prompt_to_continue("Graph Building", config): continue
 
                         # Now, run the optional pre-analysis/benchmarking step, gated by its own checkpoint.
                         if not checkpoint_manager.get_checkpoint("PreAnalysis"):

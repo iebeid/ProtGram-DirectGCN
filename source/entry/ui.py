@@ -13,21 +13,27 @@ import sys
 import time
 import webbrowser
 from pathlib import Path
-from typing import List
+from typing import List, TYPE_CHECKING
 
 import pandas as pd
 
-from configuration.config import Config
 from source.utils.data.data_utils import DataUtils
 from source.utils.data.fasta_utils import FastaUtils
+
+if TYPE_CHECKING:
+    from configuration.config import Config
 
 
 class UIManager:
     """Handles all user interface and console interaction logic."""
 
     @staticmethod
-    def prompt_to_continue(step_completed: str) -> bool:
+    def prompt_to_continue(step_completed: str, config: 'Config') -> bool:
         """Asks the user if they want to continue to the next pipeline step."""
+        if config.DISABLE_INTERACTIVE_PROMPTS:
+            print(f"--- Interactive prompts disabled. Automatically continuing after '{step_completed}'. ---")
+            return True
+
         if not sys.stdin.isatty():
             print(f"--- Non-interactive session detected. Automatically continuing after '{step_completed}'. ---")
             return True

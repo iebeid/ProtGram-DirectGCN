@@ -42,6 +42,7 @@ class PipelineFlags(BaseModel):
     RUN_DUMMY_TEST: bool
     SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     CLEANUP_DUMMY_DATA: bool
+    DISABLE_INTERACTIVE_PROMPTS: bool = Field(default=False)
     ENABLE_FILE_LOGGING: bool
 
 class BaseGNNTrainingParams(BaseModel):
@@ -359,6 +360,7 @@ class Config:
         self.RUN_DUMMY_TEST = flags['RUN_DUMMY_TEST']
         self.SEQUENCE_DOWNSAMPLE_FRACTION = flags['SEQUENCE_DOWNSAMPLE_FRACTION']
         self.CLEANUP_DUMMY_DATA = flags['CLEANUP_DUMMY_DATA']
+        self.DISABLE_INTERACTIVE_PROMPTS = flags['DISABLE_INTERACTIVE_PROMPTS']
         self.ENABLE_FILE_LOGGING = flags['ENABLE_FILE_LOGGING']
 
     def _setup_benchmarking_params(self):

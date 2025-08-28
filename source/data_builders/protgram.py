@@ -54,17 +54,7 @@ class ProtGramDataBuilder:
         DataUtils.print_header("PIPELINE STEP 1: Building N-gram Graphs")
 
         # --- NEW: Add a specific resource alert before starting the build ---
-        try:
-            total_input_size_gb = sum(os.path.getsize(f) for f in self.protein_sequence_files if os.path.exists(f)) / (1024 ** 3)
-            if total_input_size_gb > 0:
-                print("\n--- Resource Alert: Graph Building ---")
-                print(f"  Input FASTA size is ~{total_input_size_gb:.2f} GB.")
-                print(f"  This process can generate intermediate files up to 3-5x this size (~{total_input_size_gb*3:.2f} - {total_input_size_gb*5:.2f} GB).")
-                print("  Please ensure you have sufficient free disk space.")
-                print("--------------------------------------\n")
-        except Exception:
-            # Don't crash if we can't get file sizes for some reason
-            pass
+        self._resource_alert()
 
         # --- Validation of existing graphs ---
         all_graphs_exist_and_are_valid = True
@@ -92,31 +82,18 @@ class ProtGramDataBuilder:
         # --- Setup for a new build ---
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
-        os.makedirs(self.temp_dir, exist_ok=True)
-        os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(self.temp_dir, exist_ok=True) # noqa
+        os.makedirs(self.output_dir, exist_ok=True) # noqa
         print(f"Temporary files will be stored in: {self.temp_dir}")
         print(f"Final graph objects will be saved to: {self.output_dir}")
 
         # --- NEW: Wrap the core logic in a try...finally block to guarantee cleanup of the temp directory ---
         try:
             n_values = range(1, self.n_max + 1)
-            effective_dask_workers = self.num_workers_config if self.num_workers_config > 1 else 1
-            dask_scheduler_general = 'processes' if effective_dask_workers > 1 else 'sync'
+            effective_dask_workers = self.num_workers_config if self.num_workers_config > 1 else 1 # noqa
 
-            if self.num_workers_config > 1:
-                print("\n" + "=" * 80)
-                print(f"GraphBuilder is configured for parallel processing (GRAPH_BUILDER_WORKERS={self.num_workers_config}).")
-                print(f"Using Dask with a MULTIPROCESSING scheduler ({effective_dask_workers} processes).")
-                print("=" * 80 + "\n")
-            else:
-                print("\nGraphBuilder is configured for synchronous (single-threaded) execution.\n")
-
-            def get_preprocessed_sequence_stream() -> Iterator[Tuple[Tuple[str, str], bool]]:
-                """
-                A generator that streams sequences from FASTA files, applying cleaning
-                and downsampling as configured. It also yields a flag for the first sequence.
-                """
-                # Default behavior: stream all sequences directly
+            def get_preprocessed_sequence_stream() -> Iterator[Tuple[Tuple[str, str], bool]]: # noqa
+                """A generator that streams sequences from FASTA files, applying cleaning as configured."""
                 sequence_iterator = FastaUtils.parse_sequences(
                     self.protein_sequence_files,
                     perform_cleaning=self.config.PROTGRAM_CLEAN_FASTA_ON_PARSE,
@@ -125,20 +102,6 @@ class ProtGramDataBuilder:
                     alphabet_type=self.config.PROTGRAM_FASTA_ALPHABET
                 )
 
-                # --- DEFINITIVE FIX: Use a more scalable single-pass downsampling method ---
-                # This avoids a second full read of the FASTA file just to get the total count.
-                # It yields an *approximate* sample size, which is a good trade-off for performance.
-                if self.config.SEQUENCE_DOWNSAMPLE_FRACTION and 0.0 < self.config.SEQUENCE_DOWNSAMPLE_FRACTION < 1.0:
-                    print(f"  Applying single-pass probabilistic downsampling ({self.config.SEQUENCE_DOWNSAMPLE_FRACTION * 100:.2f}% chance per sequence)...")
-                    random.seed(self.config.RANDOM_STATE)
-                    # Re-wrap the iterator in a new generator that applies the filter
-                    def probabilistic_sampler(iterator, fraction):
-                        for item in iterator:
-                            if random.random() < fraction:
-                                yield item
-                    sequence_iterator = probabilistic_sampler(sequence_iterator, self.config.SEQUENCE_DOWNSAMPLE_FRACTION)
-
-                # --- DEFINITIVE FIX: Add the missing iterator and yield logic ---
                 if sequence_iterator:
                     first_sequence = True
                     for seq_tuple in sequence_iterator:
@@ -254,3 +217,17 @@ class ProtGramDataBuilder:
             print(f"<<< Phase 4 finished in {time.monotonic() - phase4_start_time:.2f}s.")
 
         DataUtils.print_header(f"N-gram Graph Building FINISHED in {time.monotonic() - overall_start_time:.2f}s")
+
+    def _resource_alert(self):
+        """Prints a warning about potential disk usage."""
+        try:
+            total_input_size_gb = sum(os.path.getsize(f) for f in self.protein_sequence_files if os.path.exists(f)) / (1024 ** 3)
+            if total_input_size_gb > 0:
+                print("\n--- Resource Alert: Graph Building ---")
+                print(f"  Input FASTA size is ~{total_input_size_gb:.2f} GB.")
+                print(f"  This process can generate intermediate files up to 3-5x this size (~{total_input_size_gb*3:.2f} - {total_input_size_gb*5:.2f} GB).")
+                print("  Please ensure you have sufficient free disk space.")
+                print("--------------------------------------\n")
+        except Exception:
+            # Don't crash if we can't get file sizes for some reason
+            pass

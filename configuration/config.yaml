@@ -41,11 +41,18 @@ pipeline_flags:
   SEQUENCE_DOWNSAMPLE_FRACTION: 0.01
   CLEANUP_DUMMY_DATA: true
   ENABLE_FILE_LOGGING: true
+  DISABLE_INTERACTIVE_PROMPTS: true # Set to true to run the entire pipeline without user prompts.
 
 # 4. RESOURCE MANAGEMENT
 resource_management:
   MEMORY_USAGE_STRATEGY: 'high' # 'low', 'high', or 'dynamic'
   CHECKSUM_SKIP_SIZE_MB: 500 # Files larger than this (in MB) will skip SHA256 checksumming to speed up validation.
+  # --- NEW: Centralized worker configuration ---
+  worker_settings:
+    default_workers: 'auto' # Use 'auto' for (CPU cores - 1) or specify an integer.
+    graph_builder_workers: 'auto' # For Dask in the ProtGram builder.
+    w2v_workers: 'auto' # For Gensim Word2Vec training.
+    dataloader_workers: 0 # For PyTorch DataLoaders. 0 is often safest to avoid multiprocessing hangs.
 
 # --- NEW: Shared GNN Hyperparameters using YAML Anchors ---
 # This block defines common GNN parameters once to avoid duplication.
@@ -97,6 +104,7 @@ gnn_benchmarking:
   NE_WALKS_PER_NODE: 10
   NE_NUM_NEGATIVE_SAMPLES: 1
   NE_CLASSIFIER_C: 1.0
+  BENCHMARK_NE_LOADER_WORKERS: 0 # Set to 0 to prevent hangs in interactive sessions.
   NE_CLASSIFIER_MAX_ITER: 1000
   NE_CLASSIFIER_SOLVER: 'lbfgs'
   GNN_INIT_DIM: 64
@@ -162,7 +170,6 @@ word2vec:
   W2V_VECTOR_SIZE: 100
   W2V_WINDOW: 5
   W2V_MIN_COUNT: 1
-  W2V_EPOCHS: 5
   W2V_POOLING_STRATEGY: 'mean'
   APPLY_PCA_TO_W2V: true
 

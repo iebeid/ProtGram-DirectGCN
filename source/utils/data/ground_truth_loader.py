@@ -132,19 +132,20 @@ class GroundTruthLoader:
     @staticmethod
     def _stream_filter_pairs(filepath: Path, label: int, available_ids: Set[str]) -> Iterator[Tuple[str, str, int]]:
         """The core streaming logic, refactored to be a true generator."""
+        # --- DEFINITIVE FIX for IsADirectoryError ---
+        # The previous implementation used `open()`, which cannot read a Parquet directory.
+        # This now uses Dask to correctly stream from either CSV or Parquet formats.
         try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                for line in tqdm(f, desc=f"    Scanning {filepath.name}", leave=False):
-                    parts = [p.strip() for p in line.strip().replace('"', '').split(',')]
-                    if len(parts) < 2:
-                        parts = [p.strip() for p in line.strip().replace('"', '').split('\t')]
-                    if len(parts) >= 2:
-                        p1, p2 = parts[0], parts[1]
-                        if p1 in available_ids and p2 in available_ids:
-                            yield (p1, p2, label) # Use yield to make it a generator
+            sep = '\t' if '.mitab' in filepath.name or '.tsv' in filepath.name else ','
+            ddf = dd.read_csv(str(filepath), sep=sep, header=None, names=['p1', 'p2'], usecols=[0, 1], dtype=str, on_bad_lines='warn') if '.parquet' not in filepath.name else dd.read_parquet(str(filepath))
+            ddf = ddf.dropna().astype(str)
+            filtered_ddf = ddf[ddf['p1'].isin(available_ids) & ddf['p2'].isin(available_ids)]
+
+            for partition in tqdm(filtered_ddf.to_delayed(), desc=f"    Scanning {filepath.name}", leave=False):
+                for row in partition.itertuples(index=False):
+                    yield (row.p1, row.p2, label)
         except Exception as e:
             print(f"    ERROR: Could not load or filter interaction file '{filepath.name}'.")
-            print(f"    Please check the file format and integrity.")
             print(f"    Details: {e}")
             return # Stop the generator on error
 
@@ -167,9 +168,16 @@ class GroundTruthLoader:
         if config and config.MEMORY_USAGE_STRATEGY == 'high':
             print(f"  High-performance filtering pairs from: {filepath.name} (label: {label})...")
             try:
-                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                    sep = '\t' if '\t' in f.readline() else ','
-                df = pd.read_csv(filepath, header=None, usecols=[0, 1], names=['p1', 'p2'], sep=sep, on_bad_lines='warn', dtype=str)
+                # --- DEFINITIVE FIX: Handle both CSV and Parquet files correctly ---
+                if filepath.is_dir() and (filepath / '_common_metadata').exists():
+                    # This is a parquet directory
+                    df = pd.read_parquet(filepath, columns=['protein1', 'protein2'])
+                    df = df.rename(columns={'protein1': 'p1', 'protein2': 'p2'}) # Align column names
+                else:
+                    # Assume it's a CSV/TSV
+                    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                        sep = '\t' if '\t' in f.readline() else ','
+                    df = pd.read_csv(filepath, header=None, usecols=[0, 1], names=['p1', 'p2'], sep=sep, on_bad_lines='warn', dtype=str)
                 df.dropna(inplace=True)
                 # Vectorized filtering is much faster than iterating
                 mask = df['p1'].isin(available_ids) & df['p2'].isin(available_ids)

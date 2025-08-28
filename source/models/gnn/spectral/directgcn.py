@@ -309,8 +309,11 @@ class DirectGCN(nn.Module):
             h = F.relu(h)
             h = F.dropout(h, p=self.dropout_rate, training=self.training)
             self.embedding_output = h # Embedding is the output of the hidden layer
-            logits = self.convs[1](self.embedding_output, data)
-            return logits, self.embedding_output.detach()
+            # --- DEFINITIVE FIX: Use the dedicated decoder_fc for logits ---
+            # The previous implementation used the final conv layer, which is inconsistent
+            # with the model's __init__ method where a separate decoder is created.
+            logits = self.decoder_fc(self.embedding_output)
+            return logits, self.embedding_output.detach() # Return detached embeddings
         else: # Original logic for the main ProtGram pipeline
             for i in range(len(self.convs)):
                 h_pre_act = self.convs[i](h, data) + self.res_projs[i](h)
