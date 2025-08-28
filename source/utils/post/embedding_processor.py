@@ -218,7 +218,10 @@ class EmbeddingProcessor:
 
                 for i in tqdm(range(0, len(keys), batch_size), desc="  - Fitting PCA"):
                     batch_keys = keys[i:i + batch_size]
-                    batch_embeddings = np.array([loader[k] for k in batch_keys if loader[k].size > 0 and not np.isnan(loader[k]).any()], dtype=np.float32)
+                    # --- DEFINITIVE FIX: Check for both NaN and Inf values ---
+                    # StandardScaler can produce NaNs if the input contains infinity, which
+                    # then corrupts the PCA model. np.isfinite() checks for both.
+                    batch_embeddings = np.array([loader[k] for k in batch_keys if loader[k].size > 0 and np.all(np.isfinite(loader[k]))], dtype=np.float32)
                     if batch_embeddings.shape[0] > 0:
                         # IncrementalPCA requires scaling, so we fit the scaler incrementally as well.
                         scaler.partial_fit(batch_embeddings)
@@ -237,12 +240,10 @@ class EmbeddingProcessor:
                     batch_keys = keys[i:i + batch_size]
                     valid_keys = []
                     valid_embeddings_list = []
-                    # --- DEFINITIVE FIX: Add the missing NaN check to the transform loop ---
-                    # The fitting loop correctly checks for NaNs, but the transform loop was
-                    # missing it, which could propagate NaNs into the final PCA file.
+                    # --- DEFINITIVE FIX: Also check for NaN/Inf in the transform loop for consistency ---
                     for k in batch_keys:
                         emb = loader[k]
-                        if emb.size > 0 and not np.isnan(emb).any():
+                        if emb.size > 0 and np.all(np.isfinite(emb)):
                             valid_keys.append(k)
                             valid_embeddings_list.append(emb)
                     if valid_embeddings_list:

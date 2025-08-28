@@ -38,7 +38,7 @@ pipeline_flags:
   RUN_INTEGRATED_TESTS: true
   RUN_SINGLETON_GCN_EVAL: true
   RUN_DUMMY_TEST: false
-  SEQUENCE_DOWNSAMPLE_FRACTION: 0.01
+  SEQUENCE_DOWNSAMPLE_FRACTION: 0.005
   CLEANUP_DUMMY_DATA: true
   ENABLE_FILE_LOGGING: true
   DISABLE_INTERACTIVE_PROMPTS: true # Set to true to run the entire pipeline without user prompts.

@@ -1,11 +1,10 @@
 from pathlib import Path
 from typing import Iterator, List, Optional, Set, Tuple, Union
-import random
 
 import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
-
+import dask.dataframe as dd
 from configuration.config import Config
 # --- NEW: Import DataUtils for reservoir sampling ---
 from source.utils.data.data_utils import DataUtils
@@ -21,113 +20,43 @@ class GroundTruthLoader:
     @staticmethod
     def get_required_ids_from_files(file_paths: List[Union[str, Path]]) -> Set[str]:
         """
-        Memory-efficiently reads interaction files to get the set of all unique protein IDs.
-        Reads files line-by-line to avoid loading everything into memory.
+        Memory-efficiently reads interaction files to get the set of all unique protein IDs
+        using Dask for scalability.
         """
-        print("Gathering all required protein IDs from interaction files...")
-        required_ids: Set[str] = set()
+        from dask.diagnostics import ProgressBar
+        print("Gathering all required protein IDs from interaction files using Dask...")
+        all_ids_series = []
         for filepath in file_paths:
             filepath = Path(filepath)
             if not filepath.exists():
                 print(f"Warning: File not found during ID gathering: {filepath}")
                 continue
             try:
-                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                    for line in tqdm(f, desc=f"Scanning {filepath.name} for IDs", leave=False):
-                        parts = [p.strip() for p in line.strip().replace('"', '').split(',')]
-                        if len(parts) < 2:
-                            parts = [p.strip() for p in line.strip().replace('"', '').split('\t')]
-                        if len(parts) >= 2:
-                            p1, p2 = parts[0], parts[1]
-                            if p1: required_ids.add(p1)
-                            if p2: required_ids.add(p2)
+                # --- REFACTOR: Use Dask for scalable and robust file reading ---
+                if filepath.is_dir():  # Assume Parquet
+                    ddf = dd.read_parquet(str(filepath), columns=['protein1', 'protein2'])
+                else:  # Assume CSV/TSV
+                    sep = '\t' if '.mitab' in filepath.name or '.tsv' in filepath.name else ','
+                    ddf = dd.read_csv(str(filepath), sep=sep, header=None, usecols=[0, 1],
+                                     names=['protein1', 'protein2'], dtype=str, on_bad_lines='warn')
+
+                ddf = ddf.dropna().astype(str)
+                all_ids_series.append(ddf['protein1'])
+                all_ids_series.append(ddf['protein2'])
             except Exception as e:
                 print(f"Error reading file {filepath} during ID gathering: {e}")
-        print(f"Found {len(required_ids)} unique protein IDs across all interaction files.")
+
+        if not all_ids_series:
+            print("No valid interaction files found to gather IDs.")
+            return set()
+
+        combined_ids = dd.concat(all_ids_series)
+        with ProgressBar():
+            unique_ids = combined_ids.unique().compute()
+
+        required_ids = set(unique_ids)
+        print(f"Found {len(required_ids):,} unique protein IDs across all interaction files.")
         return required_ids
-
-    @staticmethod
-    def load_interaction_pairs(filepath: Union[str, Path], label: int, sample_n: Optional[int] = None,
-                               random_state: Optional[int] = None) -> List[Tuple[str, str, int]]:
-        """
-        Loads interaction pairs from a CSV/TSV file. Includes option for sampling.
-        """
-        filepath = Path(filepath)
-        sampling_info = f" (sampling up to {sample_n} pairs)" if sample_n is not None else ""
-        print(f"Loading pairs from: {filepath.name} (label: {label}){sampling_info}...")
-        if not filepath.exists():
-            print(f"Warning: Interaction file not found: {filepath}")
-            return []
-        try:
-            # Sniff the delimiter for robustness instead of nested try-except
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                first_line = f.readline()
-                sep = '\t' if '\t' in first_line else ','
-
-            df = pd.read_csv(filepath, header=None, names=['protein1', 'protein2'], dtype=str, on_bad_lines='warn',
-                             sep=sep)
-            df.dropna(subset=['protein1', 'protein2'], inplace=True)
-            df['protein1'] = df['protein1'].astype(str).str.strip()
-            df['protein2'] = df['protein2'].astype(str).str.strip()
-            df = df[(df['protein1'] != "") & (df['protein2'] != "")]
-
-            if sample_n is not None and 0 < sample_n < len(df):
-                df = df.sample(n=sample_n, random_state=random_state)
-
-            pairs = [(row.protein1, row.protein2, label) for _, row in df.iterrows()]
-            print(f"Successfully loaded {len(pairs)} pairs.")
-            return pairs
-        except Exception as e:
-            print(f"  ERROR: Could not load or parse interaction file '{filepath.name}'.")
-            print(f"  Please check the file format and integrity.")
-            print(f"  Details: {e}")
-            return []
-
-    @staticmethod
-    def stream_interaction_pairs(filepath: Union[str, Path], label: int, batch_size: int, sample_n: Optional[int] = None,
-                                 random_state: Optional[int] = None) -> Iterator[List[Tuple[str, str, int]]]:
-        """
-        Reads interaction pairs from a CSV/TSV file line by line and yields them in batches.
-        """
-        filepath = Path(filepath)
-        streaming_info = f" (sampling up to {sample_n} pairs)" if sample_n is not None else ""
-        print(f"Streaming pairs from: {filepath.name} (label: {label}, batch_size: {batch_size}){streaming_info}...")
-        if not filepath.exists():
-            print(f"Warning: Interaction file not found: {filepath}")
-            return
-
-        lines_to_read_indices: Optional[Set[int]] = None
-        if sample_n is not None:
-            try:
-                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                    total_lines = sum(1 for _ in f)
-                if 0 < sample_n < total_lines:
-                    rng = np.random.default_rng(random_state)
-                    lines_to_read_indices = set(rng.choice(total_lines, sample_n, replace=False))
-            except Exception as e:
-                print(f"Error during pre-sampling count for {filepath}: {e}. Proceeding without sampling if possible.")
-
-        batch: List[Tuple[str, str, int]] = []
-        try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                for i, line in enumerate(f):
-                    if lines_to_read_indices is not None and i not in lines_to_read_indices:
-                        continue
-                    parts = [p.strip() for p in line.strip().replace('"', '').split(',')]
-                    if len(parts) < 2:
-                        parts = [p.strip() for p in line.strip().replace('"', '').split('\t')]
-                    if len(parts) >= 2:
-                        p1, p2 = parts[0], parts[1]
-                        if p1 and p2:
-                            batch.append((p1, p2, label))
-                            if len(batch) == batch_size:
-                                yield batch
-                                batch = []
-        except Exception as e:
-            print(f"Error streaming interaction file {filepath}: {e}")
-
-        if batch:
-            yield batch
 
     @staticmethod
     def _stream_filter_pairs(filepath: Path, label: int, available_ids: Set[str]) -> Iterator[Tuple[str, str, int]]:
@@ -136,8 +65,13 @@ class GroundTruthLoader:
         # The previous implementation used `open()`, which cannot read a Parquet directory.
         # This now uses Dask to correctly stream from either CSV or Parquet formats.
         try:
-            sep = '\t' if '.mitab' in filepath.name or '.tsv' in filepath.name else ','
-            ddf = dd.read_csv(str(filepath), sep=sep, header=None, names=['p1', 'p2'], usecols=[0, 1], dtype=str, on_bad_lines='warn') if '.parquet' not in filepath.name else dd.read_parquet(str(filepath))
+            # --- REFACTOR: Use is_dir() for more robust Parquet detection ---
+            if filepath.is_dir():
+                ddf = dd.read_parquet(str(filepath), columns=['protein1', 'protein2'])
+                ddf = ddf.rename(columns={'protein1': 'p1', 'protein2': 'p2'})
+            else:
+                sep = '\t' if '.mitab' in filepath.name or '.tsv' in filepath.name else ','
+                ddf = dd.read_csv(str(filepath), sep=sep, header=None, names=['p1', 'p2'], usecols=[0, 1], dtype=str, on_bad_lines='warn')
             ddf = ddf.dropna().astype(str)
             filtered_ddf = ddf[ddf['p1'].isin(available_ids) & ddf['p2'].isin(available_ids)]
 
@@ -169,12 +103,14 @@ class GroundTruthLoader:
             print(f"  High-performance filtering pairs from: {filepath.name} (label: {label})...")
             try:
                 # --- DEFINITIVE FIX: Handle both CSV and Parquet files correctly ---
-                if filepath.is_dir() and (filepath / '_common_metadata').exists():
-                    # This is a parquet directory
+                # --- REFACTOR: Simplify logic to align with the robust Dask path ---
+                # The previous check was brittle if a directory was not a parquet file.
+                if filepath.is_dir():
+                    # It's a directory, assume it's Parquet. Let pd.read_parquet handle errors.
                     df = pd.read_parquet(filepath, columns=['protein1', 'protein2'])
                     df = df.rename(columns={'protein1': 'p1', 'protein2': 'p2'}) # Align column names
                 else:
-                    # Assume it's a CSV/TSV
+                    # It's a file, assume it's CSV/TSV.
                     with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                         sep = '\t' if '\t' in f.readline() else ','
                     df = pd.read_csv(filepath, header=None, usecols=[0, 1], names=['p1', 'p2'], sep=sep, on_bad_lines='warn', dtype=str)
