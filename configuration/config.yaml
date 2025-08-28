@@ -170,6 +170,7 @@ word2vec:
   W2V_VECTOR_SIZE: 100
   W2V_WINDOW: 5
   W2V_MIN_COUNT: 1
+  W2V_EPOCHS: 5 # This parameter was accidentally removed in a previous commit.
   W2V_POOLING_STRATEGY: 'mean'
   APPLY_PCA_TO_W2V: true
 
