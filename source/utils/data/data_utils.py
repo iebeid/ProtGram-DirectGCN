@@ -16,6 +16,11 @@ import numpy as np
 import pandas as pd
 import psutil
 import torch
+# --- DEFINITIVE FIX for Singleton Evaluation: Add networkx and community for robust community detection ---
+import networkx as nx
+from torch_geometric.data import Data
+from torch_geometric.utils import to_networkx
+import community as community_louvain
 
 
 # ==============================================================================
@@ -129,3 +134,43 @@ class DataUtils:
             print("!" * 80 + "\n")
             return False
         return True
+
+    @staticmethod
+    def generate_community_labels(graph_obj: 'DirectedNgramGraph') -> Tuple[Optional[torch.Tensor], int]:
+        """
+        Generates community detection labels using the Louvain method, robustly
+        handling disconnected graphs by processing each connected component.
+        """
+        print("    Generating community labels for all connected components...")
+        if graph_obj.number_of_nodes == 0:
+            return None, 0
+
+        # Convert the sparse adjacency matrix to a NetworkX graph
+        # This is the most reliable way to handle graph structures for community detection.
+        pyg_data = Data(edge_index=graph_obj.A_undirected_norm_sparse.indices(), num_nodes=graph_obj.number_of_nodes)
+        G = to_networkx(pyg_data, to_undirected=True)
+
+        labels = torch.zeros(graph_obj.number_of_nodes, dtype=torch.long)
+        community_offset = 0
+
+        # Find all connected components
+        connected_components = list(nx.connected_components(G))
+        print(f"      Found {len(connected_components)} connected components.")
+
+        # Run community detection on each component
+        for component_nodes in connected_components:
+            subgraph = G.subgraph(component_nodes)
+            if subgraph.number_of_nodes() > 1:
+                # best_partition returns a dict {node: community_id}
+                partition = community_louvain.best_partition(subgraph)
+                max_local_community = 0
+                for node, community_id in partition.items():
+                    labels[node] = community_id + community_offset
+                    if community_id > max_local_community:
+                        max_local_community = community_id
+                # Ensure the next component's communities start with a new ID
+                community_offset += (max_local_community + 1)
+
+        num_classes = community_offset if community_offset > 0 else 1
+        print(f"      Found {num_classes} communities across all components.")
+        return labels, num_classes

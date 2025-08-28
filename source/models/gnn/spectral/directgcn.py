@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: models/gnn/spectral/directgcn.py
 # PURPOSE: Contains the PyTorch class definitions for the custom GCN model.
-# VERSION: 10.0 (Correctly implements conditional homophily/heterophily paths)
+# VERSION: 10.1 (Corrected typo in forward pass)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -319,8 +319,8 @@ class DirectGCN(nn.Module):
             # The previous implementation had the activation and dropout outside the loop,
             # and did not update the hidden state `h` in each iteration.
             for i, conv in enumerate(self.convs):
-                h_pre_act = conv(h, data) + self.res_projsi
-                h_norm = self.layer_normsi
+                h_pre_act = conv(h, data) + self.res_projs[i](h)
+                h_norm = self.layer_norms[i](h_pre_act)
                 h = F.leaky_relu(h_norm)
                 h = F.dropout(h, p=self.dropout_rate, training=self.training)
 

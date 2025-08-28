@@ -7,6 +7,7 @@
 
 import gc
 import logging
+from multiprocessing import Pool
 from pathlib import Path
 from typing import Dict, Mapping, Optional, Any
 
@@ -19,6 +20,25 @@ from tqdm.auto import tqdm
 from configuration.config import Config
 from source.utils.data.fasta_utils import FastaUtils
 from source.utils.fs.file_utils import FileUtils
+
+
+def _parse_fasta_for_regex_map(fasta_path: Path) -> Dict[str, str]:
+    """
+    Helper function to be run in a parallel process. Parses a single FASTA file
+    and extracts ID mappings using regex.
+    """
+    local_id_map = {}
+    try:
+        for record in SeqIO.parse(fasta_path, "fasta"):
+            canonical_id = FastaUtils.extract_id_from_header(record.description)
+            if canonical_id:
+                local_id_map[record.id] = canonical_id
+                first_word = record.description.split()[0]
+                if first_word != record.id:
+                    local_id_map[first_word] = canonical_id
+    except Exception as e:
+        print(f"An error occurred during parallel regex mapping on {fasta_path}: {e}")
+    return local_id_map
 
 
 class IDMapper:
@@ -150,21 +170,21 @@ class IDMapper:
 
     def _generate_from_regex(self) -> Dict[str, str]:
         """Performs ID mapping by parsing FASTA headers with regular expressions."""
-        fasta_files = self.config.SEQUENCE_FILE_PATHS
-        if not fasta_files: return {}
+        fasta_paths = self.config.SEQUENCE_FILE_PATHS
+        if not fasta_paths: return {}
 
-        print(f"  Starting Regex ID mapping for: {[p.name for p in fasta_files]}...")
+        print(f"  Starting Regex ID mapping for: {[p.name for p in fasta_paths]}...")
         id_map = {}
-        for fasta_file in fasta_files:
-            try:
-                for record in tqdm(SeqIO.parse(fasta_file, "fasta"), desc=f"Parsing {fasta_file.name} with Regex", leave=False):
-                    canonical_id = FastaUtils.extract_id_from_header(record.description)
-                    if canonical_id:
-                        id_map[record.id] = canonical_id
-                        first_word = record.description.split()[0]
-                        if first_word != record.id:
-                            id_map[first_word] = canonical_id
-            except Exception as e:
-                print(f"An error during regex mapping on {fasta_file}: {e}")
+
+        # --- DEFINITIVE FIX for Performance: Parallelize FASTA parsing for Regex mode ---
+        # This avoids a bottleneck if the regex mode is ever used on very large files.
+        num_workers = self.config.GRAPH_BUILDER_WORKERS
+        with Pool(processes=num_workers) as pool:
+            results = list(tqdm(pool.imap(_parse_fasta_for_regex_map, fasta_paths),
+                                total=len(fasta_paths), desc="  Parsing FASTA for Regex Map (parallel)"))
+
+        for partial_map in results:
+            id_map.update(partial_map)
+
         print(f"  Regex mapping complete. Found {len(id_map)} potential mappings.")
         return id_map

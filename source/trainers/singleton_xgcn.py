@@ -50,7 +50,14 @@ class SingletonXGCNTrainer:
             return pd.DataFrame()  # All code after this in this block is unreachable if this triggers
 
         task_type = self.config.PROTGRAM_TASK_TYPES_PER_LEVEL.get(1, self.config.PROTGRAM_DEFAULT_TASK_TYPE)
-        labels, num_classes = self.label_generator.generate_task_labels(self.graph, task_type)
+
+        # --- DEFINITIVE FIX for Singleton Evaluation: Use component-aware community detection ---
+        # The original label generator might only find communities in the largest connected component.
+        # This new logic ensures that for the 'community' task, we generate labels for all nodes.
+        if task_type == 'community':
+            labels, num_classes = DataUtils.generate_community_labels(self.graph)
+        else:
+            labels, num_classes = self.label_generator.generate_task_labels(self.graph, task_type)
 
         # --- DEFINITIVE FIX for "Zero Results" on Small/Simple Graphs ---
         # This guard is the reason the subsequent code may appear "unreachable".
