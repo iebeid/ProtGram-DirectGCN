@@ -146,52 +146,33 @@
 		A $LogSoftmax$ function is then applied to these logits for training with a negative log-likelihood loss. The final embeddings, $Z_{n-gram}$, are L2-normalized before extraction.
 	\end{itemize}
 
-\begin{figure*}[t!] % Use figure* to span both columns. [t!] places it at the top of the page.
+\begin{figure*}[t!]
 	\centering
-	
-	% Use a tabular environment for robust layout control
 	\begin{tabular}{c}
-		
-		% --- TOP IMAGE ---
-		\includegraphics[width=0.7\linewidth]{images/ProtGram-DirectGCN-Part-1.png} \\ % Replace with your top image file
-		\textbf{(a)} This is the top image. \label{fig:top} \\
-		
-		\vspace{1em} % Add vertical space between rows
-		
-		% --- BOTTOM IMAGES (in a nested tabular) ---
+		\includegraphics[width=0.7\linewidth]{images/ProtGram-DirectGCN-Part-1.png} \\
+		\textbf{(a)} $ProtGram$: our unique approach in modeling protein sequences. \label{fig:top} \\
+		\vspace{1em}
 		\begin{tabular}{cc}
-			\includegraphics[width=0.48\linewidth]{images/ProtGram-DirectGCN-Part-2.png} & % Replace with bottom-left
-			\includegraphics[width=0.48\linewidth]{images/ProtGram-DirectGCN-Part-3.png} \\ % Replace with bottom-right
-			
-			% --- Manual Labels for bottom images ---
+			\includegraphics[width=0.48\linewidth]{images/ProtGram-DirectGCN-Part-2.png} &
+			\includegraphics[width=0.48\linewidth]{images/ProtGram-DirectGCN-Part-3.png} \\
 			\begin{minipage}[t]{0.48\linewidth}
 				\centering
-				\textbf{(b)} This is the bottom-left image. \label{fig:bottom_left}
+				\textbf{(b)} $DirectGCN$: the layer is composite of multiple paths extracted from the graph; unstructured, directional, homophily in addition to a positional identity the paths are then aggregated and transformed via a final feed forward layer and is trained on a next node prediction classification task. \label{fig:bottom_left}
 			\end{minipage} &
 			\begin{minipage}[t]{0.48\linewidth}
 				\centering
-				\textbf{(c)} This is the bottom-right image. \label{fig:bottom_right}
+				\textbf{(c)} $PPI$: the final embedding are pooled via an attention pooling layer the passed down to the downstream task of classification based link prediction where a classifier is trained on a standard ground truth data. \label{fig:bottom_right}
 			\end{minipage} \\
 		\end{tabular}
-		
 	\end{tabular}
-	
-	% The main caption for the entire figure
-	\caption{This is the main caption for all three images.}
+	\caption{$ProtGram-DirectGCN$}
 	\label{fig:three_images}
-	
-	\vspace{1em} % Add some space before the detailed note
-	
-	% --- ADDITIONAL DETAILED CAPTION ---
+	\vspace{1em}
 	\parbox{\textwidth}{%
-		\small \textit{Note:} The proposed ProtGramDirectGCN layer architecture. For each of the three information channels (Incoming, Outgoing, Undirected), input features ($H^{(l)}$) are processed through two parallel paths: a path-specific GCN-style message passing transformation (e.g., using $W_{main,in}$) and an MLP-style shared transformation ($W_{shared}$). The results are aggregated and then combined via a learnable gating mechanism controlled by coefficients ($C$) before a final residual connection and activation.
+		\small \textit{Note:} The proposed architecture; for each of the 5 information paths (Incoming, Outgoing, Undirected, Homophilic, and Heterophilic), input features ($H^{(l)}$) are processed through two parallel paths: a path-specific GCN-style message passing transformation (e.g., using $W_{main,in}$) and an MLP-style shared transformation ($W_{shared}$). The results are aggregated and then combined via a learnable gating mechanism controlled by coefficients ($C$) before a final residual connection and activation.
 	}
 \end{figure*}
 	
-
-	
-
-
 	\section{Experiments}
 	This section outlines the experimental design employed to evaluate the proposed $ProtGramDirectGCN$ model. Our experiments are structured to: (1) assess the intrinsic performance of $ProtGramDirectGCN$ on standard graph benchmark datasets; (2) detail the construction of a hierarchy of global n-gram graphs $G_{n}$ from the UniProt sequence dataset; (3) evaluate the ability of $ProtGramDirectGCN$ to learn meaningful representations from these $G_{n}$ via a self-supervised pre-training task; (4) apply these learned representations, after pooling to the protein level, to the downstream task of PPI link prediction; and (5) compare the efficacy of our GNN-based protein embeddings against those derived from the state-of-the-art PLM, ProtT5.
 	

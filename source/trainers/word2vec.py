@@ -15,6 +15,7 @@ import numpy as np
 from gensim.models import Word2Vec
 from tqdm.auto import tqdm
 
+from pathlib import Path
 from configuration.config import Config
 from source.utils.data.data_utils import DataUtils
 from source.utils.data.fasta_utils import FastaUtils

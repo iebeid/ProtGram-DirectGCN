@@ -7,30 +7,25 @@
 # ==============================================================================
 
 from pathlib import Path
-from typing import Dict, Optional, List, Tuple, Set, Union, TYPE_CHECKING, Iterator, Callable
+from typing import Dict
+from typing import Optional, List, Tuple, Union, TYPE_CHECKING, Callable
 
-import h5py
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
+from gensim.models import Word2Vec
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from torch_geometric.data import Data
 from tqdm.auto import tqdm
-from source.utils.fs.file_utils import FileUtils
-from gensim.models import Word2Vec
-from source.utils.post.embedding_loader import EmbeddingLoader
-from pathlib import Path
-from typing import Dict, Any
 
-import h5py
-
-from configuration.config import Config
 from source.utils.data.id_mapper import IDMapper
+from source.utils.fs.file_utils import FileUtils
+from source.utils.post.embedding_loader import EmbeddingLoader
 
 if TYPE_CHECKING:
     from configuration.config import Config
-    from source.data_structures.direct_ngram_graph import DirectedNgramGraph
 
 
 class EmbeddingProcessor:
@@ -78,7 +73,18 @@ class EmbeddingProcessor:
             try:
                 import dask.dataframe as dd
                 map_ddf = dd.read_parquet(id_mapping_parquet_path)
-                filtered_map_ddf = map_ddf[map_ddf['db_id'].isin(list(keys_to_map))]
+
+                # --- DEFINITIVE FIX for Performance: Replace slow 'isin' with a fast Dask 'merge' (join) ---
+                # The previous implementation used `isin(list(keys_to_map))`, which is a known
+                # performance anti-pattern in Dask. It requires serializing the entire (potentially huge)
+                # list of keys and sending it to every worker, causing the process to hang.
+                # This new approach converts the keys into a Dask DataFrame and performs a highly
+                # optimized merge operation, which is the standard and scalable way to
+                # perform this kind of filtering on large datasets.
+                keys_df = pd.DataFrame(list(keys_to_map), columns=['db_id'])
+                keys_ddf = dd.from_pandas(keys_df, npartitions=config.DASK_N_PARTITIONS)
+                filtered_map_ddf = dd.merge(map_ddf, keys_ddf, on='db_id', how='inner')
+
                 filtered_map_df = filtered_map_ddf.compute()
                 id_map = dict(zip(filtered_map_df['db_id'], filtered_map_df['uniprot_id']))
                 print(f"  Successfully created a specific ID map with {len(id_map)} entries.")
