@@ -75,9 +75,13 @@ class GroundTruthLoader:
             ddf = ddf.dropna().astype(str)
             filtered_ddf = ddf[ddf['p1'].isin(available_ids) & ddf['p2'].isin(available_ids)]
 
-            for partition in tqdm(filtered_ddf.to_delayed(), desc=f"    Scanning {filepath.name}", leave=False):
-                for row in partition.itertuples(index=False):
-                    yield (row.p1, row.p2, label)
+            # --- DEFINITIVE FIX: Make tqdm compatible with Dask's delayed objects ---
+            # The previous implementation failed because tqdm tries to get the length of the
+            # delayed object iterator, which is unknown. Providing the total number of
+            # partitions explicitly solves this issue.
+            for partition in tqdm(filtered_ddf.to_delayed(), total=filtered_ddf.npartitions, desc=f"    Scanning {filepath.name}", leave=False):
+                for row in partition.compute().itertuples(index=False):
+                    yield row.p1, row.p2, label
         except Exception as e:
             print(f"    ERROR: Could not load or filter interaction file '{filepath.name}'.")
             print(f"    Details: {e}")

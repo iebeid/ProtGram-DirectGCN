@@ -155,10 +155,19 @@ class ProtGramDataBuilder:
             phase2_start_time = time.monotonic()
             # --- REFACTOR: Replace in-memory mapping with scalable Dask joins ---
             for n in tqdm(n_values, desc="Aggregating Edges"):
-                print(f"  - Aggregating edges for n={n}...")
-                # 1. Extract string-based edges for the current n-gram level
-                extract_edges_for_n_partial = partial(ProtgramDaskHelpers.extract_string_edges_for_n, n=n)
-                string_edges_ddf = final_preprocessed_input_bag.map(extract_edges_for_n_partial).flatten().to_dataframe(meta={'source_str': 'str', 'target_str': 'str'})
+                print(f"  - Aggregating edges for n={n}...") # noqa
+
+                # --- DEFINITIVE FIX: Define the missing helper function locally ---
+                # The previous implementation called a non-existent helper. This defines
+                # the function here, making the builder self-contained and resolving the AttributeError.
+                def extract_string_edges_for_n(sequence_tuple: Tuple[str, str], n_level: int) -> Iterator[Dict[str, str]]:
+                    _, sequence = sequence_tuple
+                    if len(sequence) >= n_level + 1:
+                        for i in range(len(sequence) - n_level):
+                            yield {'source_str': sequence[i:i + n_level], 'target_str': sequence[i + 1:i + 1 + n_level]}
+
+                extract_edges_for_n_partial = partial(extract_string_edges_for_n, n_level=n)
+                string_edges_ddf = final_preprocessed_input_bag.map(extract_edges_for_n_partial).flatten().to_dataframe(meta={'source_str': 'str', 'target_str': 'str'}) # noqa
 
                 # 2. Load the corresponding n-gram map from disk
                 ngram_map_path = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
