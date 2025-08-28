@@ -304,8 +304,8 @@ class DirectGCN(nn.Module):
 
         if is_benchmark_or_singleton:
             # Standard 2-layer GCN-like forward pass
-            h = self.convs0
-            h = self.layer_norms0
+            h = self.convs[0](h, data)
+            h = self.layer_norms[0](h)
             h = F.relu(h)
             h = F.dropout(h, p=self.dropout_rate, training=self.training)
             self.embedding_output = h # Embedding is the output of the hidden layer
