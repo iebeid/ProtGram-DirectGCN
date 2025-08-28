@@ -13,6 +13,7 @@ from typing import Dict, Optional, List
 
 import numpy as np
 from gensim.models import Word2Vec
+from gensim.models.word2vec import PathLineSentences
 from tqdm.auto import tqdm
 
 from pathlib import Path
