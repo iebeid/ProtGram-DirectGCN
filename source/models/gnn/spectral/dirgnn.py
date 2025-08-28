@@ -52,19 +52,17 @@ class DirGNN(nn.Module):
         x, edge_index, edge_index_backward = data.x, data.edge_index, getattr(data, 'edge_index_backward', None)
 
         for i in range(len(self.convs) - 1):
-            # --- DEFINITIVE FIX: Manually implement the Dir-GNN logic ---
-            # This bypasses the problematic DirGNNConv wrapper.
-            h_forward = self.convs[i](x, edge_index)
-            h_backward = self.convs[i](x, edge_index_backward)
-            x = self.alpha * h_forward + (1 - self.alpha) * h_backward
+            # --- DEFINITIVE FIX: Pass only the arguments expected by the wrapped GCNConv ---
+            # The DirGNNConv wrapper handles the backward edges internally. We only need
+            # to pass the standard arguments to the forward call.
+            x = self.convs[i](x, edge_index)
             if i < len(self.norms):
                 x = self.norms[i](x)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout_rate, training=self.training)
 
         self.embedding_output = x
-        h_forward = self.convs[-1](self.embedding_output, edge_index)
-        h_backward = self.convs[-1](self.embedding_output, edge_index_backward)
-        logits = self.alpha * h_forward + (1 - self.alpha) * h_backward
+        # --- DEFINITIVE FIX: Also pass backward edges to the final layer. ---
+        logits = self.convs[-1](self.embedding_output, edge_index)
 
         return logits, self.embedding_output

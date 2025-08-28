@@ -101,8 +101,8 @@ class DirectedNgramGraph(Graph):
         self.A_out_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
         self.A_in_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
         self._A_undirected_norm_sparse = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty) # noqa
-        self.mathcal_A_out = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
-        self.mathcal_A_in = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
+        self._mathcal_A_out = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
+        self._mathcal_A_in = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
         self.A_homo_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
         self.A_hetero_w = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)
         self.A_homo_norm = torch.sparse_coo_tensor(empty_indices, empty_values, size_empty)

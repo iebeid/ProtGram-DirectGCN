@@ -251,17 +251,23 @@ class DirectGCN(nn.Module):
         self.res_projs = nn.ModuleList()
         self.layer_norms = nn.ModuleList()
 
-        if not layer_dims or len(layer_dims) < 2:
-            raise ValueError("layer_dims must contain at least input and one hidden/output dimension (length >= 2).") # noqa
+        # --- DEFINITIVE FIX for Model Alignment ---
+        # This standardizes the benchmark architecture to be a simple 2-layer stack,
+        # consistent with the other benchmark models like GCN and GAT.
+        # The complex multi-path logic is now only used for the main ProtGram pipeline.
+        is_benchmark_or_singleton = num_graph_nodes is not None
 
-        for i in range(len(layer_dims) - 1):
-            in_dim, out_dim = layer_dims[i], layer_dims[i + 1]
-            current_num_nodes = num_graph_nodes if num_graph_nodes is not None else 0
-            self.convs.append(
-                DirectGCNLayer(in_dim, out_dim, current_num_nodes, gating_mode, use_homo_hetero_paths))
-            # The residual projection must match the original input dimension, not the PE-enhanced one.
-            self.res_projs.append(nn.Linear(layer_dims[i], out_dim) if layer_dims[i] != out_dim else nn.Identity())
-            self.layer_norms.append(nn.LayerNorm(out_dim))
+        if is_benchmark_or_singleton:
+            hidden_dim = layer_dims[1] # The first element after input_dim
+            self.convs.append(DirectGCNLayer(layer_dims[0], hidden_dim, num_graph_nodes, gating_mode, use_homo_hetero_paths))
+            self.layer_norms.append(nn.LayerNorm(hidden_dim))
+            self.convs.append(DirectGCNLayer(hidden_dim, task_num_output_classes, num_graph_nodes, gating_mode, use_homo_hetero_paths))
+        else: # Original logic for the main ProtGram pipeline
+            for i in range(len(layer_dims) - 1):
+                in_dim, out_dim = layer_dims[i], layer_dims[i + 1]
+                self.convs.append(DirectGCNLayer(in_dim, out_dim, num_graph_nodes, gating_mode, use_homo_hetero_paths))
+                self.res_projs.append(nn.Linear(in_dim, out_dim) if in_dim != out_dim else nn.Identity())
+                self.layer_norms.append(nn.LayerNorm(out_dim))
 
         if num_graph_nodes is not None:  # This check implies a benchmark or singleton context
             final_embedding_dim = layer_dims[-1]
@@ -292,19 +298,27 @@ class DirectGCN(nn.Module):
 
         h = x
 
-        for i in range(len(self.convs)):
-            h_res = h
-            gcn_layer, res_layer, norm_layer = self.convs[i], self.res_projs[i], self.layer_norms[i]
+        # --- DEFINITIVE FIX for Model Alignment ---
+        # Use a simple forward pass for the standardized benchmark architecture.
+        is_benchmark_or_singleton = len(self.res_projs) == 0
 
-            h_pre_act = gcn_layer(h, data) + res_layer(h_res)
-            # --- DEFINITIVE FIX: Apply LayerNorm BEFORE activation to prevent NaN loss ---
-            h_norm = norm_layer(h_pre_act)
+        if is_benchmark_or_singleton:
+            # Standard 2-layer GCN-like forward pass
+            h = self.convs[0](h, data)
+            h = self.layer_norms[0](h)
+            h = F.relu(h)
+            h = F.dropout(h, p=self.dropout_rate, training=self.training)
+            self.embedding_output = h # Embedding is the output of the hidden layer
+            logits = self.convs[1](self.embedding_output, data)
+            return logits, self.embedding_output.detach()
+        else: # Original logic for the main ProtGram pipeline
+            for i in range(len(self.convs)):
+                h_pre_act = self.convs[i](h, data) + self.res_projs[i](h)
+                h_norm = self.layer_norms[i](h_pre_act)
             h = F.leaky_relu(h_norm)
             h = F.dropout(h, p=self.dropout_rate, training=self.training)
 
-        final_embed_for_task = h
-        self.embedding_output = final_embed_for_task  # For consistency with other models
-        logits = self.decoder_fc(self.embedding_output)
-        final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(final_embed_for_task, eps=self.l2_eps)
-        # --- BUG FIX: Return the L2-normalized embeddings, not the raw pre-normalized ones. ---
-        return logits, final_normalized_embeddings.detach()
+            self.embedding_output = h
+            logits = self.decoder_fc(self.embedding_output)
+            final_normalized_embeddings = EmbeddingProcessor.l2_normalize_torch(h, eps=self.l2_eps)
+            return logits, final_normalized_embeddings.detach()
