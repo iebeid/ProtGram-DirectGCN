@@ -38,14 +38,21 @@ class Word2VecPipelineTests(unittest.TestCase):
         self.config.RESULTS_W2V_EMBEDDINGS_DIR = self.base_test_dir / "word2vec_embeddings"
         self.config.PROJECT_ROOT = self.base_test_dir
         self.config.PERSISTENT_DATA_CACHE = self.base_test_dir / ".cache"
+        # --- DEFINITIVE FIX: Fully re-initialize all path-dependent configs ---
+        self.config._setup_paths()
+        self.config._setup_data_sources()
+        self.config._link_data_sources_to_attributes()
 
     def tearDown(self):
         self.config.BASE_OUTPUT_DIR = self.original_base_output_dir
         self.config.W2V_EPOCHS = self.original_epochs
         self.config.PROTGRAM_FASTA_MIN_LEN = self.original_min_len
         self.config.RESULTS_W2V_EMBEDDINGS_DIR = self.original_w2v_dir
-        self.config.PROJECT_ROOT = self.original_project_root # --- DEFINITIVE FIX: Restore all original paths ---
         self.config.PERSISTENT_DATA_CACHE = self.original_persistent_cache
+        self.config.PROJECT_ROOT = self.original_project_root
+        self.config._setup_paths()
+        self.config._setup_data_sources()
+        self.config._link_data_sources_to_attributes()
         shutil.rmtree(self.base_test_dir)
 
     def test_word2vec_pipeline_run(self):

@@ -247,7 +247,12 @@ class Config:
         self.RANDOM_STATE: int = self._config['RANDOM_STATE']
         self.DEBUG_VERBOSE: bool = self._config['DEBUG_VERBOSE']
 
-        # --- 2. PATHS & DIRECTORIES (Dynamically set) ---
+        # --- 2. PATHS & DIRECTORIES ---
+        # --- DEFINITIVE FIX for Test Isolation ---
+        # The project root is now set here, once. The _setup_paths method
+        # will derive all other paths from this, allowing tests to override it
+        # before calling _setup_paths to create an isolated environment.
+        self.PROJECT_ROOT = Path(__file__).parent.parent.resolve()
         self._setup_paths()
 
         # --- NEW: Set up resource management parameters ---
@@ -301,7 +306,6 @@ class Config:
 
     def _setup_paths(self):
         """Sets up all base, data, and results paths for the project."""
-        self.PROJECT_ROOT = Path(__file__).parent.parent.resolve()
         self.BASE_CONFIG_DIR = self.PROJECT_ROOT / "configuration"
         self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
         self.BASE_SOURCE_DIR = self.PROJECT_ROOT / "source"
@@ -321,6 +325,15 @@ class Config:
         self.RESULTS_EVALUATION_DIR = self.BASE_OUTPUT_DIR / "evaluation_results"
         self.RESULTS_BENCHMARKING_DIR = self.BASE_OUTPUT_DIR / "benchmarking_results"
         self.RESULTS_BENCHMARK_EMBEDDINGS_DIR = self.RESULTS_BENCHMARKING_DIR / "embeddings"
+        # --- DEFINITIVE FIX for Test Isolation ---
+        # These paths depend on the base paths above. They must be re-calculated
+        # whenever _setup_paths is called to ensure that unit tests using a
+        # temporary project root are fully isolated.
+        self.POS_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "positive_interactions.parquet"
+        self.NEG_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "negative_interactions.parquet"
+        self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "id_mapping.parquet"
+        self.DATA_BUNDLE_PATH = self.PERSISTENT_DATA_CACHE / "data_bundle.tar.gz"
+        self.DATA_MANIFEST_PATH = self.PERSISTENT_DATA_CACHE / "data_manifest.json"
 
     def _setup_resource_management_params(self):
         """
@@ -427,11 +440,6 @@ class Config:
 
     def _link_data_sources_to_attributes(self):
         """Dynamically creates key file path attributes."""
-        self.POS_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "positive_interactions.parquet"
-        self.NEG_INTERACTIONS_PATH = self.DATA_GROUND_TRUTH_DIR / "negative_interactions.parquet"
-        self.ID_MAPPING_PATH = self.DATA_MAPPINGS_DIR / "id_mapping.parquet"
-        self.DATA_BUNDLE_PATH = self.PERSISTENT_DATA_CACHE / "data_bundle.tar.gz"
-        self.DATA_MANIFEST_PATH = self.PERSISTENT_DATA_CACHE / "data_manifest.json"
         self.PROTT5_MODEL_PATH = self.DATA_SOURCES['PROTT5_MODEL']['path']
 
         # --- NEW: Define raw data paths for the processor ---

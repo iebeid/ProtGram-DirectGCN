@@ -31,16 +31,20 @@ class PPIPipelineTests(unittest.TestCase):
         self.config.BASE_OUTPUT_DIR = self.base_test_dir
         self.config.PROJECT_ROOT = self.base_test_dir
         self.config.PERSISTENT_DATA_CACHE = self.base_test_dir / ".cache"
+        # --- DEFINITIVE FIX: Fully re-initialize all path-dependent configs ---
         self.config._setup_paths()
+        self.config._setup_data_sources()
+        self.config._link_data_sources_to_attributes()
 
     def tearDown(self):
         self.config.BASE_OUTPUT_DIR = self.original_base_output_dir
         self.config.EVAL_EPOCHS = self.original_epochs
         self.config.EVAL_N_FOLDS = self.original_folds
-        # --- NEW: Restore isolated paths ---
         self.config.PROJECT_ROOT = self.original_project_root
         self.config.PERSISTENT_DATA_CACHE = self.original_persistent_cache
         self.config._setup_paths()
+        self.config._setup_data_sources()
+        self.config._link_data_sources_to_attributes()
         shutil.rmtree(self.base_test_dir)
 
     def test_ppi_pipeline_run(self):
