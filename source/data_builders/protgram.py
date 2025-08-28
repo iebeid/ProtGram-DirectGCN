@@ -131,32 +131,48 @@ class ProtGramDataBuilder:
             # Pass 1: Generate all n-gram maps for all levels in a single pass over the data.
             DataUtils.print_header("Phase 1: Generating All N-Gram Maps")
             phase1_start_time = time.monotonic() # --- DEFINITIVE FIX: Remove redundant local functions and use the centralized helpers ---
-            extract_all_ngrams_partial = partial(ProtgramDaskHelpers.extract_all_ngrams_from_sequence_tuple, n_max=self.n_max)
-            all_ngrams_bag = final_preprocessed_input_bag.map(extract_all_ngrams_partial).flatten()
-            all_ngrams_ddf = all_ngrams_bag.to_dataframe(meta={'n': 'i4', 'ngram': 'str'})
+            extract_all_ngrams_partial = partial(ProtgramDaskHelpers.extract_all_ngrams_from_sequence_tuple, n_max=self.n_max) # noqa
+            all_ngrams_bag = final_preprocessed_input_bag.map(extract_all_ngrams_partial).flatten() # noqa
+            all_ngrams_ddf = all_ngrams_bag.to_dataframe(meta={'n': 'i4', 'ngram': 'str'}) # noqa
 
-            all_ngram_maps_in_memory = {}
             for n in tqdm(n_values, desc="Building N-Gram Levels"):
                 print(f"  - Creating map for n={n}...") # noqa
                 ngrams_for_n_ddf = all_ngrams_ddf[all_ngrams_ddf['n'] == n]
                 ngram_map_ddf = ngrams_for_n_ddf[['ngram']].drop_duplicates().reset_index(drop=True)
                 ngram_map_ddf['id'] = ngram_map_ddf.index
                 output_ngram_map_path = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
-                ngram_map_ddf.to_parquet(output_ngram_map_path, write_index=False, engine='pyarrow', overwrite=True)
-                all_ngram_maps_in_memory[n] = ngram_map_ddf.compute().set_index('ngram')['id'].to_dict()
-                print(f"    Unique n-gram map for n={n} (size: {len(all_ngram_maps_in_memory[n])}) created.")
+                # --- DEFINITIVE FIX: Write the map to disk but DO NOT load it into memory ---
+                # The .compute() call was the source of the OOM error on large datasets.
+                # We will now read these maps back from disk in a scalable way in Phase 2.
+                ngram_map_ddf.to_parquet(output_ngram_map_path, write_index=False, engine='pyarrow', overwrite=True) # noqa
+                # We can get the size from metadata without loading the whole file.
+                num_unique_ngrams = len(pd.read_parquet(output_ngram_map_path, columns=['id']))
+                print(f"    Unique n-gram map for n={n} (size: {num_unique_ngrams:,}) created.")
             print(f"<<< Phase 1 finished in {time.monotonic() - phase1_start_time:.2f}s.")
 
             # Pass 2: Generate all edges for all levels in a single pass over the data.
             DataUtils.print_header("Phase 2: Generating All Edges")
-            phase2_start_time = time.monotonic() # --- DEFINITIVE FIX: Use the centralized helper for edge extraction ---
-            extract_all_edges_partial = partial(ProtgramDaskHelpers.extract_all_edges_from_sequence_tuple, n_max=self.n_max, all_ngram_maps=all_ngram_maps_in_memory)
-            all_edges_bag = final_preprocessed_input_bag.map(extract_all_edges_partial).flatten()
-            all_edges_ddf = all_edges_bag.to_dataframe(meta={'n': 'i4', 'source': 'i8', 'target': 'i8'})
-
+            phase2_start_time = time.monotonic()
+            # --- REFACTOR: Replace in-memory mapping with scalable Dask joins ---
             for n in tqdm(n_values, desc="Aggregating Edges"):
                 print(f"  - Aggregating edges for n={n}...")
-                edges_for_n_ddf = all_edges_ddf[all_edges_ddf['n'] == n][['source', 'target']]
+                # 1. Extract string-based edges for the current n-gram level
+                extract_edges_for_n_partial = partial(ProtgramDaskHelpers.extract_string_edges_for_n, n=n)
+                string_edges_ddf = final_preprocessed_input_bag.map(extract_edges_for_n_partial).flatten().to_dataframe(meta={'source_str': 'str', 'target_str': 'str'})
+
+                # 2. Load the corresponding n-gram map from disk
+                ngram_map_path = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
+                ngram_map_ddf = dd.read_parquet(ngram_map_path)
+
+                # 3. Perform two joins to map string edges to integer IDs
+                # Join for source nodes
+                merged_source = string_edges_ddf.merge(ngram_map_ddf, left_on='source_str', right_on='ngram', how='inner')
+                merged_source = merged_source.rename(columns={'id': 'source'}).drop(columns=['ngram', 'source_str'])
+                # Join for target nodes
+                merged_target = merged_source.merge(ngram_map_ddf, left_on='target_str', right_on='ngram', how='inner')
+                edges_for_n_ddf = merged_target.rename(columns={'id': 'target'}).drop(columns=['ngram', 'target_str'])
+
+                # 4. Aggregate and save the weighted edges
                 weighted_edges_ddf = edges_for_n_ddf.groupby(['source', 'target']).size().to_frame('weight')
                 temp_edge_file_path = os.path.join(self.temp_dir, f"aggregated_edges_n{n}.parquet")
                 weighted_edges_ddf.to_parquet(temp_edge_file_path, engine='pyarrow', write_index=True, overwrite=True)
