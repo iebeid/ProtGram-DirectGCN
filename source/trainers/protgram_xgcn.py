@@ -32,6 +32,8 @@ from source.models.factory import ModelFactory
 from source.utils.data.data_utils import DataUtils
 from source.utils.data.id_mapper import IDMapper
 from source.utils.data.fasta_utils import FastaUtils
+from source.utils.data.ground_truth_loader import GroundTruthLoader
+from source.utils.post.embedding_loader import EmbeddingLoader
 from source.utils.data.protgram_helper import ProtgramDaskHelpers
 from source.utils.post.embedding_processor import EmbeddingProcessor
 from source.utils.models.early_stopper import EarlyStopper
