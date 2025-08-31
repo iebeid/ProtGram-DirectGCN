@@ -327,9 +327,12 @@ class PipelineOrchestrator:
                             DataUtils.print_header("Running Hyperparameter Optimization")
                             optimizer = HyperparameterOptimizer(config)
                             target_model_name = config.HPO_TARGET_EMBEDDING_MODEL
+                            # --- DEFINITIVE FIX: Use a substring search to find the HPO target model ---
+                            # The previous exact match failed because filenames have suffixes (e.g., _n1, _pca).
+                            # This makes the matching robust.
                             target_embedding_path = None
                             for emb_file in config.LP_EMBEDDING_FILES_TO_EVALUATE:
-                                if emb_file['name'] == target_model_name:
+                                if target_model_name.lower() in emb_file['name'].lower():
                                     target_embedding_path = emb_file['path']
                                     break
 

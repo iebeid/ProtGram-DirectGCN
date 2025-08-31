@@ -303,11 +303,8 @@ class PPIPipeline:
         pos_fp = self.config.POS_INTERACTIONS_PATH
         neg_fp = self.config.NEG_INTERACTIONS_PATH
         if not emb_configs:
-            print("Warning: 'LP_EMBEDDING_FILES_TO_EVALUATE' is empty in config. No evaluation will run.")
+            print("  Warning: 'LP_EMBEDDING_FILES_TO_EVALUATE' is empty in config. No evaluation will run.")
             return
-
-        # Refactored: PCA pre-processing is now a clean, single method call
-        emb_configs = self._preprocess_embeddings_with_pca(emb_configs)
 
         reporter = EvaluationReporter(base_output_dir=str(self.config.RESULTS_EVALUATION_DIR), k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE)
 

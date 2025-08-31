@@ -493,7 +493,9 @@ class Config:
         cpu_cores = os.cpu_count()
         self.PROTGRAM_NGRAM_MAX_N = params['PROTGRAM_NGRAM_MAX_N']
         self.FASTA_FILE_TO_PROCESS = params['FASTA_FILE_TO_PROCESS']
-        # --- NEW: Add missing Dask configuration ---
+        # --- DEFINITIVE FIX for ID Mapping Failures: Intelligently select the best mapping mode ---
+        # If the user has enabled processing of the main ID mapping file, we should USE it.
+        # This overrides the 'regex' default with the more robust 'file' mode.
         self.DASK_N_PARTITIONS = os.cpu_count() or 1
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1
         self.ID_MAPPING_MODE = 'file' if self.PROCESS_ID_MAPPING_FILE else 'regex'

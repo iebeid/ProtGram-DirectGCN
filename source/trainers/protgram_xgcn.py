@@ -660,27 +660,44 @@ class ProtGramXGCNTrainer:
     def _run_sanity_check_ppi(self, embedding_path: str):
         """Runs a quick, small-scale PPI evaluation as a sanity check."""
         DataUtils.print_header("Running Sanity Check PPI Evaluation")
-        print(f"  Using embeddings from: {Path(embedding_path).name}")
-        
-        # Standardize the embeddings first
-        standardized_embedding_path = EmbeddingProcessor.standardize_embedding_file(embedding_path)
-        
-        sanity_config = copy.deepcopy(self.config)
+        print(f"  Using embeddings from: {Path(embedding_path).name}") # noqa
 
-        # Override config for a quick run
+        # 1. Standardize the newly generated embeddings to UniProtKB IDs
+        standardized_embedding_path = EmbeddingProcessor.standardize_embedding_file(embedding_path) # noqa
+
+        # 2. Create a temporary, self-contained ground truth for this specific sanity check
+        # This ensures that we only evaluate on interaction pairs that actually exist in our embedding file.
+        with EmbeddingLoader(standardized_embedding_path, config=self.config) as loader:
+            available_ids = loader.get_keys()
+
+        if not available_ids:
+            print("  Sanity Check ERROR: No embeddings found to run evaluation.")
+            return
+
+        print(f"  Found {len(available_ids)} embeddings. Creating a temporary, relevant ground truth subset...")
+        pos_pairs = GroundTruthLoader.load_interaction_pairs_filtered(self.config.POS_INTERACTIONS_PATH, 1, available_ids)
+        neg_pairs = GroundTruthLoader.load_interaction_pairs_filtered(self.config.NEG_INTERACTIONS_PATH, 0, available_ids, sample_n=len(pos_pairs))
+
+        if not pos_pairs or not neg_pairs:
+            print("  Sanity Check WARNING: No overlapping interaction pairs found between generated embeddings and ground truth. Skipping evaluation.")
+            return
+
+        # 3. Configure a temporary pipeline run for this specific check
+        sanity_config = copy.deepcopy(self.config)
         sanity_config.EVAL_EPOCHS = self.config.PROTGRAM_SANITY_CHECK_EPOCHS
         sanity_config.EVAL_N_FOLDS = 2  # A minimal number of folds for a quick check
         sanity_config.EVAL_GENERATE_SHAP_SUMMARY = False  # Disable for speed
         sanity_config.PLOT_TRAINING_HISTORY = False  # Disable for speed
+        # Override the ground truth paths to point to our temporary, relevant subset
+        sanity_config.POS_INTERACTIONS_PATH = pos_pairs
+        sanity_config.NEG_INTERACTIONS_PATH = neg_pairs
 
-        # Set the specific embedding file to evaluate
-        model_name_for_eval = Path(standardized_embedding_path).stem.replace('_pca', '').replace(str(self.config.PCA_TARGET_DIMENSION), '')
+        model_name_for_eval = Path(standardized_embedding_path).stem.replace('_standardized', '')
         sanity_config.LP_EMBEDDING_FILES_TO_EVALUATE = [
             {"name": model_name_for_eval, "path": standardized_embedding_path}
         ]
 
         try:
-            # Instantiate and run the pipeline with the modified config
             ppi_evaluator = PPIPipeline(sanity_config)
             ppi_evaluator.run()
         except Exception as e:
