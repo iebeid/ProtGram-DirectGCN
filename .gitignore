@@ -27,6 +27,7 @@ dist/
 
 # Ignore all data files. Data is managed locally by the pipeline.
 data/*
+results/*
 
 # --- Environment Files ---
  /configuration/environment.yml
