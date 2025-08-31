@@ -138,8 +138,9 @@ class ProtGramDataBuilder:
             for n in tqdm(n_values, desc="Building N-Gram Levels"):
                 print(f"  - Creating map for n={n}...") # noqa
                 ngrams_for_n_ddf = all_ngrams_ddf[all_ngrams_ddf['n'] == n]
-                ngram_map_ddf = ngrams_for_n_ddf[['ngram']].drop_duplicates().reset_index(drop=True)
-                ngram_map_ddf['id'] = ngram_map_ddf.index
+                ngram_map_ddf = ngrams_for_n_ddf[['ngram']].drop_duplicates()
+                ngram_map_ddf['id'] = 1
+                ngram_map_ddf['id'] = (ngram_map_ddf['id'].cumsum() - 1).astype(int)
                 output_ngram_map_path = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
                 # --- DEFINITIVE FIX: Write the map to disk but DO NOT load it into memory ---
                 # The .compute() call was the source of the OOM error on large datasets.
@@ -160,13 +161,7 @@ class ProtGramDataBuilder:
                 # --- DEFINITIVE FIX: Define the missing helper function locally ---
                 # The previous implementation called a non-existent helper. This defines
                 # the function here, making the builder self-contained and resolving the AttributeError.
-                def extract_string_edges_for_n(sequence_tuple: Tuple[str, str], n_level: int) -> Iterator[Dict[str, str]]:
-                    _, sequence = sequence_tuple
-                    if len(sequence) >= n_level + 1:
-                        for i in range(len(sequence) - n_level):
-                            yield {'source_str': sequence[i:i + n_level], 'target_str': sequence[i + 1:i + 1 + n_level]}
-
-                extract_edges_for_n_partial = partial(extract_string_edges_for_n, n_level=n)
+                extract_edges_for_n_partial = partial(ProtgramDaskHelpers.extract_string_edges_for_n, n_level=n)
                 string_edges_ddf = final_preprocessed_input_bag.map(extract_edges_for_n_partial).flatten().to_dataframe(meta={'source_str': 'str', 'target_str': 'str'}) # noqa
 
                 # 2. Load the corresponding n-gram map from disk
@@ -223,6 +218,7 @@ class ProtGramDataBuilder:
 
                 output_dir_path = Path(self.output_dir) / f'ngram_graph_n{n}'
                 graph_object.save_to_dir(output_dir_path)
+                ProtgramDaskHelpers.log_graph_statistics(graph_object, n)
                 print(f"  Graph for n={n} saved to {output_dir_path}")
 
                 del graph_object, idx_to_node # noqa

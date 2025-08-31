@@ -1,0 +1,15 @@
+{
+    "A_in_w_shape": [
+        8157,
+        8157
+    ],
+    "A_out_w_shape": [
+        8157,
+        8157
+    ],
+    "edge_file_path": "None",
+    "epsilon_propagation": 1e-09,
+    "n_value": 3,
+    "number_of_edges": 85155,
+    "number_of_nodes": 8157
+}

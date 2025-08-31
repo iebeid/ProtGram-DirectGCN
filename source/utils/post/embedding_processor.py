@@ -24,8 +24,7 @@ from source.utils.data.id_mapper import IDMapper
 from source.utils.fs.file_utils import FileUtils
 from source.utils.post.embedding_loader import EmbeddingLoader
 
-if TYPE_CHECKING:
-    from configuration.config import Config
+from configuration.config import Config
 
 
 class EmbeddingProcessor:

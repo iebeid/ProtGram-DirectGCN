@@ -67,6 +67,9 @@ class GroundTruthLoader:
         try:
             # --- REFACTOR: Use is_dir() for more robust Parquet detection ---
             if filepath.is_dir():
+                import os
+                print(f"Reading parquet directory: {filepath}")
+                print(f"Contents: {os.listdir(filepath)}")
                 ddf = dd.read_parquet(str(filepath), columns=['protein1', 'protein2'])
                 ddf = ddf.rename(columns={'protein1': 'p1', 'protein2': 'p2'})
             else:
@@ -107,11 +110,11 @@ class GroundTruthLoader:
             print(f"  High-performance filtering pairs from: {filepath.name} (label: {label})...")
             try:
                 # --- DEFINITIVE FIX: Handle both CSV and Parquet files correctly ---
-                # --- REFACTOR: Simplify logic to align with the robust Dask path ---
                 # The previous check was brittle if a directory was not a parquet file.
                 if filepath.is_dir():
                     # It's a directory, assume it's Parquet. Let pd.read_parquet handle errors.
-                    df = pd.read_parquet(filepath, columns=['protein1', 'protein2'])
+                    ddf = dd.read_parquet(str(filepath))
+                    df = ddf.compute()
                     df = df.rename(columns={'protein1': 'p1', 'protein2': 'p2'}) # Align column names
                 else:
                     # It's a file, assume it's CSV/TSV.

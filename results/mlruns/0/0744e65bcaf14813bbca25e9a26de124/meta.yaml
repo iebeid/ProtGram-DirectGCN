@@ -1,0 +1,14 @@
+artifact_uri: file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/mlruns/0/0744e65bcaf14813bbca25e9a26de124/artifacts
+end_time: 1756672243916
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 0744e65bcaf14813bbca25e9a26de124
+run_name: gcn_n2_dim
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1756672231956
+status: 3
+tags: []
+user_id: iaebeid

@@ -13,6 +13,7 @@ import mlflow
 from configuration.config import Config
 from source.experiments.ppi_1 import PPIPipeline
 from source.utils.data.data_utils import DataUtils
+from source.testers.dummy import DummyDataFactory
 
 
 class PPIPipelineTests(unittest.TestCase):
@@ -55,9 +56,22 @@ class PPIPipelineTests(unittest.TestCase):
         self.config.EVAL_EPOCHS = 1
         self.config.EVAL_N_FOLDS = 2
 
+        protein_ids = [f"DUMMY_P{i:04d}" for i in range(50)]
+        dummy_emb_file = DummyDataFactory.create_h5_embeddings(
+            str(self.base_test_dir), "dummy_embeddings.h5", protein_ids=protein_ids, dim=16
+        )
+        pos_fp, neg_fp = DummyDataFactory.create_interaction_files(
+            str(self.base_test_dir), num_pairs=100, num_proteins=len(protein_ids)
+        )
+        emb_configs = [{"path": str(dummy_emb_file), "name": "DummyEmb"}]
+
+        self.config.LP_EMBEDDING_FILES_TO_EVALUATE = emb_configs
+        self.config.POS_INTERACTIONS_PATH = pos_fp
+        self.config.NEG_INTERACTIONS_PATH = neg_fp
+
         with mlflow.start_run(run_name="PPI_Pipeline_SMOKE_TEST"):
             evaluator = PPIPipeline(self.config)
-            evaluator.run(use_dummy_data=True)
+            evaluator.run()
 
         print("\n  PPIPipeline (dummy run) smoke test ran successfully.")
         print("--- PPI Pipeline (Dummy Run) Smoke Test Complete ---")

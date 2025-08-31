@@ -100,13 +100,11 @@ class ModelFactory:
             if self.context == 'protgram':
                 params.update({
                     'dropout_rate': self.config.PROTGRAM_DROPOUT_RATE,
-                    'gating_mode': self.config.PROTGRAM_GATING_COEFF_MODE,
                 })
             else:  # benchmark or singleton context
                 prefix = 'BENCHMARK_' if self.context == 'benchmark' else 'SINGLETON_'
                 params.update({
                     'dropout_rate': getattr(self.config, f'{prefix}GNN_DROPOUT_RATE'),
-                    'gating_mode': 'vector',  # A reasonable default for benchmarks
                 })
             params.setdefault('use_homo_hetero_paths', False)
         return params
@@ -147,6 +145,7 @@ class ModelFactory:
 
         # Special handling for DirectGCN's complex parameters
         if name_lower == 'directgcn':
+            constructor_args.setdefault('gating_mode', self.config.PROTGRAM_GATING_COEFF_MODE)
             layer_dims_config = constructor_args.pop('layer_dims_config', [])
             constructor_args['layer_dims'] = [in_channels] + layer_dims_config
             graph_obj = constructor_args.get('graph_obj')

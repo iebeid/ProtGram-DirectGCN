@@ -87,16 +87,34 @@ class IDMapper:
 
         self._mode_used = mode
         cache_filename = f"{mode}_map_cache.pkl"
-        cache_path = self.config.PROJECT_ROOT / cache_filename
+        local_cache_path = self.config.PROJECT_ROOT / cache_filename
+        persistent_cache_path = self.config.PERSISTENT_DATA_CACHE / cache_filename
 
-        if cache_path.exists():
-            print(f"  INFO: Loading ID map for mode '{mode}' from cache: {cache_path.name}")
-            self._id_map = FileUtils.load_object(cache_path)
+        # 1. Try loading from local project root (if recently generated or restored)
+        if local_cache_path.exists():
+            print(f"  INFO: Loading ID map for mode '{mode}' from local cache: {local_cache_path.name}")
+            self._id_map = FileUtils.load_object(local_cache_path)
             if self._id_map is None:
-                print(f"  - ❌ ERROR: Failed to load or unpickle cached ID map '{cache_path.name}'.")
-        else:
-            print(f"  - ❌ ERROR: ID map cache file not found: '{cache_path.name}'. The data setup process may have failed.")
-            self._id_map = {} # Return empty dict to prevent crashes
+                print(f"  - ❌ ERROR: Failed to load or unpickle local cached ID map '{local_cache_path.name}'.")
+                self._id_map = {} # Fallback
+            return self._id_map
+
+        # 2. If not in local project root, try loading from persistent cache
+        if persistent_cache_path.exists():
+            print(f"  INFO: Loading ID map for mode '{mode}' from persistent cache: {persistent_cache_path.name}")
+            self._id_map = FileUtils.load_object(persistent_cache_path)
+            if self._id_map is None:
+                print(f"  - ❌ ERROR: Failed to load or unpickle persistent cached ID map '{persistent_cache_path.name}'.")
+                self._id_map = {} # Fallback
+            else:
+                # Copy to local project root for faster access in subsequent calls
+                print(f"  INFO: Copying ID map from persistent cache to local project root: {local_cache_path.name}")
+                FileUtils.save_object(self._id_map, local_cache_path)
+            return self._id_map
+
+        # 3. If not found anywhere, log error and return empty dict
+        print(f"  - ❌ ERROR: ID map cache file not found anywhere for mode '{mode}'. The data setup process may have failed.")
+        self._id_map = {} # Return empty dict to prevent crashes
 
         return self._id_map
 

@@ -67,6 +67,7 @@ class DirectedNgramGraph(Graph):
                     # Instead of relying on column names like 'source', access by position.
                     # The structure is known: reset_index() creates [index_col_1, index_col_2, 'weight']
                     df_chunk = batch.to_pandas().reset_index()
+                    print(f'--- Edges for n={self.n_value} ---\n{df_chunk.head()}')
                     source_chunks.append(df_chunk.iloc[:, 0].to_numpy(dtype=np.int64))
                     target_chunks.append(df_chunk.iloc[:, 1].to_numpy(dtype=np.int64))
                     weight_chunks.append(df_chunk['weight'].to_numpy(dtype=np.float32))

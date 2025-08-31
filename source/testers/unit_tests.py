@@ -12,15 +12,58 @@ from .gpu import GPUTests
 from .data_utility import DataUtilityTests
 from .graph_utility import GraphBuilderTests
 from .models import ModelBuildTests
-from .reporting import ReportingTests
+import shutil
+import copy
+from source.testers.reporting import ReportingTests
+from source.experiments.ppi_1 import PPIPipeline
+from source.testers.dummy import DummyDataFactory
 from .word2vec import Word2VecPipelineTests
 from .transformers import TransformerPipelineTests
 from .gnns import GNNBenchmarkerTests
 from .ppi import PPIPipelineTests
+from configuration.config import Config
 
+
+def run_dummy_ppi_test(config):
+    """
+    Runs a smoke test of the PPI pipeline using dummy data.
+    """
+    print("--- Running Dummy PPI Pipeline Smoke Test ---")
+    dummy_data_dir = config.BASE_OUTPUT_DIR / "dummy_data_temp"
+    if dummy_data_dir.exists():
+        shutil.rmtree(dummy_data_dir)
+    dummy_data_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Creating dummy data in: {dummy_data_dir}")
+
+    try:
+        protein_ids = [f"DUMMY_P{i:04d}" for i in range(50)]
+        dummy_emb_file = DummyDataFactory.create_h5_embeddings(
+            str(dummy_data_dir), "dummy_embeddings.h5", protein_ids=protein_ids, dim=16
+        )
+        pos_fp, neg_fp = DummyDataFactory.create_interaction_files(
+            str(dummy_data_dir), num_pairs=100, num_proteins=len(protein_ids)
+        )
+        emb_configs = [{"path": str(dummy_emb_file), "name": "DummyEmb"}]
+
+        # Create a temporary config for the dummy run
+        dummy_config = copy.deepcopy(config)
+        dummy_config.LP_EMBEDDING_FILES_TO_EVALUATE = emb_configs
+        dummy_config.POS_INTERACTIONS_PATH = pos_fp
+        dummy_config.NEG_INTERACTIONS_PATH = neg_fp
+
+        ppi_pipeline = PPIPipeline(dummy_config)
+        ppi_pipeline.run()
+        print("--- Dummy PPI Pipeline Smoke Test Finished Successfully ---")
+    finally:
+        if dummy_data_dir.exists():
+            shutil.rmtree(dummy_data_dir)
+            print(f"Cleaned up dummy data directory: {dummy_data_dir}")
 
 def run_all_tests(suites_to_run=None, verbosity=2):
     """Main function to run all tests."""
+    config = Config()
+    run_dummy_ppi_test(config)
+
     gpu_ok = GPUTests.verify_full_gpu_environment()
 
     # --- REFACTOR: Allow selective test execution ---

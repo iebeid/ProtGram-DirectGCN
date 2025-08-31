@@ -8,6 +8,7 @@
 import hashlib
 from pathlib import Path
 import dask.dataframe as dd
+import pandas as pd
 from dask.diagnostics import ProgressBar
 
 class DataProcessor:
@@ -20,9 +21,7 @@ class DataProcessor:
 
     def _process_negative_interactions(self):
         """Processes and combines all negative interaction files."""
-        if self.config.NEG_INTERACTIONS_PATH.exists():
-            print("  - ✅ Negative interactions file already exists. Skipping processing.")
-            return
+        
 
         print("  - Processing negative interaction files...")
         dfs = []
@@ -33,8 +32,14 @@ class DataProcessor:
                         file_path, sep='\t', usecols=[0, 1], header=None,
                         names=['protein1', 'protein2'], dtype='object', on_bad_lines='warn'
                     )
-                    ddf['protein1'] = ddf['protein1'].str.replace('uniprot:', '', regex=False)
-                    ddf['protein2'] = ddf['protein2'].str.replace('uniprot:', '', regex=False)
+                    
+                    def clean_uniprot_id(df):
+                        df['protein1'] = df['protein1'].str.replace('uniprot:', '', regex=False)
+                        df['protein2'] = df['protein2'].str.replace('uniprot:', '', regex=False)
+                        return df
+                    
+                    meta = pd.DataFrame(columns=['protein1', 'protein2'], dtype=str)
+                    ddf = ddf.map_partitions(clean_uniprot_id, meta=meta)
                     dfs.append(ddf)
                 except Exception as e:
                     print(f"    - WARNING: Could not process file {file_path.name}: {e}")
@@ -49,9 +54,7 @@ class DataProcessor:
 
     def _process_biogrid_interactions(self):
         """Processes the BioGRID MITAB file to extract positive protein interactions."""
-        if self.config.POS_INTERACTIONS_PATH.exists():
-            print("  - ✅ Positive interactions file already exists. Skipping processing.")
-            return
+        
 
         source_path = self.config.BIOGRID_RAW_PATH
         if not source_path.exists():
@@ -64,9 +67,15 @@ class DataProcessor:
             dtype='object', on_bad_lines='warn'
         )
         human_interactions = ddf[(ddf['Taxid Interactor A'] == 'taxid:9606') & (ddf['Taxid Interactor B'] == 'taxid:9606')]
-        protein1 = human_interactions['#ID Interactor A'].str.split(':').str[1]
-        protein2 = human_interactions['ID Interactor B'].str.split(':').str[1]
-        final_ddf = dd.concat([protein1.to_frame(name='protein1'), protein2.to_frame(name='protein2')], axis=1)
+        
+        def extract_uniprot_id(df):
+            df['protein1'] = df['#ID Interactor A'].str.split(':').str[1]
+            df['protein2'] = df['ID Interactor B'].str.split(':').str[1]
+            return df[['protein1', 'protein2']]
+
+        meta = pd.DataFrame(columns=['protein1', 'protein2'], dtype=str)
+        final_ddf = human_interactions.map_partitions(extract_uniprot_id, meta=meta)
+        
         final_ddf = final_ddf.dropna().drop_duplicates().repartition(npartitions=self.config.DASK_N_PARTITIONS)
 
         print(f"  - Saving positive interactions to: {self.config.POS_INTERACTIONS_PATH.name}")

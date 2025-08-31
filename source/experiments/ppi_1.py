@@ -36,7 +36,7 @@ from tqdm.auto import tqdm
 from configuration.config import Config
 from source.models.fnn.mlp import MLP
 # --- FIX: Import the correct factory for dummy data ---
-from source.testers.dummy import DummyDataFactory
+
 from source.utils.data.data_utils import DataUtils
 from source.utils.data.ground_truth_loader import GroundTruthLoader
 from source.utils.post.embedding_loader import EmbeddingLoader
@@ -291,137 +291,113 @@ class PPIPipeline:
         print(f"CV workflow for {embedding_name} finished in {time.monotonic() - cv_start_time:.2f}s.")
         return aggregated_results
 
-    def run(self, use_dummy_data: bool = False):
+    def run(self):
         """
         The main public entry point for the PPI evaluation pipeline.
         """
         pipeline_start_time = time.monotonic()
-        run_type = "DUMMY EVALUATION" if use_dummy_data else "MAIN EVALUATION"
+        run_type = "MAIN EVALUATION"
         DataUtils.print_header(f"PPI EVALUATION PIPELINE ({run_type})")
 
-        # --- DEFINITIVE FIX: Wrap the main logic in a try...finally to guarantee cleanup ---
-        dummy_data_dir = None
-        try:
-            if use_dummy_data:
-                dummy_data_dir = self.config.BASE_OUTPUT_DIR / "dummy_data_temp"
-                if dummy_data_dir.exists():
-                    shutil.rmtree(dummy_data_dir)
-                dummy_data_dir.mkdir(parents=True, exist_ok=True)
-                print(f"Creating dummy data in: {dummy_data_dir}")
+        emb_configs = getattr(self.config, 'LP_EMBEDDING_FILES_TO_EVALUATE', [])
+        pos_fp = self.config.POS_INTERACTIONS_PATH
+        neg_fp = self.config.NEG_INTERACTIONS_PATH
+        if not emb_configs:
+            print("Warning: 'LP_EMBEDDING_FILES_TO_EVALUATE' is empty in config. No evaluation will run.")
+            return
 
-                # --- FIX: Use the correct DummyDataFactory ---
-                protein_ids = [f"DUMMY_P{i:04d}" for i in range(50)]
-                dummy_emb_file = DummyDataFactory.create_h5_embeddings(
-                    str(dummy_data_dir), "dummy_embeddings.h5", protein_ids=protein_ids, dim=16
-                )
-                pos_fp, neg_fp = DummyDataFactory.create_interaction_files(
-                    str(dummy_data_dir), num_pairs=100, num_proteins=len(protein_ids)
-                )
-                emb_configs = [{"path": str(dummy_emb_file), "name": "DummyEmb"}]
-            else:
-                emb_configs = getattr(self.config, 'LP_EMBEDDING_FILES_TO_EVALUATE', [])
-                pos_fp = self.config.POS_INTERACTIONS_PATH
-                neg_fp = self.config.NEG_INTERACTIONS_PATH
-                if not emb_configs:
-                    print("Warning: 'LP_EMBEDDING_FILES_TO_EVALUATE' is empty in config. No evaluation will run.")
-                    return
+        # Refactored: PCA pre-processing is now a clean, single method call
+        emb_configs = self._preprocess_embeddings_with_pca(emb_configs)
 
-            # Refactored: PCA pre-processing is now a clean, single method call
-            emb_configs = self._preprocess_embeddings_with_pca(emb_configs)
+        reporter = EvaluationReporter(base_output_dir=str(self.config.RESULTS_EVALUATION_DIR), k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE)
 
-            reporter = EvaluationReporter(base_output_dir=str(self.config.RESULTS_EVALUATION_DIR), k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE)
+        all_cv_results_list = []
+        for emb_config_item in tqdm(emb_configs, desc="Evaluating Embedding Models"):
+            emb_name = emb_config_item['name']
+            emb_path = emb_config_item['path']
+            mlflow_active = self.config.USE_MLFLOW
+            # A run is nested if there's already an active run.
+            run_context = mlflow.start_run(run_name=emb_name, nested=mlflow.active_run() is not None) if mlflow_active else nullcontext()
 
-            all_cv_results_list = []
-            for emb_config_item in tqdm(emb_configs, desc="Evaluating Embedding Models"):
-                emb_name = emb_config_item['name']
-                emb_path = emb_config_item['path']
-                mlflow_active = self.config.USE_MLFLOW
-                # A run is nested if there's already an active run.
-                run_context = mlflow.start_run(run_name=emb_name, nested=mlflow.active_run() is not None) if mlflow_active else nullcontext()
+            with run_context as run:
+                DataUtils.print_header(f"Processing Embedding: {emb_name}")
+                print(f"  Path: {emb_path}")
+                if mlflow_active and run:
+                    mlflow.log_params({"embedding_name": emb_name, "embedding_path": emb_path, "edge_embedding_method": self.config.EVAL_EDGE_EMBEDDING_METHOD, "n_folds": self.config.EVAL_N_FOLDS})
 
-                with run_context as run:
-                    DataUtils.print_header(f"Processing Embedding: {emb_name}")
-                    print(f"  Path: {emb_path}")
+                if not Path(emb_path).exists():
+                    print(f"ERROR: Embedding file not found for {emb_name} at {emb_path}. Skipping.")
+                    continue
+
+                try:
+                    # --- FIX: Pass the config object to the EmbeddingLoader ---
+                    # This allows the loader to dynamically choose its loading strategy (lazy vs. in-memory).
+                    with EmbeddingLoader(emb_path, config=self.config) as protein_embeddings_loader:
+                        # --- DEFINITIVE FIX for Scalability: Stream and filter interaction pairs ---
+                        # Instead of loading all interaction pairs into memory, we first get the IDs
+                        # available in the current embedding file. Then, we stream the interaction
+                        # files and only load the pairs for which we have embeddings. This dramatically
+                        # reduces memory usage.
+                        available_ids = protein_embeddings_loader.get_keys()
+                        if not available_ids:
+                            print(f"  No embeddings found in H5 file for {emb_name}. Skipping CV.")
+                            continue
+
+                        print(f"  Found {len(available_ids)} embeddings. Filtering interaction files against these IDs...")
+                        pos_pairs = GroundTruthLoader.load_interaction_pairs_filtered(
+                            pos_fp, 1, available_ids, random_state=self.config.RANDOM_STATE
+                        )
+                        num_pos_for_sampling = len(pos_pairs)
+                        neg_pairs = GroundTruthLoader.load_interaction_pairs_filtered(
+                            neg_fp, 0, available_ids, sample_n=num_pos_for_sampling, random_state=self.config.RANDOM_STATE
+                        )
+
+                        all_pairs = pos_pairs + neg_pairs
+                        if not all_pairs:
+                            print(f"  No interaction pairs remain after filtering against available embeddings for {emb_name}. Skipping CV.")
+                            continue
+
+                        results = self._run_cv_workflow(emb_name, all_pairs, protein_embeddings_loader)
+                        all_cv_results_list.append(results)
+
+                        if mlflow_active and run and results:
+                            metrics_to_log = {k: v for k, v in results.items() if isinstance(v, (int, float, np.number))}
+                            mlflow.log_metrics(metrics_to_log)
+                            # --- FIX: Plot the training history that was collected for the first fold ---
+                            if self.config.PLOT_TRAINING_HISTORY and results.get('history_dict_fold1'):
+                                history_plot_path = reporter.plot_training_history(results['history_dict_fold1'], emb_name)
+                                if history_plot_path:
+                                    mlflow.log_artifact(str(history_plot_path), "training_plots")
+                # --- NEW: Specific handling for Out-of-Memory errors ---
+                # This catches OOM errors from TensorFlow (ResourceExhaustedError) or NumPy/Python (MemoryError)
+                # that can occur during batch generation or model training, allowing the pipeline to continue.
+                except (MemoryError, tf.errors.ResourceExhaustedError) as mem_e:
+                    print("\n" + "!" * 80)
+                    print(f"!!! GRACEFUL SHUTDOWN for {emb_name} due to OUT-OF-MEMORY !!!")
+                    print(f"  Caught a memory-related error: {type(mem_e).__name__}")
+                    print(f"  This means the system ran out of RAM or GPU memory for this specific task.")
+                    print(f"  The pipeline will now clean up and proceed to the next embedding file.")
+                    print("!" * 80 + "\n")
                     if mlflow_active and run:
-                        mlflow.log_params({"embedding_name": emb_name, "embedding_path": emb_path, "edge_embedding_method": self.config.EVAL_EDGE_EMBEDDING_METHOD, "n_folds": self.config.EVAL_N_FOLDS})
+                        mlflow.set_tag("status", "FAILED_OOM")
+                        mlflow.log_param("error", str(mem_e))
+                except Exception as e:
+                    print(f"\n--- UNEXPECTED ERROR during processing for {emb_name}: {e}. ---")
+                    print("--- Continuing to next embedding file. ---")
+                    import traceback
+                    traceback.print_exc()
+                finally:
+                    DataUtils.report_memory_usage(f"After processing {emb_name}")
+                    gc.collect()
 
-                    if not Path(emb_path).exists():
-                        print(f"ERROR: Embedding file not found for {emb_name} at {emb_path}. Skipping.")
-                        continue
+        if all_cv_results_list:
+            DataUtils.print_header("FINAL AGGREGATE RESULTS & REPORTING")
+            # --- FIX: Instantiate and use the correct class for writing the summary file ---
+            summary_generator = EvaluationSummary(base_output_dir=str(self.config.RESULTS_EVALUATION_DIR), k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE)
+            summary_generator.write_summary_file(all_cv_results_list, self.config.EVAL_MAIN_EMBEDDING_FOR_STATS, 'test_auc_sklearn', self.config.EVAL_STATISTICAL_TEST_ALPHA)
+            reporter.plot_roc_curves(all_cv_results_list)
+            reporter.plot_comparison_charts(all_cv_results_list)
 
-                    try:
-                        # --- FIX: Pass the config object to the EmbeddingLoader ---
-                        # This allows the loader to dynamically choose its loading strategy (lazy vs. in-memory).
-                        with EmbeddingLoader(emb_path, config=self.config) as protein_embeddings_loader:
-                            # --- DEFINITIVE FIX for Scalability: Stream and filter interaction pairs ---
-                            # Instead of loading all interaction pairs into memory, we first get the IDs
-                            # available in the current embedding file. Then, we stream the interaction
-                            # files and only load the pairs for which we have embeddings. This dramatically
-                            # reduces memory usage.
-                            available_ids = protein_embeddings_loader.get_keys()
-                            if not available_ids:
-                                print(f"  No embeddings found in H5 file for {emb_name}. Skipping CV.")
-                                continue
-
-                            print(f"  Found {len(available_ids)} embeddings. Filtering interaction files against these IDs...")
-                            pos_pairs = GroundTruthLoader.load_interaction_pairs_filtered(
-                                pos_fp, 1, available_ids, random_state=self.config.RANDOM_STATE
-                            )
-                            num_pos_for_sampling = len(pos_pairs)
-                            neg_pairs = GroundTruthLoader.load_interaction_pairs_filtered(
-                                neg_fp, 0, available_ids, sample_n=num_pos_for_sampling, random_state=self.config.RANDOM_STATE
-                            )
-
-                            all_pairs = pos_pairs + neg_pairs
-                            if not all_pairs:
-                                print(f"  No interaction pairs remain after filtering against available embeddings for {emb_name}. Skipping CV.")
-                                continue
-
-                            results = self._run_cv_workflow(emb_name, all_pairs, protein_embeddings_loader)
-                            all_cv_results_list.append(results)
-
-                            if mlflow_active and run and results:
-                                metrics_to_log = {k: v for k, v in results.items() if isinstance(v, (int, float, np.number))}
-                                mlflow.log_metrics(metrics_to_log)
-                                # --- FIX: Plot the training history that was collected for the first fold ---
-                                if self.config.PLOT_TRAINING_HISTORY and results.get('history_dict_fold1'):
-                                    history_plot_path = reporter.plot_training_history(results['history_dict_fold1'], emb_name)
-                                    if history_plot_path:
-                                        mlflow.log_artifact(str(history_plot_path), "training_plots")
-                    # --- NEW: Specific handling for Out-of-Memory errors ---
-                    # This catches OOM errors from TensorFlow (ResourceExhaustedError) or NumPy/Python (MemoryError)
-                    # that can occur during batch generation or model training, allowing the pipeline to continue.
-                    except (MemoryError, tf.errors.ResourceExhaustedError) as mem_e:
-                        print("\n" + "!" * 80)
-                        print(f"!!! GRACEFUL SHUTDOWN for {emb_name} due to OUT-OF-MEMORY !!!")
-                        print(f"  Caught a memory-related error: {type(mem_e).__name__}")
-                        print(f"  This means the system ran out of RAM or GPU memory for this specific task.")
-                        print(f"  The pipeline will now clean up and proceed to the next embedding file.")
-                        print("!" * 80 + "\n")
-                        if mlflow_active and run:
-                            mlflow.set_tag("status", "FAILED_OOM")
-                            mlflow.log_param("error", str(mem_e))
-                    except Exception as e:
-                        print(f"\n--- UNEXPECTED ERROR during processing for {emb_name}: {e}. ---")
-                        print("--- Continuing to next embedding file. ---")
-                        import traceback
-                        traceback.print_exc()
-                    finally:
-                        DataUtils.report_memory_usage(f"After processing {emb_name}")
-                        gc.collect()
-
-            if all_cv_results_list:
-                DataUtils.print_header("FINAL AGGREGATE RESULTS & REPORTING")
-                # --- FIX: Instantiate and use the correct class for writing the summary file ---
-                summary_generator = EvaluationSummary(base_output_dir=str(self.config.RESULTS_EVALUATION_DIR), k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE)
-                summary_generator.write_summary_file(all_cv_results_list, self.config.EVAL_MAIN_EMBEDDING_FOR_STATS, 'test_auc_sklearn', self.config.EVAL_STATISTICAL_TEST_ALPHA)
-                reporter.plot_roc_curves(all_cv_results_list)
-                reporter.plot_comparison_charts(all_cv_results_list)
-
-        finally:
-            # This block is guaranteed to run, ensuring cleanup.
-            if use_dummy_data and self.config.CLEANUP_DUMMY_DATA and dummy_data_dir and dummy_data_dir.exists():
-                shutil.rmtree(dummy_data_dir)
-                print(f"Cleaned up dummy data directory: {dummy_data_dir}")
+        
 
         DataUtils.print_header(f"PPI Evaluation Pipeline ({run_type}) FINISHED in {time.monotonic() - pipeline_start_time:.2f}s")

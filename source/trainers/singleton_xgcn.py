@@ -27,12 +27,13 @@ from source.models.factory import ModelFactory
 class SingletonXGCNTrainer:
     """
     A specialized trainer for a fast, standalone evaluation of various GNN models
-    on the n=1 n-gram graph. This is intended for rapid prototyping.
+    on the n-gram graphs. This is intended for rapid prototyping.
     """
 
     def __init__(self, config: Config, graph_obj: DirectedNgramGraph):
         self.config = config
         self.graph = graph_obj
+        self.n_val = graph_obj.n_value
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.label_generator = XGCNDataBuilder(config)
         self.model_factory = ModelFactory(config, context='singleton')
@@ -40,16 +41,16 @@ class SingletonXGCNTrainer:
 
     def run(self) -> pd.DataFrame:
         """
-        Executes the entire training and evaluation workflow for the n=1 graph.
+        Executes the entire training and evaluation workflow for the n-gram graph.
 
         Returns:
             A pandas DataFrame of performance metrics.
         """
         if not self.graph or self.graph.number_of_nodes == 0:
             print("  Singleton Trainer: Graph is empty or invalid. Cannot proceed.")
-            return pd.DataFrame()  # All code after this in this block is unreachable if this triggers
+            return pd.DataFrame()
 
-        task_type = self.config.PROTGRAM_TASK_TYPES_PER_LEVEL.get(1, self.config.PROTGRAM_DEFAULT_TASK_TYPE)
+        task_type = 'next_node'
 
         # --- DEFINITIVE FIX for Singleton Evaluation: Use component-aware community detection ---
         # The original label generator might only find communities in the largest connected component.
@@ -74,12 +75,12 @@ class SingletonXGCNTrainer:
             y_for_stratify = labels
             homophily_ratio = homophily(self.graph.A_undirected_norm_sparse.indices(), y_for_stratify, method='edge')
             is_heterophilic = homophily_ratio < self.config.GCN_HETEROPHILY_THRESHOLD
-            print(f"  Singleton Graph (n=1) Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
+            print(f"  Singleton Graph (n={self.n_val}) Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
         else:
             print("  Homophily calculation skipped for non-classification task (e.g., masked_node).")
 
-        print(f"  Using random features for initial features (dim={self.config.PROTGRAM_1GRAM_INIT_DIM}).")
-        initial_features = torch.randn((self.graph.number_of_nodes, self.config.PROTGRAM_1GRAM_INIT_DIM))
+        print(f"  Initializing features with identity matrix.")
+        initial_features = torch.eye(self.graph.number_of_nodes)
         # --- NEW: Apply BatchNorm for consistency with the main pipeline's feature handling ---
         # This ensures that the model is always tested under similar input conditions,
         # even though the random features for n=1 are already somewhat normalized.
@@ -88,6 +89,7 @@ class SingletonXGCNTrainer:
         # This prevents the "trying to backward through the graph a second time" error.
         initial_features = bn(initial_features.to(self.device)).detach()
 
+        import numpy as np
         node_indices = np.arange(self.graph.number_of_nodes)
         try:
             train_idx, test_idx = train_test_split(
@@ -126,7 +128,7 @@ class SingletonXGCNTrainer:
 
                 model = self.model_factory.create_model(
                     model_name=model_name, in_channels=initial_features.shape[1], num_classes=num_classes,
-                    graph_obj=self.graph, use_homo_hetero_paths=use_homo_hetero_for_this_model, n_val=1
+                    graph_obj=self.graph, use_homo_hetero_paths=use_homo_hetero_for_this_model, n_val=self.n_val
                 )
 
                 print(model)
@@ -184,12 +186,17 @@ class SingletonXGCNTrainer:
                         y_pred = preds[data_for_model.test_mask].cpu().numpy()
 
                 if len(y_true) > 0:
+                    from sklearn.metrics import confusion_matrix
+                    import numpy as np
+                    print(f"y_true shape: {y_true.shape}")
+                    print(f"y_pred shape: {y_pred.shape}")
+                    print(f"y_true unique values: {np.unique(y_true, return_counts=True)}")
+                    print(f"y_pred unique values: {np.unique(y_pred, return_counts=True)}")
+                    print(f"Confusion matrix:\n{confusion_matrix(y_true, y_pred)}")
                     metrics = {
                         "Model": model_name,
                         "Accuracy": accuracy_score(y_true, y_pred),
-                        "F1-Score (Macro)": f1_score(y_true, y_pred, average='macro', zero_division=0),
-                        "Precision (Macro)": precision_score(y_true, y_pred, average='macro', zero_division=0),
-                        "Recall (Macro)": recall_score(y_true, y_pred, average='macro', zero_division=0)
+                        "F1-Score (Macro)": f1_score(y_true, y_pred, average='macro', zero_division=0)
                     }
                     all_results.append(metrics)
                 else:
@@ -199,8 +206,7 @@ class SingletonXGCNTrainer:
                 print(f"  ❌ ERROR during evaluation of {model_name}: {e}")
                 traceback.print_exc()
                 all_results.append({
-                    "Model": model_name, "Accuracy": 0.0, "F1-Score (Macro)": 0.0,
-                    "Precision (Macro)": 0.0, "Recall (Macro)": 0.0, "error": str(e)
+                    "Model": model_name, "Accuracy": 0.0, "F1-Score (Macro)": 0.0
                 })
 
         return pd.DataFrame(all_results)

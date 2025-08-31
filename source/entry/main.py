@@ -75,10 +75,21 @@ class PipelineOrchestrator:
 
 
     # Replace the existing function with this corrected version
+    def _run_protgram_xgcn_trainer(self, config: Config):
+        """
+        Helper method to run ProtGramXGCNTrainer with a check for existing graph objects.
+        """
+        # If ProtGram pipeline was not run, check if graph objects exist.
+        if not config.RUN_PROTGRAM_PIPELINE and not config.RESULTS_GRAPH_OBJECTS_DIR.exists():
+            print(f"  Warning: Skipping ProtGram-XGCN pipeline. Graph objects not found in {config.RESULTS_GRAPH_OBJECTS_DIR}.")
+            return None # Return None to indicate no output files
+
+        return ProtGramXGCNTrainer(config).run()
+
     def _run_main_embedding_pipelines(self, config: Config, checkpoint_manager: CheckpointManager) -> List[Dict[str, str]]:
         """Runs the main embedding generation pipelines with checkpointing and user prompts."""
         pipelines = [
-            {"name": "ProtGram-XGCN", "flag": "RUN_GCN_PIPELINE", "runner": lambda: ProtGramXGCNTrainer(config).run(),
+            {"name": "ProtGram-XGCN", "flag": "RUN_PROTGRAM_XGCN_PIPELINE", "runner": lambda: self._run_protgram_xgcn_trainer(config),
              "formatter": lambda paths: [{"name": name, "path": path} for name, path in paths.items()]},
             # --- FIX: Update formatter to handle a dictionary of paths (main + optional PCA) ---
             {"name": "Word2Vec", "flag": "RUN_WORD2VEC_PIPELINE", "runner": lambda: Word2VecEmbedder(config).run(), # noqa
@@ -135,13 +146,6 @@ class PipelineOrchestrator:
                     gnn_results_df = GNNBenchmarker(config).run()
                     if gnn_results_df is not None and not gnn_results_df.empty:
                         all_benchmark_results.append(gnn_results_df)
-        except Exception as e:
-            print(f"\n--- GNN BENCHMARKING FAILED: {e} ---\n")
-            import traceback
-            traceback.print_exc()
-
-        try:
-            if config.RUN_NETWORK_EMBEDDING_BENCHMARKING:
                 with mlflow.start_run(run_name="NE_Benchmark_Suite"):
                     ne_results_df = NetworkEmbeddingBenchmarker(config).run()
                     if ne_results_df is not None and not ne_results_df.empty:
@@ -153,26 +157,27 @@ class PipelineOrchestrator:
 
         try:
             if config.RUN_SINGLETON_GCN_EVAL:
-                DataUtils.print_header("Running Singleton (n=1) GCN Evaluation")
+                for n in range(1, 3):
+                    DataUtils.print_header(f"Running Singleton (n={n}) GCN Evaluation")
 
-                # --- FIX: Use the new directory-based loading for graphs ---
-                # The graph is now saved as a directory, not a single .pkl file.
-                n1_graph_dir = config.RESULTS_GRAPH_OBJECTS_DIR / "ngram_graph_n1"
-                if n1_graph_dir.exists() and n1_graph_dir.is_dir():
-                    print("  n=1 graph found. Proceeding...")
-                    from source.data_structures.direct_ngram_graph import DirectedNgramGraph
-                    from source.trainers.singleton_xgcn import SingletonXGCNTrainer
-                    # Use the correct class method to load from the directory
-                    n1_graph: DirectedNgramGraph = DirectedNgramGraph.load_from_dir(n1_graph_dir)
-                    if n1_graph:
-                        singleton_results_df = SingletonXGCNTrainer(config, n1_graph).run()
-                        if singleton_results_df is not None and not singleton_results_df.empty:
-                            singleton_results_df = singleton_results_df.rename(columns={'Model': 'model'})
-                            singleton_results_df['dataset'] = f"ProtGram_n1_Singleton_{fasta_file_path.stem}"
-                            singleton_results_df['error'] = None
-                            all_benchmark_results.append(singleton_results_df)
-                else:
-                    print(f"  Warning: n=1 graph not found at {n1_graph_dir}. It may not have been built. Skipping singleton evaluation.")
+                    # --- FIX: Use the new directory-based loading for graphs ---
+                    # The graph is now saved as a directory, not a single .pkl file.
+                    n_graph_dir = config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{n}"
+                    if n_graph_dir.exists() and n_graph_dir.is_dir():
+                        print(f"  n={n} graph found. Proceeding...")
+                        from source.data_structures.direct_ngram_graph import DirectedNgramGraph
+                        from source.trainers.singleton_xgcn import SingletonXGCNTrainer
+                        # Use the correct class method to load from the directory
+                        n_graph: DirectedNgramGraph = DirectedNgramGraph.load_from_dir(n_graph_dir)
+                        if n_graph:
+                            singleton_results_df = SingletonXGCNTrainer(config, n_graph).run()
+                            if singleton_results_df is not None and not singleton_results_df.empty:
+                                singleton_results_df = singleton_results_df.rename(columns={'Model': 'model'})
+                                singleton_results_df['dataset'] = f"ProtGram_n{n}_Singleton_{fasta_file_path.stem}"
+                                singleton_results_df['error'] = None
+                                all_benchmark_results.append(singleton_results_df)
+                    else:
+                        print(f"  Warning: n={n} graph not found at {n_graph_dir}. It may not have been built. Skipping singleton evaluation.")
         except Exception as e:
             print(f"\n--- SINGLETON GCN EVALUATION FAILED: {e} ---\n")
             import traceback
@@ -293,11 +298,16 @@ class PipelineOrchestrator:
 
                         # --- DEFINITIVE FIX: Add checkpointing for major pipeline stages ---
                         # This prevents long-running steps from being re-executed unnecessarily.
-                        if not checkpoint_manager.get_checkpoint("GraphBuilding"):
-                            DataUtils.print_header("Building all n-gram graphs for the main pipeline")
-                            ProtGramDataBuilder(config).run()
-                            checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "completed"})
-                        if not self.ui_manager.prompt_to_continue("Graph Building", config): continue
+                        # Graph Building Stage
+                        if config.RUN_PROTGRAM_PIPELINE:
+                            if not checkpoint_manager.get_checkpoint("GraphBuilding"):
+                                DataUtils.print_header("Building all n-gram graphs for the main pipeline")
+                                ProtGramDataBuilder(config).run()
+                                checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "completed"})
+                            if not self.ui_manager.prompt_to_continue("Graph Building", config): continue
+                        else:
+                            print("  INFO: Skipping graph building as RUN_PROTGRAM_PIPELINE is false.")
+                            if not self.ui_manager.prompt_to_continue("Graph Building (skipped)", config): continue
 
                         # Now, run the optional pre-analysis/benchmarking step, gated by its own checkpoint.
                         if not checkpoint_manager.get_checkpoint("PreAnalysis"):
@@ -334,7 +344,7 @@ class PipelineOrchestrator:
                             if not checkpoint_manager.get_checkpoint("PPI_Evaluation"):
                                 if config.LP_EMBEDDING_FILES_TO_EVALUATE:
                                     ppi_evaluator = PPIPipeline(config)
-                                    ppi_evaluator.run(use_dummy_data=config.RUN_DUMMY_TEST)
+                                    ppi_evaluator.run()
                                     checkpoint_manager.save_checkpoint("PPI_Evaluation", {"status": "completed"})
 
                     # --- FIX: Add the missing 'except' block for the per-dataset try block ---

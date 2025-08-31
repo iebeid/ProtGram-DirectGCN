@@ -30,20 +30,21 @@ class ResourceManagementParams(BaseModel):
     CHECKSUM_SKIP_SIZE_MB: int = Field(default=500, gt=0)
 
 class PipelineFlags(BaseModel):
-    RUN_GCN_PIPELINE: bool
+    RUN_PROTGRAM_XGCN_PIPELINE: bool
     RUN_LSTM_PIPELINE: bool
     RUN_WORD2VEC_PIPELINE: bool
     RUN_TRANSFORMER_PIPELINE: bool
     RUN_BENCHMARKING_PIPELINE: bool
-    RUN_NETWORK_EMBEDDING_BENCHMARKING: bool
+    RUN_PROTGRAM_PIPELINE: bool
+    
     RUN_MAIN_PPI_EVALUATION: bool
     RUN_INTEGRATED_TESTS: bool
     RUN_SINGLETON_GCN_EVAL: bool
-    RUN_DUMMY_TEST: bool
     SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    CLEANUP_DUMMY_DATA: bool
+    
     DISABLE_INTERACTIVE_PROMPTS: bool = Field(default=False)
     ENABLE_FILE_LOGGING: bool
+    PROCESS_ID_MAPPING_FILE: bool
 
 class BaseGNNTrainingParams(BaseModel):
     """A base model for shared GNN training hyperparameters to ensure consistency."""
@@ -81,6 +82,7 @@ class GNNBenchmarkingParams(BaseGNNTrainingParams):
     GNN_INIT_DIM: int = Field(gt=0)
 
 class ProtGramGCNParams(BaseModel):
+    
     PROTGRAM_NGRAM_MAX_N: int = Field(gt=0, lt=5, description="Maximum n-gram size. Kept below 5 for memory efficiency.")
     FASTA_FILE_TO_PROCESS: str
     ID_MAPPING_MODE: str
@@ -348,20 +350,21 @@ class Config:
     def _setup_pipeline_flags(self):
         """Sets flags statically from the YAML config."""
         flags = self._config['pipeline_flags']
-        self.RUN_GCN_PIPELINE = flags['RUN_GCN_PIPELINE']
+        self.RUN_PROTGRAM_XGCN_PIPELINE = flags['RUN_PROTGRAM_XGCN_PIPELINE']
         self.RUN_LSTM_PIPELINE = flags['RUN_LSTM_PIPELINE']
         self.RUN_WORD2VEC_PIPELINE = flags['RUN_WORD2VEC_PIPELINE']
         self.RUN_TRANSFORMER_PIPELINE = flags['RUN_TRANSFORMER_PIPELINE']
         self.RUN_BENCHMARKING_PIPELINE = flags['RUN_BENCHMARKING_PIPELINE']
-        self.RUN_NETWORK_EMBEDDING_BENCHMARKING = flags['RUN_NETWORK_EMBEDDING_BENCHMARKING']
+        self.RUN_PROTGRAM_PIPELINE = flags['RUN_PROTGRAM_PIPELINE']
+        
         self.RUN_MAIN_PPI_EVALUATION = flags['RUN_MAIN_PPI_EVALUATION']
         self.RUN_INTEGRATED_TESTS = flags['RUN_INTEGRATED_TESTS']
         self.RUN_SINGLETON_GCN_EVAL = flags['RUN_SINGLETON_GCN_EVAL']
-        self.RUN_DUMMY_TEST = flags['RUN_DUMMY_TEST']
         self.SEQUENCE_DOWNSAMPLE_FRACTION = flags['SEQUENCE_DOWNSAMPLE_FRACTION']
-        self.CLEANUP_DUMMY_DATA = flags['CLEANUP_DUMMY_DATA']
+        
         self.DISABLE_INTERACTIVE_PROMPTS = flags['DISABLE_INTERACTIVE_PROMPTS']
         self.ENABLE_FILE_LOGGING = flags['ENABLE_FILE_LOGGING']
+        self.PROCESS_ID_MAPPING_FILE = flags['PROCESS_ID_MAPPING_FILE']
 
     def _setup_benchmarking_params(self):
         """Sets GNN benchmarking parameters statically from the YAML config."""
@@ -493,7 +496,7 @@ class Config:
         # --- NEW: Add missing Dask configuration ---
         self.DASK_N_PARTITIONS = os.cpu_count() or 1
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1
-        self.ID_MAPPING_MODE = params['ID_MAPPING_MODE']
+        self.ID_MAPPING_MODE = 'file' if self.PROCESS_ID_MAPPING_FILE else 'regex'
         # --- FIX: Load smart mapping options from the correct (top) level ---
         self.ENABLE_SMART_MAPPING_PROMPT = params['ENABLE_SMART_MAPPING_PROMPT']
         self.REGEX_CONFIDENCE_THRESHOLD = params['REGEX_CONFIDENCE_THRESHOLD']

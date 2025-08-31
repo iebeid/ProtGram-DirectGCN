@@ -28,20 +28,21 @@ data_urls:
 
 # 3. PIPELINE CONTROL FLAGS
 pipeline_flags:
-  RUN_GCN_PIPELINE: true
-  RUN_LSTM_PIPELINE: true
-  RUN_WORD2VEC_PIPELINE: true
-  RUN_TRANSFORMER_PIPELINE: true
-  RUN_BENCHMARKING_PIPELINE: true
-  RUN_NETWORK_EMBEDDING_BENCHMARKING: true
-  RUN_MAIN_PPI_EVALUATION: true
-  RUN_INTEGRATED_TESTS: true
-  RUN_SINGLETON_GCN_EVAL: true
-  RUN_DUMMY_TEST: true
+  RUN_PROTGRAM_XGCN_PIPELINE: true
+  RUN_LSTM_PIPELINE: false
+  RUN_WORD2VEC_PIPELINE: false
+  RUN_TRANSFORMER_PIPELINE: false
+  RUN_BENCHMARKING_PIPELINE: false
+  RUN_PROTGRAM_PIPELINE: true
+  
+  RUN_MAIN_PPI_EVALUATION: false
+  RUN_INTEGRATED_TESTS: false
+  RUN_SINGLETON_GCN_EVAL: false
   SEQUENCE_DOWNSAMPLE_FRACTION: 0.001
-  CLEANUP_DUMMY_DATA: true
+  
   ENABLE_FILE_LOGGING: true
   DISABLE_INTERACTIVE_PROMPTS: true # Set to true to run the entire pipeline without user prompts.
+  PROCESS_ID_MAPPING_FILE: true
 
 # 4. RESOURCE MANAGEMENT
 resource_management:
@@ -58,7 +59,7 @@ resource_management:
 # This block defines common GNN parameters once to avoid duplication.
 # It is merged into the gnn_benchmarking and singleton_eval sections below. # --- REFACTOR: Create a more comprehensive shared anchor ---
 _base_gnn_params: &base_gnn_params
-  GNN_HIDDEN_CHANNELS: 64
+  GNN_HIDDEN_CHANNELS: 16
   GNN_NUM_LAYERS: 2
   GNN_DROPOUT_RATE: 0.5
   GAT_HEADS: 2
@@ -115,12 +116,13 @@ protgram_gcn:
   PROTGRAM_NGRAM_MAX_N: 3
   FASTA_FILE_TO_PROCESS: "UNIPROT_SPROT_FASTA"
   ID_MAPPING_MODE: 'file'
+  
   ENABLE_SMART_MAPPING_PROMPT: true
   REGEX_CONFIDENCE_THRESHOLD: 0.95
   REGEX_COMPATIBILITY_SAMPLE_SIZE: 1000
   API_MAPPING_FROM_DB: null
   API_MAPPING_TO_DB: "UniProtKB"
-  PROTGRAM_MODELS_TO_TRAIN: ['directgcn']
+  PROTGRAM_MODELS_TO_TRAIN: ['directgcn', 'gcn', 'rgcn']
   DIRECTGCN_HIDDEN_LAYER_DIMS: [512, 256, 128, 64]
   PROTGRAM_1GRAM_INIT_DIM: 512
   PROTGRAM_GNN_HIDDEN_CHANNELS: 64
@@ -137,7 +139,7 @@ protgram_gcn:
   PROTGRAM_EARLY_STOPPING_PATIENCE: 50
   PROTGRAM_EARLY_STOPPING_MIN_DELTA: 0.00001
   PROTGRAM_GRADIENT_ACCUMULATION_STEPS: 1
-  PROTGRAM_TASK_TYPES_PER_LEVEL: {1: "community", 2: "next_node", 3: "next_node"}
+  PROTGRAM_TASK_TYPES_PER_LEVEL: {1: "next_node", 2: "next_node", 3: "next_node"}
   PROTGRAM_DEFAULT_TASK_TYPE: "community"
   GCN_HETEROPHILY_THRESHOLD: 0.6
   GCN_PROPAGATION_EPSILON: 1.0e-9
@@ -211,6 +213,7 @@ singleton_eval:
     - "GCN"
     - "RGCN"
     - "DirGNN"
+  GNN_HIDDEN_CHANNELS: 16
   GRADIENT_ACCUMULATION_STEPS: 1
   <<: *base_gnn_params # Merge the shared GNN parameters
 
@@ -228,7 +231,7 @@ ppi_evaluation:
   MLP_DROPOUT2_RATE: 0.4
   MLP_L2_REG: 0.00001
   BATCH_SIZE: 2048
-  EPOCHS: 10
+  EPOCHS: 2
   MLP_LEARNING_RATE: 0.001
   K_VALUES_FOR_TABLE: [50, 100]
   MAIN_EMBEDDING_FOR_STATS: "ProtGramDirectgcn"
@@ -243,7 +246,7 @@ mlflow:
 
 # 12. HYPERPARAMETER OPTIMIZATION (Optuna)
 hyperparameter_optimization:
-  RUN_HPO: false
+  RUN_HPO: true
   HPO_N_TRIALS: 50 # Number of trials for Optuna to run
   HPO_TARGET_EMBEDDING_MODEL: "ProtGramDirectgcn" # Which embedding to optimize the MLP for
   # Search space for the PPI evaluation MLP

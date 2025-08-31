@@ -1,0 +1,14 @@
+artifact_uri: file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/mlruns/0/8accf29290104f5aa445b885cbf9dd19/artifacts
+end_time: 1756671770711
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 8accf29290104f5aa445b885cbf9dd19
+run_name: directgcn_none_gating_n1_dim
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1756671756133
+status: 3
+tags: []
+user_id: iaebeid

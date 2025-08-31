@@ -190,7 +190,7 @@ class DirectGCNLayer(MessagePassing):
         # A learnable gating mechanism (scalar, vector, or node-specific) calculates
         # weights for each path. These weights determine the contribution of each
         # path's features to the final node representation.
-        if self.gating_mode == 'none':
+        if self.gating_mode is None or self.gating_mode == 'none':
             # In 'none' mode, all paths contribute equally (summation).
             final_combination = torch.stack(path_combinations, dim=0).sum(dim=0)
         else:
@@ -319,8 +319,9 @@ class DirectGCN(nn.Module):
             # The previous implementation had the activation and dropout outside the loop,
             # and did not update the hidden state `h` in each iteration.
             for i, conv in enumerate(self.convs):
-                h_pre_act = conv(h, data) + self.res_projsi
-                h_norm = self.layer_normsi
+                h_residual = self.res_projs[i](h)
+                h_pre_act = conv(h, data) + h_residual
+                h_norm = self.layer_norms[i](h_pre_act)
                 h = F.leaky_relu(h_norm)
                 h = F.dropout(h, p=self.dropout_rate, training=self.training)
 

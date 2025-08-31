@@ -11,15 +11,38 @@ import numpy as np
 import scipy.sparse.linalg as sp_linalg
 import torch
 # --- DEFINITIVE FIX: Add version-agnostic imports for PyG to handle API changes ---
+from torch_geometric.utils import degree
+import torch
+
+def modularity(edge_index, cluster, weight=None, num_nodes=None):
+    num_nodes = cluster.size(0) if num_nodes is None else num_nodes
+    row, col = edge_index
+    deg = degree(row, num_nodes, dtype=torch.float)
+    num_edges = edge_index.size(1) / 2
+    if weight is not None:
+        num_edges = weight.sum() / 2
+
+    mod = 0
+    for i in torch.unique(cluster):
+        mask = cluster == i
+        nodes = torch.where(mask)[0]
+        subgraph_mask = torch.isin(row, nodes) & torch.isin(col, nodes)
+        subgraph_edge_index = edge_index[:, subgraph_mask]
+        sub_deg = deg[nodes]
+        sub_num_edges = subgraph_edge_index.size(1) / 2
+        if weight is not None:
+            sub_weight = weight[subgraph_mask]
+            sub_num_edges = sub_weight.sum() / 2
+        mod += sub_num_edges / num_edges - (sub_deg.sum() / (2 * num_edges))**2
+
+    return mod
+    
 try:
     # For PyG >= 2.0
-    from torch_geometric.nn.pool import graclus, pool_edge
-    from torch_geometric.nn import modularity
+    from torch_geometric.nn.pool import graclus, edge_pool as pool_edge
 except ImportError:
     # Fallback for PyG < 2.0
     from torch_geometric.nn import functional as F
-    from torch_geometric.utils import pool_edge
-    from torch_geometric.utils import modularity
     graclus = F.graclus
 from torch_geometric.utils import to_scipy_sparse_matrix, from_scipy_sparse_matrix, get_laplacian
 from tqdm.auto import tqdm

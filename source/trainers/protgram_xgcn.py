@@ -75,14 +75,28 @@ class ProtGramXGCNTrainer:
         protein_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
 
         for model_type in self.config.PROTGRAM_MODELS_TO_TRAIN:
-            DataUtils.print_header(f"Processing Model Type: {model_type.upper()}")
-            ngram_embeddings_per_level, _ = self._train_gnns_hierarchically(model_type)
+            if model_type == 'directgcn':
+                for gating_mode in ['vector', None]:
+                    gating_mode_str = gating_mode if gating_mode is not None else 'none'
+                    DataUtils.print_header(f"Processing Model Type: {model_type.upper()} (Gating: {gating_mode_str})")
+                    ngram_embeddings_per_level, _ = self._train_gnns_hierarchically(model_type, gating_coeff_mode=gating_mode)
 
-            final_protein_embeddings, _ = self._pool_to_protein_level(
-                ngram_embeddings_per_level, protein_sequences,
-                level_ngram_to_idx=self._get_level_ngram_maps()
-            )
-            final_protein_embeddings_per_model[model_type] = final_protein_embeddings
+                    pooled_results = self._pool_to_protein_level(
+                        ngram_embeddings_per_level, protein_sequences,
+                        level_ngram_to_idx=self._get_level_ngram_maps()
+                    )
+                    for n, (pooled_embeddings, _) in pooled_results.items():
+                        final_protein_embeddings_per_model[f"{model_type}_{gating_mode_str}_gating_n{n}"] = pooled_embeddings
+            else:
+                DataUtils.print_header(f"Processing Model Type: {model_type.upper()}")
+                ngram_embeddings_per_level, _ = self._train_gnns_hierarchically(model_type)
+
+                pooled_results = self._pool_to_protein_level(
+                    ngram_embeddings_per_level, protein_sequences,
+                    level_ngram_to_idx=self._get_level_ngram_maps()
+                )
+                for n, (pooled_embeddings, _) in pooled_results.items():
+                    final_protein_embeddings_per_model[f"{model_type}_n{n}"] = pooled_embeddings
 
         # This function now saves the raw (unmapped) embeddings and returns their paths.
         output_paths = self._save_final_embeddings(final_protein_embeddings_per_model)
@@ -90,49 +104,45 @@ class ProtGramXGCNTrainer:
         # --- NEW: Trigger the optional sanity check PPI evaluation ---
         # This was previously dead code. It's now called after embeddings are generated.
         if self.config.PROTGRAM_RUN_SANITY_CHECK_PPI:
-            for model_name, emb_path in output_paths.items():
-                # Only run the sanity check on the primary (non-PCA) embedding file.
-                if "_pca" not in model_name:
-                    self._run_sanity_check_ppi(emb_path)
+            for model_output_path in output_paths.values():
+                self._run_sanity_check_ppi(model_output_path)
 
         DataUtils.print_header("ProtGram Embedding PIPELINE STEP FINISHED")
         return output_paths
 
     def _pool_to_protein_level(self, ngram_embeddings_per_level: Dict[int, np.ndarray],
                                protein_sequences: List[Tuple[str, str]],
-                               level_ngram_to_idx: Dict[int, Dict[str, int]]) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
-        """
-        Pools the final n-gram embeddings for each protein to generate a single
-        fixed-size vector representation for each protein.
-        """
-        DataUtils.print_header("Step 3: Pooling Final N-Gram Embeddings to Protein Level")
-        final_n = self.config.PROTGRAM_NGRAM_MAX_N
-        final_level_embeddings = ngram_embeddings_per_level.get(final_n)
-        final_level_map = level_ngram_to_idx.get(final_n)
+                               level_ngram_to_idx: Dict[int, Dict[str, int]]) -> Dict[int, Tuple[Dict[str, np.ndarray], Dict[str, Any]]]:
+        
+        pooled_results = {}
+        for n in range(1, self.config.PROTGRAM_NGRAM_MAX_N + 1):
+            DataUtils.print_header(f"Step 3: Pooling N-Gram Embeddings to Protein Level for n={n}")
+            level_embeddings = ngram_embeddings_per_level.get(n)
+            level_map = level_ngram_to_idx.get(n)
 
-        if final_level_embeddings is None or final_level_map is None:
-            print(f"  ERROR: Final n-gram embeddings for n={final_n} are not available. Cannot perform protein-level pooling.")
-            return {}, {}
+            if level_embeddings is None or level_map is None:
+                print(f"  ERROR: N-gram embeddings for n={n} are not available. Cannot perform protein-level pooling.")
+                continue
 
-        # Use the highly optimized pooling function from the processor
-        pooled_embeddings, attention_log = EmbeddingProcessor.pool_ngram_embeddings_for_protein_fast(
-            protein_sequences=protein_sequences,
-            n_val=final_n,
-            ngram_map=final_level_map,
-            ngram_embeddings=final_level_embeddings,
-            strategy=self.config.PROTGRAM_PROTEIN_POOLING_STRATEGY
-        )
-        return pooled_embeddings, attention_log
+            # Use the highly optimized pooling function from the processor
+            pooled_embeddings, attention_log = EmbeddingProcessor.pool_ngram_embeddings_for_protein_fast(
+                protein_sequences=protein_sequences,
+                n_val=n,
+                ngram_map=level_map,
+                ngram_embeddings=level_embeddings,
+                strategy=self.config.PROTGRAM_PROTEIN_POOLING_STRATEGY
+            )
+            pooled_results[n] = (pooled_embeddings, attention_log)
+        return pooled_results
 
     def _save_final_embeddings(self, embeddings_per_model: Dict[str, Dict[str, np.ndarray]]) -> Dict[str, str]:
         """Saves final protein embeddings and their PCA versions to H5 files."""
         output_paths = {}
-        for model_type, embeddings in embeddings_per_model.items():
+        for model_name, embeddings in embeddings_per_model.items():
             if not embeddings:
-                print(f"  No embeddings generated for model '{model_type}'. Skipping save.")
+                print(f"  No embeddings generated for model '{model_name}'. Skipping save.")
                 continue
 
-            model_name = f"ProtGram{model_type.capitalize()}"
             output_dir = self.config.RESULTS_GCN_EMBEDDINGS_DIR
             output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -158,7 +168,7 @@ class ProtGramXGCNTrainer:
         return output_paths
 
 
-    def _train_gnns_hierarchically(self, model_type: str) -> Tuple[Dict[int, np.ndarray], Dict[int, Dict]]:
+    def _train_gnns_hierarchically(self, model_type: str, gating_coeff_mode: Optional[str] = "vector") -> Tuple[Dict[int, np.ndarray], Dict[int, Dict]]:
         """
         The main hierarchical training loop. It iterates from n=1 to n_max,
         training a GNN at each level and using its output embeddings to initialize
@@ -218,7 +228,8 @@ class ProtGramXGCNTrainer:
             model = self.model_factory.create_model(
                 model_name=model_type, in_channels=initial_features.shape[1],
                 num_classes=num_classes_for_task, graph_obj=graph_obj,
-                use_homo_hetero_paths=use_homo_hetero_paths_for_level, n_val=n
+                use_homo_hetero_paths=use_homo_hetero_paths_for_level, n_val=n,
+                gating_mode=gating_coeff_mode
             )
             if model is None: continue
 
@@ -517,12 +528,12 @@ class ProtGramXGCNTrainer:
                                         prev_level_map: Optional[Dict[str, int]]) -> Optional[Tuple[torch.Tensor, Dict]]:
         """
         Gets initial node features for a given n-gram level.
-        - For n=1, features are randomly initialized.
+        - For n=1, features are initialized with an identity matrix.
         - For n>1, features are pooled from the (n-1) level embeddings.
         """
         if n == 1:
-            print(f"  Initializing n=1 features with random noise (dim={self.config.PROTGRAM_1GRAM_INIT_DIM}).")
-            features = torch.randn((graph_obj.number_of_nodes, self.config.PROTGRAM_1GRAM_INIT_DIM))
+            print(f"  Initializing n=1 features with identity matrix.")
+            features = torch.eye(graph_obj.number_of_nodes)
             return features, {}
         elif prev_level_embeddings is not None and prev_level_map is not None:
             return EmbeddingProcessor.pool_lower_level_embeddings_for_init(
@@ -650,6 +661,10 @@ class ProtGramXGCNTrainer:
         """Runs a quick, small-scale PPI evaluation as a sanity check."""
         DataUtils.print_header("Running Sanity Check PPI Evaluation")
         print(f"  Using embeddings from: {Path(embedding_path).name}")
+        
+        # Standardize the embeddings first
+        standardized_embedding_path = EmbeddingProcessor.standardize_embedding_file(embedding_path)
+        
         sanity_config = copy.deepcopy(self.config)
 
         # Override config for a quick run
@@ -659,15 +674,15 @@ class ProtGramXGCNTrainer:
         sanity_config.PLOT_TRAINING_HISTORY = False  # Disable for speed
 
         # Set the specific embedding file to evaluate
-        model_name_for_eval = Path(embedding_path).stem.replace('_pca', '').replace(str(self.config.PCA_TARGET_DIMENSION), '')
+        model_name_for_eval = Path(standardized_embedding_path).stem.replace('_pca', '').replace(str(self.config.PCA_TARGET_DIMENSION), '')
         sanity_config.LP_EMBEDDING_FILES_TO_EVALUATE = [
-            {"name": model_name_for_eval, "path": embedding_path}
+            {"name": model_name_for_eval, "path": standardized_embedding_path}
         ]
 
         try:
             # Instantiate and run the pipeline with the modified config
             ppi_evaluator = PPIPipeline(sanity_config)
-            ppi_evaluator.run(use_dummy_data=False)
+            ppi_evaluator.run()
         except Exception as e:
             print(f"  ❌ Sanity check PPI evaluation failed with an error: {e}")
             traceback.print_exc()

@@ -10,6 +10,7 @@ import gc
 from multiprocessing import Pool
 import time # noqa
 from typing import Dict, Optional, List
+from pathlib import Path
 
 import numpy as np
 from gensim.models import Word2Vec
@@ -87,6 +88,8 @@ class Word2VecEmbedder:
                     for line in processed_lines:
                         temp_corpus_file.write(line + "\n")
 
+            # Flush the buffer to ensure the corpus is written to disk before training
+            temp_corpus_file.flush()
             # Now, train the model using the optimized file path
             w2v_model = self._train_w2v_model(corpus_path)
 
