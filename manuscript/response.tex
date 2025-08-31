@@ -56,7 +56,7 @@
 	\section{Part 1: Code \& Repository Enhancements}
 	\textit{Objective: Address Reviewer 1's comments on usability, reproducibility, and transparency.}
 	
-	\subsection{Overhaul \texttt{README.md}}
+	\subsection{Overhaul \texttt{README.md}\textcolor{red}{DONE}}
 	The current README is too minimal and must be expanded into a complete guide for new users.
 	\subsubsection*{Action Plan:}
 	\begin{enumerate}
@@ -71,7 +71,7 @@
 		\item \textbf{Document Project Structure:} Briefly explain the purpose of the main directories (\texttt{source/}, \texttt{configuration/}, \texttt{results/}, etc.) to help users navigate the codebase.
 	\end{enumerate}
 	
-	\subsection{Add Experimental Details to Configuration}
+	\subsection{Add Experimental Details to Configuration\textcolor{red}{DONE}}
 	Make all hyperparameters used for the manuscript's experiments explicit and easy to locate.
 	\subsubsection*{Action Plan:}
 	\begin{enumerate}
@@ -88,7 +88,7 @@
 		\end{lstlisting}
 	\end{enumerate}
 	
-	\subsection{Document Data Preprocessing}
+	\subsection{Document Data Preprocessing\textcolor{red}{DONE}}
 	Clarify the initial data cleaning steps performed on the UniProt FASTA file.
 	\subsubsection*{Action Plan:}
 	\begin{enumerate}
@@ -105,12 +105,12 @@
 	The current comparison against only ProtT5 is insufficient. A broader set of baselines is required.
 	\subsubsection*{Action Plan:}
 	\begin{enumerate}
-		\item \textbf{Integrate ESM-2 Embeddings:}
+		\item \textbf{Integrate ESM-2 Embeddings:\textcolor{red}{DONE}}
 		\begin{itemize}
 			\item Add logic to the \texttt{TransformerEmbedder} to download and process embeddings from a state-of-the-art ESM model (e.g., \texttt{esm2\_t33\_650M\_UR50D}).
 			\item Include these embeddings in the final PPI evaluation pipeline.
 		\end{itemize}
-		\item \textbf{Integrate a Structure-Based Baseline:}
+		\item \textbf{Integrate a Structure-Based Baseline:\textcolor{red}{OUT OF SCOPE}}
 		\begin{itemize}
 			\item Acquire AlphaFold2-predicted structures for the proteins in the dataset.
 			\item Implement a simple baseline using structural features. An effective approach would be to use a pre-trained, structure-based GNN like GearNet or to extract features (e.g., pLDDT scores, contact maps) for a simple classifier.
@@ -121,9 +121,9 @@
 	Quantify the contribution of the model's key architectural components.
 	\subsubsection*{Action Plan:}
 	\begin{enumerate}
-		\item \textbf{Directed vs. Undirected Graph:} Run the full PPI evaluation using only the undirected graph component (\texttt{A\_undirected\_norm\_sparse}) to demonstrate the value of directed edges.
-		\item \textbf{Gating Mechanism:} Create a simplified version of the \texttt{DirectGCNLayer} where the learnable gating coefficients are removed and replaced with a simple addition. Compare its performance to the full model.
-		\item \textbf{N-gram Hierarchy:} Run the full pipeline three times, using embeddings generated from:
+		\item \textbf{Directed vs. Undirected Graph:\textcolor{red}{DONE}} Run the full PPI evaluation using only the undirected graph component (\texttt{A\_undirected\_norm\_sparse}) to demonstrate the value of directed edges.
+		\item \textbf{Gating Mechanism:\textcolor{red}{DONE}} Create a simplified version of the \texttt{DirectGCNLayer} where the learnable gating coefficients are removed and replaced with a simple addition. Compare its performance to the full model.
+		\item \textbf{N-gram Hierarchy:\textcolor{red}{DONE}} Run the full pipeline three times, using embeddings generated from:
 		\begin{itemize}
 			\item n=1 only.
 			\item n=1 and n=2 combined.
@@ -136,7 +136,7 @@
 	Demonstrate the utility of the learned embeddings on a task other than PPI prediction.
 	\subsubsection*{Action Plan:}
 	\begin{enumerate}
-		\item \textbf{Implement GO Function Prediction Task:}
+		\item \textbf{Implement GO Function Prediction Task:\textcolor{red}{OUT OF SCOPE}}
 		\begin{itemize}
 			\item Acquire Gene Ontology (GO) annotations for the proteins in the dataset.
 			\item Set up a new multi-label classification experiment where the goal is to predict GO terms from protein embeddings.
@@ -148,7 +148,7 @@
 	Address the concern that mean-pooling is too simplistic for aggregating n-gram embeddings.
 	\subsubsection*{Action Plan:}
 	\begin{enumerate}
-		\item \textbf{Implement Attention-Based Pooling:}
+		\item \textbf{Implement Attention-Based Pooling:\textcolor{red}{DONE}}
 		\begin{itemize}
 			\item In \texttt{source/utils/post.py}, create a new pooling function that uses a simple attention mechanism to learn weights for each n-gram's contribution to the final protein embedding.
 			\item Compare the performance of attention-pooling against mean-pooling on the PPI prediction task.
@@ -164,21 +164,21 @@
 	Make the model less of a "black box" by identifying which features it learns are important.
 	\subsubsection*{Action Plan:}
 	\begin{enumerate}
-		\item \textbf{Identify Salient N-grams:} After training the final PPI model, implement a method to score the importance of each n-gram. One approach is to use Integrated Gradients or a similar feature attribution method on the trained MLP to find which n-grams contribute most to positive predictions.
-		\item \textbf{Visualize Motifs:} Visualize the most influential n-grams as sequence logos or heatmaps to highlight potentially important biological motifs.
+		\item \textbf{Identify Salient N-grams:\textcolor{red}{DONE}} After training the final PPI model, implement a method to score the importance of each n-gram. One approach is to use Integrated Gradients or a similar feature attribution method on the trained MLP to find which n-grams contribute most to positive predictions.
+		\item \textbf{Visualize Motifs:\textcolor{red}{OUT OF SCOPE}} Visualize the most influential n-grams as sequence logos or heatmaps to highlight potentially important biological motifs.
 	\end{enumerate}
 	
 	\subsection{Rewrite and Expand Manuscript Sections}
 	Incorporate the new results and address specific reviewer comments throughout the text.
 	\subsubsection*{Action Plan:}
 	\begin{enumerate}
-		\item \textbf{Related Work:} Add a new subsection discussing D-SCRIPT, geometric deep learning on protein structures, and other sequence-based transformers like BioBERT.
-		\item \textbf{Methods:} Create a dedicated "Experimental Details" subsection that includes a table listing all key hyperparameters requested by Reviewer 1.
+		\item \textbf{Related Work:\textcolor{red}{DONE}} Add a new subsection discussing D-SCRIPT, geometric deep learning on protein structures, and other sequence-based transformers like BioBERT.
+		\item \textbf{Methods:\textcolor{red}{DONE}} Create a dedicated "Experimental Details" subsection that includes a table listing all key hyperparameters requested by Reviewer 1.
 		\item \textbf{Discussion:}
 		\begin{itemize}
-			\item \textbf{Address Performance Gap:} Add a paragraph discussing the performance trade-offs between ProtGram-DirectGCN and large PLMs. Emphasize advantages in computational efficiency, interpretability, and independence from external pre-trained models.
-			\item \textbf{Integrate New Results:} Weave the findings from the new experiments (baselines, ablations, GO prediction) into the Results and Discussion sections to build a stronger argument.
-			\item \textbf{Incorporate New Citations:} Add the papers suggested by Reviewer 2 (PMID: 40386382, 39184075, 36823353) to the Discussion section to contextualize future work.
+			\item \textbf{Address Performance Gap:\textcolor{red}{DONE}} Add a paragraph discussing the performance trade-offs between ProtGram-DirectGCN and large PLMs. Emphasize advantages in computational efficiency, interpretability, and independence from external pre-trained models.
+			\item \textbf{Integrate New Results:\textcolor{red}{DONE}} Weave the findings from the new experiments (baselines, ablations, GO prediction) into the Results and Discussion sections to build a stronger argument.
+			\item \textbf{Incorporate New Citations:\textcolor{red}{DONE}} Add the papers suggested by Reviewer 2 (PMID: 40386382, 39184075, 36823353) to the Discussion section to contextualize future work.
 		\end{itemize}
 	\end{enumerate}
 	
@@ -186,32 +186,57 @@
 	Correct all minor typographical and clarity issues noted by the reviewers.
 	\subsubsection*{Action Plan:}
 	\begin{enumerate}
-		\item Find and fix the "Table ??" placeholder.
-		\item Add a sentence to the caption of Equation 2 clarifying the operations (e.g., "where $\odot$ denotes element-wise multiplication").
-		\item Create and insert a new figure in the Methods section that visually illustrates the n-gram graph construction process using a short, example amino acid sequence.
+		\item Find and fix the "Table ??" placeholder\textcolor{red}{DONE}.
+		\item Add a sentence to the caption of Equation 2 clarifying the operations (e.g., "where $\odot$ denotes element-wise multiplication")\textcolor{red}{DONE}.
+		\item Create and insert a new figure in the Methods section that visually illustrates the n-gram graph construction process using a short, example amino acid sequence\textcolor{red}{DONE}.
 	\end{enumerate}
 	
 	\newpage
 	
 	\section{Suggested Responses to Reviewers}
-	\subsection{Response to Reviewer 1}
+
+	
+
+	% ==============================================================================
+	% Response to Reviewer 1
+	% ==============================================================================
+	\subsection*{Response to Reviewer 1}
+	
 	We thank the reviewer for their positive feedback and constructive suggestions, which have significantly improved the clarity and reproducibility of our work. We have addressed all points as follows:
-	\begin{enumerate}[label=\arabic*.]
-		\item \textbf{Code Usability (README):} We agree that the original \texttt{README.md} was insufficient. We have completely overhauled it to provide a comprehensive guide, including detailed sections on installation, environment setup (with a note on WSL for Windows users), configuration of the \texttt{config.py} file, and example commands for running the pipeline.
-		\item \textbf{Related Work:} This was an excellent point. We have expanded the "Related Work" section to include a discussion of important recent methods, including D-SCRIPT, geometric deep learning models, and transformer-based approaches like BioBERT, to better contextualize our contribution.
-		\item \textbf{Experimental Details:} To enhance reproducibility, we have added a new "Experimental Details" subsection within the Methods, which now includes a table listing all key hyperparameters used in our experiments, such as learning rates, batch sizes, random seeds, Cluster-GCN parameters, and PCA settings, as requested.
+	
+	\begin{enumerate}[label=\arabic*., leftmargin=*]
+		\item \textbf{Code Usability and Documentation:} We agree that the original \texttt{README.md} was insufficient. We have completely overhauled it to provide a comprehensive guide. The new README now includes:
+		\begin{itemize}
+			\item A detailed, step-by-step **Installation Guide** with the exact commands required to set up the Conda environment from scratch, including a note on using WSL for Windows users.
+			\item A **"How to Run"** section with example shell commands for common use cases, such as running the full pipeline or only the integrated tests.
+			\item A **Configuration Guide** explaining the key parameters in \texttt{configuration/config.yaml}, grouped by function (e.g., Pipeline Control, GCN Parameters, Benchmarking).
+			\item A **Project Structure** overview to help users navigate the codebase.
+		\end{itemize}
+		
+		\item \textbf{Related Work:} This was an excellent point. We have expanded the "Related Work" section to include a discussion of important recent methods, including D-SCRIPT, geometric deep learning models, and transformer-based approaches like BioBERT, to better contextualize our contribution. Note that we moved a part of the related work section to the supplementary material to save space for writing the methods and the experiments results.
+		
+		\item \textbf{Experimental Details:} To enhance reproducibility, we have made all hyperparameters explicit and easy to locate within the declarative \texttt{config.yaml} file. This file now serves as the single source of truth for all parameters used in our experiments, including learning rates, batch sizes, random seeds, Cluster-GCN parameters, and PCA settings, as requested. In addition we added an experimental details section in the supplementary material including the hyperparameter tunining procedure and the ranges that were used in experimentation.
 	\end{enumerate}
 	
-	\subsection{Response to Reviewer 2}
+	\clearpage
+	
+	% ==============================================================================
+	% Response to Reviewer 2
+	% ==============================================================================
+	\subsection*{Response to Reviewer 2}
+	
 	We are grateful for the reviewer's insightful comments and suggestions, which have helped us strengthen the experimental validation and narrative of our manuscript.
 	
-	\subsubsection*{Major Concerns:}
-	\begin{enumerate}[label=\arabic*.]
-		\item \textbf{Comparative Underperformance vs. PLMs:} We agree this is a critical point. We have expanded the Discussion section to explicitly address the performance trade-offs. We now frame ProtGram-DirectGCN not as a direct replacement for large PLMs but as a valuable alternative that is more computationally efficient, does not require massive pre-training, and offers a higher degree of interpretability. We are aware of this specfici limiatiion and we largely did not include more models due to a current limitation in access computational to computational capacity as this research is not funded but we are working on expanding the work via related proposal that would help us further investigate "alteranative architrectures". We ran our inference and models on our development laptops. So due to these limitations we were not able to include more models. However we recently were able to run a comparative analysis to include ESM-2, providing a more complete picture.
+	\subsection*{Major Concerns:}
+	\begin{enumerate}[label=\arabic*., leftmargin=*]
+		\item \textbf{Comparative Performance vs. PLMs:} We agree this is a critical point. We have expanded the Discussion section to explicitly address the performance trade-offs. We now frame ProtGram-DirectGCN not as a direct replacement for large Protein Language Models (PLMs) but as a valuable alternative that is more computationally efficient, does not require massive pre-training, and offers a higher degree of interpretability. To provide a stronger baseline, we have now integrated results from another state-of-the-art PLM, \textbf{ESM-2}, into our comparative analysis. While a full-scale comparison against numerous large PLMs or structure-based models was deemed out of scope for this work, we believe this addition provides a more complete picture and we highlight these other methods as a key area for future investigation.
 		
-		\item \textbf{Pooling Strategy:} This is an excellent suggestion. We have implemented an attention-based pooling mechanism as an alternative to mean-pooling and have included the comparative results in the revised manuscript.
-		\item \textbf{Interpretability:} We agree that demonstrating the biological relevance of the learned representations is crucial. We have performed a new interpretability analysis to identify salient n-gram motifs that are most predictive of interactions and have included these findings, along with visualizations, in the Results section.
-		\item \textbf{Generalizability:} To demonstrate the broader utility of our learned embeddings, we have added a new downstream evaluation task: Gene Ontology (GO) function prediction. The results, which show competitive performance, are now included in the manuscript.
+		\item \textbf{Pooling Strategy:} This is an excellent suggestion. We have implemented an \textbf{attention-based pooling mechanism} as an alternative to mean-pooling for aggregating n-gram embeddings into a final protein representation. The comparative results, which demonstrate the benefit of this more sophisticated strategy, have been included in the revised manuscript.
+		
+		\item \textbf{Interpretability:} We agree that demonstrating the biological relevance of the learned representations is crucial. We have performed a new interpretability analysis using \textbf{SHAP (SHapley Additive exPlanations)} to identify salient n-gram motifs that are most predictive of interactions. These findings, which highlight the model's ability to learn meaningful sequence features, have been included in the Results section. While detailed motif visualization is a great next step, it was considered out of scope for the current revisions.
+		
+		\item \textbf{Generalizability:} To demonstrate the broader utility of our learned embeddings on a task other than PPI prediction is an excellent suggestion for future work. For the current manuscript, we have focused our efforts on the extensive ablation studies and the expanded baseline comparisons requested by the reviewers, which we believe substantially strengthens the validation of the core method. We have added a note on this to our Future Work section.
+		
 		\item \textbf{New Citations:} We thank the reviewer for these valuable references. We have incorporated the suggested papers (PMID: 40386382, 39184075, 36823353) into our Discussion section to inform future directions.
 	\end{enumerate}
 	
@@ -222,14 +247,28 @@
 		\item We have added a new figure to the Methods section that visually illustrates the n-gram graph construction process, as suggested.
 	\end{itemize}
 	
-	\subsection{Response to Reviewer 3}
+	\clearpage
+	
+	% ==============================================================================
+	% Response to Reviewer 3
+	% ==============================================================================
+	\subsection*{Response to Reviewer 3}
+	
 	We thank the reviewer for their valuable feedback and for recognizing the promise of our framework. We have performed several new experiments to address the points raised.
-	\begin{enumerate}[label=\arabic*.]
+	
+	\begin{enumerate}[label=\arabic*., leftmargin=*]
 		\item \textbf{Ablation Studies:} This is a crucial point that we have now addressed thoroughly. We have conducted a series of ablation studies to quantify the contribution of our model's key components. The new Results section includes analyses comparing: (i) our directed graph versus an undirected version, (ii) our model with and without the gating mechanism, and (iii) performance across different n-gram levels (n=1, n=1,2, and n=1,2,3). These results confirm the importance of each component to the model's final performance.
-		\item \textbf{Generalizability and Use Case:} We agree that demonstrating the utility of our embeddings beyond a single task is important. We have added a new evaluation on a Gene Ontology (GO) function prediction task. The strong performance on this task helps to better define the best use cases for our method and demonstrates the general applicability of the learned representations.
-		\item \textbf{Comparative Analysis:} We have expanded our comparative analysis to provide a more robust evaluation. In addition to ProtT5, we now include results from another state-of-the-art protein language model (ESM-2) and a structure-based baseline method. This broader comparison provides better context for the strengths and weaknesses of our approach.
 		
-		"A notable class of modern PPI prediction methods leverages 3D structural information, either from experimental sources or high-fidelity predictions from models like AlphaFold2 [Jumper et al., 2021]. These geometric deep learning approaches, such as GearNet and GVP-GNN, have demonstrated state-of-the-art performance by directly encoding the physical and chemical properties of protein surfaces.While these methods are powerful, their applicability is contingent on the availability of accurate structural data. Our work, with ProtGram-DirectGCN, intentionally explores a different and complementary direction. We focus exclusively on the protein's primary sequence, aiming to develop a method that is (1) universally applicable to any protein, including those with unknown or poorly predicted structures (e.g., intrinsically disordered proteins), and (2) computationally less intensive, as it does not require the computationally expensive step of structure prediction or the storage of large structural files. By constructing a global n-gram graph, our approach seeks to infer higher-order sequence motifs that serve as a proxy for structural and functional information, providing a robust and scalable alternative for large-scale proteome analysis where structural information may be sparse or unavailable. Future work could explore hybrid models that fuse our learned n-gram representations with structural features for proteins where both are available."
+		\item \textbf{Generalizability and Use Case:} We agree that demonstrating the utility of our embeddings beyond a single task is important. While implementing an entirely new downstream task (e.g., Gene Ontology prediction) was beyond the scope of the current revisions, we have expanded the Discussion to better contextualize the use case for our method. We position ProtGram-DirectGCN as a powerful and computationally efficient approach that is particularly valuable when structural information is sparse or unavailable.
+		
+		\item \textbf{Comparative Analysis:} We have expanded our comparative analysis to provide a more robust evaluation. In addition to ProtT5, we now include results from another state-of-the-art protein language model, \textbf{ESM-2}. Furthermore, we have added a new paragraph to the Discussion to explicitly contextualize our sequence-based method against structure-based approaches, as requested.
+		
+		\begin{quote}
+			\textit{A notable class of modern PPI prediction methods leverages 3D structural information, either from experimental sources or high-fidelity predictions from models like AlphaFold2 \cite{jumper_highly_2021}. These geometric deep learning approaches, such as GearNet and GVP-GNN, have demonstrated state-of-the-art performance by directly encoding the physical and chemical properties of protein surfaces. While these methods are powerful, their applicability is contingent on the availability of accurate structural data. Our work, with $ProtGram-DirectGCN$, intentionally explores a different and complementary direction. We focus exclusively on the protein's primary sequence, aiming to develop a method that is (1) universally applicable to any protein, including those with unknown or poorly predicted structures (e.g., intrinsically disordered proteins), and (2) computationally less intensive, as it does not require the computationally expensive step of structure prediction or the storage of large structural files. By constructing a global n-gram graph, our approach seeks to infer higher-order sequence motifs that serve as a proxy for structural and functional information, providing a robust and scalable alternative for large-scale proteome analysis where structural information may be sparse or unavailable. Future work could explore hybrid models that fuse our learned n-gram representations with structural features for proteins where both are available.}
+		\end{quote}
+		
 	\end{enumerate}
+	
+
 	
 \end{document}

@@ -17,132 +17,319 @@
 	\title[Supplementary Material]{{\helveticaitalic{Supplementary Material for ProtGram-DirectGCN}}}
 	\maketitle
 	
-	\section{Appendix A: Algorithms}
-	This section provides the pseudocode for the main components of our proposed pipeline, including the hierarchical graph construction and the forward pass of the $ProtGramDirectGCN$ model.
-	
-	\begin{algorithm}[H]
-		\caption{Hierarchical N-gram Graph Construction}
-		\label{alg:GraphConstruction}
-		\begin{algorithmic}[1]
-			\Statex \Comment{Constructs a hierarchy of n-gram graphs $G_1, \dots, G_{N_{max}}$ from a protein sequence corpus.}
-			\Require Corpus of protein sequences $S_{corpus}$, Maximum n-gram size $N_{max}$
-			\Ensure A set of n-gram graphs $\{G_1, \dots, G_{N_{max}}\}$
-			\Statex
-			\For{$n = 1 \ldots N_{max}$}
-			\State Initialize unique n-gram set $V_n \gets \emptyset$
-			\State Initialize edge counts $\texttt{W\_counts\_n} \gets \text{empty map}$
-			\Statex
-			\procedurecomment{Phase 1: Identify all unique n-grams of length n}
-			\For{each protein sequence $R$ in $S_{corpus}$}
-			\For{$i = 0 \ldots \text{length}(R) - n$}
-			\State $ngram \gets R[i : i+n]$
-			\State Add $ngram$ to $V_n$
-			\EndFor
-			\EndFor
-			\State Create integer mapping $\texttt{node\_to\_idx\_n}$ for all n-grams in $V_n$.
-			\Statex
-			\procedurecomment{Phase 2: Count transitions between n-grams}
-			\For{each protein sequence $R$ in $S_{corpus}$}
-			\For{$i = 0 \ldots \text{length}(R) - n - 1$}
-			\State $u \gets R[i : i+n]$
-			\State $v \gets R[i+1 : i+1+n]$
-			\If{$u \in V_n$ and $v \in V_n$}
-			\State Increment count for edge $(u, v)$ in $\texttt{W\_counts\_n}$
-			\EndIf
-			\EndFor
-			\EndFor
-			\Statex
-			\procedurecomment{Phase 3: Assemble the graph object $G_n$}
-			\State Create edge list $E_n$ from $\texttt{W\_counts\_n}$ using integer IDs from $\texttt{node\_to\_idx\_n}$.
-			\State $G_n \gets \text{InstantiateGraph}(V_n, E_n)$
-			\State Store $G_n$
-			\EndFor
-			\State \Return $\{G_1, \dots, G_{N_{max}}\}$
-		\end{algorithmic}
-	\end{algorithm}
-	
-	
+\section{Appendix A: Algorithms}
+This section provides a high-level summary of the four algorithms that constitute the \textbf{$ProtGram-DirectGCN$} pipeline. The methodology is designed to create a hierarchical representation of proteins, starting from basic n-grams and culminating in comprehensive protein-level embeddings.
+
+\subsection*{Algorithm 1: \textit{$ProtGram$}: Hierarchical N-gram Graph Construction}
+This foundational algorithm builds a hierarchy of directed, weighted graphs $\{G_1, \dots, G_{N_{max}}\}$ from a corpus of protein sequences $\mathcal{S}$. For each n-gram size $n$, the algorithm performs a single pass over the data to extract unique n-grams (nodes $V_n$) and their sequential co-occurrences (directed edges $E_n$). The weight of an edge from n-gram $u$ to $v$ quantifies the frequency of their transition. The output is a series of graphs where each $G_n$ captures the relational structure of n-grams at a specific length scale.
+
+\subsection*{Algorithm 2: \textit{$DirectGCN$}: Layer Forward Pass}
+This algorithm specifies the forward pass for a single layer in the \textbf{$DirectGCN$} model. It updates node features $H$ through a sophisticated multi-path architecture. The process involves:
+\begin{enumerate}
+	\item A \textbf{shared linear transformation} applied to the input features.
+	\item \textbf{Multi-path message passing}, where information is propagated and transformed independently across different edge types (e.g., based on in-degree, out-degree, or as an undirected graph).
+	\item A \textbf{hierarchical gating mechanism} that uses learnable weights to compute an adaptive, weighted sum of the outputs from all paths. This allows the model to dynamically prioritize different types of neighborhood information.
+\end{enumerate}
+
+\subsection*{Algorithm 3: \textit{$DirectGCN$}: Model Forward Pass}
+This algorithm outlines the complete forward pass for the full \textbf{$DirectGCN$} model, which stacks multiple layers defined in Algorithm 2. The architecture integrates modern deep learning components, including \textbf{residual connections}, \textbf{Layer Normalization}, and \textbf{Dropout}, to facilitate stable training of a deep network. The model is adaptable, employing a deeper configuration for the full ProtGram pipeline and a simpler one for benchmark tasks. The final output provides both node-level embeddings ($H_{final}$) and classification logits ($\hat{Y}$) from a terminal MLP decoder.
+
+\subsection*{Algorithm 4: \textit{$ProtGram-DirectGCN$}: Hierarchical Training}
+This master algorithm orchestrates the end-to-end training and embedding generation process. It consists of two primary phases:
+\begin{enumerate}
+	\item \textbf{Hierarchical GNN Training:} The algorithm iteratively trains a \textbf{$DirectGCN$} model on each graph $G_n$ from the hierarchy. For each level $n>1$, the initial node features are derived by pooling the learned embeddings from the previous level ($n-1$), establishing a curriculum where representations become progressively more complex. Each level is trained using a self-supervised task.
+	\item \textbf{Protein-Level Embedding Aggregation:} After the hierarchical training is complete, this phase generates the final embeddings for each full protein. It retrieves the learned representations for all n-grams within a protein from the highest level ($N_{max}$) and aggregates them using an \textbf{attention pooling} mechanism. This produces a single, fixed-size vector representation for each protein in the corpus.
+\end{enumerate}
 \begin{algorithm}[H]
-	\caption{$DirectGCNLayer$ - Node-Level Feature Propagation (Per-Dimension View)}
-	\label{alg:DirectGCNLayer_NodeLevel}
+	\caption{$ProtGram$: Hierarchical N-gram Graph Construction}
+	\label{alg:GraphConstruction}
 	\begin{algorithmic}[1]
-		\Statex \Comment{Computes output features for all nodes, showing the per-dimension logic.}
-		\Require Node features $H^{(l)}$ ($N \times F_{in}$), Prop. matrices $\mathcal{A}_{in}, \mathcal{A}_{out}, \tilde{A}_{undir}$
-		\Require Layer parameters: $W_{main,*}, b_{main,*}, W_{shared}, b_{shared,*}, C_{*}, b_{const}$
-		\Ensure Pre-activation output features $H^{(l+1)'}$ ($N \times F_{out}$)
+		\Require Corpus of protein sequences $\mathcal{S}$, Maximum n-gram size $N_{max}$
+		\Ensure A set of directed, weighted n-gram graphs $\{G_1, \dots, G_{N_{max}}\}$
 		\Statex
-		\State Initialize $H^{(l+1)'}$ as a zero matrix of shape ($N \times F_{out}$)
-		\For{each node $u = 0 \ldots N-1$}
-		\For{each output dimension $d = 0 \ldots F_{out}-1$}
-		\Statex \procedurecomment{Initialize accumulators for node $u$, dimension $d$}
-		\State $\texttt{agg\_main\_in} \gets 0$, $\texttt{agg\_main\_out} \gets 0$, $\texttt{agg\_main\_undir} \gets 0$
-		\State $\texttt{h\_shared} \gets 0$
-		\Statex
-		\procedurecomment{1. Aggregate messages from neighbors}
-		\For{each input dimension $f = 0 \ldots F_{in}-1$}
-		\For{each neighbor node $v = 0 \ldots N-1$}
-		\State $\texttt{agg\_main\_in} \gets \texttt{agg\_main\_in} + \mathcal{A}_{in,uv} \cdot H^{(l)}_{vf} \cdot W_{main,in,fd}$
-		\State $\texttt{agg\_main\_out} \gets \texttt{agg\_main\_out} + \mathcal{A}_{out,uv} \cdot H^{(l)}_{vf} \cdot W_{main,out,fd}$
-		\State $\texttt{agg\_main\_undir} \gets \texttt{agg\_main\_undir} + \tilde{A}_{undir,uv} \cdot H^{(l)}_{vf} \cdot W_{main,undir,fd}$
+		\For{$n = 1 \ldots N_{max}$}
+		\State \textbf{Phase 1: Single-Pass N-gram and Edge Extraction}
+		\State Initialize unique n-gram set $V_n \gets \emptyset$
+		\State Initialize edge weights $W_n \gets \text{empty map}$
+		\For{each protein sequence $R$ in $\mathcal{S}$}
+		\If{$\text{length}(R) < n+1$} \Comment{Skip sequences too short to form an edge}
+		\State \textbf{continue}
+		\EndIf
+		\For{$i = 0 \ldots \text{length}(R) - n - 1$}
+		\State $u \gets R[i : i+n]$ \Comment{Source n-gram}
+		\State $v \gets R[i+1 : i+1+n]$ \Comment{Target n-gram}
+		\State Add $u$ and $v$ to $V_n$
+		\State Increment weight for edge $(u, v)$ in $W_n$
 		\EndFor
 		\EndFor
 		\Statex
-		\procedurecomment{2. Compute shared MLP transformation}
-		\For{each input dimension $f = 0 \ldots F_{in}-1$}
-		\State $\texttt{h\_shared} \gets \texttt{h\_shared} + H^{(l)}_{uf} \cdot W_{shared,fd}$
+		\State \textbf{Phase 2: Graph Assembly}
+		\State Create integer mapping $ID_n: V_n \to \{0, \dots, |V_n|-1\}$
+		\State Create weighted edge list $E_n$ from $W_n$ using the mapping $ID_n$
+		\State $G_n \gets \text{InstantiateGraph}(V_n, E_n)$
+		\State Store $G_n$
+		\EndFor
+		\State \Return $\{G_1, \dots, G_{N_{max}}\}$
+	\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+	\caption{$DirectGCN$: Layer Forward Pass}
+	\label{alg:DirectGCNLayer}
+	\begin{algorithmic}[1]
+		\Require Node features $H$, Graph data object $\mathcal{D}$
+		\Ensure Updated node features $H'$
+		\Statex
+		\procedurecomment{Phase 1: Shared Feature Transformation}
+		\State $H_{shared} \gets \text{LinearShared}(H)$
+		\Statex
+		\procedurecomment{Phase 2: Multi-Path Message Passing}
+		\State Initialize empty list $H_{paths}$
+		\For{each path $p$ in \{in-degree, out-degree, undirected, etc.\}}
+		\State $H_{prop_p} \gets \text{Propagate}(\mathcal{D}.E_p, \text{Linear}_p(H)) + \text{bias}_p$
+		\State $H_{comb_p} \gets \text{Project}_p(H_{prop_p} \oplus (H_{shared} + \text{bias}_{shared_p}))$ \Comment{$\oplus$ is concatenation}
+		\State Add $H_{comb_p}$ to $H_{paths}$
 		\EndFor
 		\Statex
-		\procedurecomment{3. Combine components for each channel}
-		\State $\texttt{H\_in\_d} \gets (\texttt{agg\_main\_in} + b_{main,in,d}) + (\texttt{h\_shared} + b_{shared,in,d})$
-		\State $\texttt{H\_out\_d} \gets (\texttt{agg\_main\_out} + b_{main,out,d}) + (\texttt{h\_shared} + b_{shared,out,d})$
-		\State $\texttt{H\_undir\_d} \gets (\texttt{agg\_main\_undir} + b_{main,undir,d}) + (\texttt{h\_shared} + b_{shared,undir,d})$
+		\procedurecomment{Phase 3: Hierarchical Gating and Aggregation}
+		\State $W_{gates} \gets \sigma(\text{LearnableGatingCoefficients } C)$ \Comment{$\sigma$ is the sigmoid function}
+		\State $H' \gets \sum_{p} W_{gates_p} \odot H_{paths_p}$ \Comment{$\odot$ is element-wise product}
+		\State $H' \gets H' + \text{LearnableNodeConstant}$
+		\State \Return $H'$
+	\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+	\caption{$DirectGCN$: Model Forward Pass}
+	\label{alg:DirectGCNModel}
+	\begin{algorithmic}[1]
+		\Require Initial node features $X$, Graph data object $\mathcal{D}$
+		\Ensure Logits for classification $\hat{Y}$, Final node embeddings $H_{final}$
 		\Statex
-		\procedurecomment{4. Apply gating and final combination}
-		\State $\texttt{directed\_signal} \gets C_{directed,u} \cdot (C_{in,u} \cdot \texttt{H\_in\_d} + C_{out,u} \cdot \texttt{H\_out\_d})$
-		\State $\texttt{undirected\_signal} \gets C_{undirected,u} \cdot \texttt{H\_undir\_d}$
-		\State $H^{(l+1)'}_{ud} \gets C_{all,u} \cdot (\texttt{directed\_signal} + \texttt{undirected\_signal}) + b_{const,ud}$
+		\State $H \gets X$
+		\If{model is in ProtGram context (deep architecture)}
+		\For{$i = 0 \ldots \text{NumLayers} - 1$}
+		\State $H_{conv} \gets \text{DirectGCNLayer}_i(H, \mathcal{D})$
+		\State $H_{res} \gets \text{ResidualProjection}_i(H)$
+		\State $H \gets \text{LeakyReLU}(\text{LayerNorm}_i(H_{conv} + H_{res}))$
+		\State $H \gets \text{Dropout}(H)$
 		\EndFor
+		\Else{ (model is in Benchmark/Singleton context)}
+		\State $H \gets \text{DirectGCNLayer}_0(H, \mathcal{D})$
+		\State $H \gets \text{ReLU}(\text{LayerNorm}_0(H))$
+		\State $H \gets \text{Dropout}(H)$
+		\EndIf
+		\State $H_{final} \gets H$
+		\Statex
+		\procedurecomment{Final Classification Head}
+		\State $\hat{Y} \gets \text{DecoderMLP}(H_{final})$
+		\State \Return $\hat{Y}, H_{final}$
+	\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+	\caption{$ProtGram-DirectGCN$: Hierarchical Training}
+	\label{alg:ProtGramTraining}
+	\begin{algorithmic}[1]
+		\Require Set of n-gram graphs $\{G_1, \dots, G_{N_{max}}\}$, Protein sequences $\mathcal{S}$, GNN model type $\mathcal{M}$
+		\Ensure Final protein-level embeddings $E_{protein}$
+		\Statex
+		\State Initialize map of embeddings per level $E_{levels} \gets \emptyset$
+		\Statex
+		\procedurecomment{Phase 1: Hierarchical GNN Training}
+		\For{$n = 1 \ldots N_{max}$}
+		\State Load graph $G_n$
+		\If{$n = 1$}
+		\State $X_n \gets \text{RandomFeatures}(\text{num\_nodes}(G_n), \text{dim}_{init})$
+		\Else
+		\State $X_n \gets \text{PoolEmbeddings}(E_{levels}[n-1], G_n, G_{n-1})$ \Comment{Pool from previous level}
+		\EndIf
+		\State $Y_n, \text{num\_classes} \gets \text{GenerateTaskLabels}(G_n, \text{task\_type}_n)$ \Comment{Self-supervised task}
+		\State $\mathcal{M}_n \gets \text{InstantiateModel}(\mathcal{M}, \text{dim}(X_n), \text{num\_classes})$
+		\State Train $\mathcal{M}_n$ on $(G_n, X_n, Y_n)$ to minimize loss $\mathcal{L}$
+		\State $E_{levels}[n] \gets \text{ExtractEmbeddings}(\mathcal{M}_n, G_n, X_n)$ \Comment{Get final node embeddings}
 		\EndFor
-		\State \Return $H^{(l+1)'}$
+		\Statex
+		\procedurecomment{Phase 2: Protein-Level Embedding Aggregation}
+		\State Initialize protein embeddings $E_{protein} \gets \text{empty map}$
+		\For{each protein sequence $R$ in $\mathcal{S}$}
+		\State $N_R \gets \text{GetAllNgrams}(R, N_{max})$
+		\State $E_R \gets \text{LookupEmbeddings}(N_R, E_{levels}[N_{max}])$ \Comment{Get embeddings from final level}
+		\State $E_{protein}[R_{id}] \gets \text{AttentionPool}(E_R)$
+		\EndFor
+		\State \Return $E_{protein}$
 	\end{algorithmic}
 \end{algorithm}
 	
-	
 	\section{A Review of Convolutional Methods for Directed Graphs}
 	
-	Extending Graph Convolutional Networks (GCNs) to directed graphs is a significant challenge, as the standard spectral GCN formulation relies on the symmetric Laplacian of an undirected graph. Research to address this has broadly followed three themes: adapting spectral theory, redesigning spatial convolutions, and leveraging higher-order structures.
+	Extending Spectral Graph Convolutional Networks (GCNs) to directed graphs is a significant challenge, as the standard spectral GCN formulation relies on the symmetric Laplacian of an undirected graph. Research to address this has broadly followed three themes: adapting spectral theory, redesigning spatial convolutions, and leveraging higher-order structures.
 	
-	Spectral approaches aim to redefine the graph Laplacian to handle directedness. An early attempt by \cite{ma_spectral-based_2019} constructed a symmetric Laplacian using the graph's transition matrix and its stationary distribution (the Perron vector), but this is computationally expensive. A more recent innovation is MagNet \cite{zhang_magnet_2021}, which employs a complex Hermitian matrix called the magnetic Laplacian, $L_{N}^{(q)}:=I-(D_{s}^{-1/2}A_{s}D_{s}^{-1/2})\odot \exp(i\Theta^{(q)})$, where directionality is elegantly encoded in the phase of complex entries, guaranteeing real eigenvalues suitable for spectral filtering.
+	Spectral approaches aim to redefine the graph Laplacian to handle directedness. An early attempt by \cite{ma_spectral-based_2019} constructed a symmetric Laplacian using the graph's transition matrix and its stationary distribution (the Perron vector), but this is computationally expensive. A more recent innovation is MagNet \cite{zhang_magnet_2021}, which employs a complex Hermitian matrix called the magnetic Laplacian, $L_{N}^{(q)}:=I-(D_{s}^{-1/2}A_{s}D_{s}^{-1/2})\odot \exp(i\Theta^{(q)})$, where directionality is elegantly encoded in the phase of complex entries, guaranteeing real eigenvalues suitable for spectral filtering. Another important model is DirGNN \cite{rossi_edge_2023} focuses on "heterophilic" graphs, where connected nodes likely have different labels or types, it contrasts with "homophilic" graphs, where neighboring nodes tend to share similar labels. The authors argue that most Graph Neural Networks (GNNs) overlook edge direction by converting directed graphs into undirected forms. This means the direction of relationships is ignored, which can be unideal for heterophilic graphs. Dir-GNN addresses this by performing separate aggregations of information for incoming and outgoing edges, considering their direction. This approach improves effective homophily, or how well related information is grouped together, in datasets with many differing node labels. The research shows notable accuracy gains on benchmarks designed for heterophilic graphs, achieving top results by using edge direction while still performing well on homophilic graphs.
 	
 	A second, more intuitive theme involves spatial approaches that redefine the neighborhood aggregation process. The most common strategy, seen in models like \cite{tong_directed_2020}'s, is to explicitly separate the aggregation of features from in-neighbors and out-neighbors. A generalized form of this operation is $H' = \sigma ( \tilde{A}_{in} H W_{in} + \tilde{A}_{out} H W_{out} )$, where $\tilde{A}_{in}$ and $\tilde{A}_{out}$ are normalized adjacency matrices for incoming and outgoing edges. This method is straightforward to implement and scale but has a localized receptive field.
 	
-	Finally, some research has moved beyond simple edges to consider higher-order connectivity patterns. MotifNet \cite{monti_motifnet_2018}, uses small, recurring directed subgraphs called motifs to define multiple anisotropic views of the graph, allowing the model to capture more complex structural information. Our $ProtGramDirectGCN$ builds upon the principles of spatial methods by explicitly handling incoming, outgoing, and undirected information channels. However, it introduces a unique hybrid GCN-MLP layer architecture with a gating mechanism, allowing the model to learn the relative importance of each information channel and a shared feature transformation for a more expressive aggregation scheme.
+	Finally, some research has moved beyond simple edges to consider higher-order connectivity patterns. MotifNet \cite{monti_motifnet_2018}, uses small, recurring directed subgraphs called motifs to define multiple anisotropic views of the graph, allowing the model to capture more complex structural information. Our $ProtGramDirectGCN$ builds upon the principles of spatial methods by explicitly handling incoming, outgoing, and undirected information channels. However, it is inherently spectral introducing a unique hybrid $DirectGCN$ layer architecture with a gating mechanism, allowing the model to learn the relative importance of each information channel and a shared feature transformation for a more expressive aggregation scheme.
 	
 	\section{Data Preparation}
-	%1- go to https://downloads.thebiogrid.org/BioGRID/Release-Archive/BIOGRID-4.4.248/
-	%2- download the file named BIOGRID-ALL-4.4.248.mitab.zip the mitab format
-	%3- download the id_mapping file from uniprot downloads
-	%4- download the experimental negative interaction files from %https://www.russelllab.org/negatives/
-	%5- extract the uniprotkb to geneid mapping columns from the main uniprot idmapping file and %save them as csv file
-	%6- in the main positive interaction BioGrid interaction file extract the first 2 columns %mapping interactor A to interactor B via geneid
-	%7- import both files as seperate table to a mysql database 
-	%8- write a join sql statment to map the geneid columns from the biogrid 2 column table to %the uniprot corresponding rows in the id mapping table 
-	%9- in the join statment extract the actual ids using substring 
-	%10- now you will have a 2 column table with uniprotkbids for interactor a and interactor b
-	%11- you can save that table as csv called positive_interactions
-	%12- the negative interaction files are already indexed with the uniprotid
-	%13- extract the first 2 column represeting interactor a and interactor b and insert them %into a pre created mysql table
-	%14- repeat for each species file 
-	%15- do a substring select statment to extract the id number only from the resulting cmbined %table 
-	%16- exprot the table as csv file and call it negative_interactions.csv
+\section{Data Acquisition and Preprocessing}
+The data processing methodology minimizes modifications to public datasets before analysis. All data cleaning, filtering, and tokenization tasks occur within the main processing pipeline.
+\subsection{Data Sources}
+The primary datasets for this study were acquired from the following official sources:
+\begin{itemize}
+	\item \textbf{Protein Sequences:} The UniProt Swiss-Prot (UniProt-SPROT) and UniRef50 databases served as the primary sources for all protein sequences.
+	\item \textbf{Positive Protein-Protein Interactions (PPIs):} A comprehensive set of positive interactions was obtained from the BioGrid database (Version 4.4.248, file BIOGRID-ALL-4.4.248.mitab.zip).
+	\item \textbf{Negative Protein-Protein Interactions (PPIs):} A high-confidence set of negative (non-interacting) protein pairs was obtained from the curated datasets provided by Trabuco et al. (2012).
+	\item \textbf{Identifier Mapping:} The official UniProt ID mapping database (idmapping.dat.gz) was utilized to standardize all protein identifiers to their corresponding canonical UniProtKB accession numbers.
+\end{itemize}
+\subsection{Generation of PPI Ground Truth Sets}
+A standardized ground truth dataset of positive and negative interactions was created for model training and evaluation.
+\begin{enumerate}
+	\item \textbf{Identifier Standardization} \ To ensure consistency across sources, a local identifier mapping database was built. The UniProt idmapping.dat file was parsed to create a relational table. This table maps GeneID identifiers to their UniProtKB accession numbers.
+	\item \textbf{Processing of Positive Interactions} \ The BioGrid dataset was processed to generate the positive interaction set:
+	\begin{itemize}
+		\item The BIOGRID-ALL-4.4.248.mitab file was parsed to extract the first two columns, representing Interactor A and Interactor B, which are primarily identified by GeneIDs.
+		\item These GeneID pairs, which uniquely identify genes in NCBI, were added to a MySQL database.
+		\item A database join was performed between the BioGrid interaction table and the UniProt ID mapping table. This converted each GeneID in the pairs to its corresponding UniProtKB accession number.
+		\item The resulting table of UniProtKB ID pairs was exported as the positive interaction set.
+		\item We have also implemented an automated version of this process in the main pipeline, which relies on Parquet files.
+	\end{itemize}
+	\item \textbf{Processing of Negative Interactions} \ The negative interaction set was generated by aggregating data from Trabuco et al. (2012):
+	\begin{itemize}
+		\item The source files, which are already indexed by UniProtKB identifiers, were processed to extract the first two columns representing the non-interacting protein pair.
+		\item Data from all relevant species-specific files were combined into a single table.
+		\item A string parsing function was used to keep only the core UniProtKB accession number. This number is a unique protein identifier in the UniProt database.
+		\item The final, aggregated table of non-interacting pairs was exported as the negative interaction set.
+	\end{itemize}
+\end{enumerate}
+Both positive and negative interaction sets were saved in Parquet format for efficient downstream access.
+\subsection{Dynamic Sequence Preprocessing}
+Protein sequence data was processed immediately prior to model input, ensuring that each pipeline component receives data in the required standardized format.
+
+\textbf{Sequence Cleaning:} When a model component requests a sequence, the raw FASTA file is read. A filter removes any character not representing one of the 20 standard amino acids (A, C, D, E, F, G, H, I, K, L, M, N, P, Q, R, S, T, V, W, Y). This standardizes the alphabet for all models. To fit GPU and memory limits, sequences are truncated to a maximum of 10,000 characters.
+
+\textbf{Tokenization:} The cleaned and truncated sequence is converted into smaller units, called tokens, according to the specific requirements of the downstream model.
+
+	\section*{Experimental Details}
+	
+	The experimental setup is defined by a series of fixed hyperparameters for the primary embedding generation models and a defined search space for optimizing the downstream Protein-Protein Interaction (PPI) classifier.
+	
+	\subsection*{Model Hyperparameters}
+	
+	The following tables detail the fixed hyperparameters used for the main embedding generation pipelines and the GNN benchmarking suite.
+	
+	\begin{table}[H]
+		\centering
+		\caption{Hyperparameters for the $ProtGram-DirectGCN$ Pipeline.}
+		\label{tab:protgram_params}
+		\begin{tabular}{ll}
+			\toprule
+			\textbf{Parameter} & \textbf{Value} \\
+			\midrule
+			Max N-gram Size ($N_{max}$) & 3 \\
+			DirectGCN Hidden Layer Dims & [512, 256, 128, 64] \\
+			1-gram Initial Feature Dim & 512 \\
+			Epochs per N-gram Level & 500 \\
+			Learning Rate & 0.005 \\
+			Dropout Rate & 0.5 \\
+			Weight Decay & 0.0001 \\
+			Protein Pooling Strategy & attention \\
+			Hierarchical Pooling Strategy & attention \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\begin{table}[H]
+		\centering
+		\caption{Hyperparameters for the GNN Benchmarking Suite.}
+		\label{tab:benchmark_params}
+		\begin{tabular}{ll}
+			\toprule
+			\textbf{Parameter} & \textbf{Value} \\
+			\midrule
+			Epochs & 100 \\
+			Learning Rate & 0.01 \\
+			Weight Decay & 0.0005 \\
+			GNN Hidden Channels & 64 \\
+			GNN Number of Layers & 2 \\
+			GAT Heads & 2 \\
+			ChebNet K & 3 \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+
+	
+	\begin{table}[H]
+		\centering
+		\caption{Hyperparameters for the final PPI Evaluation MLP.}
+		\label{tab:ppi_mlp_params}
+		\begin{tabular}{ll}
+			\toprule
+			\textbf{Parameter} & \textbf{Value} \\
+			\midrule
+			Cross-Validation Folds & 3 \\
+			Epochs & 10 \\
+			Batch Size & 2048 \\
+			Learning Rate & 0.001 \\
+			Dense Layer 1 Units & 128 \\
+			Dropout Rate 1 & 0.4 \\
+			Dense Layer 2 Units & 64 \\
+			Dropout Rate 2 & 0.4 \\
+			L2 Regularization & 1.0e-5 \\
+			Edge Embedding Method & concatenate \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\subsection*{Hyperparameter Optimization Search Space}
+	
+	For the hyperparameter optimization (HPO) pipeline, we used Optuna to search for the best-performing MLP architecture for the downstream PPI classification task. The search was conducted on the embeddings generated by the \texttt{$ProtGram-DirectGCN$} model. Table~\ref{tab:hpo_space} details the search space for each hyperparameter.
+	
+	\begin{table}[H]
+		\centering
+		\caption{Search space for the Hyperparameter Optimization of the PPI Evaluation MLP.}
+		\label{tab:hpo_space}
+		\begin{tabular}{lll}
+			\toprule
+			\textbf{Hyperparameter} & \textbf{Type} & \textbf{Range / Choices} \\
+			\midrule
+			MLP Learning Rate & Log-Uniform & [1.0e-5, 1.0e-2] \\
+			Dense Layer 1 Units & Integer & [32, 512] (step of 32) \\
+			Dropout Rate 1 & Uniform & [0.1, 0.6] \\
+			Dense Layer 2 Units & Integer & [16, 256] (step of 16) \\
+			Dropout Rate 2 & Uniform & [0.1, 0.6] \\
+			L2 Regularization & Log-Uniform & [1.0e-6, 1.0e-3] \\
+			Batch Size & Categorical & \{512, 1024, 2048, 4096\} \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
 	
 	
-	
-	SQL statments 
-	
-	\section{Computational Capacity}
-	
-	
+\section*{Computational Capacity}
+
+The project was developed and evaluated across two distinct computational environments to ensure both functional correctness and scalability.
+
+\subsection*{1. Development and Testing Environment (Mobile Workstation)}
+
+Initial development, prototyping, and unit testing were conducted on a high-performance mobile workstation. This environment was sufficient for debugging, feature implementation, and running the integrated test suite on smaller, sampled datasets.
+\begin{itemize}
+	\item \textbf{Processor:} 13th Gen Intel\textregistered{} Core\texttrademark{} i9-13900H (2.60 GHz base frequency)
+	\item \textbf{Memory (RAM):} 32.0 GB
+	\item \textbf{System Type:} 64-bit Operating System, x64-based processor
+\end{itemize}
+
+\subsection*{2. Scalability and Evaluation Environment (Server Node)}
+
+All large-scale data processing, model training, and final performance evaluations were executed on a dedicated server node designed for high-throughput computing and GPU-intensive tasks. This machine's specifications were critical for handling the full sequence datasets and running the comprehensive benchmarking suite.
+\begin{itemize}
+	\item \textbf{Processor:} Dual Intel\textregistered{} Xeon\textregistered{} Gold 6426Y CPUs, providing a total of 32 cores and 64 threads (2.5 GHz base, up to 4.1 GHz Turbo).
+	\item \textbf{Memory (RAM):} 128 GB of DDR5 4800MHz RDIMM ECC memory.
+	\item \textbf{GPU:} A single NVIDIA RTX 6000 Ada Generation graphics card with 48 GB of GDDR6 memory.
+	\item \textbf{Primary Storage:} A high-performance RAID array of four 2 TB NVMe SSDs (8 TB total raw capacity) hosted on a Dell Ultra-Speed Drive PCIe card, used for the operating system and active computations.
+	\item \textbf{Secondary Storage:} A RAID 1 array of two 1.92 TB Enterprise SATA SSDs (1.92 TB usable capacity) managed by a PERC H755 hardware RAID controller, used for data backup and staging.
+	\item \textbf{Networking:} Equipped with both standard dual-port 1GbE networking and a high-performance quad-port 25GbE SFP28 adapter for fast data access.
+\end{itemize}
+
 		\bibliographystyle{Frontiers-Harvard}
 	\bibliography{references}
 	
