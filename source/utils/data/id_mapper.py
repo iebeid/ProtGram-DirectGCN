@@ -87,7 +87,7 @@ class IDMapper:
 
         self._mode_used = mode
         cache_filename = f"{mode}_map_cache.pkl"
-        local_cache_path = self.config.PROJECT_ROOT / cache_filename
+        local_cache_path = self.config.DATA_MAPPINGS_DIR / cache_filename
         persistent_cache_path = self.config.PERSISTENT_DATA_CACHE / cache_filename
 
         # 1. Try loading from local project root (if recently generated or restored)
@@ -135,7 +135,7 @@ class IDMapper:
             self._generate_from_dat_file_direct()
         elif mode == 'regex':
             cache_filename = f"{mode}_map_cache.pkl"
-            local_cache_path = self.config.PROJECT_ROOT / cache_filename
+            local_cache_path = self.config.DATA_MAPPINGS_DIR / cache_filename
             if local_cache_path.exists():
                 print(f"  INFO: ID map cache '{local_cache_path.name}' already exists. Skipping generation.")
                 return
