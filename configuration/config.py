@@ -267,34 +267,36 @@ class Config:
         # --- 4. GNN BENCHMARKING PARAMETERS (from YAML) ---
         self._setup_benchmarking_params()
 
-        # --- 5. DATA SOURCES (Dynamically set, logic from original file) ---
+        # --- 5. GCN PARAMETERS (from YAML) ---
+        # This must be called before _setup_data_sources because the data source
+        # logic depends on the USE_CANONICAL_ID_MAPPING_FILE flag.
+        self._setup_gcn_params()
+
+        # --- 6. DATA SOURCES (Dynamically set, logic from original file) ---
         self._setup_data_sources()
 
-        # --- 8. WORD2VEC PIPELINE PARAMETERS (from YAML) ---
+        # --- 7. WORD2VEC PIPELINE PARAMETERS (from YAML) ---
         self._setup_word2vec_params()
 
-        # --- 9. TRANSFORMER PIPELINE PARAMETERS (from YAML) ---
+        # --- 8. TRANSFORMER PIPELINE PARAMETERS (from YAML) ---
         self._setup_transformer_params()
 
-        # --- 10. LSTM PIPELINE PARAMETERS (from YAML) ---
+        # --- 9. LSTM PIPELINE PARAMETERS (from YAML) ---
         self._setup_lstm_params()
 
-        # --- 11. SINGLETON EVALUATION PARAMETERS (from YAML) ---
+        # --- 10. SINGLETON EVALUATION PARAMETERS (from YAML) ---
         self._setup_singleton_eval_params()
 
-        # --- 12. PPI EVALUATION PARAMETERS (from YAML) ---
+        # --- 11. PPI EVALUATION PARAMETERS (from YAML) ---
         self._setup_evaluation_params()
 
-        # --- 13. MLFLOW & EXPERIMENT TRACKING (from YAML) ---
+        # --- 12. MLFLOW & EXPERIMENT TRACKING (from YAML) ---
         self._setup_mlflow_params()
 
-        # --- 14. HYPERPARAMETER OPTIMIZATION (from YAML) ---
+        # --- 13. HYPERPARAMETER OPTIMIZATION (from YAML) ---
         self._setup_hpo_params()
 
         # --- LAST STEP: Link attributes now that all params are loaded ---
-        # This must be called after all other setup methods to ensure that
-        # dependent attributes (like FASTA_FILE_TO_PROCESS) are available.
-        self._setup_gcn_params()
         self._link_data_sources_to_attributes()
 
     def _load_yaml_config(self, config_path: str) -> Dict:
