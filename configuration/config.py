@@ -86,6 +86,7 @@ class ProtGramGCNParams(BaseModel):
     PROTGRAM_NGRAM_MAX_N: int = Field(gt=0, lt=5, description="Maximum n-gram size. Kept below 5 for memory efficiency.")
     FASTA_FILE_TO_PROCESS: str
     ID_MAPPING_MODE: str
+    USE_CANONICAL_ID_MAPPING_FILE: bool
     ENABLE_SMART_MAPPING_PROMPT: bool
     REGEX_CONFIDENCE_THRESHOLD: float = Field(ge=0.0, le=1.0)
     REGEX_COMPATIBILITY_SAMPLE_SIZE: int = Field(gt=0)
@@ -413,7 +414,8 @@ class Config:
         id_mapping_filename_gz = Path(urlparse(id_mapping_url).path).name
         id_mapping_filename = id_mapping_filename_gz.replace('.gz', '')
 
-        self.DATA_SOURCES: Dict[str, Dict] = {
+        # Base sources that are always needed
+        data_sources: Dict[str, Dict] = {
             "UNIPROT_SPROT_FASTA": {
                 "url": urls['UNIPROT_SPROT_FASTA'],
                 "type": "file", "path": self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta",
@@ -433,25 +435,31 @@ class Config:
                 "url": urls['PROTT5_MODEL'],
                 "type": "file", "path": self.DATA_MODELS_DIR / "per-protein.h5",
                 "post_process": None, "checksum": None, "cacheable": True
-            },
-            "UNIPROT_ID_MAPPING": {
+            }
+        }
+
+        # --- DEFINITIVE FIX: Conditionally add the large ID mapping file as a data source ---
+        if self.USE_CANONICAL_ID_MAPPING_FILE:
+            print("  INFO: `USE_CANONICAL_ID_MAPPING_FILE` is true. The full UniProt ID mapping file will be downloaded.")
+            data_sources["UNIPROT_ID_MAPPING"] = {
                 "url": id_mapping_url,
                 "type": "file", "path": self.DATA_MAPPINGS_DIR / id_mapping_filename,
                 "post_process": "ungzip", "checksum": None, "cacheable": True
             }
-        }
+
         neg_urls = urls['NEG_INTERACTIONS']
         for i, url in enumerate(neg_urls):
-            self.DATA_SOURCES[f"NEG_INTERACTIONS_{i + 1}"] = {
+            data_sources[f"NEG_INTERACTIONS_{i + 1}"] = {
                 "url": url, "type": "file", "path": self.DATA_GROUND_TRUTH_DIR / f"neg_{i + 1}.mitab",
                 "post_process": "ungzip", "checksum": None, "cacheable": True
             }
 
         for name in self.BENCHMARK_NODE_CLASSIFICATION_DATASETS:
-            self.DATA_SOURCES[f"BENCHMARK_{name.upper()}"] = {
+            data_sources[f"BENCHMARK_{name.upper()}"] = {
                 "type": "pyg_dataset", "name": name,
                 "path": self.DATA_STANDARD_DATASETS_DIR / name, "cacheable": True
             }
+        self.DATA_SOURCES = data_sources
 
     def _link_data_sources_to_attributes(self):
         """Dynamically creates key file path attributes."""
@@ -459,7 +467,8 @@ class Config:
 
         # --- DEFINITIVE FIX: Create a dedicated attribute for the raw mapping file path ---
         # This avoids hardcoding the filename in other parts of the application.
-        self.ID_MAPPING_RAW_PATH = self.DATA_SOURCES['UNIPROT_ID_MAPPING']['path']
+        if 'UNIPROT_ID_MAPPING' in self.DATA_SOURCES:
+            self.ID_MAPPING_RAW_PATH = self.DATA_SOURCES['UNIPROT_ID_MAPPING']['path']
 
         # --- NEW: Define raw data paths for the processor ---
         # These attributes were being used by the DataProcessor but were never defined.
@@ -487,10 +496,6 @@ class Config:
         # This maps a processed file to the raw source file(s) it replaces.
         # The key is the name of the processed file, the value is a list of raw file names.
         self.PROCESSED_FILE_DEPENDENCIES = {
-            self.ID_MAPPING_PATH.name: {
-                "dependencies": [Path(self.DATA_SOURCES['UNIPROT_ID_MAPPING']['path']).name],
-                "destination_dir_attr": "DATA_MAPPINGS_DIR"
-            },
             self.POS_INTERACTIONS_PATH.name: {
                 "dependencies": [Path(self.DATA_SOURCES['BIOGRID_INTERACTIONS']['path']).name],
                 "destination_dir_attr": "DATA_GROUND_TRUTH_DIR"
@@ -500,6 +505,12 @@ class Config:
                 "destination_dir_attr": "DATA_GROUND_TRUTH_DIR"
             }
         }
+        # Conditionally add the ID mapping dependency
+        if self.USE_CANONICAL_ID_MAPPING_FILE:
+            self.PROCESSED_FILE_DEPENDENCIES[self.ID_MAPPING_PATH.name] = {
+                "dependencies": [Path(self.DATA_SOURCES['UNIPROT_ID_MAPPING']['path']).name],
+                "destination_dir_attr": "DATA_MAPPINGS_DIR"
+            }
 
     def _setup_gcn_params(self):
         """Sets ProtGram-GCN parameters statically from the YAML config."""
@@ -510,6 +521,7 @@ class Config:
         # --- DEFINITIVE FIX: Decouple ID_MAPPING_MODE from PROCESS_ID_MAPPING_FILE ---
         # This allows the user to use the 'file' mode (relying on an existing parquet file)
         # without being forced to re-process the raw idmapping.dat file every time.
+        self.USE_CANONICAL_ID_MAPPING_FILE = params['USE_CANONICAL_ID_MAPPING_FILE']
         self.DASK_N_PARTITIONS = os.cpu_count() or 1
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1
         self.ID_MAPPING_MODE = params['ID_MAPPING_MODE']

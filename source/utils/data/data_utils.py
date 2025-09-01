@@ -137,31 +137,26 @@ class DataUtils:
         return True
 
     @staticmethod
-    def generate_community_labels(graph_obj: 'DirectedNgramGraph') -> Tuple[Optional[torch.Tensor], int]:
+    def generate_community_labels(graph_data: Data) -> Tuple[Optional[torch.Tensor], int]:
         """
         Generates community detection labels using the Louvain method, robustly
         handling disconnected graphs by processing each connected component.
         """
         print("    Generating community labels for all connected components...")
-        if graph_obj.number_of_nodes == 0:
+        if graph_data.num_nodes == 0:
             return None, 0
 
-        # Convert the sparse adjacency matrix to a NetworkX graph
-        # This is the most reliable way to handle graph structures for community detection.
-        pyg_data = Data(edge_index=graph_obj.A_undirected_w.indices(), num_nodes=graph_obj.number_of_nodes)
-        sparse_csr_tensor = graph_obj.A_undirected_w.to_sparse_csr()
-        scipy_csr_matrix = sp.csr_matrix(
-            (sparse_csr_tensor.values().cpu().numpy(), sparse_csr_tensor.col_indices().cpu().numpy(), sparse_csr_tensor.crow_indices().cpu().numpy()),
-            shape=(graph_obj.number_of_nodes, graph_obj.number_of_nodes)
-        )
-        G = nx.from_scipy_sparse_array(scipy_csr_matrix, create_using=nx.Graph)
+        # --- DEFINITIVE FIX: Use the generic PyG Data object directly ---
+        # This decouples the function from any custom graph class and makes it reusable.
+        # The to_networkx function correctly handles the edge_attr for weighted Louvain.
+        G = to_networkx(graph_data, to_undirected=True, edge_attrs=['edge_attr'])
 
         # Find all connected components
         connected_components = list(nx.connected_components(G))
         num_components = len(connected_components)
         print(f"      Found {num_components} connected components.")
 
-        labels = torch.zeros(graph_obj.number_of_nodes, dtype=torch.long)
+        labels = torch.zeros(graph_data.num_nodes, dtype=torch.long)
         
         if num_components > 1:
             print("      Using connected components as community labels.")
@@ -171,7 +166,8 @@ class DataUtils:
             num_classes = num_components
         else:
             print("      Graph has one component, running Louvain community detection...")
-            partition = community_louvain.best_partition(G, random_state=42)
+            # --- DEFINITIVE FIX: Use edge weights for more accurate community detection ---
+            partition = community_louvain.best_partition(G, random_state=42, weight='edge_attr')
             num_classes = len(set(partition.values()))
             for node, community_id in partition.items():
                 labels[node] = community_id

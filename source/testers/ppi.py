@@ -94,7 +94,7 @@ class PPIPipelineTests(unittest.TestCase):
             str(self.base_test_dir), "sanity_check_embeddings.h5", protein_ids=protein_ids[:50], dim=16 # Only 50 have embeddings
         )
         pos_fp, neg_fp = DummyDataFactory.create_interaction_files(
-            str(self.base_test_dir), num_pairs=200, protein_ids=protein_ids # Interactions involve all 100 proteins
+            str(self.base_test_dir), num_pairs=200, num_proteins=len(protein_ids)
         )
 
         # 2. Mimic the sanity check logic

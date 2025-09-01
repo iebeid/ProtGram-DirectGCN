@@ -55,8 +55,12 @@ class SingletonXGCNTrainer:
         # --- DEFINITIVE FIX for Singleton Evaluation: Use component-aware community detection ---
         # The original label generator might only find communities in the largest connected component.
         # This new logic ensures that for the 'community' task, we generate labels for all nodes.
-        if task_type == 'community':
-            labels, num_classes = DataUtils.generate_community_labels(self.graph)
+        if task_type == 'community': # --- DEFINITIVE FIX: Use the centralized, robust community detection utility ---
+            community_graph_data = Data(
+                edge_index=self.graph.A_undirected_w.indices(),
+                edge_attr=self.graph.A_undirected_w.values(), num_nodes=self.graph.number_of_nodes
+            )
+            labels, num_classes = DataUtils.generate_community_labels(community_graph_data)
         else:
             labels, num_classes = self.label_generator.generate_task_labels(self.graph, task_type)
 

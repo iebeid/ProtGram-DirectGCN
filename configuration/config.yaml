@@ -13,7 +13,7 @@ data_urls:
   UNIREF_50_FASTA: "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz"
   BIOGRID_INTERACTIONS: "https://downloads.thebiogrid.org/Download/BioGRID/Release-Archive/BIOGRID-4.4.248/BIOGRID-ALL-4.4.248.mitab.zip"
   PROTT5_MODEL: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5"
-  UNIPROT_ID_MAPPING: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping_selected.tab.gz" # Using the smaller 'selected' file
+  UNIPROT_ID_MAPPING: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping.dat.gz"
   NEG_INTERACTIONS:
     - "https://www.russelllab.org/negatives/16169070_neg.mitab.gz"
     - "https://www.russelllab.org/negatives/14605208_neg.mitab.gz"
@@ -31,7 +31,7 @@ pipeline_flags:
   RUN_PROTGRAM_XGCN_PIPELINE: true
   RUN_LSTM_PIPELINE: false
   RUN_WORD2VEC_PIPELINE: false
-  RUN_TRANSFORMER_PIPELINE: false
+  RUN_TRANSFORMER_PIPELINE: true
   RUN_BENCHMARKING_PIPELINE: true
   RUN_PROTGRAM_PIPELINE: true
   
@@ -116,7 +116,8 @@ protgram_gcn:
   PROTGRAM_NGRAM_MAX_N: 3
   FASTA_FILE_TO_PROCESS: "UNIPROT_SPROT_FASTA"
   ID_MAPPING_MODE: 'regex'
-  
+  USE_CANONICAL_ID_MAPPING_FILE: false # Set to true ONLY for non-standard FASTA files like UniRef50
+
   ENABLE_SMART_MAPPING_PROMPT: true
   REGEX_CONFIDENCE_THRESHOLD: 0.95
   REGEX_COMPATIBILITY_SAMPLE_SIZE: 1000

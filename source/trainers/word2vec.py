@@ -57,7 +57,7 @@ class Word2VecEmbedder:
         Main entry point for the Word2Vec pipeline.
         """
         mlflow.set_experiment(self.config.MLFLOW_LLMS_EXPERIMENT_NAME)
-        with mlflow.start_run(run_name=f"Word2Vec_{Path(self.config.SEQUENCE_FILE_PATHS[0]).stem}"):
+        with mlflow.start_run(run_name=f"Word2Vec_{Path(self.config.SEQUENCE_FILE_PATHS[0]).stem}", nested=True):
             mlflow.log_params(self.config.get_as_dict('word2vec'))
             DataUtils.print_header("PIPELINE STEP: Training Word2Vec & Generating Embeddings")
             self.config.RESULTS_W2V_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)

@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Iterator, List, Optional, Set, Tuple, Union
+import re
 import os
 
 import numpy as np
@@ -103,6 +104,71 @@ class GroundTruthLoader:
             overwrite=True,
             write_index=False
         )
+        print(f"  ✅ Successfully created standardized ground truth file: {output_path.name}")
+
+    @staticmethod
+    def process_raw_files_with_regex(raw_file_paths: List[Path], output_path: Path, is_positive: bool):
+        """
+        A faster processing method that uses regex to extract UniProtKB IDs directly
+        from the raw interaction files, bypassing the need for the large mapping file.
+        """
+        if output_path.exists():
+            print(f"  INFO: Standardized ground truth file '{output_path.name}' already exists. Skipping processing.")
+            return
+
+        if not raw_file_paths:
+            print(f"  No raw files provided for {'positive' if is_positive else 'negative'} interactions. Skipping.")
+            return
+
+        print(f"  Processing {'positive' if is_positive else 'negative'} raw interaction files with REGEX...")
+
+        # This regex is designed to capture UniProt IDs from various common formats.
+        uniprot_regex = re.compile(r"(?:uniprotkb|uniprot/swiss-prot):([A-Z0-9]{6,10}(?:-\d+)?)")
+
+        def _extract_uniprot_from_string(s: str) -> Optional[str]:
+            """Helper to find the first UniProt ID in a given string."""
+            match = uniprot_regex.search(s)
+            return match.group(1) if match else None
+
+        def map_ids_with_regex(partition: pd.DataFrame) -> pd.DataFrame:
+            """A Dask partition function to apply the regex extraction."""
+            partition['protein1'] = partition['raw_id1'].apply(_extract_uniprot_from_string)
+            partition['protein2'] = partition['raw_id2'].apply(_extract_uniprot_from_string)
+            return partition.dropna(subset=['protein1', 'protein2'])
+
+        all_dfs = []
+        for file_path in raw_file_paths:
+            if not file_path.exists():
+                print(f"    Warning: Raw interaction file not found: {file_path}")
+                continue
+            # For regex processing, we need more columns from BioGrid but not from Russell Lab
+            usecols = [0, 1, 2, 3] if "BIOGRID" in file_path.name else [0, 1]
+            names = ['raw_id1', 'raw_id2', 'full_id1', 'full_id2'] if "BIOGRID" in file_path.name else ['raw_id1', 'raw_id2']
+
+            ddf = dd.read_csv(
+                str(file_path), sep='\t', header=None, usecols=usecols,
+                names=names, dtype=str, on_bad_lines='warn'
+            )
+            # For BioGrid, the UniProt IDs are in the full columns
+            if "BIOGRID" in file_path.name:
+                ddf['raw_id1'] = ddf['full_id1']
+                ddf['raw_id2'] = ddf['full_id2']
+
+            all_dfs.append(ddf[['raw_id1', 'raw_id2']])
+
+        if not all_dfs:
+            print("  No valid raw interaction files could be read for regex processing.")
+            return
+
+        combined_ddf = dd.concat(all_dfs).dropna().drop_duplicates()
+        mapped_ddf = combined_ddf.map_partitions(map_ids_with_regex, meta={'raw_id1': 'str', 'raw_id2': 'str', 'protein1': 'str', 'protein2': 'str'})
+        final_ddf = mapped_ddf[['protein1', 'protein2']].drop_duplicates()
+
+        with ProgressBar():
+            num_pairs = len(final_ddf)
+            print(f"  Saving {num_pairs} standardized interaction pairs to {output_path}...")
+            final_ddf.to_parquet(str(output_path), engine='pyarrow', overwrite=True, write_index=False)
+
         print(f"  ✅ Successfully created standardized ground truth file: {output_path.name}")
 
     @staticmethod

@@ -250,6 +250,9 @@ class DirectGCN(nn.Module):
         self.convs = nn.ModuleList()
         self.res_projs = nn.ModuleList()
         self.layer_norms = nn.ModuleList()
+        # --- DEFINITIVE FIX for AttributeError ---
+        # Initialize the norms ModuleList before appending to it.
+        self.norms = nn.ModuleList()
 
         # --- DEFINITIVE FIX: Use a more robust check to distinguish contexts ---
         # The previous check on `num_graph_nodes` was brittle. The length of the

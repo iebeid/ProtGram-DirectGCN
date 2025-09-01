@@ -92,36 +92,46 @@ class DataManager:
                 print("!!! Please check the URLs in your config and your network connection. !!!")
                 print("!" * 80)
                 sys.exit(1)
-            try: # --- DEFINITIVE FIX for "Zero Pairs" Error: Process ground truth using the full ID map ---
-                # This new workflow ensures that the ground truth interaction files are always
-                # created with standardized UniProtKB IDs, resolving the mismatch with the
-                # generated embeddings.
-                print("\n--- Step 2a: Ensuring full ID Map Parquet file exists for ground truth processing ---")
-                # Create a temporary config that FORCES file mode for this specific step.
-                # This does not affect the global config used by other pipelines.
-                temp_file_mode_config = copy.deepcopy(self.config)
-                temp_file_mode_config.ID_MAPPING_MODE = 'file'
-                IDMapper(temp_file_mode_config).pregenerate_caches()
 
-                print("\n--- Step 2b: Processing Negative Interaction Files ---")
-                GroundTruthLoader.process_raw_files(
-                    raw_file_paths=self.config.NEG_INTERACTIONS_RAW_PATHS,
-                    output_path=self.config.NEG_INTERACTIONS_PATH,
-                    id_map_path=self.config.ID_MAPPING_PATH,
-                    is_positive=False
-                )
-                self._copy_to_cache(self.config.NEG_INTERACTIONS_PATH)
+            # --- DEFINITIVE FIX: Branch data processing based on the canonical mapping flag ---
+            if self.config.USE_CANONICAL_ID_MAPPING_FILE:
+                print("\n--- Using Canonical ID Mapping File Workflow ---")
+                try:
+                    print("\n--- Step 2a: Ensuring full ID Map Parquet file exists for ground truth processing ---")
+                    IDMapper(self.config).pregenerate_caches()
 
-                print("\n--- Step 2c: Processing BioGRID Positive Interactions ---")
-                GroundTruthLoader.process_raw_files(
-                    raw_file_paths=[self.config.BIOGRID_RAW_PATH],
-                    output_path=self.config.POS_INTERACTIONS_PATH,
-                    id_map_path=self.config.ID_MAPPING_PATH,
-                    is_positive=True
-                )
-                self._copy_to_cache(self.config.POS_INTERACTIONS_PATH)
+                    print("\n--- Step 2b: Processing Interaction Files using Canonical Map ---")
+                    GroundTruthLoader.process_raw_files(
+                        raw_file_paths=self.config.NEG_INTERACTIONS_RAW_PATHS,
+                        output_path=self.config.NEG_INTERACTIONS_PATH,
+                        id_map_path=self.config.ID_MAPPING_PATH, is_positive=False
+                    )
+                    GroundTruthLoader.process_raw_files(
+                        raw_file_paths=[self.config.BIOGRID_RAW_PATH],
+                        output_path=self.config.POS_INTERACTIONS_PATH,
+                        id_map_path=self.config.ID_MAPPING_PATH, is_positive=True
+                    )
+                except Exception as e:
+                    raise RuntimeError(f"Data processing with canonical map failed: {e}") from e
+            else:
+                print("\n--- Using Direct Regex-based ID Extraction Workflow ---")
+                try:
+                    print("\n--- Step 2: Processing Interaction Files using Regex Extraction ---")
+                    GroundTruthLoader.process_raw_files_with_regex(
+                        raw_file_paths=self.config.NEG_INTERACTIONS_RAW_PATHS,
+                        output_path=self.config.NEG_INTERACTIONS_PATH, is_positive=False
+                    )
+                    GroundTruthLoader.process_raw_files_with_regex(
+                        raw_file_paths=[self.config.BIOGRID_RAW_PATH],
+                        output_path=self.config.POS_INTERACTIONS_PATH, is_positive=True
+                    )
+                except Exception as e:
+                    raise RuntimeError(f"Regex-based data processing failed: {e}") from e
 
-            except Exception as e:
+            self._copy_to_cache(self.config.NEG_INTERACTIONS_PATH)
+            self._copy_to_cache(self.config.POS_INTERACTIONS_PATH)
+
+        except Exception as e:
                 print("\n" + "!" * 80)
                 print(f"!!! FATAL: Data processing failed: {e} !!!")
                 print("!!! Setup cannot continue. The manifest will not be generated. !!!")
@@ -129,7 +139,7 @@ class DataManager:
                 import traceback
                 traceback.print_exc()
                 sys.exit(1)
-
+        try:
             self._generate_manifest()
         finally:
             self._cleanup_intermediate_files()
@@ -379,12 +389,16 @@ class DataManager:
                         print(f"Decompressing {download_target_path.name}...")
                         with gzip.open(download_target_path, 'rb') as f_in, open(final_path, 'wb') as f_out:
                             shutil.copyfileobj(f_in, f_out)
+                        # --- DEFINITIVE FIX: Ensure compressed file is cleaned up ---
+                        self.files_to_cleanup.append(download_target_path)
                     elif post_process_type == 'unzip':
                         print(f"Decompressing {download_target_path.name}...")
                         with zipfile.ZipFile(download_target_path, 'r') as zip_ref:
                             file_to_extract = sorted(zip_ref.infolist(), key=lambda z: z.file_size, reverse=True)[0]
                             with zip_ref.open(file_to_extract) as zf, open(final_path, 'wb') as f_out:
                                 shutil.copyfileobj(zf, f_out)
+                        # --- DEFINITIVE FIX: Ensure compressed file is cleaned up ---
+                        self.files_to_cleanup.append(download_target_path)
 
                     self._copy_to_cache(final_path)
                     download_success = True
@@ -466,7 +480,7 @@ class DataManager:
     def _cleanup_intermediate_files(self):
         """Removes only the downloaded archive files."""
         print("\n--- Step 4: Cleaning Up Intermediate Files ---")
-        for f_path in set(self.files_to_cleanup):
+        for f_path in sorted(list(set(self.files_to_cleanup))):
             if f_path.exists():
                 try:
                     f_path.unlink()

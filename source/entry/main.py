@@ -113,11 +113,16 @@ class PipelineOrchestrator:
                     if raw_result:
                         formatted_raw_results = p_config["formatter"](raw_result)
 
-                        standardized_files = []
-                        for file_info in formatted_raw_results:
-                            # Standardize each file immediately after it's created
-                            standardized_path = EmbeddingProcessor.standardize_embedding_file(file_info["path"])
-                            standardized_files.append({"name": file_info["name"], "path": standardized_path})
+                        # --- DEFINITIVE FIX: Only standardize if using the canonical mapping file ---
+                        if config.USE_CANONICAL_ID_MAPPING_FILE:
+                            print("  Standardizing generated embeddings using canonical ID map...")
+                            standardized_files = []
+                            for file_info in formatted_raw_results:
+                                standardized_path = EmbeddingProcessor.standardize_embedding_file(file_info["path"])
+                                standardized_files.append({"name": file_info["name"], "path": standardized_path})
+                        else:
+                            print("  Skipping standardization, assuming generated embeddings use correct IDs.")
+                            standardized_files = formatted_raw_results
 
                         checkpoint_manager.save_checkpoint(p_config['name'], standardized_files)
                         generated_files.extend(standardized_files)

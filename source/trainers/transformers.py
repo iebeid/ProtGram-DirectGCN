@@ -140,7 +140,7 @@ class TransformerEmbedder:
         Main entry point for the Transformer embedding generation pipeline.
         """
         mlflow.set_experiment(self.config.MLFLOW_LLMS_EXPERIMENT_NAME)
-        with mlflow.start_run(run_name=f"Transformers_{Path(self.config.SEQUENCE_FILE_PATHS[0]).stem}"):
+        with mlflow.start_run(run_name=f"Transformers_{Path(self.config.SEQUENCE_FILE_PATHS[0]).stem}", nested=True):
             DataUtils.print_header("PIPELINE STEP: Generating Embeddings from Transformers")
             self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
             generated_paths: Dict[str, Path] = {}
