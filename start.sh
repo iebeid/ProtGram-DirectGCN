@@ -59,36 +59,16 @@ fi
 echo "SUCCESS: Environment '$ENV_NAME' activated."
 "$ENV_PYTHON" --version
 
-# --- NEW STEP: Verify and install missing pip packages ---
-echo -e "\n--- STEP 1.5: Verifying critical Python packages ---"
-if ! "$ENV_PYTHON" -c "
-import sys
-try:
-    # A list of packages that are installed via pip and might be missing.
-    import optuna
-    import mlflow
-    import gdown
-    import transformers
-    import safetensors
-    import optuna_integration
-    import torch_geometric
-    import pycuda.driver
-    print('  - ✅ All critical Python packages are installed.')
-except ImportError as e:
-    print(f'  - ❌ Missing package: {e.name}.')
-    sys.exit(1) # Exit with error code 1 to signal missing package
-"; then
-    echo "INFO: Attempting to install missing pip packages. This is a one-time setup."
-    # These commands are mirrored from setup.py to ensure consistency.
-    "$ENV_PYTHON" -m pip install --no-cache-dir optuna mlflow gdown 'transformers==4.41.2' 'safetensors==0.4.3' 'optuna-integration[mlflow]'
-    # Define versions for PyG wheels
-    PYTORCH_VERSION="2.1.2"
-    CUDA_VERSION="12.1"
-    "$ENV_PYTHON" -m pip install torch-geometric pyg_lib torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-${PYTORCH_VERSION}%2Bcu${CUDA_VERSION//.}.html
-    echo -e "\n\nSUCCESS: Missing packages installed."
-    echo "Please re-run 'bash start.sh' to continue."
-    exit 0
-fi
+# --- STEP 1.5: Ensure all pip-based dependencies are installed ---
+# This is an idempotent operation. If packages are already installed, pip will
+# simply confirm this and do nothing. If they are missing, it will install them.
+# This is much cleaner than a separate check-then-install script.
+echo -e "\n--- STEP 1.5: Ensuring all critical Python packages are installed ---"
+PYTORCH_VERSION="2.1.2"
+CUDA_VERSION="12.1"
+"$ENV_PIP" install --no-cache-dir optuna mlflow gdown 'transformers==4.41.2' 'safetensors==0.4.3' 'optuna-integration[mlflow]'
+"$ENV_PIP" install torch-geometric pyg_lib torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-${PYTORCH_VERSION}%2Bcu${CUDA_VERSION//.}.html
+echo "  - ✅ Pip package check complete."
 
 # --- Step 2: Update the Repository ---
 echo -e "\n--- STEP 2: Synchronizing project with the latest changes from Git ---"
