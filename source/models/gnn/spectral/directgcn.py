@@ -194,7 +194,7 @@ class DirectGCNLayer(MessagePassing):
             # In 'none' mode, all paths contribute equally (summation).
             final_combination = torch.stack(path_combinations, dim=0).sum(dim=0)
         else:
-            # Handle 'scalar', 'vector', and 'node_gate_vector' modes
+            # --- DEFINITIVE FIX: Move gating logic inside the conditional block ---
             gating_logits_list = []
             if self.gating_mode in ['vector', 'node_gate_vector']:
                 gating_logits_list.extend([self.C_in_vec, self.C_out_vec, self.C_undirected_vec])

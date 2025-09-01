@@ -364,11 +364,11 @@ class PPIPipeline:
 
                         print(f"  Found {len(available_ids)} embeddings. Filtering interaction files against these IDs...")
                         pos_pairs = GroundTruthLoader.load_interaction_pairs_filtered(
-                            pos_fp, 1, available_ids, random_state=self.config.RANDOM_STATE
+                            pos_fp, 1, available_ids, random_state=self.config.RANDOM_STATE, config=self.config
                         )
                         num_pos_for_sampling = len(pos_pairs)
                         neg_pairs = GroundTruthLoader.load_interaction_pairs_filtered(
-                            neg_fp, 0, available_ids, sample_n=num_pos_for_sampling, random_state=self.config.RANDOM_STATE
+                            neg_fp, 0, available_ids, sample_n=num_pos_for_sampling, random_state=self.config.RANDOM_STATE, config=self.config
                         )
 
                         all_pairs = pos_pairs + neg_pairs

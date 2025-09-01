@@ -2,6 +2,7 @@
 # MODULE: configuration/config.py
 # PURPOSE: Centralized configuration loaded from a YAML file.
 # VERSION: 3.6 (Corrected syntax errors and added requirements)
+# VERSION: 4.0 (Integrated run-specific directory creation)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
@@ -11,6 +12,7 @@ from typing import Optional, Dict, List, Any
 import yaml
 import sys
 from pydantic import BaseModel, Field, ValidationError
+import time
 
 
 # ==============================================================================
@@ -257,6 +259,14 @@ class Config:
         # will derive all other paths from this, allowing tests to override it
         # before calling _setup_paths to create an isolated environment.
         self.PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
+        # --- DEFINITIVE FIX: Create a unique output directory for each run ---
+        # This logic is now centralized within the Config class itself, ensuring
+        # that all paths are correct from the moment the object is instantiated.
+        run_id = f"run_{time.strftime('%Y%m%d_%H%M%S')}"
+        self.BASE_OUTPUT_DIR = self.PROJECT_ROOT / "results" / run_id
+
+        # Now, set up all other paths based on this unique directory
         self._setup_paths()
 
         # --- NEW: Set up resource management parameters ---

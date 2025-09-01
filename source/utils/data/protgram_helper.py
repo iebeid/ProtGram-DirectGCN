@@ -66,15 +66,10 @@ class ProtgramDaskHelpers:
         assortativity = nx.degree_assortativity_coefficient(G)
         print(f"      Degree Assortativity: {assortativity:.4f}")
 
-        # Closeness Centrality
-        closeness = nx.closeness_centrality(G)
-        avg_closeness = sum(closeness.values()) / len(closeness)
-        print(f"      Average Closeness Centrality: {avg_closeness:.4f}")
-
-        # Betweenness Centrality
-        betweenness = nx.betweenness_centrality(G)
-        avg_betweenness = sum(betweenness.values()) / len(betweenness)
-        print(f"      Average Betweenness Centrality: {avg_betweenness:.4f}")
+        # --- DEFINITIVE FIX: Disable expensive centrality calculations as per user request ---
+        # These metrics are very slow to compute on large graphs and are not
+        # critical for the main pipeline's execution.
+        print("      - Closeness and Betweenness Centrality calculations have been disabled for performance.")
 
         print(f"    --- End of Graph Statistics for n={n_val} ---")
 

@@ -14,7 +14,6 @@ import subprocess
 # variable to 'false' silences the warning and is the recommended practice.
 import os
 import dask
-import time
 from pathlib import Path
 from source.utils.fs.cleaner import ProjectCleaner
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -105,14 +104,6 @@ if __name__ == "__main__":
 
         # Now, we can safely assume the environment is valid and proceed.
         base_config = Config()
-
-        # --- DEFINITIVE FIX: Create a unique output directory for each run ---
-        # This prevents subsequent runs from overwriting the results of previous ones.
-        run_id = f"run_{time.strftime('%Y%m%d_%H%M%S')}"
-        base_config.BASE_OUTPUT_DIR = base_config.BASE_OUTPUT_DIR / run_id
-        # Re-initialize all path attributes to use this new base directory.
-        base_config._setup_paths()
-
         logger = FileLogger(base_config.LOG_DIR, enabled=base_config.ENABLE_FILE_LOGGING)
 
         # --- DEFINITIVE FIX for "No space left on device" and "FileNotFoundError" ---

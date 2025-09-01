@@ -105,8 +105,8 @@ class PPIPipelineTests(unittest.TestCase):
 
         self.assertEqual(len(available_ids), 50)
 
-        pos_pairs = GroundTruthLoader.load_interaction_pairs_filtered(pos_fp, 1, available_ids)
-        neg_pairs = GroundTruthLoader.load_interaction_pairs_filtered(neg_fp, 0, available_ids, sample_n=len(pos_pairs))
+        pos_pairs = GroundTruthLoader.load_interaction_pairs_filtered(pos_fp, 1, available_ids, config=self.config)
+        neg_pairs = GroundTruthLoader.load_interaction_pairs_filtered(neg_fp, 0, available_ids, sample_n=len(pos_pairs), config=self.config)
 
         self.assertGreater(len(pos_pairs), 0, "Filtered positive pairs should not be empty.")
         self.assertGreater(len(neg_pairs), 0, "Filtered negative pairs should not be empty.")
