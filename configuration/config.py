@@ -83,6 +83,7 @@ class GNNBenchmarkingParams(BaseGNNTrainingParams):
 class ProtGramGCNParams(BaseModel):
     
     PROTGRAM_NGRAM_MAX_N: int = Field(gt=0, lt=5, description="Maximum n-gram size. Kept below 5 for memory efficiency.")
+    FASTA_FILE_TO_PROCESS: str
     ID_MAPPING_MODE: str
     USE_CANONICAL_ID_MAPPING_FILE: bool
     REGEX_CONFIDENCE_THRESHOLD: float = Field(ge=0.0, le=1.0)
@@ -514,6 +515,7 @@ class Config:
         """Sets ProtGram-GCN parameters statically from the YAML config."""
         params = self._config['protgram_gcn']
         cpu_cores = os.cpu_count()
+        self.FASTA_FILE_TO_PROCESS = params['FASTA_FILE_TO_PROCESS']
         self.DASK_N_PARTITIONS = os.cpu_count() or 1
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1
         self.ID_MAPPING_MODE = params['ID_MAPPING_MODE']
