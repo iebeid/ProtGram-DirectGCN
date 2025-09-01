@@ -37,7 +37,7 @@ class PipelineFlags(BaseModel):
     RUN_BENCHMARKING_PIPELINE: bool
     RUN_PROTGRAM_PIPELINE: bool
     
-    RUN_MAIN_PPI_EVALUATION: bool
+    USE_CANONICAL_ID_MAPPING_FILE: bool
     RUN_INTEGRATED_TESTS: bool
     RUN_SINGLETON_GCN_EVAL: bool
     SEQUENCE_DOWNSAMPLE_FRACTION: Optional[float] = Field(default=None, ge=0.0, le=1.0)
@@ -84,9 +84,7 @@ class GNNBenchmarkingParams(BaseGNNTrainingParams):
 class ProtGramGCNParams(BaseModel):
     
     PROTGRAM_NGRAM_MAX_N: int = Field(gt=0, lt=5, description="Maximum n-gram size. Kept below 5 for memory efficiency.")
-    FASTA_FILE_TO_PROCESS: str
     ID_MAPPING_MODE: str
-    USE_CANONICAL_ID_MAPPING_FILE: bool
     ENABLE_SMART_MAPPING_PROMPT: bool
     REGEX_CONFIDENCE_THRESHOLD: float = Field(ge=0.0, le=1.0)
     REGEX_COMPATIBILITY_SAMPLE_SIZE: int = Field(gt=0)
@@ -365,6 +363,7 @@ class Config:
         self.RUN_SINGLETON_GCN_EVAL = flags['RUN_SINGLETON_GCN_EVAL']
         self.SEQUENCE_DOWNSAMPLE_FRACTION = flags['SEQUENCE_DOWNSAMPLE_FRACTION']
         
+        self.USE_CANONICAL_ID_MAPPING_FILE = flags['USE_CANONICAL_ID_MAPPING_FILE']
         self.DISABLE_INTERACTIVE_PROMPTS = flags['DISABLE_INTERACTIVE_PROMPTS']
         self.ENABLE_FILE_LOGGING = flags['ENABLE_FILE_LOGGING']
         self.PROCESS_ID_MAPPING_FILE = flags['PROCESS_ID_MAPPING_FILE']
@@ -516,12 +515,8 @@ class Config:
         """Sets ProtGram-GCN parameters statically from the YAML config."""
         params = self._config['protgram_gcn']
         cpu_cores = os.cpu_count()
-        self.PROTGRAM_NGRAM_MAX_N = params['PROTGRAM_NGRAM_MAX_N']
-        self.FASTA_FILE_TO_PROCESS = params['FASTA_FILE_TO_PROCESS']
-        # --- DEFINITIVE FIX: Decouple ID_MAPPING_MODE from PROCESS_ID_MAPPING_FILE ---
         # This allows the user to use the 'file' mode (relying on an existing parquet file)
         # without being forced to re-process the raw idmapping.dat file every time.
-        self.USE_CANONICAL_ID_MAPPING_FILE = params['USE_CANONICAL_ID_MAPPING_FILE']
         self.DASK_N_PARTITIONS = os.cpu_count() or 1
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1
         self.ID_MAPPING_MODE = params['ID_MAPPING_MODE']
