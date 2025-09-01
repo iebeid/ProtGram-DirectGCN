@@ -10,7 +10,7 @@ DEBUG_VERBOSE: true
 # 2. DATA SOURCE URLS
 data_urls:
   UNIPROT_SPROT_FASTA: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz"
-  #UNIREF_50_FASTA: "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz"
+  # UNIREF_50_FASTA: "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz"
   BIOGRID_INTERACTIONS: "https://downloads.thebiogrid.org/Download/BioGRID/Release-Archive/BIOGRID-4.4.248/BIOGRID-ALL-4.4.248.mitab.zip"
   PROTT5_MODEL: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5"
   UNIPROT_ID_MAPPING: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping.dat.gz"

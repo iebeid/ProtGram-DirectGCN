@@ -21,7 +21,7 @@ import time
 
 class DataUrls(BaseModel):
     UNIPROT_SPROT_FASTA: str
-    UNIREF_50_FASTA: str
+    UNIREF_50_FASTA: Optional[str] = None
     BIOGRID_INTERACTIONS: str
     PROTT5_MODEL: str
     UNIPROT_ID_MAPPING: str
@@ -430,11 +430,6 @@ class Config:
                 "type": "file", "path": self.DATA_SEQUENCES_DIR / "uniprot_sprot.fasta",
                 "post_process": "ungzip", "checksum": None, "cacheable": True
             },
-            "UNIREF_50_FASTA": {
-                "url": urls['UNIREF_50_FASTA'],
-                "type": "file", "path": self.DATA_SEQUENCES_DIR / "uniref50.fasta",
-                "post_process": "ungzip", "checksum": None, "cacheable": True
-            },
             "BIOGRID_INTERACTIONS": {
                 "url": urls['BIOGRID_INTERACTIONS'],
                 "type": "file", "path": self.DATA_GROUND_TRUTH_DIR / "BIOGRID-ALL-4.4.248.mitab.txt",
@@ -447,6 +442,14 @@ class Config:
             }
         }
 
+        # --- DEFINITIVE FIX: Conditionally add optional data sources ---
+        # This prevents the pipeline from trying to download files that are not
+        # specified in the config.yaml (e.g., if they are commented out).
+        if urls.get('UNIREF_50_FASTA'):
+            data_sources["UNIREF_50_FASTA"] = {
+                "url": urls['UNIREF_50_FASTA'], "type": "file", "path": self.DATA_SEQUENCES_DIR / "uniref50.fasta",
+                "post_process": "ungzip", "checksum": None, "cacheable": True
+            }
         # --- DEFINITIVE FIX: Conditionally add the large ID mapping file as a data source ---
         if self.USE_CANONICAL_ID_MAPPING_FILE:
             print("  INFO: `USE_CANONICAL_ID_MAPPING_FILE` is true. The full UniProt ID mapping file will be downloaded.")
