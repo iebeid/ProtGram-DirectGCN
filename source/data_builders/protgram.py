@@ -177,6 +177,11 @@ class ProtGramDataBuilder:
                 ngram_map_path = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
                 ngram_map_ddf = dd.read_parquet(ngram_map_path)
 
+                # --- DEFINITIVE FIX for Dask UserWarning: Ensure consistent dtypes before merge ---
+                # Explicitly casting to string prevents potential mismatches between 'object' and 'string' dtypes.
+                string_edges_ddf['source_str'] = string_edges_ddf['source_str'].astype(str)
+                ngram_map_ddf['ngram'] = ngram_map_ddf['ngram'].astype(str)
+
                 # 3. Perform two joins to map string edges to integer IDs
                 merged_source = string_edges_ddf.merge(ngram_map_ddf, left_on='source_str', right_on='ngram', how='inner')
                 merged_source = merged_source.rename(columns={'id': 'source'}).drop(columns=['ngram', 'source_str', 'n'])
