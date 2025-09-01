@@ -22,8 +22,11 @@ dist/
 *.synctex.gz
 *.toc
 
-# Logs
-*.log
+# --- Logs & Results ---
+# Use the trailing slash to ignore the directory and all its contents.
+# This is the definitive fix to prevent `git reset --hard` from deleting them.
+results/
+logs/
 
 # Ignore all data files. Data is managed locally by the pipeline.
 data/*
