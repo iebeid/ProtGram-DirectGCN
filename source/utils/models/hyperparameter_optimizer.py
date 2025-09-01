@@ -9,9 +9,9 @@ from typing import Dict, Any, List, Optional
 
 import mlflow
 import optuna
-# --- DEFINITIVE FIX for MLflow Integration: Import the MLflow callback ---
-# This is the standard, idiomatic way to connect Optuna and MLflow.
-from optuna.integration import MLflowCallback
+# --- DEFINITIVE FIX for ModuleNotFoundError: Import from the correct integration package ---
+# Optuna has moved its integrations into a separate package, `optuna-integration`.
+from optuna_integration import MLflowCallback
 import numpy as np
 from sklearn.model_selection import train_test_split
 
