@@ -11,6 +11,7 @@ import random
 import shutil
 import time # noqa
 from functools import partial
+import dask
 from typing import Tuple, Iterator, List, Dict
 from pathlib import Path
 import dask.bag as db
@@ -39,11 +40,19 @@ class ProtGramDataBuilder:
         self.output_dir = str(config.RESULTS_GRAPH_OBJECTS_DIR)
         self.n_max = config.PROTGRAM_NGRAM_MAX_N
         self.num_workers_config = config.GRAPH_BUILDER_WORKERS if config.GRAPH_BUILDER_WORKERS is not None else 1
-        self.temp_dir = os.path.join(str(config.BASE_OUTPUT_DIR), "temp_graph_builder")
+        # --- DEFINITIVE FIX for "No space left on device" error ---
+        # The Dask shuffle operation writes large temporary files. By default, this goes
+        # to the system's /tmp directory, which is often on a small partition.
+        # This change forces Dask to use a temporary directory *within our project's
+        # results folder*, where we know there is ample space.
+        self.temp_dir = Path(config.BASE_OUTPUT_DIR) / "temp_graph_builder"
+        dask.config.set({'temporary_directory': str(self.temp_dir)})
+
         self.gcn_propagation_epsilon = getattr(config, 'GCN_PROPAGATION_EPSILON', 1e-9)
 
         print(f"ProtGramDataBuilder initialized: n_max={self.n_max}, "
               f"configured_workers={self.num_workers_config}, output_dir='{self.output_dir}'")
+        print(f"  - Dask temporary directory set to: {self.temp_dir}")
         DataUtils.print_header(f"ProtGramDataBuilder Initialized (Output: {self.output_dir})")
 
     def run(self) -> None:

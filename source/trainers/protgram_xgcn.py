@@ -103,11 +103,11 @@ class ProtGramXGCNTrainer:
         # This function now saves the raw (unmapped) embeddings and returns their paths.
         output_paths = self._save_final_embeddings(final_protein_embeddings_per_model)
 
-        # --- NEW: Trigger the optional sanity check PPI evaluation ---
-        # This was previously dead code. It's now called after embeddings are generated.
-        if self.config.PROTGRAM_RUN_SANITY_CHECK_PPI:
-            for model_output_path in output_paths.values():
-                self._run_sanity_check_ppi(model_output_path)
+        # --- Sanity Check Disabled ---
+        # The sanity check has been disabled as per the user's request.
+        # if self.config.PROTGRAM_RUN_SANITY_CHECK_PPI:
+        #     for model_output_path in output_paths.values():
+        #         self._run_sanity_check_ppi(model_output_path)
 
         DataUtils.print_header("ProtGram Embedding PIPELINE STEP FINISHED")
         return output_paths
