@@ -13,6 +13,7 @@ import subprocess
 # This is a common warning in multiprocessing environments. Setting this environment
 # variable to 'false' silences the warning and is the recommended practice.
 import os
+import dask
 # --- NEW: Import the cleaner and Path ---
 from pathlib import Path
 from source.utils.fs.cleaner import ProjectCleaner
@@ -104,6 +105,13 @@ if __name__ == "__main__":
         # Now, we can safely assume the environment is valid and proceed.
         base_config = Config()
         logger = FileLogger(base_config.LOG_DIR, enabled=base_config.ENABLE_FILE_LOGGING)
+
+        # --- DEFINITIVE FIX for "No space left on device" error ---
+        # Configure Dask's temporary directory globally at the start of the application.
+        # This ensures that ALL Dask operations (in any module) use a safe location
+        # within the project's results directory, preventing crashes due to a full /tmp partition.
+        dask.config.set({'temporary_directory': str(base_config.BASE_OUTPUT_DIR / "dask_temp")})
+
         with logger:
             from source.entry.main import PipelineOrchestrator
             orchestrator = PipelineOrchestrator()
