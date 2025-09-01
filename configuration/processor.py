@@ -95,7 +95,7 @@ class DataProcessor:
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
 
-    def is_huge_file(self, file_path: Path) -> bool:
-        # --- DEFINITIVE FIX: Use the correct configuration attribute and compare bytes to bytes ---
-        # The previous logic was comparing bytes to gigabytes and using a non-existent config variable.
-        return file_path.stat().st_size > self.config.CHECKSUM_SKIP_SIZE_BYTES
+    @staticmethod
+    def is_huge_file(file_path: Path, size_threshold_bytes: int) -> bool:
+        """Checks if a file's size exceeds a given threshold."""
+        return file_path.stat().st_size > size_threshold_bytes
