@@ -80,11 +80,11 @@ except ImportError as e:
 "; then
     echo "INFO: Attempting to install missing pip packages. This is a one-time setup."
     # These commands are mirrored from setup.py to ensure consistency.
-    "$ENV_PIP" install --no-cache-dir optuna mlflow gdown 'transformers==4.41.2' 'safetensors==0.4.3' 'optuna-integration[mlflow]'
+    "$ENV_PYTHON" -m pip install --no-cache-dir optuna mlflow gdown 'transformers==4.41.2' 'safetensors==0.4.3' 'optuna-integration[mlflow]'
     # Define versions for PyG wheels
-    PYTORCH_VERSION=\"2.1.2\"
-    CUDA_VERSION=\"12.1\"
-    "$ENV_PIP" install torch-geometric pyg_lib torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-${PYTORCH_VERSION}%2Bcu${CUDA_VERSION//.}.html
+    PYTORCH_VERSION="2.1.2"
+    CUDA_VERSION="12.1"
+    "$ENV_PYTHON" -m pip install torch-geometric pyg_lib torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-${PYTORCH_VERSION}%2Bcu${CUDA_VERSION//.}.html
     echo -e "\n\nSUCCESS: Missing packages installed."
     echo "Please re-run 'bash start.sh' to continue."
     exit 0
