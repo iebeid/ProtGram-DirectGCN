@@ -11,6 +11,8 @@ import tempfile
 from pathlib import Path
 import mlflow
 from configuration.config import Config
+from source.utils.data.ground_truth_loader import GroundTruthLoader
+from source.utils.post.embedding_loader import EmbeddingLoader
 from source.experiments.ppi_1 import PPIPipeline
 from source.utils.data.data_utils import DataUtils
 from source.testers.dummy import DummyDataFactory
@@ -75,3 +77,48 @@ class PPIPipelineTests(unittest.TestCase):
 
         print("\n  PPIPipeline (dummy run) smoke test ran successfully.")
         print("--- PPI Pipeline (Dummy Run) Smoke Test Complete ---")
+
+    def test_ppi_sanity_check_logic(self):
+        """
+        Tests the sanity check logic on dummy data. This test ensures that
+        the pipeline can correctly filter a ground truth dataset against a small
+        set of available embeddings and run a minimal evaluation.
+        """
+        print("\n" + "=" * 80)
+        DataUtils.print_header("PPI Sanity Check Logic Smoke Test")
+        print("=" * 80)
+
+        # 1. Create a small universe of dummy data
+        protein_ids = [f"DUMMY_P{i:04d}" for i in range(100)]
+        dummy_emb_file = DummyDataFactory.create_h5_embeddings(
+            str(self.base_test_dir), "sanity_check_embeddings.h5", protein_ids=protein_ids[:50], dim=16 # Only 50 have embeddings
+        )
+        pos_fp, neg_fp = DummyDataFactory.create_interaction_files(
+            str(self.base_test_dir), num_pairs=200, protein_ids=protein_ids # Interactions involve all 100 proteins
+        )
+
+        # 2. Mimic the sanity check logic
+        with EmbeddingLoader(dummy_emb_file, config=self.config) as loader:
+            available_ids = loader.get_keys()
+
+        self.assertEqual(len(available_ids), 50)
+
+        pos_pairs = GroundTruthLoader.load_interaction_pairs_filtered(pos_fp, 1, available_ids)
+        neg_pairs = GroundTruthLoader.load_interaction_pairs_filtered(neg_fp, 0, available_ids, sample_n=len(pos_pairs))
+
+        self.assertGreater(len(pos_pairs), 0, "Filtered positive pairs should not be empty.")
+        self.assertGreater(len(neg_pairs), 0, "Filtered negative pairs should not be empty.")
+
+        # 3. Run a minimal pipeline on the filtered data
+        sanity_config = self.config
+        sanity_config.EVAL_EPOCHS = 1
+        sanity_config.EVAL_N_FOLDS = 2
+        sanity_config.LP_EMBEDDING_FILES_TO_EVALUATE = [{"name": "SanityCheckEmb", "path": str(dummy_emb_file)}]
+        sanity_config.POS_INTERACTIONS_PATH = pos_pairs
+        sanity_config.NEG_INTERACTIONS_PATH = neg_pairs
+
+        evaluator = PPIPipeline(sanity_config)
+        evaluator.run()
+
+        print("\n  PPI Sanity Check logic test ran successfully.")
+        print("--- PPI Sanity Check Logic Smoke Test Complete ---")

@@ -7,6 +7,7 @@
 
 from typing import List, Tuple, Dict, Optional
 
+import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
@@ -14,7 +15,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from tqdm.auto import tqdm
-
+from pathlib import Path
 from configuration.config import Config
 from source.utils.data.data_utils import DataUtils
 from source.utils.data.fasta_utils import FastaUtils
@@ -147,50 +148,55 @@ class LSTMBasedEmbedder:
                     print(f"  Early stopping triggered at epoch {epoch + 1}.")
                     break
 
-    def run(self) -> Optional[str]:
-        DataUtils.print_header("PIPELINE: Training LSTM & Generating Embeddings (PyTorch)")
-        self._prepare_corpus()
-        if not self.sequences or self.vocab_size == 0:
-            print("  Aborting LSTM pipeline due to lack of data.")
-            return None
+    def run(self) -> Optional[Dict[str, str]]:
+        mlflow.set_experiment(self.config.MLFLOW_LLMS_EXPERIMENT_NAME)
+        with mlflow.start_run(run_name=f"LSTM_{Path(self.config.SEQUENCE_FILE_PATHS[0]).stem}"):
+            mlflow.log_params(self.config.get_as_dict('lstm'))
+            DataUtils.print_header("PIPELINE: Training LSTM & Generating Embeddings (PyTorch)")
+            self._prepare_corpus()
+            if not self.sequences or self.vocab_size == 0:
+                print("  Aborting LSTM pipeline due to lack of data.")
+                return None
 
-        self._build_model()
-        self._train_model()
+            self._build_model()
+            self._train_model()
 
-        print("\n  LSTM training complete. Generating embeddings...")
-        assert self.model is not None, "Model must be trained before inference."
-        self.model.eval()
-        protein_embeddings = {}
-        batch_size = self.config.LSTM_BATCH_SIZE
+            print("\n  LSTM training complete. Generating embeddings...")
+            assert self.model is not None, "Model must be trained before inference."
+            self.model.eval()
+            protein_embeddings = {}
+            batch_size = self.config.LSTM_BATCH_SIZE
 
-        sorted_sequences = sorted(self.sequences, key=lambda x: len(x[1]))
+            sorted_sequences = sorted(self.sequences, key=lambda x: len(x[1]))
 
-        with torch.no_grad():
-            for i in tqdm(range(0, len(sorted_sequences), batch_size), desc="  Generating Embeddings in Batches"):
-                batch = sorted_sequences[i:i + batch_size]
-                if not batch: continue
+            with torch.no_grad():
+                for i in tqdm(range(0, len(sorted_sequences), batch_size), desc="  Generating Embeddings in Batches"):
+                    batch = sorted_sequences[i:i + batch_size]
+                    if not batch: continue
 
-                batch_ids = [item[0] for item in batch]
-                batch_seqs_text = [item[1] for item in batch]
+                    batch_ids = [item[0] for item in batch]
+                    batch_seqs_text = [item[1] for item in batch]
 
-                tokenized_batch = [
-                    torch.tensor([self.char_to_int[c] for c in seq if c in self.char_to_int], dtype=torch.long)
-                    for seq in batch_seqs_text
-                ]
-                valid_indices = [i for i, t in enumerate(tokenized_batch) if len(t) > 0]
-                if not valid_indices: continue
+                    tokenized_batch = [
+                        torch.tensor([self.char_to_int[c] for c in seq if c in self.char_to_int], dtype=torch.long)
+                        for seq in batch_seqs_text
+                    ]
+                    valid_indices = [i for i, t in enumerate(tokenized_batch) if len(t) > 0]
+                    if not valid_indices: continue
 
-                tokenized_batch = [tokenized_batch[i] for i in valid_indices]
-                batch_ids = [batch_ids[i] for i in valid_indices]
+                    tokenized_batch = [tokenized_batch[i] for i in valid_indices]
+                    batch_ids = [batch_ids[i] for i in valid_indices]
 
-                padded_batch = pad_sequence(tokenized_batch, batch_first=True, padding_value=0).to(self.device)
+                    padded_batch = pad_sequence(tokenized_batch, batch_first=True, padding_value=0).to(self.device)
 
-                _, batch_embeddings = self.model(padded_batch)
-                for j, prot_id in enumerate(batch_ids):
-                    protein_embeddings[prot_id] = batch_embeddings[j].cpu().numpy().astype(np.float16)
+                    _, batch_embeddings = self.model(padded_batch)
+                    for j, prot_id in enumerate(batch_ids):
+                        protein_embeddings[prot_id] = batch_embeddings[j].cpu().numpy().astype(np.float16)
 
-        output_path = self.config.RESULTS_LSTM_EMBEDDINGS_DIR / "lstm_generated_embeddings.h5"
-        FileUtils.write_h5(protein_embeddings, output_path, "Writing LSTM Embeddings")
+            output_path = self.config.RESULTS_LSTM_EMBEDDINGS_DIR / "lstm_generated_embeddings.h5"
+            FileUtils.write_h5(protein_embeddings, output_path, "Writing LSTM Embeddings")
 
-        print(f"\nSUCCESS: LSTM embeddings saved to: {output_path}")
-        return str(output_path)
+            print(f"\nSUCCESS: LSTM embeddings saved to: {output_path}")
+            # --- DEFINITIVE FIX: Return a dictionary for consistency with other trainers ---
+            output_paths = {"LSTM-Generated": str(output_path)}
+            return output_paths

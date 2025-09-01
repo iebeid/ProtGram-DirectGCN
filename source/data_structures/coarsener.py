@@ -80,15 +80,20 @@ class GraphCoarsener:
             - weights (torch.Tensor): The edge weights of the coarsened graph.
             Returns None if the input graph is invalid.
         """
-        if graph.A_undirected_norm_sparse is None or graph.A_undirected_norm_sparse._nnz() == 0:
+        # --- DEFINITIVE FIX for Graclus Partitioning Failure ---
+        # The Graclus algorithm works best with raw edge weights (counts), not the
+        # degree-normalized weights used for GCN propagation. Using the normalized
+        # weights was causing the algorithm to fail to find meaningful clusters.
+        # We now use the un-normalized, undirected, weighted adjacency matrix.
+        if graph.A_undirected_w is None or graph.A_undirected_w._nnz() == 0:
             print("  - Coarsening Error: Input graph has no undirected edges.")
             return None
 
         DataUtils.print_header(f"Graph Coarsening (Levels: {level})")
 
-        # Start with the undirected, normalized adjacency matrix of the original graph
-        edge_index = graph.A_undirected_norm_sparse.coalesce().indices()
-        edge_weight = graph.A_undirected_norm_sparse.coalesce().values()
+        # Start with the raw, undirected, weighted adjacency matrix
+        edge_index = graph.A_undirected_w.coalesce().indices()
+        edge_weight = graph.A_undirected_w.coalesce().values()
 
         # Initialize the cluster map where each node is its own cluster
         num_nodes = graph.number_of_nodes

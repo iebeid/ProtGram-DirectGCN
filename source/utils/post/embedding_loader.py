@@ -64,10 +64,18 @@ class EmbeddingLoader:
         if should_load_to_memory:
             print(f"  Memory Strategy ('high'): Loading '{self.h5_path.name}' into RAM for faster access.")
             with h5py.File(self.h5_path, 'r') as hf:
-                # --- DEFINITIVE FIX: Detect and handle the new HDF5 format ---
-                if 'ids' in hf and 'embeddings' in hf:
+                # --- DEFINITIVE FIX: Correctly detect the efficient HDF5 format ---
+                # The previous logic only checked for 'ids'. The standard ProtT5 file
+                # uses 'protein_ids'. This change checks for both possibilities.
+                id_key = None
+                if 'protein_ids' in hf:
+                    id_key = 'protein_ids'
+                elif 'ids' in hf:
+                    id_key = 'ids'
+
+                if id_key and 'embeddings' in hf:
                     print(f"  Detected new, efficient HDF5 format for '{self.h5_path.name}'.")
-                    ids = [s.decode('utf-8') for s in hf['ids'][:]]
+                    ids = [s.decode('utf-8') for s in hf[id_key][:]]
                     vectors = hf['embeddings'][:].astype(np.float16)
                     self._in_memory_data = dict(zip(ids, vectors))
                 else: # Fallback to old format
@@ -79,11 +87,17 @@ class EmbeddingLoader:
             if strategy == 'low':
                 print(f"  Memory Strategy ('low'): Using lazy loading for '{self.h5_path.name}'.")
             self._h5_file = h5py.File(self.h5_path, 'r')
-            # --- DEFINITIVE FIX: Detect and handle the new HDF5 format for lazy loading ---
-            if 'ids' in self._h5_file and 'embeddings' in self._h5_file:
+            # --- DEFINITIVE FIX: Correctly detect the efficient HDF5 format for lazy loading ---
+            id_key = None
+            if 'protein_ids' in self._h5_file:
+                id_key = 'protein_ids'
+            elif 'ids' in self._h5_file:
+                id_key = 'ids'
+
+            if id_key and 'embeddings' in self._h5_file:
                 self.is_new_format = True
                 print(f"  Detected new, efficient HDF5 format for '{self.h5_path.name}'.")
-                id_list = [s.decode('utf-8') for s in self._h5_file['ids'][:]]
+                id_list = [s.decode('utf-8') for s in self._h5_file[id_key][:]]
                 self.id_to_idx_map = {protein_id: i for i, protein_id in enumerate(id_list)}
                 self._keys = set(id_list)
             else: # Fallback to old format

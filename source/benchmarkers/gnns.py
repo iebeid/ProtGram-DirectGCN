@@ -22,8 +22,10 @@ from configuration.config import Config
 from source.benchmarkers.base import BaseBenchmarker
 from source.utils.fs.file_utils import FileUtils
 from source.models.factory import ModelFactory
-from source.utils.data.data_utils import DataUtils
 from source.data_structures.direct_ngram_graph import DirectedNgramGraph
+from source.utils.data.data_utils import DataUtils
+# --- DEFINITIVE FIX: Import the Network Embedding Benchmarker ---
+from source.benchmarkers.nes import NetworkEmbeddingBenchmarker
 
 
 class GNNBenchmarker(BaseBenchmarker):
@@ -262,9 +264,13 @@ class GNNBenchmarker(BaseBenchmarker):
                             is_heterophilic=is_heterophilic
                         )
 
+                        # --- DEFINITIVE FIX: Pass num_nodes explicitly instead of the wrong graph_obj type ---
+                        # The model factory expects `num_graph_nodes` for some models, but was being
+                        # passed a PyG Data object, which would cause an AttributeError.
                         model = self.model_factory.create_model(
-                            model_name=model_name, in_channels=data_for_model.num_features, num_classes=num_classes,
-                            graph_obj=data_for_model, use_homo_hetero_paths=is_heterophilic
+                            model_name=model_name, in_channels=data_for_model.num_features,
+                            num_classes=num_classes, num_graph_nodes=data.num_nodes,
+                            use_homo_hetero_paths=is_heterophilic
                         )
 
                         if self.config.DEBUG_VERBOSE:
@@ -322,6 +328,14 @@ class GNNBenchmarker(BaseBenchmarker):
             # --- Save summary for the current dataset ---
             if dataset_results:
                 all_results.extend(dataset_results)
+
+        # --- Now, run the Network Embedding benchmarks as a subroutine ---
+        print("\n--- Launching Network Embedding Benchmark Sub-routine ---")
+        ne_benchmarker = NetworkEmbeddingBenchmarker(self.config)
+        ne_results_df = ne_benchmarker.run()
+        if ne_results_df is not None and not ne_results_df.empty:
+            # Convert DataFrame to list of records and extend the main results list
+            all_results.extend(ne_results_df.to_dict('records'))
 
         # --- Save a final, grand summary of all results ---
         if all_results:

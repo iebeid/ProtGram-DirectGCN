@@ -75,7 +75,12 @@ class GroundTruthLoader:
         # This new approach converts the IDs to a DataFrame and performs a highly
         # optimized merge operation, which is the standard and scalable way to
         # perform this kind of filtering.
-        all_raw_ids_ddf = all_raw_ids.to_frame(name="db_id")
+        all_raw_ids_ddf = all_raw_ids.to_frame(name="db_id") # noqa
+        # --- DEFINITIVE FIX for "Zero Pairs" Error: Ensure consistent dtypes before merge ---
+        # The merge was failing silently because the 'db_id' column from the raw files
+        # was 'object' dtype, while the one from the mapping parquet was 'string'.
+        # Explicitly casting to string ensures the distributed join works correctly.
+        all_raw_ids_ddf['db_id'] = all_raw_ids_ddf['db_id'].astype(str)
         filtered_map_ddf = dd.merge(id_map_ddf, all_raw_ids_ddf, on='db_id', how='inner').compute()
 
         id_to_uniprot_map = dict(zip(filtered_map_ddf['db_id'], filtered_map_ddf['uniprot_id']))

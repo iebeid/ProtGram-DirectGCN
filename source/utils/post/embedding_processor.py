@@ -5,6 +5,7 @@
 # VERSION: 7.0 (Aligned DirectGCN embedding extraction with Parallel Views architecture)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
+import tempfile
 
 from pathlib import Path
 from typing import Dict
@@ -70,21 +71,23 @@ class EmbeddingProcessor:
             # 2. Load the mapping parquet and filter it to only the keys we need
             print(f"  Loading relevant mappings for {len(keys_to_map)} IDs from Parquet file...")
             try:
-                import dask.dataframe as dd
-                map_ddf = dd.read_parquet(id_mapping_parquet_path)
+                # --- DEFINITIVE FIX for Scalability: Use a temporary file for the Dask merge ---
+                # The previous dd.from_pandas() call would load all keys into memory,
+                # defeating the purpose of Dask. This new approach writes the keys to a
+                # temporary file, allowing Dask to read it in a distributed and memory-efficient way.
+                with tempfile.NamedTemporaryFile(mode='w', delete=True, suffix='.csv') as tmp:
+                    # Write keys to a temporary file
+                    pd.DataFrame(list(keys_to_map), columns=['db_id']).to_csv(tmp.name, index=False)
 
-                # --- DEFINITIVE FIX for Performance: Replace slow 'isin' with a fast Dask 'merge' (join) ---
-                # The previous implementation used `isin(list(keys_to_map))`, which is a known
-                # performance anti-pattern in Dask. It requires serializing the entire (potentially huge)
-                # list of keys and sending it to every worker, causing the process to hang.
-                # This new approach converts the keys into a Dask DataFrame and performs a highly
-                # optimized merge operation, which is the standard and scalable way to
-                # perform this kind of filtering on large datasets.
-                keys_df = pd.DataFrame(list(keys_to_map), columns=['db_id'])
-                keys_ddf = dd.from_pandas(keys_df, npartitions=config.DASK_N_PARTITIONS)
-                filtered_map_ddf = dd.merge(map_ddf, keys_ddf, on='db_id', how='inner')
+                    # Load the keys and the map as Dask DataFrames
+                    import dask.dataframe as dd
+                    keys_ddf = dd.read_csv(tmp.name)
+                    map_ddf = dd.read_parquet(id_mapping_parquet_path)
 
-                filtered_map_df = filtered_map_ddf.compute()
+                    # Perform the scalable merge and compute the result
+                    filtered_map_ddf = dd.merge(map_ddf, keys_ddf, on='db_id', how='inner')
+                    filtered_map_df = filtered_map_ddf.compute()
+
                 id_map = dict(zip(filtered_map_df['db_id'], filtered_map_df['uniprot_id']))
                 print(f"  Successfully created a specific ID map with {len(id_map)} entries.")
             except Exception as e:

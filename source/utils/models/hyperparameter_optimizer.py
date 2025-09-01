@@ -4,11 +4,14 @@
 # VERSION: 1.0
 # AUTHOR: Gemini Code Assist
 # ==============================================================================
-
 import copy
 from typing import Dict, Any, List, Optional
 
+import mlflow
 import optuna
+# --- DEFINITIVE FIX for MLflow Integration: Import the MLflow callback ---
+# This is the standard, idiomatic way to connect Optuna and MLflow.
+from optuna.integration import MLflowCallback
 import numpy as np
 from sklearn.model_selection import train_test_split
 
@@ -112,10 +115,17 @@ class HyperparameterOptimizer:
             trial_config.EVAL_MLP_L2_REG = self._get_trial_param(trial, 'L2_REG', search_space)
             trial_config.EVAL_BATCH_SIZE = self._get_trial_param(trial, 'BATCH_SIZE', search_space)
 
+            # --- DEFINITIVE FIX for HPO Inefficiency: Disable slow analysis ---
+            # SHAP analysis is computationally expensive and not needed for every HPO trial.
+            # Disabling it here significantly speeds up the optimization process.
+            trial_config.EVAL_GENERATE_SHAP_SUMMARY = False
+
             ppi_pipeline = PPIPipeline(trial_config)
 
             try:
-                metrics, _ = ppi_pipeline._train_and_evaluate_fold(
+                # --- DEFINITIVE FIX: Unpack the new return signature ---
+                # The _train_and_evaluate_fold method now returns the model, which we ignore during HPO.
+                metrics, _, _ = ppi_pipeline._train_and_evaluate_fold(
                     X_train=X_train, y_train=y_train,
                     X_val=X_val, y_val=y_val,
                     embedding_name=embedding_name, fold_num=trial.number
@@ -125,16 +135,32 @@ class HyperparameterOptimizer:
                 print(f"  Trial {trial.number} failed with error: {e}")
                 return 0.0
 
-        # 3. Run the study
-        study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=self.base_config.RANDOM_STATE))
-        study.optimize(objective, n_trials=self.base_config.HPO_N_TRIALS, show_progress_bar=True)
+        # 3. Set up MLflow tracking for the study
+        mlflow.set_experiment(self.base_config.MLFLOW_EXPERIMENT_NAME)
+        with mlflow.start_run(run_name=f"HPO_{embedding_name}") as parent_run:
+            mlflow.set_tag("optuna.study_name", f"hpo_{embedding_name}")
 
-        # 4. Report the results
-        DataUtils.print_header("Hyperparameter Optimization Finished")
-        print(f"  Number of finished trials: {len(study.trials)}")
-        best_trial = study.best_trial
-        print(f"  Best trial value (AUC): {best_trial.value:.4f}")
-        print("  Best hyperparameters found:")
-        for key, value in best_trial.params.items():
-            print(f"    - {key}: {value}")
-        return best_trial.params
+            # --- DEFINITIVE FIX for MLflow Integration: Use the MLflow callback ---
+            # This will automatically log each trial as a nested run.
+            mlflow_callback = MLflowCallback(
+                tracking_uri=mlflow.get_tracking_uri(),
+                metric_name="validation_auc",
+                create_experiment=False,
+                mlflow_kwargs={"run_name": f"hpo_trial_{embedding_name}"} # Base name for trials
+            )
+
+            # 4. Run the study
+            study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=self.base_config.RANDOM_STATE))
+            study.optimize(objective, n_trials=self.base_config.HPO_N_TRIALS, callbacks=[mlflow_callback], show_progress_bar=True)
+
+            # 5. Report and log the final best results to the parent run
+            DataUtils.print_header("Hyperparameter Optimization Finished")
+            print(f"  Number of finished trials: {len(study.trials)}")
+            best_trial = study.best_trial
+            print(f"  Best trial value (AUC): {best_trial.value:.4f}")
+            print("  Best hyperparameters found:")
+            for key, value in best_trial.params.items():
+                print(f"    - {key}: {value}")
+                mlflow.log_param(f"best_{key}", value)
+            mlflow.log_metric("best_auc", best_trial.value)
+            return best_trial.params

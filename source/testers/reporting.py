@@ -11,7 +11,6 @@ import shutil
 import numpy as np
 from source.utils.data.data_utils import DataUtils
 from source.utils.results.evaluation_reporter import EvaluationReporter
-from source.utils.results.evaluation_summary_generator import EvaluationSummary
 
 
 class ReportingTests(unittest.TestCase):
@@ -47,8 +46,8 @@ class ReportingTests(unittest.TestCase):
         reporter.plot_roc_curves(results_data)
         reporter.plot_comparison_charts(results_data)
         # --- FIX: Instantiate and call the correct class for writing the summary ---
-        summary_generator = EvaluationSummary(base_output_dir=self.test_output_dir, k_vals_table=sample_k_vals)
-        summary_generator.write_summary_file(results_data, main_emb_name='Model_A', test_metric='test_auc_sklearn', alpha=0.05)
+        summary_generator = EvaluationReporter(base_output_dir=self.test_output_dir, k_vals_table=sample_k_vals)
+        summary_generator.write_summary_file(results_data, main_model_name='Model_A', test_metric='test_auc_sklearn', alpha=0.05)
 
         # --- NEW: Add assertions to verify that output files were actually created ---
         self.assertTrue(os.path.exists(os.path.join(self.test_output_dir, "plots", "history_Model_A_Fold1.png")))

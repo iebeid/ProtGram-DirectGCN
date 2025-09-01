@@ -1,15 +1,13 @@
 # ==============================================================================
 # MODULE: utils/data/fasta_utils.py
 # PURPOSE: Contains utility functions for parsing and handling FASTA files.
-# VERSION: 2.0 (Implemented parallel parsing for performance)
+# VERSION: 3.0 (Replaced buggy parallel parser with robust Bio.SeqIO.parse)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
 
 import re
 from pathlib import Path
-from typing import Iterator, List, Optional, Tuple, Union
-from multiprocessing import Pool, cpu_count
-from functools import partial
+from typing import Iterator, List, Tuple, Union
 
 from Bio import SeqIO
 from tqdm.auto import tqdm
@@ -24,33 +22,6 @@ ALPHABET_PROTEIN_NOCUT = "ACDEFGHIKLMNPQRSTVWYBXZJUO"
 ALPHABET_PROTEIN_CUT = "ACDEFGHIKLMNPQRSTVWY"
 ALPHABET_DNA = "GATCRYWSMKHBVDN"
 ALPHABET_RNA = "GAUCRYWSMKHBVDN"
-
-
-def _parse_fasta_chunk(chunk: List[str], perform_cleaning: bool, min_len: int, max_len: int, alphabet_type: str) -> List[Tuple[str, str]]:
-    """
-    A helper function designed to be run in a separate process. It parses a
-    chunk of a FASTA file (as a list of lines) and returns a list of (header, sequence) tuples.
-    """
-    sequences = []
-    header, sequence_parts = None, []
-
-    def process_entry(h, s_parts):
-        if h and s_parts:
-            full_sequence = "".join(s_parts)
-            if perform_cleaning:
-                full_sequence = FastaUtils.clean_sequence(full_sequence, alphabet_type)
-            if min_len <= len(full_sequence) <= max_len:
-                sequences.append((h, full_sequence))
-
-    for line in chunk:
-        if line.startswith('>'):
-            process_entry(header, sequence_parts)
-            header, sequence_parts = FastaUtils.extract_id_from_header(line), []
-        elif header:
-            sequence_parts.append(line.strip())
-
-    process_entry(header, sequence_parts) # Process the last entry in the chunk
-    return sequences
 
 
 class FastaUtils:
@@ -101,40 +72,31 @@ class FastaUtils:
             alphabet_type: str = 'protein'
     ) -> Iterator[Tuple[str, str]]:
         """
-        Parses one or more FASTA files in parallel and yields sequences.
-        This implementation reads the file(s) in large chunks and distributes
-        the parsing across multiple CPU cores for significant speedup on large files.
+        Parses one or more FASTA files and yields sequences. This implementation
+        uses the robust and memory-efficient Bio.SeqIO.parse iterator, which is
+        the standard and safest way to handle FASTA files.
         """
-        # --- DEFINITIVE FIX for Performance: Parallelize FASTA parsing ---
-        # The previous single-threaded parser was a major bottleneck. This new
-        # implementation reads the file in large chunks and processes them in parallel.
+        # --- DEFINITIVE FIX for Correctness: Replace buggy parallel parser ---
+        # The previous line-chunking parallel parser was not safe for the FASTA
+        # format and could lead to data loss or corruption. Using the standard
+        # Bio.SeqIO.parse iterator guarantees correctness and is still highly
+        # memory-efficient.
         if perform_cleaning:
             print("  - Cleaning enabled for FASTA parsing.")
 
-        num_workers = max(1, cpu_count() - 1)
-        chunk_size = 200000  # Number of lines per chunk
-
-        process_chunk_partial = partial(
-            _parse_fasta_chunk, perform_cleaning=perform_cleaning, min_len=min_len,
-            max_len=max_len, alphabet_type=alphabet_type
-        )
-
-        with Pool(processes=num_workers) as pool:
-            for file_path in tqdm(fasta_filepaths, desc="Parsing FASTA files", leave=False, unit="file"):
-                try:
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f_in:
-                        # Create a generator for chunks
-                        def chunk_generator():
-                            while True:
-                                chunk = f_in.readlines(chunk_size)
-                                if not chunk: break
-                                yield chunk
-
-                        for result_list in pool.imap(process_chunk_partial, chunk_generator()):
-                            yield from result_list
-                except FileNotFoundError:
-                    print(f"Warning: FASTA file not found: {file_path}")
-                    continue
+        for file_path in fasta_filepaths:
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    for record in SeqIO.parse(f, "fasta"):
+                        header = FastaUtils.extract_id_from_header(record.description)
+                        sequence = str(record.seq)
+                        if perform_cleaning:
+                            sequence = FastaUtils.clean_sequence(sequence, alphabet_type)
+                        if min_len <= len(sequence) <= max_len:
+                            yield header, sequence
+            except FileNotFoundError:
+                print(f"Warning: FASTA file not found: {file_path}")
+                continue
 
     @staticmethod
     def check_uniprot_header_compatibility(fasta_paths: List[Path], sample_size: int) -> float:

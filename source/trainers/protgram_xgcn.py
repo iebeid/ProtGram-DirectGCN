@@ -22,7 +22,7 @@ from torch_geometric.data import Data
 from torch_geometric.utils import homophily
 from tqdm.auto import tqdm
 from functools import partial
-
+import mlflow
 from configuration.config import Config
 from source.data_structures.direct_ngram_graph import DirectedNgramGraph
 from source.data_builders.xgcn import XGCNDataBuilder
@@ -71,50 +71,63 @@ class ProtGramXGCNTrainer:
         Main execution function. Loops through n-gram levels, trains models,
         and generates final protein-level embeddings with raw IDs.
         """
-        DataUtils.print_header("PIPELINE STEP: Training ProtGram Models & Generating Embeddings")
+        mlflow.set_experiment(self.config.MLFLOW_PROTGRAM_XGCN_EXPERIMENT_NAME)
+        with mlflow.start_run(run_name=f"ProtGram-XGCN_{Path(self.config.SEQUENCE_FILE_PATHS[0]).stem}"):
+            DataUtils.print_header("PIPELINE STEP: Training ProtGram Models & Generating Embeddings")
 
-        final_protein_embeddings_per_model: Dict[str, Dict[str, np.ndarray]] = {} # noqa
-        protein_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
+            final_protein_embeddings_per_model: Dict[str, Dict[str, np.ndarray]] = {}
+            final_attention_logs: Dict[str, Dict] = {}  # Initialize the aggregator
+            protein_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
 
-        for model_type in self.config.PROTGRAM_MODELS_TO_TRAIN:
-            if model_type == 'directgcn':
-                for gating_mode in ['vector', None]:
-                    gating_mode_str = gating_mode if gating_mode is not None else 'none'
-                    DataUtils.print_header(f"Processing Model Type: {model_type.upper()} (Gating: {gating_mode_str})")
-                    ngram_embeddings_per_level, _ = self._train_gnns_hierarchically(model_type, gating_coeff_mode=gating_mode)
+            for model_type in self.config.PROTGRAM_MODELS_TO_TRAIN:
+                if model_type == 'directgcn':
+                    for gating_mode in ['vector', None]:
+                        gating_mode_str = gating_mode if gating_mode is not None else 'none'
+                        DataUtils.print_header(f"Processing Model Type: {model_type.upper()} (Gating: {gating_mode_str})")
+
+                        # Correctly capture the attention logs from the hierarchical trainer
+                        ngram_embeddings_per_level, attention_logs_for_model = self._train_gnns_hierarchically(
+                            model_type, gating_coeff_mode=gating_mode
+                        )
+                        final_attention_logs.update(attention_logs_for_model)  # Aggregate logs
+
+                        pooled_results = self._pool_to_protein_level(
+                            ngram_embeddings_per_level, protein_sequences,
+                            level_ngram_to_idx=self._get_level_ngram_maps()
+                        )
+                        for n, (pooled_embeddings, _) in pooled_results.items():
+                            final_protein_embeddings_per_model[f"{model_type}_{gating_mode_str}_gating_n{n}"] = pooled_embeddings
+                else:
+                    DataUtils.print_header(f"Processing Model Type: {model_type.upper()}")
+
+                    # Correctly capture the attention logs from the hierarchical trainer
+                    ngram_embeddings_per_level, attention_logs_for_model = self._train_gnns_hierarchically(model_type)
+                    final_attention_logs.update(attention_logs_for_model)  # Aggregate logs
 
                     pooled_results = self._pool_to_protein_level(
                         ngram_embeddings_per_level, protein_sequences,
                         level_ngram_to_idx=self._get_level_ngram_maps()
                     )
                     for n, (pooled_embeddings, _) in pooled_results.items():
-                        final_protein_embeddings_per_model[f"{model_type}_{gating_mode_str}_gating_n{n}"] = pooled_embeddings
-            else:
-                DataUtils.print_header(f"Processing Model Type: {model_type.upper()}")
-                ngram_embeddings_per_level, _ = self._train_gnns_hierarchically(model_type)
+                        final_protein_embeddings_per_model[f"{model_type}_n{n}"] = pooled_embeddings
 
-                pooled_results = self._pool_to_protein_level(
-                    ngram_embeddings_per_level, protein_sequences,
-                    level_ngram_to_idx=self._get_level_ngram_maps()
-                )
-                for n, (pooled_embeddings, _) in pooled_results.items():
-                    final_protein_embeddings_per_model[f"{model_type}_n{n}"] = pooled_embeddings
+            # This function now saves the raw (unmapped) embeddings and returns their paths.
+            output_paths = self._save_final_embeddings(final_protein_embeddings_per_model)
 
-        # This function now saves the raw (unmapped) embeddings and returns their paths.
-        output_paths = self._save_final_embeddings(final_protein_embeddings_per_model)
+            # This method is now responsible for generating embeddings and attention logs.
+            if self.config.PROTGRAM_LOG_ATTENTION_WEIGHTS:
+                for model_name, attention_log in final_attention_logs.items():
+                    if attention_log:
+                        log_path = self.config.RESULTS_GCN_EMBEDDINGS_DIR / f"attention_log_{model_name}.json"
+                        FileUtils.save_json(attention_log, log_path)
+                        print(f"  Saved attention log for '{model_name}' to {log_path.name}")
 
-        # --- Sanity Check Disabled ---
-        # The sanity check has been disabled as per the user's request.
-        # if self.config.PROTGRAM_RUN_SANITY_CHECK_PPI:
-        #     for model_output_path in output_paths.values():
-        #         self._run_sanity_check_ppi(model_output_path)
-
-        DataUtils.print_header("ProtGram Embedding PIPELINE STEP FINISHED")
-        return output_paths
+            DataUtils.print_header("ProtGram Embedding PIPELINE STEP FINISHED")
+            return output_paths
 
     def _pool_to_protein_level(self, ngram_embeddings_per_level: Dict[int, np.ndarray],
                                protein_sequences: List[Tuple[str, str]],
-                               level_ngram_to_idx: Dict[int, Dict[str, int]]) -> Dict[int, Tuple[Dict[str, np.ndarray], Dict[str, Any]]]:
+                               level_ngram_to_idx: Dict[int, Dict[str, int]]) -> Dict[int, Tuple[Dict[str, np.ndarray], Dict[str, Dict[str, float]]]]:
         
         pooled_results = {}
         for n in range(1, self.config.PROTGRAM_NGRAM_MAX_N + 1):
@@ -181,6 +194,7 @@ class ProtGramXGCNTrainer:
         """
         ngram_embeddings_per_level: Dict[int, np.ndarray] = {}
         level_ngram_to_idx: Dict[int, Dict[str, int]] = {}
+        final_attention_logs: Dict[str, Dict] = {}
         hierarchical_attention_per_level: Dict[int, Dict] = {}
 
         for n in range(1, self.config.PROTGRAM_NGRAM_MAX_N + 1):
@@ -250,7 +264,11 @@ class ProtGramXGCNTrainer:
                 create_clustered_subgraphs_func=lambda g: self._partition_graph(g)
             )
 
-            print(f"  Generated {ngram_embeddings_per_level[n].shape[0]} embeddings of dim {ngram_embeddings_per_level[n].shape[1]} for n={n}.")
+            # --- NEW: Capture the attention log for the final level ---
+            if n == self.config.PROTGRAM_NGRAM_MAX_N:
+                model_run_name = f"{model_type}_{gating_coeff_mode}_gating_n{n}" if model_type == 'directgcn' else f"{model_type}_n{n}"
+                final_attention_logs[model_run_name] = hierarchical_attention_per_level.get(n, {})
+
             del model, data, graph_obj, initial_features, labels, optimizer
             gc.collect()
             if torch.cuda.is_available():
@@ -557,8 +575,16 @@ class ProtGramXGCNTrainer:
             from source.data_structures.coarsener import GraphCoarsener
             coarsening_level = self.config.PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING
 
-            # The coarsener returns the final cluster map directly
-            coarsening_result = GraphCoarsener.coarsen_graph(graph_obj, level=coarsening_level)
+            # --- DEFINITIVE FIX for Graclus "no undirected edges" error ---
+            # The GraphCoarsener expects a simple PyG Data object with an undirected
+            # edge_index. We create one here to ensure the coarsener receives the
+            # correct input format, resolving the error.
+            undirected_data = Data(
+                edge_index=graph_obj.A_undirected_w.indices(),
+                num_nodes=graph_obj.number_of_nodes
+            )
+
+            coarsening_result = GraphCoarsener.coarsen_graph(undirected_data, level=coarsening_level)
             if coarsening_result is None:
                 print("  - WARNING: Graclus coarsening failed. Falling back to a single partition.")
                 return [list(range(graph_obj.number_of_nodes))]
@@ -657,53 +683,3 @@ class ProtGramXGCNTrainer:
         else:
             print(f"  ERROR: Cannot initialize features for n={n}. Previous level embeddings or map are missing.")
             return None
-
-
-    def _run_sanity_check_ppi(self, embedding_path: str):
-        """Runs a quick, small-scale PPI evaluation as a sanity check."""
-        DataUtils.print_header("Running Sanity Check PPI Evaluation")
-        print(f"  Using embeddings from: {Path(embedding_path).name}") # noqa
-
-        # 1. Standardize the newly generated embeddings to UniProtKB IDs
-        standardized_embedding_path = EmbeddingProcessor.standardize_embedding_file(embedding_path) # noqa
-
-        # 2. Create a temporary, self-contained ground truth for this specific sanity check
-        # This ensures that we only evaluate on interaction pairs that actually exist in our embedding file.
-        with EmbeddingLoader(standardized_embedding_path, config=self.config) as loader:
-            available_ids = loader.get_keys()
-
-        if not available_ids:
-            print("  Sanity Check ERROR: No embeddings found to run evaluation.")
-            return
-
-        print(f"  Found {len(available_ids)} embeddings. Creating a temporary, relevant ground truth subset...")
-        pos_pairs = GroundTruthLoader.load_interaction_pairs_filtered(self.config.POS_INTERACTIONS_PATH, 1, available_ids)
-        neg_pairs = GroundTruthLoader.load_interaction_pairs_filtered(self.config.NEG_INTERACTIONS_PATH, 0, available_ids, sample_n=len(pos_pairs))
-
-        if not pos_pairs or not neg_pairs:
-            print("  Sanity Check WARNING: No overlapping interaction pairs found between generated embeddings and ground truth. Skipping evaluation.")
-            return
-
-        # 3. Configure a temporary pipeline run for this specific check
-        sanity_config = copy.deepcopy(self.config)
-        sanity_config.EVAL_EPOCHS = self.config.PROTGRAM_SANITY_CHECK_EPOCHS
-        sanity_config.EVAL_N_FOLDS = 2  # A minimal number of folds for a quick check
-        sanity_config.EVAL_GENERATE_SHAP_SUMMARY = False  # Disable for speed
-        sanity_config.PLOT_TRAINING_HISTORY = False  # Disable for speed
-        # Override the ground truth paths to point to our temporary, relevant subset
-        sanity_config.POS_INTERACTIONS_PATH = pos_pairs
-        sanity_config.NEG_INTERACTIONS_PATH = neg_pairs
-
-        model_name_for_eval = Path(standardized_embedding_path).stem.replace('_standardized', '')
-        sanity_config.LP_EMBEDDING_FILES_TO_EVALUATE = [
-            {"name": model_name_for_eval, "path": standardized_embedding_path}
-        ]
-
-        try:
-            ppi_evaluator = PPIPipeline(sanity_config)
-            ppi_evaluator.run()
-        except Exception as e:
-            print(f"  ❌ Sanity check PPI evaluation failed with an error: {e}")
-            traceback.print_exc()
-
-        print("--- Sanity Check PPI Evaluation Finished ---")

@@ -1,24 +1,24 @@
 # ==============================================================================
-# MODULE: utils/evaluation_reporter.py
-# PURPOSE: Contains all functions for plotting results and writing summary
-#          files for the PPI evaluation trainers.
-# VERSION: 3.1 (Added error bars to comparison charts for better visualization)
-# AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
+# MODULE: utils/results/evaluation_reporter.py
+# PURPOSE: A consolidated class for all evaluation reporting, including plots,
+#          summary files, statistical tests, and interpretability visualizations.
+# VERSION: 4.0 (Merged summary generation, improved stats, added heatmaps)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
+import json
+import math
 import random
 import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
-import math
-import h5py
 import matplotlib.pyplot as plt
-import json
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from scipy.stats import wilcoxon, pearsonr
+from scipy.stats import ttest_rel
+from sklearn.metrics import auc
 
 # Conditionally import SHAP to avoid making it a hard dependency
 try:
@@ -26,8 +26,8 @@ try:
 except ImportError:
     shap = None
 
-from sklearn.manifold import TSNE
 from source.utils.post.embedding_loader import EmbeddingLoader
+from sklearn.manifold import TSNE
 
 # --- Configuration for t-SNE plotting ---
 TSNE_PERPLEXITY = 30
@@ -38,12 +38,11 @@ TSNE_LEARNING_RATE = 'auto'
 SAMPLE_N_FOR_COMBINED_TSNE = 2000
 
 
-
-
 class EvaluationReporter:
     """
-    A class to handle plotting of results, writing summary files,
-    and generating t-SNE visualizations.
+    A consolidated class to handle all aspects of reporting for the PPI evaluation pipeline.
+    This includes plotting results, writing summary files with statistical tests,
+    and generating interpretability visualizations like SHAP plots and attention heatmaps.
     """
 
     def __init__(self, base_output_dir: str, k_vals_table: List[int]):
@@ -61,18 +60,158 @@ class EvaluationReporter:
         self.plots_output_dir.mkdir(parents=True, exist_ok=True)
         self.summary_file_output_dir.mkdir(parents=True, exist_ok=True)
 
+    # --- Summary File Generation ---
 
+    def write_summary_file(self, results_list: List[Dict[str, Any]], main_model_name: str, test_metric: str, alpha: float) -> Optional[Path]:
+        """
+        Writes a formatted summary table and statistical test results to a text file.
+        Also saves a clean, machine-readable CSV version of the performance metrics.
+        """
+        if not results_list:
+            print("Reporting: No results data provided for summary file.")
+            return None
+
+        csv_filepath = self.summary_file_output_dir / "evaluation_summary.csv"
+        txt_filepath = self.summary_file_output_dir / "evaluation_summary.txt"
+        performance_df = self._create_performance_dataframe(results_list)
+
+        try:
+            performance_df.to_csv(csv_filepath, index=False, float_format='%.4f')
+            print(f"Machine-readable results summary saved to {csv_filepath}")
+
+            formatted_df = performance_df.copy()
+            for col in formatted_df.select_dtypes(include=['float']).columns:
+                formatted_df[col] = formatted_df[col].apply(lambda x: f'{x:.4f}')
+
+            with open(txt_filepath, 'w') as f:
+                f.write("--- Performance Summary ---\n")
+                f.write(formatted_df.to_string(index=False))
+                f.write("\n\n")
+                self._write_statistical_comparison(f, results_list, main_model_name, test_metric, alpha)
+            print(f"Human-readable report with stats saved to {txt_filepath}")
+        except IOError as e:
+            print(f"  ERROR: Could not write summary files: {e}")
+            return None
+
+        return txt_filepath
+
+    @staticmethod
+    def _calculate_ranking_metrics(y_true: np.ndarray, y_score: np.ndarray, k_list: List[int]) -> Dict[str, float]:
+        """
+        Calculates ranking metrics like Hits@k (as Recall@k) and NDCG@k.
+        """
+        if len(y_true) != len(y_score):
+            raise ValueError("y_true and y_score must have the same length.")
+
+        combined = np.stack([y_score, y_true], axis=1)
+        sorted_combined = combined[np.argsort(combined[:, 0])[::-1]]
+        sorted_true_labels = sorted_combined[:, 1]
+
+        metrics = {}
+        total_positives = np.sum(y_true)
+
+        if total_positives == 0:
+            for k in k_list:
+                metrics[f'hits_at_{k}'] = 0.0
+                metrics[f'ndcg_at_{k}'] = 0.0
+            return metrics
+
+        ideal_ranking = np.sort(y_true)[::-1]
+
+        for k in k_list:
+            actual_k = min(k, len(sorted_true_labels))
+            if actual_k == 0:
+                metrics[f'hits_at_{k}'] = 0.0
+                metrics[f'ndcg_at_{k}'] = 0.0
+                continue
+
+            hits_in_top_k = np.sum(sorted_true_labels[:actual_k])
+            metrics[f'hits_at_{k}'] = hits_in_top_k / total_positives
+
+            ranks = np.arange(1, actual_k + 1)
+            discounts = np.log2(ranks + 1)
+            dcg = np.sum(sorted_true_labels[:actual_k] / discounts)
+            idcg = np.sum(ideal_ranking[:actual_k] / discounts)
+
+            metrics[f'ndcg_at_{k}'] = dcg / idcg if idcg > 0 else 0.0
+
+        return metrics
+
+    def _create_performance_dataframe(self, results_list: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Helper to create the main performance summary DataFrame with raw numeric data."""
+        rows_data = []
+        for res in results_list:
+            row = {
+                "Embedding Name": res.get('embedding_name', 'N/A'),
+                "AUC": res.get('test_auc_sklearn', 0.0),
+                "F1": res.get('test_f1_sklearn', 0.0),
+                "Precision": res.get('test_precision_sklearn', 0.0),
+                "Recall": res.get('test_recall_sklearn', 0.0),
+                "AUC StdDev": res.get('test_auc_sklearn_std', 0.0),
+                "F1 StdDev": res.get('test_f1_sklearn_std', 0.0)
+            }
+            for k_val in self.k_vals_table:
+                row[f"Hits@{k_val}"] = res.get(f'test_hits_at_{k_val}', 0.0)
+                row[f"NDCG@{k_val}"] = res.get(f'test_ndcg_at_{k_val}', 0.0)
+            rows_data.append(row)
+
+        return pd.DataFrame(rows_data)
+
+    def _write_statistical_comparison(self, f, results_list: List[Dict[str, Any]], main_model_name: str, metric: str, alpha: float):
+        """Helper to write the statistical comparison section to the file using a paired t-test with Bonferroni correction."""
+        main_model_results = next((res for res in results_list if res.get('embedding_name') == main_model_name), None)
+        scores_key = 'fold_auc_scores' if 'auc' in metric else 'fold_f1_scores'
+        main_model_scores = main_model_results.get(scores_key) if main_model_results else None
+
+        if main_model_scores is None:
+            f.write(f"\n--- Statistical Comparison Skipped: Baseline model '{main_model_name}' or its fold scores not found. ---\n")
+            return
+
+        other_models = [res for res in results_list if res['embedding_name'] != main_model_name]
+        num_comparisons = len(other_models)
+        if num_comparisons == 0:
+            f.write("\n--- Statistical Comparison Skipped: No other models to compare against. ---\n")
+            return
+
+        corrected_alpha = alpha / num_comparisons
+
+        f.write(f"\n--- Statistical Significance Tests (Paired t-test) ---\n")
+        f.write(f"Comparing all models against '{main_model_name}' using metric '{metric}' (alpha={alpha}, Bonferroni corrected alpha={corrected_alpha:.4f})\n")
+        f.write("-" * 50 + "\n")
+
+        for other_model_results in other_models:
+            other_model_scores = other_model_results.get(scores_key)
+            f.write(f"\n  Comparison: '{main_model_name}' vs '{other_model_results['embedding_name']}'\n")
+
+            if other_model_scores is None or len(main_model_scores) != len(other_model_scores):
+                f.write("    - ❌ Result: Cannot perform test. Score lists have different lengths or are missing.\n")
+                continue
+
+            try:
+                t_stat, p_val = ttest_rel(main_model_scores, other_model_scores, nan_policy='omit')
+                f.write(f"    - P-value: {p_val:.4f}\n")
+                mean_main, mean_other = np.nanmean(main_model_scores), np.nanmean(other_model_scores)
+                if p_val < corrected_alpha:
+                    if mean_main > mean_other:
+                        f.write(f"    - ✅ Result: Statistically significant improvement. ({mean_main:.4f} > {mean_other:.4f})\n")
+                    elif mean_other > mean_main:
+                        f.write(f"    - ❌ Result: Statistically significant decline. ({mean_main:.4f} < {mean_other:.4f})\n")
+                    else:
+                        f.write("    - ➖ Result: Statistically significant, but means are equal.\n")
+                else:
+                    f.write(f"    - ➖ Result: No statistically significant difference. ({mean_main:.4f} vs {mean_other:.4f})\n")
+            except Exception as e:
+                f.write(f"    - ❌ Result: Statistical test failed with error: {e}\n")
+
+    # --- Plotting Functions ---
 
     def plot_training_history(self, history_dict: Dict[str, Any], model_name: str) -> Optional[Path]:
-        """
-        Plots the training and validation loss/accuracy from a Keras history object.
-        """
+        """Plots the training and validation loss/accuracy from a Keras history object."""
         if not history_dict:
             print(f"Plotting: No history data for {model_name} to plot.")
             return None
 
         plot_filename = self.plots_output_dir / f"history_{model_name.replace(' ', '_')}.png"
-
         plt.figure(figsize=(12, 5))
 
         plt.subplot(1, 2, 1)
@@ -87,7 +226,6 @@ class EvaluationReporter:
         plt.grid(True)
 
         plt.subplot(1, 2, 2)
-        # FIX: Robustly find the primary metric (e.g., 'accuracy', 'auc')
         metric_key = next((k for k in ['accuracy', 'auc'] if k in history_dict), None)
         val_metric_key = f'val_{metric_key}' if metric_key else None
 
@@ -114,11 +252,8 @@ class EvaluationReporter:
         return plot_filename
 
     def plot_roc_curves(self, results_list: List[Dict[str, Any]]) -> Optional[Path]:
-        """
-        Plots a comparison of ROC curves from multiple model evaluation results.
-        """
+        """Plots a comparison of ROC curves from multiple model evaluation results."""
         plot_filename = self.plots_output_dir / "comparison_roc_curves.png"
-
         plt.figure(figsize=(10, 8))
         plotted_anything = False
         for result in results_list:
@@ -151,16 +286,12 @@ class EvaluationReporter:
         return plot_filename
 
     def plot_comparison_charts(self, results_list: List[Dict[str, Any]]) -> Optional[Path]:
-        """
-        Generates a set of bar charts comparing key performance metrics across all models,
-        including error bars for standard deviation.
-        """
+        """Generates a set of bar charts comparing key performance metrics across all models."""
         if not results_list:
             print("Plotting: No results data provided for comparison charts.")
             return None
 
         plot_filename = self.plots_output_dir / "comparison_metrics_barchart.png"
-
         metrics = {'AUC': 'test_auc_sklearn', 'F1-Score': 'test_f1_sklearn', 'Precision': 'test_precision_sklearn', 'Recall': 'test_recall_sklearn'}
         for k in self.k_vals_table:
             metrics[f'Hits@{k}'] = f'test_hits_at_{k}'
@@ -175,7 +306,6 @@ class EvaluationReporter:
         for i, (name, key) in enumerate(metrics.items()):
             plt.subplot(rows, cols, i + 1)
             values = [res.get(key, 0) for res in results_list]
-            # FIX: Add error bars using the standard deviation from cross-validation
             std_dev_key = f"{key}_std"
             errors = [res.get(std_dev_key, 0) for res in results_list]
 
@@ -183,7 +313,7 @@ class EvaluationReporter:
             plt.ylabel('Score')
             plt.title(name)
             plt.xticks(rotation=45, ha="right")
-            plt.ylim(bottom=0, top=max(1.0, max(values) * 1.1))
+            plt.ylim(bottom=0, top=max(1.0, max(values) * 1.1 if values else 1.0))
             for bar in bars:
                 yval = bar.get_height()
                 plt.text(bar.get_x() + bar.get_width() / 2.0, yval, f'{yval:.3f}', ha='center', va='bottom', fontsize=8)
@@ -199,38 +329,25 @@ class EvaluationReporter:
         plt.close()
         return plot_filename
 
-    def generate_shap_summary(self, model, background_data: np.ndarray, model_name: str, fold_num: int) -> Optional[Path]:
-        """
-        Generates and saves a SHAP summary plot to explain model predictions.
+    # --- Interpretability Plots ---
 
-        Note: This interprets the importance of the *input features to the MLP*,
-        which are the dimensions of the concatenated protein embeddings, not the
-        n-grams themselves.
-        """
-        # --- NEW: Check if SHAP is installed before proceeding ---
+    def generate_shap_summary(self, model, background_data: np.ndarray, model_name: str, fold_num: int) -> Optional[Path]:
+        """Generates and saves a SHAP summary plot to explain model predictions."""
         if shap is None:
             print("  SHAP library not installed. Skipping SHAP summary generation.")
-            print("  To enable, please install it: pip install shap")
             return None
 
         plot_filename = self.plots_output_dir / f"shap_summary_{model_name.replace(' ', '_')}_Fold{fold_num}.png"
         print(f"  Generating SHAP summary plot for {model_name}...")
 
         try:
-            # The background data is now pre-summarized (e.g., by k-means)
-            # before being passed to this function, so we can use it directly.
-
-            # --- REFACTOR: Use DeepExplainer for TensorFlow models ---
-            # DeepExplainer is significantly faster and optimized for deep learning models.
             explainer = shap.DeepExplainer(model, background_data)
-            shap_values = explainer.shap_values(background_data)  # Explain the background data
+            shap_values = explainer.shap_values(background_data)
 
-            # For a single-output model, shap_values is a list with one array.
             if isinstance(shap_values, list):
                 shap_values = shap_values[0]
 
             plt.figure()
-            # --- NEW: Limit the number of features displayed for clarity ---
             shap.summary_plot(shap_values, background_data, show=False, plot_type="bar", max_display=20)
             plt.title(f"SHAP Feature Importance\n({model_name} - Fold {fold_num})")
             plt.tight_layout()
@@ -243,153 +360,49 @@ class EvaluationReporter:
         plt.close()
         return plot_filename
 
-    def generate_pooling_attention_plot(self, attention_json_path: Path, model_name: str, num_top_ngrams: int = 20) -> Optional[Path]:
+    def plot_attention_heatmap(self, attention_data: Dict[str, Dict[str, float]], model_name: str, num_top_proteins: int = 20, num_top_ngrams: int = 25) -> Optional[Path]:
         """
-        Generates a bar chart showing the n-grams with the highest attention
-        weights for a sample protein from the pooling strategy.
+        Generates and saves a heatmap of n-gram attention weights for the proteins
+        with the highest overall attention variance.
         """
-        if not attention_json_path.exists():
-            print(f"  Pooling attention file not found: {attention_json_path}. Skipping plot.")
-            return None
-
-        print(f"  Generating pooling attention plot for {model_name} from {attention_json_path.name}...")
-
+        print(f"  Generating attention heatmap for '{model_name}'...")
         try:
-            # --- DEFINITIVE FIX for OOM Crash: Read only the first line of the JSONL file ---
-            # This avoids loading the entire (potentially massive) attention log into memory.
-            with open(attention_json_path, 'r') as f:
-                first_line = f.readline()
-                if not first_line:
-                    print("  No attention data found in file.")
-                    return None
-                # The first line contains the entire JSON object for the first protein.
-                attention_data = json.loads(first_line)
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"  Error reading attention JSON file: {e}")
-            return None
+            df = pd.DataFrame.from_dict(attention_data, orient='index').fillna(0)
+            if df.empty:
+                print("    - WARNING: Attention data is empty. Cannot generate heatmap.")
+                return None
 
-        # Select a sample protein to visualize (e.g., the first one)
-        sample_protein_id = next(iter(attention_data))
-        protein_attention = attention_data[sample_protein_id]
+            top_proteins = df.var(axis=1).nlargest(num_top_proteins).index
+            top_ngrams = df.loc[top_proteins].mean(axis=0).nlargest(num_top_ngrams).index
+            heatmap_data = df.loc[top_proteins, top_ngrams]
 
-        # Sort by weight and take the top N
-        sorted_ngrams = sorted(protein_attention.items(), key=lambda item: item[1], reverse=True)
-        top_ngrams = dict(sorted_ngrams[:num_top_ngrams])
+            plt.style.use('seaborn-v0_8-whitegrid')
+            fig, ax = plt.subplots(figsize=(18, 12))
+            sns.heatmap(heatmap_data, ax=ax, cmap="viridis", annot=False)
+            ax.set_title(f'N-Gram Attention Heatmap for Top {num_top_proteins} Proteins ({model_name})', fontsize=16)
+            ax.set_xlabel('N-Grams', fontsize=12)
+            ax.set_ylabel('Protein IDs', fontsize=12)
+            plt.xticks(rotation=45, ha='right')
+            plt.yticks(rotation=0)
+            plt.tight_layout()
 
-        plt.figure(figsize=(12, 8))
-        plt.bar(top_ngrams.keys(), top_ngrams.values(), color='skyblue')
-        plt.xlabel("N-Grams")
-        plt.ylabel("Attention Weight")
-        plt.title(f"Top {num_top_ngrams} N-Gram Attention Weights for Protein '{sample_protein_id}'\n(Model: {model_name})")
-        plt.xticks(rotation=45, ha="right")
-        plt.tight_layout()
-
-        plot_filename = self.plots_output_dir / f"pooling_attention_{model_name.replace(' ', '_')}.png"
-        try:
-            plt.savefig(plot_filename)
-            print(f"  Saved attention summary plot to {plot_filename}")
+            output_path = self.plots_output_dir / f"attention_heatmap_{model_name}.png"
+            fig.savefig(output_path, dpi=300, bbox_inches='tight')
+            plt.close(fig)
+            print(f"    - Attention heatmap saved to: {output_path.name}")
+            return output_path
         except Exception as e:
-            print(f"  Error saving attention plot {plot_filename}: {e}")
-        plt.close()
-        return plot_filename
-
-    def generate_hierarchical_attention_plot(self, attention_json_path: Path, model_name: str, num_samples_per_level: int = 5) -> Optional[Path]:
-        """
-        Generates a set of bar charts showing the attention weights for a sample
-        of n-grams from each level of the hierarchy.
-        """
-        if not attention_json_path.exists():
-            print(f"  Hierarchical attention file not found: {attention_json_path}. Skipping plot.")
+            print(f"    - ❌ ERROR: Could not generate attention heatmap: {e}")
             return None
-
-        print(f"  Generating hierarchical attention plot for {model_name} from {attention_json_path.name}...")
-
-        try:
-            # --- DEFINITIVE FIX for OOM Crash: Read the JSONL file line-by-line ---
-            attention_data = {}
-            with open(attention_json_path, 'r') as f:
-                for line in f:
-                    if line.strip():
-                        # Each line is a JSON object like {"2": {...}}
-                        line_data = json.loads(line)
-                        # The key is the n-gram level (as a string)
-                        level_key_str = next(iter(line_data))
-                        level_data = line_data[level_key_str]
-                        attention_data[int(level_key_str)] = level_data
-        except (json.JSONDecodeError, IOError, ValueError, StopIteration) as e:
-            print(f"  Error reading or parsing attention JSONL file: {e}")
-            return None
-
-        if not attention_data:
-            print("  No hierarchical attention data found in file.")
-            return None
-
-        # The keys are n-gram levels (e.g., 2, 3). Sort them numerically.
-        levels = sorted(attention_data.keys())
-        num_levels = len(levels)
-        if num_levels == 0:
-            print("  Attention data is empty, no levels to plot.")
-            return None
-
-        fig, axes = plt.subplots(num_levels, 1, figsize=(12, 6 * num_levels), squeeze=False)
-        fig.suptitle(f'Hierarchical Attention Weights\n(Model: {model_name})', fontsize=16)
-
-        for i, level in enumerate(levels):
-            ax = axes[i, 0]
-            level_data = attention_data[level]
-
-            if not level_data:
-                ax.text(0.5, 0.5, f'No attention data for n={level}', ha='center', va='center')
-                ax.set_title(f'N-Gram Level: {level}')
-                continue
-
-            # Take a random sample of n-grams to visualize
-            sample_keys = random.sample(list(level_data.keys()), min(len(level_data), num_samples_per_level))
-            sample_data = {k: level_data[k] for k in sample_keys}
-
-            bar_labels, parent1_weights, parent2_weights = [], [], []
-            for ngram, parents in sample_data.items():
-                bar_labels.append(ngram)
-                parent1_weights.append(parents.get(ngram[:-1], 0))
-                parent2_weights.append(parents.get(ngram[1:], 0))
-
-            x = np.arange(len(bar_labels))
-            width = 0.35
-            ax.bar(x - width / 2, parent1_weights, width, label=f'Parent 1 ({bar_labels[0][:-1][:4]}...)')
-            ax.bar(x + width / 2, parent2_weights, width, label=f'Parent 2 (...{bar_labels[0][1:][-4:]})')
-            ax.set_ylabel('Attention Weight')
-            ax.set_title(f'N-Gram Level: {level} (Sample of {len(bar_labels)} n-grams)')
-            ax.set_xticks(x)
-            ax.set_xticklabels(bar_labels, rotation=45, ha="right")
-            ax.legend()
-            ax.grid(axis='y', linestyle='--', alpha=0.7)
-
-        plt.tight_layout(rect=[0, 0, 1, 0.96])
-        plot_filename = self.plots_output_dir / f"hierarchical_attention_{model_name.replace(' ', '_')}.png"
-        try:
-            plt.savefig(plot_filename)
-            print(f"  Saved hierarchical attention summary plot to {plot_filename}")
-        except Exception as e:
-            print(f"  Error saving hierarchical attention plot {plot_filename}: {e}")
-        plt.close()
-        return plot_filename
-
-
 
     def plot_tsne_from_embedding_file(self, h5_path: str, embedding_type: str = 'per_protein') -> Optional[Path]:
-        """
-        Loads an H5 embedding file and generates a t-SNE visualization plot.
-        """
+        """Loads an H5 embedding file and generates a t-SNE visualization plot."""
         print(f"\n--- Generating t-SNE plot for {os.path.basename(h5_path)} ---")
         if not os.path.exists(h5_path):
             print(f"  Error: H5 file not found at {h5_path}")
             return None
 
         try:
-            # --- DEFINITIVE FIX for OOM Error: Use EmbeddingLoader to sample keys before loading ---
-            # The previous implementation loaded the entire H5 file into memory, which
-            # would crash on large embedding files. This new approach samples the keys
-            # first and then loads only the required embeddings.
             with EmbeddingLoader(h5_path) as loader:
                 all_keys = list(loader.get_keys())
                 if not all_keys:
@@ -401,17 +414,15 @@ class EvaluationReporter:
 
                 if num_embeddings > SAMPLE_N_FOR_COMBINED_TSNE:
                     print(f"  Sampling {SAMPLE_N_FOR_COMBINED_TSNE} points from {num_embeddings} for performance.")
-                    random.seed(TSNE_RANDOM_STATE)
                     keys_to_load = random.sample(all_keys, SAMPLE_N_FOR_COMBINED_TSNE)
                 else:
                     keys_to_load = all_keys
 
                 embeddings_array = np.array([loader[key] for key in keys_to_load])
-
                 base_filename = os.path.splitext(os.path.basename(h5_path))[0]
                 title = f"t-SNE of Per-Protein Embeddings\n(Source: {base_filename})"
-
                 num_samples = embeddings_array.shape[0]
+
                 if num_samples <= 1:
                     raise ValueError(f"Not enough samples ({num_samples}) for t-SNE.")
 
@@ -421,9 +432,7 @@ class EvaluationReporter:
                 print(f"  Fitting t-SNE (perplexity: {effective_perplexity:.1f}, init: {tsne_init_method})...")
                 tsne = TSNE(n_components=2, random_state=TSNE_RANDOM_STATE, perplexity=effective_perplexity,
                             max_iter=TSNE_N_ITER, init=tsne_init_method, learning_rate=TSNE_LEARNING_RATE, n_jobs=-1)
-
                 tsne_results = tsne.fit_transform(embeddings_array)
-
                 df_tsne = pd.DataFrame({'tsne_1': tsne_results[:, 0], 'tsne_2': tsne_results[:, 1]})
 
                 fig = plt.figure(figsize=(10, 8))
@@ -439,7 +448,6 @@ class EvaluationReporter:
                 plt.close(fig)
                 print(f"  Successfully saved t-SNE plot to: {plot_filename}")
                 return plot_filename
-
         except Exception as e:
             print(f"  An error occurred during t-SNE processing: {e}")
             return None

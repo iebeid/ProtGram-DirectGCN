@@ -13,7 +13,7 @@ data_urls:
   UNIREF_50_FASTA: "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz"
   BIOGRID_INTERACTIONS: "https://downloads.thebiogrid.org/Download/BioGRID/Release-Archive/BIOGRID-4.4.248/BIOGRID-ALL-4.4.248.mitab.zip"
   PROTT5_MODEL: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5"
-  UNIPROT_ID_MAPPING: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping.dat.gz"
+  UNIPROT_ID_MAPPING: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping_selected.tab.gz" # Using the smaller 'selected' file
   NEG_INTERACTIONS:
     - "https://www.russelllab.org/negatives/16169070_neg.mitab.gz"
     - "https://www.russelllab.org/negatives/14605208_neg.mitab.gz"
@@ -28,17 +28,17 @@ data_urls:
 
 # 3. PIPELINE CONTROL FLAGS
 pipeline_flags:
-  RUN_PROTGRAM_XGCN_PIPELINE: false
+  RUN_PROTGRAM_XGCN_PIPELINE: true
   RUN_LSTM_PIPELINE: false
   RUN_WORD2VEC_PIPELINE: false
   RUN_TRANSFORMER_PIPELINE: false
   RUN_BENCHMARKING_PIPELINE: true
-  RUN_PROTGRAM_PIPELINE: false
+  RUN_PROTGRAM_PIPELINE: true
   
   RUN_MAIN_PPI_EVALUATION: true
-  RUN_INTEGRATED_TESTS: false
+  RUN_INTEGRATED_TESTS: true
   RUN_SINGLETON_GCN_EVAL: false
-  SEQUENCE_DOWNSAMPLE_FRACTION: 0.99
+  SEQUENCE_DOWNSAMPLE_FRACTION: 0.05
   
   ENABLE_FILE_LOGGING: true
   DISABLE_INTERACTIVE_PROMPTS: true # Set to true to run the entire pipeline without user prompts.
@@ -59,7 +59,7 @@ resource_management:
 # This block defines common GNN parameters once to avoid duplication.
 # It is merged into the gnn_benchmarking and singleton_eval sections below. # --- REFACTOR: Create a more comprehensive shared anchor ---
 _base_gnn_params: &base_gnn_params
-  GNN_HIDDEN_CHANNELS: 16
+  GNN_HIDDEN_CHANNELS: 64
   GNN_NUM_LAYERS: 2
   GNN_DROPOUT_RATE: 0.5
   GAT_HEADS: 2
@@ -99,7 +99,7 @@ gnn_benchmarking:
   NE_LEARNING_RATE: 0.01
   NE_BATCH_SIZE: 128
   NE_EPOCHS: 5
-  NE_EMBEDDING_DIM: 128
+  NE_EMBEDDING_DIM: 64
   NE_WALK_LENGTH: 20
   NE_CONTEXT_SIZE: 10
   NE_WALKS_PER_NODE: 10
@@ -132,7 +132,7 @@ protgram_gcn:
   PROTGRAM_LR: 0.005
   PROTGRAM_DROPOUT_RATE: 0.5
   PROTGRAM_WEIGHT_DECAY: 0.0001
-  PROTGRAM_USE_LR_SCHEDULER: true
+  PROTGRAM_USE_LR_SCHEDULER: false
   PROTGRAM_LR_SCHEDULER_PATIENCE: 10
   PROTGRAM_LR_SCHEDULER_FACTOR: 0.5
   PROTGRAM_USE_EARLY_STOPPING: true
@@ -213,7 +213,7 @@ singleton_eval:
     - "GCN"
     - "RGCN"
     - "DirGNN"
-  GNN_HIDDEN_CHANNELS: 16
+  GNN_HIDDEN_CHANNELS: 64
   GRADIENT_ACCUMULATION_STEPS: 1
   <<: *base_gnn_params # Merge the shared GNN parameters
 
@@ -224,7 +224,7 @@ ppi_evaluation:
   EVAL_GENERATE_SHAP_SUMMARY: true
   EARLY_STOPPING_PATIENCE: 10
   EDGE_EMBEDDING_METHOD: 'concatenate'
-  N_FOLDS: 3
+  N_FOLDS: 2
   MLP_DENSE1_UNITS: 128
   MLP_DROPOUT1_RATE: 0.4
   MLP_DENSE2_UNITS: 64
@@ -242,12 +242,14 @@ mlflow:
   USE_MLFLOW: true
   EXPERIMENT_NAME: "PPI-Link-Prediction"
   BENCHMARK_EXPERIMENT_NAME: "GNN-Benchmarking"
-  NE_BENCHMARK_EXPERIMENT_NAME: "Network_Embedding_Benchmarking"
+  LLMS_EXPERIMENT_NAME: "LLMs"
+  PROTGRAM_XGCN_EXPERIMENT_NAME: "ProtGram-XGCN"
+  INTERPRETABILITY_EXPERIMENT_NAME: "Interpretability"
 
 # 12. HYPERPARAMETER OPTIMIZATION (Optuna)
 hyperparameter_optimization:
   RUN_HPO: true
-  HPO_N_TRIALS: 50 # Number of trials for Optuna to run
+  HPO_N_TRIALS: 2 # Number of trials for Optuna to run
   # --- DEFINITIVE FIX: Use the model's base name to match generated filenames ---
   # The trainer creates files like 'directgcn_...' not 'ProtGramDirectgcn_...'.
   HPO_TARGET_EMBEDDING_MODEL: "directgcn" # Which embedding to optimize the MLP for

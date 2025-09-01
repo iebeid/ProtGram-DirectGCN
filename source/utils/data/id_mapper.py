@@ -151,7 +151,9 @@ class IDMapper:
         Directly creates the ID map from the raw `idmapping.dat` file using Dask.
         """
         print("  INFO: Starting direct conversion of 'idmapping.dat' to dictionary...")
-        source_dat_path = Path(self.config.PERSISTENT_DATA_CACHE) / 'idmapping.dat'
+        # --- DEFINITIVE FIX: Use the dynamic path from the config object ---
+        # This removes the hardcoded 'idmapping.dat' filename.
+        source_dat_path = self.config.ID_MAPPING_RAW_PATH
 
         if not source_dat_path.exists():
             logging.error(f"'idmapping.dat' not found at expected location: {source_dat_path}")
@@ -171,14 +173,26 @@ class IDMapper:
                     blocksize='128MB'
                 )
 
-                print("  - Dask is now processing the file in parallel. This may take a while...")
+                # --- DEFINITIVE FIX for Ambiguous/Incorrect ID Mappings ---
+                # The raw idmapping.dat file contains many-to-one mappings (e.g., one GeneID
+                # can map to multiple UniProt isoforms). This was causing non-deterministic
+                # mapping. The new logic creates a canonical, one-to-one map.
+                print("  - Filtering mappings to trusted databases...")
+                target_dbs = [
+                    'BioGrid', 'GeneID', 'EMBL', 'RefSeq', 'PDB',
+                    'UniProtKB-AC'  # Include self-mappings
+                ]
+                ddf = ddf[ddf['db_type'].isin(target_dbs)]
 
-                # --- DEFINITIVE FIX for OOM Error: Save directly to a queryable Parquet file ---
-                # This avoids materializing the entire (massive) ID map in memory.
+                print("  - De-duplicating mappings to create a canonical one-to-one map...")
+                # For any db_id that still maps to multiple uniprot_ids, we sort and
+                # take the first one. This is a deterministic way to choose the canonical entry.
+                final_ddf = ddf[['db_id', 'uniprot_id']].drop_duplicates().sort_values(['db_id', 'uniprot_id'])
+                final_ddf = final_ddf.drop_duplicates(subset=['db_id'], keep='first')
+
+                print("  - Dask is now writing the final Parquet file. This may take a while...")
                 output_path = self.config.ID_MAPPING_PATH
                 output_path.parent.mkdir(parents=True, exist_ok=True)
-                # Select and rename columns for a clean output
-                final_ddf = ddf[['db_id', 'uniprot_id']]
                 final_ddf.to_parquet(output_path, engine='pyarrow', overwrite=True)
                 print(f"  - ✅ Success! Generated ID map Parquet file at {output_path}.")
 

@@ -205,7 +205,9 @@ class MLflowParams(BaseModel):
     USE_MLFLOW: bool
     EXPERIMENT_NAME: str
     BENCHMARK_EXPERIMENT_NAME: str
-    NE_BENCHMARK_EXPERIMENT_NAME: str
+    LLMS_EXPERIMENT_NAME: str
+    PROTGRAM_XGCN_EXPERIMENT_NAME: str
+    INTERPRETABILITY_EXPERIMENT_NAME: str
 
 class HPOSearchSpaceItem(BaseModel):
     type: str
@@ -402,7 +404,15 @@ class Config:
 
     def _setup_data_sources(self):
         """Defines the data sources for automatic download using URLs from YAML config."""
+        from urllib.parse import urlparse
         urls = self._config['data_urls']
+
+        # --- DEFINITIVE FIX: Dynamically determine filename from URL ---
+        # This makes the config robust to changes in the source filename (e.g., idmapping.dat vs idmapping_selected.tab)
+        id_mapping_url = urls['UNIPROT_ID_MAPPING']
+        id_mapping_filename_gz = Path(urlparse(id_mapping_url).path).name
+        id_mapping_filename = id_mapping_filename_gz.replace('.gz', '')
+
         self.DATA_SOURCES: Dict[str, Dict] = {
             "UNIPROT_SPROT_FASTA": {
                 "url": urls['UNIPROT_SPROT_FASTA'],
@@ -425,8 +435,8 @@ class Config:
                 "post_process": None, "checksum": None, "cacheable": True
             },
             "UNIPROT_ID_MAPPING": {
-                "url": urls['UNIPROT_ID_MAPPING'],
-                "type": "file", "path": self.DATA_MAPPINGS_DIR / "idmapping.dat",
+                "url": id_mapping_url,
+                "type": "file", "path": self.DATA_MAPPINGS_DIR / id_mapping_filename,
                 "post_process": "ungzip", "checksum": None, "cacheable": True
             }
         }
@@ -446,6 +456,10 @@ class Config:
     def _link_data_sources_to_attributes(self):
         """Dynamically creates key file path attributes."""
         self.PROTT5_MODEL_PATH = self.DATA_SOURCES['PROTT5_MODEL']['path']
+
+        # --- DEFINITIVE FIX: Create a dedicated attribute for the raw mapping file path ---
+        # This avoids hardcoding the filename in other parts of the application.
+        self.ID_MAPPING_RAW_PATH = self.DATA_SOURCES['UNIPROT_ID_MAPPING']['path']
 
         # --- NEW: Define raw data paths for the processor ---
         # These attributes were being used by the DataProcessor but were never defined.
@@ -638,7 +652,10 @@ class Config:
         self.MLFLOW_TRACKING_URI = mlruns_path.as_uri()
         self.MLFLOW_EXPERIMENT_NAME = params['EXPERIMENT_NAME']
         self.MLFLOW_BENCHMARK_EXPERIMENT_NAME = params['BENCHMARK_EXPERIMENT_NAME']
-        self.MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME = params['NE_BENCHMARK_EXPERIMENT_NAME']
+        self.MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME = self.MLFLOW_BENCHMARK_EXPERIMENT_NAME
+        self.MLFLOW_LLMS_EXPERIMENT_NAME = params['LLMS_EXPERIMENT_NAME']
+        self.MLFLOW_PROTGRAM_XGCN_EXPERIMENT_NAME = params['PROTGRAM_XGCN_EXPERIMENT_NAME']
+        self.MLFLOW_INTERPRETABILITY_EXPERIMENT_NAME = params['INTERPRETABILITY_EXPERIMENT_NAME']
 
     def _setup_hpo_params(self):
         """Sets HPO parameters statically from the YAML config."""

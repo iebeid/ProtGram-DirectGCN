@@ -63,13 +63,11 @@ class DirectedNgramGraph(Graph):
                 parquet_file = pq.ParquetDataset(edge_file_path)
                 source_chunks, target_chunks, weight_chunks = [], [], []
                 for batch in parquet_file.read().to_batches(max_chunksize=10_000_000):
-                    # --- DEFINITIVE FIX: Handle cases where index names are lost during parquet read ---
-                    # Instead of relying on column names like 'source', access by position.
-                    # The structure is known: reset_index() creates [index_col_1, index_col_2, 'weight']
-                    df_chunk = batch.to_pandas().reset_index()
-                    print(f'--- Edges for n={self.n_value} ---\n{df_chunk.head()}')
-                    source_chunks.append(df_chunk.iloc[:, 0].to_numpy(dtype=np.int64))
-                    target_chunks.append(df_chunk.iloc[:, 1].to_numpy(dtype=np.int64))
+                    # --- DEFINITIVE FIX: Use explicit column names instead of positional iloc ---
+                    # This is more robust to changes in the Parquet file schema.
+                    df_chunk = batch.to_pandas()
+                    source_chunks.append(df_chunk['source'].to_numpy(dtype=np.int64))
+                    target_chunks.append(df_chunk['target'].to_numpy(dtype=np.int64))
                     weight_chunks.append(df_chunk['weight'].to_numpy(dtype=np.float32))
 
                 source_indices = np.concatenate(source_chunks)

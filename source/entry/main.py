@@ -44,9 +44,9 @@ from source.entry.ui import UIManager
 class PipelineOrchestrator:
     """Orchestrates the entire data processing and model training pipeline."""
 
-    def __init__(self):
+    def __init__(self, config: Config):
         self.project_root = Path(__file__).resolve().parents[2]
-        self.base_config = Config()
+        self.base_config = config
         self.ui_manager = UIManager()
 
         self._configure_gpu()
@@ -135,6 +135,28 @@ class PipelineOrchestrator:
 
         return generated_files
 
+    def _discover_existing_embeddings(self, config: Config, existing_files: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Scans output directories for pre-existing embeddings and adds them to the evaluation list."""
+        print("  Scanning for existing, pre-generated embeddings...")
+        discovered_files = []
+        existing_paths = {f['path'] for f in existing_files}
+
+        embedding_dirs = [
+            config.RESULTS_GCN_EMBEDDINGS_DIR,
+            config.RESULTS_W2V_EMBEDDINGS_DIR,
+            config.RESULTS_LSTM_EMBEDDINGS_DIR,
+            config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR
+        ]
+
+        for emb_dir in embedding_dirs:
+            if emb_dir.exists():
+                for h5_file in emb_dir.glob('**/*.h5'):
+                    if str(h5_file) not in existing_paths:
+                        model_name = h5_file.stem.replace('_standardized', '')
+                        print(f"    Discovered pre-existing embedding: {model_name}")
+                        discovered_files.append({"name": model_name, "path": str(h5_file)})
+        return discovered_files
+
     def _run_pre_analysis_and_prompt(self, config: Config, fasta_file_path: Path) -> bool:
         """Runs preliminary benchmarks, displays a summary, and prompts the user to continue."""
         all_benchmark_results = []
@@ -142,14 +164,11 @@ class PipelineOrchestrator:
         # --- ERROR HANDLING: Wrap each benchmark suite to allow the pipeline to continue if one fails. ---
         try:
             if config.RUN_BENCHMARKING_PIPELINE:
-                with mlflow.start_run(run_name="GNN_Benchmark_Suite"):
-                    gnn_results_df = GNNBenchmarker(config).run()
-                    if gnn_results_df is not None and not gnn_results_df.empty:
-                        all_benchmark_results.append(gnn_results_df)
-                with mlflow.start_run(run_name="NE_Benchmark_Suite"):
-                    ne_results_df = NetworkEmbeddingBenchmarker(config).run()
-                    if ne_results_df is not None and not ne_results_df.empty:
-                        all_benchmark_results.append(ne_results_df)
+                # --- DEFINITIVE FIX: Use a single run for all benchmarks ---
+                with mlflow.start_run(run_name="Node_Classification_Benchmark_Suite"):
+                    benchmark_results_df = GNNBenchmarker(config).run()
+                    if benchmark_results_df is not None and not benchmark_results_df.empty:
+                        all_benchmark_results.append(benchmark_results_df)
         except Exception as e:
             print(f"\n--- NETWORK EMBEDDING BENCHMARKING FAILED: {e} ---\n")
             import traceback
@@ -320,6 +339,11 @@ class PipelineOrchestrator:
                         # always be run to ensure the list of files to evaluate is populated.
                         generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)
                         generated_files = generated_files if isinstance(generated_files, list) else []
+
+                        # --- DEFINITIVE FIX for HPO Not Triggering ---
+                        # Discover pre-existing embeddings from previous runs.
+                        discovered_files = self._discover_existing_embeddings(config, generated_files)
+                        generated_files.extend(discovered_files)
                         config.LP_EMBEDDING_FILES_TO_EVALUATE = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_files
 
                         # --- Run Hyperparameter Optimization ---

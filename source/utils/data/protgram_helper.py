@@ -113,6 +113,18 @@ class ProtgramDaskHelpers:
         return all_edges
 
     @staticmethod
+    def extract_all_string_edges(sequence_tuple: Tuple[str, str], n_max: int) -> Iterator[Dict[str, Any]]:
+        """
+        A Dask-friendly generator that extracts all string-based edges for all
+        n-gram levels (from 1 to n_max) from a single sequence.
+        """
+        _, sequence = sequence_tuple
+        for n in range(1, n_max + 1):
+            if len(sequence) >= n + 1:
+                for i in range(len(sequence) - n):
+                    yield {'n': n, 'source_str': sequence[i:i + n], 'target_str': sequence[i + 1:i + 1 + n]}
+
+    @staticmethod
     def extract_string_edges_for_n(sequence_tuple: Tuple[str, str], n_level: int) -> Iterator[Dict[str, str]]:
         _, sequence = sequence_tuple
         if len(sequence) >= n_level + 1:

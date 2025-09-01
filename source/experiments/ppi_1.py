@@ -10,6 +10,7 @@ import gc
 import random
 import shutil
 import time
+import json
 from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
@@ -42,7 +43,6 @@ from source.utils.data.ground_truth_loader import GroundTruthLoader
 from source.utils.post.embedding_loader import EmbeddingLoader
 from source.utils.post.embedding_processor import EmbeddingProcessor
 from source.utils.results.evaluation_reporter import EvaluationReporter
-from source.utils.results.evaluation_summary_generator import EvaluationSummary
 
 # Configure GPU memory growth at the start
 gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -124,9 +124,8 @@ class PPIPipeline:
             self,
             X_train: np.ndarray, y_train: np.ndarray,
             X_val: np.ndarray, y_val: np.ndarray,
-            embedding_name: str,
             fold_num: int
-    ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+    ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], tf_keras.Model]:
         """
         Handles the logic for a single fold of cross-validation: model building,
         training, and evaluation.
@@ -135,10 +134,6 @@ class PPIPipeline:
         print(f"    Train class distribution: Pos={np.sum(y_train == 1)}, Neg={np.sum(y_train == 0)}")
 
         # Build and compile the MLP model for this fold.
-        # --- DEFINITIVE FIX: Call the static `build` method correctly ---
-        # The previous implementation (`MLP(...).build()`) was incorrect as MLP has no
-        # constructor. This now uses the static method as intended and passes the
-        # full config object, from which the build method pulls all its parameters.
         model = MLP.build(input_dim=X_train.shape[1], config=self.config)
         print(f"    MLP model built with input shape: {X_train.shape[1]}")
 
@@ -146,46 +141,28 @@ class PPIPipeline:
         neg_count, pos_count = np.sum(y_train == 0), np.sum(y_train == 1)
         class_weight = {0: (neg_count + pos_count) / (2.0 * neg_count), 1: (neg_count + pos_count) / (2.0 * pos_count)} if neg_count > 0 and pos_count > 0 else None
 
-        # --- DEFINITIVE FIX: Use a try...finally block to guarantee resource cleanup ---
-        # This ensures that the Keras session is cleared even if an error occurs during training or evaluation.
+        # Use a try...finally block to guarantee resource cleanup.
         try:
-            # Train the model with optional early stopping.
+            # --- DEFINITIVE FIX: Restore the missing model.fit() call ---
+            # The model must be trained on the training data for each fold.
             print(f"    Starting model training for {self.config.EVAL_EPOCHS} epochs...")
-            callbacks = [tf_keras.callbacks.EarlyStopping(monitor='val_loss', patience=self.config.EARLY_STOPPING_PATIENCE, restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else []
+            callbacks = [tf_keras.callbacks.EarlyStopping(monitor='val_loss',
+                                                          patience=self.config.EARLY_STOPPING_PATIENCE,
+                                                          restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else []
             history = model.fit(X_train, y_train, epochs=self.config.EVAL_EPOCHS, validation_data=(X_val, y_val),
-                                batch_size=self.config.EVAL_BATCH_SIZE, verbose=1 if self.config.DEBUG_VERBOSE else 0,
+                                batch_size=self.config.EVAL_BATCH_SIZE,
+                                verbose=1 if self.config.DEBUG_VERBOSE else 0,
                                 class_weight=class_weight, callbacks=callbacks)
             print("    Model training finished.")
 
-            # --- ANTICIPATORY DEBUGGING: Make slow/heavy analysis optional and robust. ---
-            # Generate SHAP summary plot only for the first fold of the main embedding, if configured.
-            try:
-                is_main_embedding = (embedding_name == self.config.EVAL_MAIN_EMBEDDING_FOR_STATS) # noqa
-                if self.config.EVAL_GENERATE_SHAP_SUMMARY and fold_num == 0 and is_main_embedding and shap is not None:
-                    # --- DEFINITIVE FIX: Implement K-Means summarization for SHAP background ---
-                    # The previous implementation used random sampling. This new approach uses
-                    # K-Means to create a summarized background dataset, which is a more
-                    # robust and standard practice for explaining models on large datasets.
-                    print(f"    Generating SHAP summary for main model '{embedding_name}' on fold {fold_num + 1}...")
-                    # Use a sample for k-means fitting if the training set is huge
-                    shap_sample = shap.sample(X_train, 1000) if len(X_train) > 1000 else X_train
-                    background_summary = shap.kmeans(shap_sample, 50).data # Summarize with 50 centroids
-                    reporter = EvaluationReporter(str(self.config.RESULTS_EVALUATION_DIR), self.config.EVAL_K_VALUES_FOR_TABLE)
-                    reporter.generate_shap_summary(
-                        model=model, background_data=background_summary,
-                        model_name=embedding_name, fold_num=fold_num + 1
-                    )
-            except Exception as e_shap:
-                print(f"    WARNING: SHAP summary generation failed with error: {e_shap}")
-
-            # Predict on the validation set and calculate performance metrics.
             # --- Evaluate Model ---
             print("    Evaluating model on validation set...")
             y_pred_proba = model.predict(X_val, batch_size=self.config.EVAL_BATCH_SIZE).flatten()
             y_true = y_val
             y_pred_class = (y_pred_proba > 0.5).astype(int)
 
-            metrics = {'precision_sklearn': precision_score(y_true, y_pred_class, zero_division=0), 'recall_sklearn': recall_score(y_true, y_pred_class, zero_division=0),
+            metrics = {'precision_sklearn': precision_score(y_true, y_pred_class, zero_division=0),
+                       'recall_sklearn': recall_score(y_true, y_pred_class, zero_division=0),
                        'f1_sklearn': f1_score(y_true, y_pred_class, zero_division=0)}
             if len(np.unique(y_true)) > 1:
                 metrics['auc_sklearn'] = roc_auc_score(y_true, y_pred_proba)
@@ -194,10 +171,11 @@ class PPIPipeline:
                 metrics['auc_sklearn'] = 0.5
                 metrics['roc_data'] = (np.array([0, 1]), np.array([0, 1]), 0.5)
 
-            metrics.update(EvaluationSummary._calculate_ranking_metrics(y_true=y_true, y_score=y_pred_proba, k_list=self.config.EVAL_K_VALUES_FOR_TABLE))
-            return metrics, history.history
+            metrics.update(EvaluationReporter._calculate_ranking_metrics(y_true=y_true, y_score=y_pred_proba, k_list=self.config.EVAL_K_VALUES_FOR_TABLE))
+            return metrics, history.history, model
 
         finally:
+            # Ensure the Keras session is cleared to prevent memory leaks.
             del model
             gc.collect()
             tf_keras.backend.clear_session()
@@ -233,6 +211,10 @@ class PPIPipeline:
                 [f'ndcg_at_{k}' for k in self.config.EVAL_K_VALUES_FOR_TABLE]
         )
 
+        # --- DEFINITIVE FIX: Initialize variables to store the model and data for SHAP analysis ---
+        model_for_shap: Optional[tf_keras.Model] = None
+        X_train_for_shap: Optional[np.ndarray] = None
+
         # Convert all_pairs to a NumPy array for efficient indexing
         all_pairs_np = np.array(all_pairs, dtype=object)
 
@@ -252,13 +234,17 @@ class PPIPipeline:
                 X_val, y_val = EmbeddingProcessor.create_edge_features(val_pairs, embedding_loader, self.config.EVAL_EDGE_EMBEDDING_METHOD)
 
                 # Train and evaluate the model for the current fold.
-                fold_metrics, history = self._train_and_evaluate_fold(
+                fold_metrics, history, trained_model = self._train_and_evaluate_fold(
                     X_train=X_train, y_train=y_train, X_val=X_val, y_val=y_val,
-                    embedding_name=embedding_name, fold_num=fold_num
+                    fold_num=fold_num
                 )
                 fold_metrics_list.append(fold_metrics)
                 # Store history and a representative ROC curve from the first fold for plotting.
                 if fold_num == 0:
+                    # --- DEFINITIVE FIX: Capture the model and training data from the first fold for later SHAP analysis ---
+                    model_for_shap = trained_model
+                    X_train_for_shap = X_train
+
                     aggregated_results['history_dict_fold1'] = history
                     if 'roc_data' in fold_metrics:
                         aggregated_results['roc_data_representative'] = fold_metrics['roc_data']
@@ -276,6 +262,42 @@ class PPIPipeline:
                 # Use a predefined, consistent set of keys for failed folds to prevent silent failures from skewing the final average metrics.
                 nan_metrics = {key: np.nan for key in expected_metric_keys}
                 fold_metrics_list.append(nan_metrics)
+
+        # --- DEFINITIVE FIX: Generate SHAP summary plot AFTER the CV loop is complete ---
+        # This separates the expensive interpretability step from the main evaluation loop.
+        is_main_embedding = (embedding_name == self.config.EVAL_MAIN_EMBEDDING_FOR_STATS)
+        if self.config.EVAL_GENERATE_SHAP_SUMMARY and is_main_embedding and model_for_shap and X_train_for_shap is not None and shap is not None:
+            try:
+                mlflow.set_experiment(self.config.MLFLOW_INTERPRETABILITY_EXPERIMENT_NAME)
+                with mlflow.start_run(run_name=f"SHAP_{embedding_name}", nested=True):
+                    print(f"  Generating SHAP summary for main model '{embedding_name}'...")
+                    shap_sample = shap.sample(X_train_for_shap, 1000) if len(X_train_for_shap) > 1000 else X_train_for_shap
+                    background_summary = shap.kmeans(shap_sample, 50).data
+                    reporter = EvaluationReporter(str(self.config.RESULTS_EVALUATION_DIR), self.config.EVAL_K_VALUES_FOR_TABLE)
+                    shap_plot_path = reporter.generate_shap_summary(
+                        model=model_for_shap, background_data=background_summary,
+                        model_name=embedding_name, fold_num=1  # Use fold 1 as representative
+                    )
+                    if shap_plot_path and shap_plot_path.exists():
+                        mlflow.log_artifact(str(shap_plot_path), "shap_plots")
+                mlflow.set_experiment(self.config.MLFLOW_EXPERIMENT_NAME)  # Switch back
+            except Exception as e_shap:
+                print(f"    WARNING: SHAP summary generation failed with error: {e_shap}")
+
+        # --- NEW: Generate and log attention heatmap for ProtGram models ---
+        if "protgram" in embedding_name.lower() or "directgcn" in embedding_name.lower() or "gcn" in embedding_name.lower():
+            attention_log_path = self.config.RESULTS_GCN_EMBEDDINGS_DIR / f"attention_log_{embedding_name}.json"
+            if attention_log_path.exists():
+                try:
+                    with open(attention_log_path, 'r') as f:
+                        attention_data = json.load(f)
+                    heatmap_path = reporter.plot_attention_heatmap(attention_data, embedding_name)
+                    if heatmap_path and mlflow.active_run():
+                        mlflow.set_experiment(self.config.MLFLOW_INTERPRETABILITY_EXPERIMENT_NAME)
+                        mlflow.log_artifact(str(heatmap_path), "attention_heatmaps")
+                        mlflow.set_experiment(self.config.MLFLOW_EXPERIMENT_NAME) # Switch back
+                except Exception as e_attn:
+                    print(f"    WARNING: Could not generate attention heatmap for {embedding_name}: {e_attn}")
 
         # After all folds are complete, calculate the mean and std dev of the metrics.
         if fold_metrics_list:
@@ -390,11 +412,11 @@ class PPIPipeline:
         if all_cv_results_list:
             DataUtils.print_header("FINAL AGGREGATE RESULTS & REPORTING")
             # --- FIX: Instantiate and use the correct class for writing the summary file ---
-            summary_generator = EvaluationSummary(base_output_dir=str(self.config.RESULTS_EVALUATION_DIR), k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE)
+            summary_generator = EvaluationReporter(base_output_dir=str(self.config.RESULTS_EVALUATION_DIR), k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE)
             summary_generator.write_summary_file(all_cv_results_list, self.config.EVAL_MAIN_EMBEDDING_FOR_STATS, 'test_auc_sklearn', self.config.EVAL_STATISTICAL_TEST_ALPHA)
             reporter.plot_roc_curves(all_cv_results_list)
             reporter.plot_comparison_charts(all_cv_results_list)
 
-        
+
 
         DataUtils.print_header(f"PPI Evaluation Pipeline ({run_type}) FINISHED in {time.monotonic() - pipeline_start_time:.2f}s")

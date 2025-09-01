@@ -139,13 +139,26 @@ class DataManager:
     def is_setup_complete(self) -> bool:
         """
         Performs a comprehensive check to see if the data setup is truly complete.
+        A setup is complete ONLY if the manifest exists and is valid.
         """
-        if not self.validate_data_from_manifest():
+        manifest_exists = self.config.DATA_MANIFEST_PATH.exists()
+
+        if not manifest_exists:
+            # If the manifest is missing, the setup is definitely not complete.
+            # We also check if derived files exist from a previous, possibly failed run.
+            if self.config.POS_INTERACTIONS_PATH.exists() or self.config.NEG_INTERACTIONS_PATH.exists():
+                print("\n" + "!" * 80)
+                print("!!! WARNING: A data manifest is missing, but processed ground truth files exist. !!!")
+                print("!!! This can happen if a previous setup was interrupted. The existing files may be stale or corrupt.")
+                print("!!! The pipeline will now attempt to re-process them.")
+                print("!!! If you continue to see 'zero pairs' errors, please manually delete the following directories and re-run:")
+                print(f"  - {self.config.POS_INTERACTIONS_PATH}")
+                print(f"  - {self.config.NEG_INTERACTIONS_PATH}")
+                print("!" * 80 + "\n")
             return False
 
-        
-
-        return True
+        # If the manifest exists, validate its contents.
+        return self.validate_data_from_manifest()
 
     def validate_data_from_manifest(self) -> bool:
         """Validates the current data directory against the cached manifest."""

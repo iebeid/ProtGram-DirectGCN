@@ -10,6 +10,7 @@ import gc
 from multiprocessing import Pool
 import time # noqa
 from typing import Dict, Optional, List
+import mlflow
 from pathlib import Path
 
 import numpy as np
@@ -55,59 +56,62 @@ class Word2VecEmbedder:
         """
         Main entry point for the Word2Vec pipeline.
         """
-        DataUtils.print_header("PIPELINE STEP: Training Word2Vec & Generating Embeddings")
-        self.config.RESULTS_W2V_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
+        mlflow.set_experiment(self.config.MLFLOW_LLMS_EXPERIMENT_NAME)
+        with mlflow.start_run(run_name=f"Word2Vec_{Path(self.config.SEQUENCE_FILE_PATHS[0]).stem}"):
+            mlflow.log_params(self.config.get_as_dict('word2vec'))
+            DataUtils.print_header("PIPELINE STEP: Training Word2Vec & Generating Embeddings")
+            self.config.RESULTS_W2V_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
 
-        fasta_paths = self.config.SEQUENCE_FILE_PATHS
-        if not fasta_paths or not fasta_paths[0].exists(): # noqa
-            print("ERROR: No FASTA files configured or found for Word2Vec.")
-            return None
+            fasta_paths = self.config.SEQUENCE_FILE_PATHS
+            if not fasta_paths or not fasta_paths[0].exists(): # noqa
+                print("ERROR: No FASTA files configured or found for Word2Vec.")
+                return None
 
-        # --- DEFINITIVE FIX for Performance: Use gensim's optimized corpus_file method ---
-        # The previous method of iterating through sequences in Python was a major bottleneck.
-        # This new approach first converts the FASTA file into a line-by-line sentence corpus,
-        # which allows gensim's highly optimized C routines to handle the file reading,
-        # dramatically improving performance and reducing memory overhead.
-        with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix=".txt", encoding='utf-8') as temp_corpus_file: # noqa
-            corpus_path = temp_corpus_file.name # noqa
-            print(f"  Creating temporary line corpus at: {corpus_path}")
+            # --- DEFINITIVE FIX for Performance: Use gensim's optimized corpus_file method ---
+            # The previous method of iterating through sequences in Python was a major bottleneck.
+            # This new approach first converts the FASTA file into a line-by-line sentence corpus,
+            # which allows gensim's highly optimized C routines to handle the file reading,
+            # dramatically improving performance and reducing memory overhead.
+            with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix=".txt", encoding='utf-8') as temp_corpus_file: # noqa
+                corpus_path = temp_corpus_file.name # noqa
+                print(f"  Creating temporary line corpus at: {corpus_path}")
 
-            # Read the large FASTA file in chunks and process in parallel
-            chunk_size = 100000  # Number of lines per chunk
-            with open(fasta_paths[0], 'r') as f_in, Pool(processes=self.config.W2V_WORKERS) as pool:
-                # Create a generator for chunks
-                def chunk_generator():
-                    while True:
-                        chunk = f_in.readlines(chunk_size)
-                        if not chunk:
-                            break
-                        yield chunk
+                # Read the large FASTA file in chunks and process in parallel
+                chunk_size = 100000  # Number of lines per chunk
+                with open(fasta_paths[0], 'r') as f_in, Pool(processes=self.config.W2V_WORKERS) as pool:
+                    # Create a generator for chunks
+                    def chunk_generator():
+                        while True:
+                            chunk = f_in.readlines(chunk_size)
+                            if not chunk:
+                                break
+                            yield chunk
 
-                # Process chunks in parallel and write to the temp file
-                for processed_lines in tqdm(pool.imap(_process_fasta_chunk_for_corpus, chunk_generator()), desc="  Writing line corpus (parallel)"):
-                    for line in processed_lines:
-                        temp_corpus_file.write(line + "\n")
+                    # Process chunks in parallel and write to the temp file
+                    for processed_lines in tqdm(pool.imap(_process_fasta_chunk_for_corpus, chunk_generator()), desc="  Writing line corpus (parallel)"):
+                        for line in processed_lines:
+                            temp_corpus_file.write(line + "\n")
 
-            # Flush the buffer to ensure the corpus is written to disk before training
-            temp_corpus_file.flush()
-            # Now, train the model using the optimized file path
-            w2v_model = self._train_w2v_model(corpus_path)
+                # Flush the buffer to ensure the corpus is written to disk before training
+                temp_corpus_file.flush()
+                # Now, train the model using the optimized file path
+                w2v_model = self._train_w2v_model(corpus_path)
 
-        # Cleanup the temporary file
-        os.remove(corpus_path)
-        print(f"  Cleaned up temporary corpus file.")
+            # Cleanup the temporary file
+            os.remove(corpus_path)
+            print(f"  Cleaned up temporary corpus file.")
 
-        protein_embeddings = self._generate_protein_embeddings(w2v_model, fasta_paths)
+            protein_embeddings = self._generate_protein_embeddings(w2v_model, fasta_paths)
 
-        # --- REFACTOR: Use a dedicated helper to save embeddings and handle PCA ---
-        # This makes the logic consistent with the ProtGram-XGCN trainer.
-        output_paths = self._save_embeddings_and_apply_pca(protein_embeddings)
+            # --- REFACTOR: Use a dedicated helper to save embeddings and handle PCA ---
+            # This makes the logic consistent with the ProtGram-XGCN trainer.
+            output_paths = self._save_embeddings_and_apply_pca(protein_embeddings)
 
-        del w2v_model, protein_embeddings
-        gc.collect()
+            del w2v_model, protein_embeddings
+            gc.collect()
 
-        DataUtils.print_header("Word2Vec Embedding PIPELINE STEP FINISHED")
-        return output_paths
+            DataUtils.print_header("Word2Vec Embedding PIPELINE STEP FINISHED")
+            return output_paths
 
     def _train_w2v_model(self, corpus_path: str) -> Word2Vec:
         """Trains the Word2Vec model on the provided corpus."""

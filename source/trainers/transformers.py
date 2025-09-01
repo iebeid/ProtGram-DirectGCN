@@ -11,6 +11,7 @@ import time
 import traceback
 from contextlib import nullcontext
 from pathlib import Path
+import mlflow
 import random
 from typing import Dict, Optional, Tuple, Any, Mapping
 import torch
@@ -138,109 +139,98 @@ class TransformerEmbedder:
         """
         Main entry point for the Transformer embedding generation pipeline.
         """
-        DataUtils.print_header("PIPELINE STEP: Generating Embeddings from Transformers")
-        self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
-        generated_paths: Dict[str, Path] = {}
-        _model_cache: Dict[str, Tuple] = {}
+        mlflow.set_experiment(self.config.MLFLOW_LLMS_EXPERIMENT_NAME)
+        with mlflow.start_run(run_name=f"Transformers_{Path(self.config.SEQUENCE_FILE_PATHS[0]).stem}"):
+            DataUtils.print_header("PIPELINE STEP: Generating Embeddings from Transformers")
+            self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
+            generated_paths: Dict[str, Path] = {}
+            _model_cache: Dict[str, Tuple] = {}
 
-        all_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
-        sample_fraction = getattr(self.config, 'TRANSFORMER_INFERENCE_SAMPLE_FRACTION', 1.0)
+            all_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
+            sample_fraction = getattr(self.config, 'TRANSFORMER_INFERENCE_SAMPLE_FRACTION', 1.0)
 
-        if 0.0 < sample_fraction < 1.0:
-            num_to_sample = int(len(all_sequences) * sample_fraction)
-            random.seed(self.config.RANDOM_STATE)
-            sequences_to_process = random.sample(all_sequences, num_to_sample)
-            print(f"  INFO: Using a random sample of {len(sequences_to_process)} sequences ({sample_fraction:.1%}) for Transformer inference.")
-        else:
-            sequences_to_process = all_sequences
-        del all_sequences
+            if 0.0 < sample_fraction < 1.0:
+                num_to_sample = int(len(all_sequences) * sample_fraction)
+                random.seed(self.config.RANDOM_STATE)
+                sequences_to_process = random.sample(all_sequences, num_to_sample)
+                print(f"  INFO: Using a random sample of {len(sequences_to_process)} sequences ({sample_fraction:.1%}) for Transformer inference.")
+            else:
+                sequences_to_process = all_sequences
+            del all_sequences
 
-        try:
-            for model_config_item in self.config.TRANSFORMER_MODELS_TO_RUN:
-                model_name = model_config_item["name"]
-                hf_id = model_config_item["hf_id"]
-                all_protein_embeddings_for_model = {}
+            try:
+                for model_config_item in self.config.TRANSFORMER_MODELS_TO_RUN:
+                    model_name = model_config_item["name"]
+                    hf_id = model_config_item["hf_id"]
+                    all_protein_embeddings_for_model = {}
 
-                try:
-                    DataUtils.print_header(f"Starting Transformer Embedding Generation: {model_name} ({hf_id})")
-                    if hf_id in _model_cache:
-                        model, tokenizer, inference_func, embedding_dim = _model_cache[hf_id]
-                    else:
-                        model, tokenizer, inference_func, embedding_dim = self._load_transformer_model(model_config_item)
-                        if model and tokenizer and inference_func:
-                            _model_cache[hf_id] = (model, tokenizer, inference_func, embedding_dim)
+                    try:
+                        with mlflow.start_run(run_name=model_name, nested=True):
+                            mlflow.log_params(model_config_item)
+                            DataUtils.print_header(f"Starting Transformer Embedding Generation: {model_name} ({hf_id})")
+                            if hf_id in _model_cache:
+                                model, tokenizer, inference_func, embedding_dim = _model_cache[hf_id]
+                            else:
+                                model, tokenizer, inference_func, embedding_dim = self._load_transformer_model(model_config_item)
+                                if model and tokenizer and inference_func:
+                                    _model_cache[hf_id] = (model, tokenizer, inference_func, embedding_dim)
 
-                    if not model or not tokenizer or not inference_func:
-                        continue
+                            if not model or not tokenizer or not inference_func:
+                                continue
 
-                    # Determine batch size based on config and model-specific multiplier
-                    batch_size_multiplier = model_config_item.get('batch_size_multiplier', 1.0)
-                    effective_batch_size = int(self.config.TRANSFORMER_BASE_BATCH_SIZE * batch_size_multiplier)
+                            batch_size_multiplier = model_config_item.get('batch_size_multiplier', 1.0)
+                            effective_batch_size = int(self.config.TRANSFORMER_BASE_BATCH_SIZE * batch_size_multiplier)
+                            sorted_sequences = sorted(sequences_to_process, key=lambda x: len(x[1]))
 
-                    # Group sequences by length to minimize padding
-                    sorted_sequences = sorted(sequences_to_process, key=lambda x: len(x[1]))
+                            with tqdm(total=len(sorted_sequences), desc=f"  Processing {model_name}") as pbar:
+                                for i in range(0, len(sorted_sequences), effective_batch_size):
+                                    batch = sorted_sequences[i:i + effective_batch_size]
+                                    batch_ids = [seq[0] for seq in batch]
+                                    batch_sequences = [seq[1] for seq in batch]
 
-                    with tqdm(total=len(sorted_sequences), desc=f"  Processing {model_name}") as pbar:
-                        for i in range(0, len(sorted_sequences), effective_batch_size):
-                            batch = sorted_sequences[i:i + effective_batch_size]
-                            batch_ids = [seq[0] for seq in batch]
-                            batch_sequences = [seq[1] for seq in batch]
+                                    inputs = tokenizer(
+                                        batch_sequences, return_tensors="tf", padding="longest",
+                                        truncation=True, max_length=self.config.TRANSFORMER_MAX_LENGTH
+                                    )
+                                    model_output = inference_func(inputs)
+                                    raw_embeddings = model_output.last_hidden_state.numpy()
 
-                            # --- DEFINITIVE FIX: Implement the correct tokenization, inference, and pooling logic ---
-                            # The previous implementation had a placeholder call that was incorrect.
-                            # 1. Tokenize the batch of sequences.
-                            inputs = tokenizer(
-                                batch_sequences,
-                                return_tensors="tf",
-                                padding="longest",
-                                truncation=True,
-                                max_length=self.config.TRANSFORMER_MAX_LENGTH
-                            )
-                            # 2. Run inference using the compiled TF function.
-                            model_output = inference_func(inputs)
-                            raw_embeddings = model_output.last_hidden_state.numpy()
+                                    for j, prot_id in enumerate(batch_ids):
+                                        original_seq_len = len(batch_sequences[j])
+                                        residue_embeddings = EmbeddingProcessor.extract_transformer_residue_embeddings(
+                                            raw_model_output=raw_embeddings[j],
+                                            original_sequence_length=original_seq_len,
+                                            is_t5_model=model_config_item["is_t5"]
+                                        )
+                                        pooled_embedding = EmbeddingProcessor.pool_residue_embeddings(
+                                            residue_embeddings,
+                                            strategy=self.config.TRANSFORMER_POOLING_STRATEGY,
+                                            embedding_dim_if_empty=embedding_dim
+                                        )
+                                        all_protein_embeddings_for_model[prot_id] = pooled_embedding.astype(np.float16)
 
-                            # 3. Process each sequence in the batch.
-                            for j, prot_id in enumerate(batch_ids):
-                                original_seq_len = len(batch_sequences[j])
-                                # 4. Extract residue embeddings (handles CLS token).
-                                residue_embeddings = EmbeddingProcessor.extract_transformer_residue_embeddings(
-                                    raw_model_output=raw_embeddings[j],
-                                    original_sequence_length=original_seq_len,
-                                    is_t5_model=model_config_item["is_t5"]
-                                )
-                                # 5. Pool to get a single protein embedding.
-                                pooled_embedding = EmbeddingProcessor.pool_residue_embeddings(
-                                    residue_embeddings,
-                                    strategy=self.config.TRANSFORMER_POOLING_STRATEGY,
-                                    embedding_dim_if_empty=embedding_dim
-                                )
-                                all_protein_embeddings_for_model[prot_id] = pooled_embedding.astype(np.float16)
+                                    pbar.update(len(batch))
 
-                            pbar.update(len(batch))
+                            output_filename = f"{model_name}_{self.config.TRANSFORMER_POOLING_STRATEGY}_dim{embedding_dim}.h5"
+                            output_path = self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR / output_filename
+                            FileUtils.write_h5(all_protein_embeddings_for_model, output_path, f"Writing H5 for {model_name}")
+                            generated_paths[model_name] = output_path
 
-                    output_filename = f"{model_name}_{self.config.TRANSFORMER_POOLING_STRATEGY}_dim{embedding_dim}.h5"
-                    output_path = self.config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR / output_filename
-                    FileUtils.write_h5(all_protein_embeddings_for_model, output_path, f"Writing H5 for {model_name}")
-                    generated_paths[model_name] = output_path
+                    except Exception as e:
+                        print(f"\n--- ❌ ERROR processing model {model_name}: {e} ---")
+                        traceback.print_exc()
+                    finally:
+                        if hf_id in _model_cache:
+                            del _model_cache[hf_id]
+                        if 'model' in locals(): del model
+                        if 'tokenizer' in locals(): del tokenizer
+                        gc.collect()
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
 
-                except Exception as e:
-                    print(f"\n--- ❌ ERROR processing model {model_name}: {e} ---")
-                    import traceback
-                    traceback.print_exc()
-                finally:
-                    # Clean up to free memory
-                    if hf_id in _model_cache:
-                        del _model_cache[hf_id]
-                    if 'model' in locals(): del model
-                    if 'tokenizer' in locals(): del tokenizer
-                    gc.collect()
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+            finally:
+                del _model_cache
+                gc.collect()
 
-        finally:
-            del _model_cache
-            gc.collect()
-
-        DataUtils.print_header("Transformer Embedding PIPELINE STEP FINISHED")
-        return generated_paths
+            DataUtils.print_header("Transformer Embedding PIPELINE STEP FINISHED")
+            return generated_paths

@@ -4,12 +4,10 @@
 # VERSION: 1.0 (Created by Gemini Code Assist)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
-
 import collections
 import random
 from typing import Tuple, Optional, TYPE_CHECKING
 
-import community as community_louvain
 import torch
 from torch_geometric.data import Data
 from torch_geometric.utils import to_networkx
@@ -17,6 +15,8 @@ from tqdm.auto import tqdm
 from source.utils.data.fasta_utils import FastaUtils
 
 # --- FIX: Import classes for direct type hinting instead of forward references ---
+# --- DEFINITIVE FIX: Import DataUtils to use the centralized community detection ---
+from source.utils.data.data_utils import DataUtils
 if TYPE_CHECKING:
     from configuration.config import Config
     from source.data_structures.graph import DirectedNgramGraph
@@ -33,7 +33,13 @@ class XGCNDataBuilder:
         """Dispatcher for generating labels for different self-supervised tasks."""
         print(f"  Generating self-supervised labels for task: '{task_type}'")
         if task_type == 'community':
-            return self._generate_community_labels(graph)
+            # --- DEFINITIVE FIX: Use the centralized, robust community detection utility ---
+            # This removes redundant code and ensures consistent logic.
+            community_graph_data = Data(
+                edge_index=graph.A_undirected_w.indices(),
+                edge_attr=graph.A_undirected_w.values(), num_nodes=graph.number_of_nodes
+            )
+            return DataUtils.generate_community_labels(community_graph_data)
         elif task_type == 'next_node':
             return self._generate_next_node_labels(graph)
         elif task_type == 'closest_aa':
@@ -46,31 +52,6 @@ class XGCNDataBuilder:
             return None, graph.number_of_nodes
         else:
             raise ValueError(f"Unknown self-supervised task type: '{task_type}'")
-
-    def _generate_community_labels(self, graph: 'DirectedNgramGraph') -> Tuple[torch.Tensor, int]:
-        """Generates community detection labels using the Louvain algorithm."""
-        num_nodes = graph.number_of_nodes
-        if num_nodes == 0: return torch.empty(0, dtype=torch.long), 1
-        print(f"    Generating community labels for all {num_nodes} nodes.")
-
-        # --- DEFINITIVE FIX: Use the un-normalized weighted matrix for community detection ---
-        # The Louvain algorithm works best with raw edge weights (counts), not normalized weights.
-        coo = graph.A_undirected_w.cpu().coalesce()
-        if coo._nnz() == 0: return torch.zeros(num_nodes, dtype=torch.long), 1
-
-        nx_graph = to_networkx(Data(edge_index=coo.indices(), edge_attr=coo.values(), num_nodes=num_nodes),
-                               to_undirected=True, edge_attrs=['edge_attr'])
-        if nx_graph.number_of_edges() == 0: return torch.zeros(num_nodes, dtype=torch.long), 1
-
-        partition = community_louvain.best_partition(nx_graph, random_state=self.config.RANDOM_STATE, weight='edge_attr')
-        labels_list = [partition.get(i, -1) for i in range(num_nodes)]
-
-        unique_labels = sorted(list(set(labels_list)))
-        label_map = {lbl: i for i, lbl in enumerate(unique_labels)}
-        labels = torch.tensor([label_map[lbl] for lbl in labels_list], dtype=torch.long)
-        num_classes = len(unique_labels)
-        print(f"      Found {num_classes} communities.")
-        return labels, num_classes
 
     def _generate_next_node_labels(self, graph: 'DirectedNgramGraph') -> Tuple[torch.Tensor, int]:
         """Generates labels by predicting the most likely next node based on transition weights."""

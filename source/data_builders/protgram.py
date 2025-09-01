@@ -160,35 +160,33 @@ class ProtGramDataBuilder:
                 print(f"    Unique n-gram map for n={n} (size: {num_unique_ngrams:,}) created.")
             print(f"<<< Phase 1 finished in {time.monotonic() - phase1_start_time:.2f}s.")
 
-            # Pass 2: Generate all edges for all levels in a single pass over the data.
+            # --- REFACTOR: Generate all edges for all levels in a single pass ---
             DataUtils.print_header("Phase 2: Generating All Edges")
             phase2_start_time = time.monotonic()
-            # --- REFACTOR: Replace in-memory mapping with scalable Dask joins ---
+            extract_all_edges_partial = partial(ProtgramDaskHelpers.extract_all_string_edges, n_max=self.n_max)
+            all_string_edges_bag = final_preprocessed_input_bag.map(extract_all_edges_partial).flatten()
+            all_string_edges_ddf = all_string_edges_bag.to_dataframe(meta={'n': 'i4', 'source_str': 'str', 'target_str': 'str'})
+
             for n in tqdm(n_values, desc="Aggregating Edges"):
                 print(f"  - Aggregating edges for n={n}...") # noqa
 
-                # --- DEFINITIVE FIX: Define the missing helper function locally ---
-                # The previous implementation called a non-existent helper. This defines
-                # the function here, making the builder self-contained and resolving the AttributeError.
-                extract_edges_for_n_partial = partial(ProtgramDaskHelpers.extract_string_edges_for_n, n_level=n)
-                string_edges_ddf = final_preprocessed_input_bag.map(extract_edges_for_n_partial).flatten().to_dataframe(meta={'source_str': 'str', 'target_str': 'str'}) # noqa
+                # Filter the pre-computed dataframe for the current n
+                string_edges_ddf = all_string_edges_ddf[all_string_edges_ddf['n'] == n]
 
                 # 2. Load the corresponding n-gram map from disk
                 ngram_map_path = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
                 ngram_map_ddf = dd.read_parquet(ngram_map_path)
 
                 # 3. Perform two joins to map string edges to integer IDs
-                # Join for source nodes
                 merged_source = string_edges_ddf.merge(ngram_map_ddf, left_on='source_str', right_on='ngram', how='inner')
-                merged_source = merged_source.rename(columns={'id': 'source'}).drop(columns=['ngram', 'source_str'])
-                # Join for target nodes
+                merged_source = merged_source.rename(columns={'id': 'source'}).drop(columns=['ngram', 'source_str', 'n'])
                 merged_target = merged_source.merge(ngram_map_ddf, left_on='target_str', right_on='ngram', how='inner')
                 edges_for_n_ddf = merged_target.rename(columns={'id': 'target'}).drop(columns=['ngram', 'target_str'])
 
                 # 4. Aggregate and save the weighted edges
-                weighted_edges_ddf = edges_for_n_ddf.groupby(['source', 'target']).size().to_frame('weight')
+                weighted_edges_ddf = edges_for_n_ddf.groupby(['source', 'target']).size().to_frame('weight').reset_index()
                 temp_edge_file_path = os.path.join(self.temp_dir, f"aggregated_edges_n{n}.parquet")
-                weighted_edges_ddf.to_parquet(temp_edge_file_path, engine='pyarrow', write_index=True, overwrite=True)
+                weighted_edges_ddf.to_parquet(temp_edge_file_path, engine='pyarrow', write_index=False, overwrite=True)
             print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.")
 
             # --- Phase 2: Build and save final graph objects ---
