@@ -58,14 +58,13 @@ echo "SUCCESS: Environment '$ENV_NAME' activated."
 "$ENV_PYTHON" --version
 
 # --- Step 2: Update the Repository ---
-echo -e "\n--- STEP 2: Updating the project with the latest changes from Git ---"
-# --- Stash local changes, pull, and restore stash ---
-echo "INFO: Stashing any local changes to prevent conflicts..."
-git stash push -m "start.sh-autostash-$(date +%s)" > /dev/null 2>&1 || true
-echo "INFO: Pulling latest changes from the remote repository..."
-git pull --rebase
-echo "INFO: Restoring any stashed local changes..."
-git stash pop > /dev/null 2>&1 || echo "INFO: No local changes to restore."
+echo -e "\n--- STEP 2: Synchronizing project with the latest changes from Git ---"
+# --- DEFINITIVE FIX for Git Conflicts: Use fetch and reset ---
+# This is a robust way to update the code to match the remote repository exactly,
+# automatically resolving any local conflicts or changes to tracked files.
+# This command WILL NOT affect your 'data/' or 'results/' directories because they are git-ignored.
+git fetch origin
+git reset --hard origin/main # Assumes 'main' is the primary branch. Change if yours is 'master'.
 echo "SUCCESS: Project repository is up to date."
 
 # --- Step 3: Run the Main Application ---
