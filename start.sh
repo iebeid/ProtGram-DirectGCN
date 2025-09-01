@@ -66,7 +66,7 @@ echo "SUCCESS: Environment '$ENV_NAME' activated."
 echo -e "\n--- STEP 1.5: Ensuring all critical Python packages are installed ---"
 PYTORCH_VERSION="2.1.2"
 CUDA_VERSION="12.1"
-"$ENV_PIP" install --no-cache-dir optuna mlflow gdown 'transformers==4.41.2' 'safetensors==0.4.3' 'optuna-integration[mlflow]'
+"$ENV_PIP" install --no-cache-dir dask pandas seaborn matplotlib scikit-learn gensim python-louvain h5py pyyaml networkx==3.2.1 optuna mlflow gdown 'transformers==4.41.2' 'safetensors==0.4.3' 'optuna-integration[mlflow]'
 "$ENV_PIP" install torch-geometric pyg_lib torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-${PYTORCH_VERSION}%2Bcu${CUDA_VERSION//.}.html
 echo "  - ✅ Pip package check complete."
 
