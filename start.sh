@@ -64,7 +64,7 @@ echo -e "\n--- STEP 2: Synchronizing project with the latest changes from Git --
 # automatically resolving any local conflicts or changes to tracked files.
 # This command WILL NOT affect your 'data/' or 'results/' directories because they are git-ignored.
 git fetch origin
-git reset --hard origin/main # Assumes 'main' is the primary branch. Change if yours is 'master'.
+git reset --hard origin/v2 # --- DEFINITIVE FIX: Point to the correct 'v2' branch ---
 echo "SUCCESS: Project repository is up to date."
 
 # --- Step 3: Run the Main Application ---

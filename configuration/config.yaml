@@ -234,7 +234,7 @@ ppi_evaluation:
   EPOCHS: 2
   MLP_LEARNING_RATE: 0.001
   K_VALUES_FOR_TABLE: [50, 100]
-  MAIN_EMBEDDING_FOR_STATS: "ProtGramDirectgcn"
+  MAIN_EMBEDDING_FOR_STATS: "directgcn"
   STATISTICAL_TEST_ALPHA: 0.05
 
 # 11. MLFLOW & EXPERIMENT TRACKING
@@ -248,7 +248,9 @@ mlflow:
 hyperparameter_optimization:
   RUN_HPO: true
   HPO_N_TRIALS: 50 # Number of trials for Optuna to run
-  HPO_TARGET_EMBEDDING_MODEL: "ProtGramDirectgcn" # Which embedding to optimize the MLP for
+  # --- DEFINITIVE FIX: Use the model's base name to match generated filenames ---
+  # The trainer creates files like 'directgcn_...' not 'ProtGramDirectgcn_...'.
+  HPO_TARGET_EMBEDDING_MODEL: "directgcn" # Which embedding to optimize the MLP for
   # Search space for the PPI evaluation MLP
   HPO_PPI_MLP_SEARCH_SPACE:
     MLP_LEARNING_RATE: {type: 'loguniform', low: 1.0e-5, high: 1.0e-2}
