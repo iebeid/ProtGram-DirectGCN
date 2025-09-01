@@ -29,10 +29,11 @@ class DummyDataFactory:
         return fasta_path
 
     @staticmethod
-    def create_interaction_files(directory: str, num_pairs: int = 10, num_proteins: int = 20):
+    def create_interaction_files(directory: str, num_pairs: int = 10, num_proteins: int = 20, protein_ids: Optional[List[str]] = None):
         """Creates dummy positive and negative interaction files."""
         os.makedirs(directory, exist_ok=True)
-        protein_ids = [f"P{i:03d}" for i in range(num_proteins)]
+        if protein_ids is None:
+            protein_ids = [f"P{i:03d}" for i in range(num_proteins)]
         pos_path = os.path.join(directory, "dummy_positive_interactions.csv")
         neg_path = os.path.join(directory, "dummy_negative_interactions.csv")
 

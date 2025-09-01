@@ -58,7 +58,14 @@ class Word2VecEmbedder:
         """
         mlflow.set_experiment(self.config.MLFLOW_LLMS_EXPERIMENT_NAME)
         with mlflow.start_run(run_name=f"Word2Vec_{Path(self.config.SEQUENCE_FILE_PATHS[0]).stem}", nested=True):
-            mlflow.log_params(self.config.get_as_dict('word2vec'))
+            # --- DEFINITIVE FIX for AttributeError: Manually construct the params dict ---
+            # The Config object does not have a get_as_dict method.
+            w2v_params = {
+                'vector_size': self.config.W2V_VECTOR_SIZE, 'window': self.config.W2V_WINDOW,
+                'min_count': self.config.W2V_MIN_COUNT, 'epochs': self.config.W2V_EPOCHS,
+                'pooling_strategy': self.config.W2V_POOLING_STRATEGY
+            }
+            mlflow.log_params(w2v_params)
             DataUtils.print_header("PIPELINE STEP: Training Word2Vec & Generating Embeddings")
             self.config.RESULTS_W2V_EMBEDDINGS_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -36,8 +36,12 @@ class ProtgramDaskHelpers:
             print(f"      Density (E / N(N-1)): {density:.4f}")
 
         # Connected Components and Communities
-        labels, num_classes = DataUtils.generate_community_labels(graph_object)
-        
+        # --- DEFINITIVE FIX: Pass a standard PyG Data object to the generic utility ---
+        community_graph_data = Data(
+            edge_index=graph_object.A_undirected_w.indices(),
+            edge_attr=graph_object.A_undirected_w.values(), num_nodes=graph_object.number_of_nodes
+        )
+        labels, num_classes = DataUtils.generate_community_labels(community_graph_data)
         # Homophily Score
         if labels is not None:
             homophily_ratio = homophily(graph_object.A_undirected_w.indices(), labels, method='edge')

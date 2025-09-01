@@ -515,6 +515,7 @@ class Config:
         """Sets ProtGram-GCN parameters statically from the YAML config."""
         params = self._config['protgram_gcn']
         cpu_cores = os.cpu_count()
+        self.PROTGRAM_NGRAM_MAX_N = params['PROTGRAM_NGRAM_MAX_N']
         self.FASTA_FILE_TO_PROCESS = params['FASTA_FILE_TO_PROCESS']
         self.DASK_N_PARTITIONS = os.cpu_count() or 1
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1

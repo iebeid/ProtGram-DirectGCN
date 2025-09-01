@@ -24,17 +24,12 @@ class GNNBenchmarkerTests(unittest.TestCase):
         self.config = Config()
         self.original_base_output_dir = self.config.BASE_OUTPUT_DIR
         self.original_datasets = self.config.BENCHMARK_NODE_CLASSIFICATION_DATASETS
-        self.original_epochs = self.config.BENCHMARK_GNN_EPOCHS # --- DEFINITIVE FIX: Isolate the persistent cache and project root for this test ---
-        # The previous implementation was using the real user cache, which could
-        # cause side effects and non-reproducible test runs.
-        self.original_persistent_cache = self.config.PERSISTENT_DATA_CACHE
-        self.original_project_root = self.config.PROJECT_ROOT
+        self.original_epochs = self.config.BENCHMARK_GNN_EPOCHS
 
         self.config.BASE_OUTPUT_DIR = self.base_test_dir
-        self.config.PERSISTENT_DATA_CACHE = self.base_test_dir / ".cache"
-        self.config.PROJECT_ROOT = self.base_test_dir
-        # --- DEFINITIVE FIX: Fully re-initialize all path-dependent configs ---
-        self.config._setup_paths()
+        # --- DEFINITIVE FIX: Do NOT override the project root or cache for this test ---
+        # This ensures that the benchmark datasets are downloaded to the correct,
+        # persistent location (`data/benchmarks`) for the main pipeline to use.
         self.config._setup_data_sources()
         self.config._link_data_sources_to_attributes()
 
@@ -42,11 +37,6 @@ class GNNBenchmarkerTests(unittest.TestCase):
         self.config.BASE_OUTPUT_DIR = self.original_base_output_dir
         self.config.BENCHMARK_NODE_CLASSIFICATION_DATASETS = self.original_datasets
         self.config.BENCHMARK_GNN_EPOCHS = self.original_epochs
-        self.config.PERSISTENT_DATA_CACHE = self.original_persistent_cache
-        self.config.PROJECT_ROOT = self.original_project_root
-        self.config._setup_paths()
-        self.config._setup_data_sources()
-        self.config._link_data_sources_to_attributes()
         shutil.rmtree(self.base_test_dir)
 
     def test_gnn_benchmarker_run(self):

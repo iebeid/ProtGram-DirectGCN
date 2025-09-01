@@ -82,7 +82,11 @@ class DataManager:
         Executes the entire data pipeline: download, process, and create manifest.
         If any critical step fails, the entire process will abort.
         """
-        try:
+        # --- DEFINITIVE FIX for Cleanup on Failure: Use a single try/finally block ---
+        # This ensures that _cleanup_intermediate_files is ALWAYS called, even if a
+        # step in the middle of the process fails, while still allowing exceptions
+        # to propagate up and stop the main script.
+        try: # noqa
             print("\n--- Running Data Setup and Processing ---")
             print("  - Ensuring project data directory structure exists...")
 
@@ -93,58 +97,41 @@ class DataManager:
                 print("!" * 80)
                 sys.exit(1)
 
-            # --- DEFINITIVE FIX: Branch data processing based on the canonical mapping flag ---
             if self.config.USE_CANONICAL_ID_MAPPING_FILE:
                 print("\n--- Using Canonical ID Mapping File Workflow ---")
-                try:
-                    print("\n--- Step 2a: Ensuring full ID Map Parquet file exists for ground truth processing ---")
-                    IDMapper(self.config).pregenerate_caches()
+                print("\n--- Step 2a: Ensuring full ID Map Parquet file exists for ground truth processing ---")
+                IDMapper(self.config).pregenerate_caches()
 
-                    print("\n--- Step 2b: Processing Interaction Files using Canonical Map ---")
-                    GroundTruthLoader.process_raw_files(
-                        raw_file_paths=self.config.NEG_INTERACTIONS_RAW_PATHS,
-                        output_path=self.config.NEG_INTERACTIONS_PATH,
-                        id_map_path=self.config.ID_MAPPING_PATH, is_positive=False
-                    )
-                    GroundTruthLoader.process_raw_files(
-                        raw_file_paths=[self.config.BIOGRID_RAW_PATH],
-                        output_path=self.config.POS_INTERACTIONS_PATH,
-                        id_map_path=self.config.ID_MAPPING_PATH, is_positive=True
-                    )
-                except Exception as e:
-                    raise RuntimeError(f"Data processing with canonical map failed: {e}") from e
+                print("\n--- Step 2b: Processing Interaction Files using Canonical Map ---")
+                GroundTruthLoader.process_raw_files(
+                    raw_file_paths=self.config.NEG_INTERACTIONS_RAW_PATHS,
+                    output_path=self.config.NEG_INTERACTIONS_PATH,
+                    id_map_path=self.config.ID_MAPPING_PATH, is_positive=False
+                )
+                GroundTruthLoader.process_raw_files(
+                    raw_file_paths=[self.config.BIOGRID_RAW_PATH],
+                    output_path=self.config.POS_INTERACTIONS_PATH,
+                    id_map_path=self.config.ID_MAPPING_PATH, is_positive=True
+                )
             else:
                 print("\n--- Using Direct Regex-based ID Extraction Workflow ---")
-                try:
-                    print("\n--- Step 2: Processing Interaction Files using Regex Extraction ---")
-                    GroundTruthLoader.process_raw_files_with_regex(
-                        raw_file_paths=self.config.NEG_INTERACTIONS_RAW_PATHS,
-                        output_path=self.config.NEG_INTERACTIONS_PATH, is_positive=False
-                    )
-                    GroundTruthLoader.process_raw_files_with_regex(
-                        raw_file_paths=[self.config.BIOGRID_RAW_PATH],
-                        output_path=self.config.POS_INTERACTIONS_PATH, is_positive=True
-                    )
-                except Exception as e:
-                    raise RuntimeError(f"Regex-based data processing failed: {e}") from e
+                print("\n--- Step 2: Processing Interaction Files using Regex Extraction ---")
+                GroundTruthLoader.process_raw_files_with_regex(
+                    raw_file_paths=self.config.NEG_INTERACTIONS_RAW_PATHS,
+                    output_path=self.config.NEG_INTERACTIONS_PATH, is_positive=False
+                )
+                GroundTruthLoader.process_raw_files_with_regex(
+                    raw_file_paths=[self.config.BIOGRID_RAW_PATH],
+                    output_path=self.config.POS_INTERACTIONS_PATH, is_positive=True
+                )
 
             self._copy_to_cache(self.config.NEG_INTERACTIONS_PATH)
             self._copy_to_cache(self.config.POS_INTERACTIONS_PATH)
 
-        except Exception as e:
-                print("\n" + "!" * 80)
-                print(f"!!! FATAL: Data processing failed: {e} !!!")
-                print("!!! Setup cannot continue. The manifest will not be generated. !!!")
-                print("!" * 80)
-                import traceback
-                traceback.print_exc()
-                sys.exit(1)
-        try:
             self._generate_manifest()
+            print("\n--- Data Setup and Processing Finished Successfully ---")
         finally:
             self._cleanup_intermediate_files()
-
-        print("\n--- Data Setup and Processing Finished Successfully ---")
 
     def is_setup_complete(self) -> bool:
         """

@@ -89,12 +89,14 @@ class PPIPipelineTests(unittest.TestCase):
         print("=" * 80)
 
         # 1. Create a small universe of dummy data
-        protein_ids = [f"DUMMY_P{i:04d}" for i in range(100)]
+        protein_ids_with_embeddings = [f"P{i:04d}" for i in range(50)]
+        protein_ids_without_embeddings = [f"P{i:04d}" for i in range(50, 100)]
+        all_protein_ids = protein_ids_with_embeddings + protein_ids_without_embeddings
         dummy_emb_file = DummyDataFactory.create_h5_embeddings(
-            str(self.base_test_dir), "sanity_check_embeddings.h5", protein_ids=protein_ids[:50], dim=16 # Only 50 have embeddings
+            str(self.base_test_dir), "sanity_check_embeddings.h5", protein_ids=protein_ids_with_embeddings, dim=16
         )
         pos_fp, neg_fp = DummyDataFactory.create_interaction_files(
-            str(self.base_test_dir), num_pairs=200, num_proteins=len(protein_ids)
+            str(self.base_test_dir), num_pairs=200, protein_ids=all_protein_ids
         )
 
         # 2. Mimic the sanity check logic
