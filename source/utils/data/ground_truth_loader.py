@@ -24,6 +24,13 @@ class GroundTruthLoader:
         Reads raw interaction files, maps all IDs to UniProtKB, and saves to a clean Parquet file.
         This is the definitive method for creating the ground truth data.
         """
+        # --- DEFINITIVE FIX for Unnecessary Reprocessing ---
+        # This check makes the data setup process idempotent. If the final, processed
+        # parquet file already exists, we skip the entire expensive mapping operation.
+        if output_path.exists():
+            print(f"  INFO: Standardized ground truth file '{output_path.name}' already exists. Skipping processing.")
+            return
+
         if not raw_file_paths:
             print(f"  No raw files provided for {'positive' if is_positive else 'negative'} interactions. Skipping.")
             return
