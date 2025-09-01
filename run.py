@@ -90,9 +90,11 @@ if __name__ == "__main__":
     else:
         # --- NEW: Perform cleaning at the start of a run ---
         # This makes the Python script the single source of truth for a clean run,
-        # removing the dependency on the user running the correct shell script.
-        project_root_path = Path(__file__).resolve().parent
-        ProjectCleaner.clean_project(project_root_path)
+        # --- FIX: Disabling the cleaning of the results directory as per user request ---
+        # This will preserve intermediate files from previous runs.
+        # project_root_path = Path(__file__).resolve().parent
+        # ProjectCleaner.clean_project(project_root_path)
+        print("--- INFO: Automatic cleaning of the 'results' directory has been disabled. ---")
 
         # --- DEFINITIVE FIX: Validate the environment and run setup if needed ---
         if not is_environment_valid():

@@ -493,12 +493,12 @@ class Config:
         cpu_cores = os.cpu_count()
         self.PROTGRAM_NGRAM_MAX_N = params['PROTGRAM_NGRAM_MAX_N']
         self.FASTA_FILE_TO_PROCESS = params['FASTA_FILE_TO_PROCESS']
-        # --- DEFINITIVE FIX for ID Mapping Failures: Intelligently select the best mapping mode ---
-        # If the user has enabled processing of the main ID mapping file, we should USE it.
-        # This overrides the 'regex' default with the more robust 'file' mode.
+        # --- DEFINITIVE FIX: Decouple ID_MAPPING_MODE from PROCESS_ID_MAPPING_FILE ---
+        # This allows the user to use the 'file' mode (relying on an existing parquet file)
+        # without being forced to re-process the raw idmapping.dat file every time.
         self.DASK_N_PARTITIONS = os.cpu_count() or 1
         self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1
-        self.ID_MAPPING_MODE = 'file' if self.PROCESS_ID_MAPPING_FILE else 'regex'
+        self.ID_MAPPING_MODE = params['ID_MAPPING_MODE']
         # --- FIX: Load smart mapping options from the correct (top) level ---
         self.ENABLE_SMART_MAPPING_PROMPT = params['ENABLE_SMART_MAPPING_PROMPT']
         self.REGEX_CONFIDENCE_THRESHOLD = params['REGEX_CONFIDENCE_THRESHOLD']

@@ -257,10 +257,17 @@ class DirectGCN(nn.Module):
         is_benchmark_or_singleton = len(layer_dims) == 2
 
         if is_benchmark_or_singleton:
-            hidden_dim = layer_dims[1] # The first element after input_dim
-            self.convs.append(DirectGCNLayer(layer_dims[0], hidden_dim, num_graph_nodes, gating_mode, use_homo_hetero_paths))
-            self.layer_norms.append(nn.LayerNorm(hidden_dim))
-            # The final layer is now handled by the decoder_fc
+            # --- DEFINITIVE FIX: Implement a 2-layer architecture for benchmarking ---
+            # This aligns DirectGCN with the other benchmark models (e.g., GCN, GAT)
+            # which all use a 2-layer structure for a fair comparison.
+            in_channels = layer_dims[0]
+            hidden_channels = layer_dims[1]
+            out_channels = task_num_output_classes
+
+            self.convs.append(DirectGCNLayer(in_channels, hidden_channels, num_graph_nodes, gating_mode, use_homo_hetero_paths))
+            self.norms.append(nn.LayerNorm(hidden_channels))
+            self.convs.append(DirectGCNLayer(hidden_channels, out_channels, num_graph_nodes, gating_mode, use_homo_hetero_paths))
+
         else: # Original logic for the main ProtGram pipeline
             for i in range(len(layer_dims) - 1):
                 in_dim, out_dim = layer_dims[i], layer_dims[i + 1]
@@ -270,8 +277,9 @@ class DirectGCN(nn.Module):
 
         # --- DEFINITIVE FIX: Use the robust context flag to build the correct decoder ---
         if is_benchmark_or_singleton:
-            final_embedding_dim = layer_dims[-1]
-            self.decoder_fc = nn.Linear(final_embedding_dim, task_num_output_classes)
+            # The decoder is now the second convolutional layer, so no separate FC layer is needed.
+            # Set to Identity to maintain architectural consistency for the forward pass logic.
+            self.decoder_fc = nn.Identity()
         else:  # Main pipeline context
             final_embedding_dim = layer_dims[-1]
             decoder_hidden_dim = final_embedding_dim // 2 if final_embedding_dim > 1 else 1
@@ -303,16 +311,13 @@ class DirectGCN(nn.Module):
         is_benchmark_or_singleton = len(self.res_projs) == 0
 
         if is_benchmark_or_singleton:
-            # Standard 2-layer GCN-like forward pass
+            # --- DEFINITIVE FIX: Implement the 2-layer forward pass for benchmarking ---
             h = self.convs[0](h, data)
             h = self.layer_norms[0](h)
             h = F.relu(h)
             h = F.dropout(h, p=self.dropout_rate, training=self.training)
             self.embedding_output = h # Embedding is the output of the hidden layer
-            # --- DEFINITIVE FIX: Use the dedicated decoder_fc for logits ---
-            # The previous implementation used the final conv layer, which is inconsistent
-            # with the model's __init__ method where a separate decoder is created.
-            logits = self.decoder_fc(self.embedding_output)
+            logits = self.convs[1](self.embedding_output, data)
             return logits, self.embedding_output.detach() # Return detached embeddings
         else: # Original logic for the main ProtGram pipeline
             # --- DEFINITIVE FIX: Correct the forward pass loop ---

@@ -4,6 +4,7 @@
 # VERSION: 8.1 (Streamlined ID Mapping to bypass Parquet generation)
 # AUTHOR: Islam Ebeid (Refactored by Gemini Code Assist)
 # ==============================================================================
+import copy
 
 import gzip
 import json
@@ -22,6 +23,8 @@ from tqdm.auto import tqdm
 
 from .processor import DataProcessor
 from source.utils.data.id_mapper import IDMapper
+# --- DEFINITIVE FIX for "Zero Pairs" Error: Import the GroundTruthLoader ---
+from source.utils.data.ground_truth_loader import GroundTruthLoader
 
 # Conditionally import gdown to avoid making it a hard dependency
 try:
@@ -89,28 +92,33 @@ class DataManager:
                 print("!!! Please check the URLs in your config and your network connection. !!!")
                 print("!" * 80)
                 sys.exit(1)
-
-            processor = DataProcessor(self.config)
-            try:
-                # --- REFACTOR: Streamlined workflow for ID mapping ---
-                print("\n--- Step 2a: Pre-generating ID Map ---")
-                IDMapper(self.config).pregenerate_caches()
-                # Now that the parquet or pickle file is created, copy it to the persistent cache
-                id_map_artifact = self.config.ID_MAPPING_PATH if self.config.ID_MAPPING_MODE == 'file' else self.config.PROJECT_ROOT / f"{self.config.ID_MAPPING_MODE}_map_cache.pkl"
-                if id_map_artifact.exists():
-                    self._copy_to_cache(id_map_artifact)
-                    # --- DEFINITIVE FIX for Orphan File Bug ---
-                    # After copying the temporary cache file (e.g., regex_map_cache.pkl)
-                    # to the persistent cache, remove the original from the project root.
-                    if self.config.ID_MAPPING_MODE != 'file':
-                        id_map_artifact.unlink()
+            try: # --- DEFINITIVE FIX for "Zero Pairs" Error: Process ground truth using the full ID map ---
+                # This new workflow ensures that the ground truth interaction files are always
+                # created with standardized UniProtKB IDs, resolving the mismatch with the
+                # generated embeddings.
+                print("\n--- Step 2a: Ensuring full ID Map Parquet file exists for ground truth processing ---")
+                # Create a temporary config that FORCES file mode for this specific step.
+                # This does not affect the global config used by other pipelines.
+                temp_file_mode_config = copy.deepcopy(self.config)
+                temp_file_mode_config.ID_MAPPING_MODE = 'file'
+                IDMapper(temp_file_mode_config).pregenerate_caches()
 
                 print("\n--- Step 2b: Processing Negative Interaction Files ---")
-                processor._process_negative_interactions()
+                GroundTruthLoader.process_raw_files(
+                    raw_file_paths=self.config.NEG_INTERACTIONS_RAW_PATHS,
+                    output_path=self.config.NEG_INTERACTIONS_PATH,
+                    id_map_path=self.config.ID_MAPPING_PATH,
+                    is_positive=False
+                )
                 self._copy_to_cache(self.config.NEG_INTERACTIONS_PATH)
 
                 print("\n--- Step 2c: Processing BioGRID Positive Interactions ---")
-                processor._process_biogrid_interactions()
+                GroundTruthLoader.process_raw_files(
+                    raw_file_paths=[self.config.BIOGRID_RAW_PATH],
+                    output_path=self.config.POS_INTERACTIONS_PATH,
+                    id_map_path=self.config.ID_MAPPING_PATH,
+                    is_positive=True
+                )
                 self._copy_to_cache(self.config.POS_INTERACTIONS_PATH)
 
             except Exception as e:
@@ -122,7 +130,7 @@ class DataManager:
                 traceback.print_exc()
                 sys.exit(1)
 
-            self._generate_manifest(processor)
+            self._generate_manifest()
         finally:
             self._cleanup_intermediate_files()
 
@@ -379,7 +387,7 @@ class DataManager:
 
         return True
 
-    def _generate_manifest(self, processor: DataProcessor):
+    def _generate_manifest(self):
         """Generates a checksum manifest for all data files."""
         print("\n--- Step 3: Generating Data Manifest ---")
         manifest = {}
@@ -409,7 +417,7 @@ class DataManager:
                 continue
             relative_path = file_path.relative_to(self.config.PROJECT_ROOT)
             if file_path.is_file():
-                checksum = "skipped_due_to_size" if processor.is_huge_file(file_path) else DataProcessor._calculate_sha256(file_path)
+                checksum = "skipped_due_to_size" if DataProcessor.is_huge_file(file_path, self.config.CHECKSUM_SKIP_SIZE_BYTES) else DataProcessor._calculate_sha256(file_path)
                 manifest[relative_path.as_posix()] = {
                     'type': 'file',
                     'size': file_path.stat().st_size,

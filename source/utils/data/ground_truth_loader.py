@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Iterator, List, Optional, Set, Tuple, Union
+import os
 
 import numpy as np
 import pandas as pd
@@ -16,6 +17,81 @@ class GroundTruthLoader:
     """
     Handles loading and processing of protein interaction data from files.
     """
+
+    @staticmethod
+    def process_raw_files(raw_file_paths: List[Path], output_path: Path, id_map_path: Path, is_positive: bool):
+        """
+        Reads raw interaction files, maps all IDs to UniProtKB, and saves to a clean Parquet file.
+        This is the definitive method for creating the ground truth data.
+        """
+        if not raw_file_paths:
+            print(f"  No raw files provided for {'positive' if is_positive else 'negative'} interactions. Skipping.")
+            return
+
+        if not id_map_path.exists():
+            print(f"  ERROR: ID Mapping Parquet file not found at '{id_map_path}'. Cannot process ground truth.")
+            return
+
+        print(f"  Processing {'positive' if is_positive else 'negative'} raw interaction files...")
+
+        # 1. Read all raw files into a single Dask DataFrame
+        all_dfs = []
+        for file_path in raw_file_paths:
+            if not file_path.exists():
+                print(f"    Warning: Raw interaction file not found: {file_path}")
+                continue
+            # Assume MITAB format for BioGrid and Russell Lab data
+            ddf = dd.read_csv(
+                str(file_path), sep='\t', header=None, usecols=[0, 1],
+                names=['raw_id1', 'raw_id2'], dtype=str, on_bad_lines='warn'
+            )
+            all_dfs.append(ddf)
+
+        if not all_dfs:
+            print("  No valid raw interaction files could be read.")
+            return
+
+        combined_ddf = dd.concat(all_dfs).dropna().drop_duplicates()
+
+        # 2. Extract all unique raw IDs that need to be mapped
+        ids1 = combined_ddf['raw_id1'].unique()
+        ids2 = combined_ddf['raw_id2'].unique()
+        all_raw_ids = dd.concat([ids1, ids2]).unique()
+
+        # 3. Load the ID map and perform an efficient, scalable merge to filter it
+        id_map_ddf = dd.read_parquet(id_map_path)
+
+        # --- DEFINITIVE FIX for Performance: Replace slow 'isin' with a fast Dask 'merge' (join) ---
+        # The previous implementation used `isin(dask_series)`, which is a known
+        # performance anti-pattern in Dask. It requires collecting one of the series
+        # into memory and broadcasting it, causing the process to hang on large data.
+        # This new approach converts the IDs to a DataFrame and performs a highly
+        # optimized merge operation, which is the standard and scalable way to
+        # perform this kind of filtering.
+        all_raw_ids_ddf = all_raw_ids.to_frame(name="db_id")
+        filtered_map_ddf = dd.merge(id_map_ddf, all_raw_ids_ddf, on='db_id', how='inner').compute()
+
+        id_to_uniprot_map = dict(zip(filtered_map_ddf['db_id'], filtered_map_ddf['uniprot_id']))
+
+        # 4. Map the raw IDs to UniProtKB IDs using the in-memory map
+        def map_ids(partition: pd.DataFrame) -> pd.DataFrame:
+            partition['protein1'] = partition['raw_id1'].map(id_to_uniprot_map)
+            partition['protein2'] = partition['raw_id2'].map(id_to_uniprot_map)
+            return partition.dropna(subset=['protein1', 'protein2'])
+
+        mapped_ddf = combined_ddf.map_partitions(map_ids, meta={'raw_id1': 'str', 'raw_id2': 'str', 'protein1': 'str', 'protein2': 'str'})
+
+        # 5. Select final columns and save to Parquet
+        final_ddf = mapped_ddf[['protein1', 'protein2']].drop_duplicates()
+
+        print(f"  Saving {len(final_ddf)} standardized interaction pairs to {output_path}...")
+        final_ddf.to_parquet(
+            str(output_path),
+            engine='pyarrow',
+            overwrite=True,
+            write_index=False
+        )
+        print(f"  ✅ Successfully created standardized ground truth file: {output_path.name}")
 
     @staticmethod
     def get_required_ids_from_files(file_paths: List[Union[str, Path]]) -> Set[str]:
