@@ -1,8 +1,8 @@
 # ==============================================================================
 # MODULE: optimization/hyperparameter_optimizer.py
 # PURPOSE: Handles automated hyperparameter optimization using Optuna.
-# VERSION: 1.0
-# AUTHOR: Gemini Code Assist
+# VERSION: 1.1 (Corrected Syntax and Indentation)
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 import copy
 from typing import Dict, Any, List, Optional
@@ -14,6 +14,13 @@ import optuna
 from optuna_integration import MLflowCallback
 import numpy as np
 from sklearn.model_selection import train_test_split
+
+# --- Add project root to sys.path to allow for relative imports ---
+# This ensures that local modules can be found when the script is run directly.
+import sys
+from pathlib import Path
+project_root = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(project_root))
 
 from configuration.config import Config
 from source.experiments.ppi_1 import PPIPipeline

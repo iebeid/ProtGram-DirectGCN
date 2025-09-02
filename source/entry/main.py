@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: source/entry/main.py
 # PURPOSE: Main pipeline entry point and orchestrator.
-# VERSION: 11.0 (Consolidated pre-analysis logic)
+# VERSION: 12.0 (Corrected IndentationError and Instantiation TypeError)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -19,6 +19,7 @@ project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
 from typing import List, Dict
+import pandas as pd
 from source.utils.post.embedding_processor import EmbeddingProcessor
 import mlflow
 import tensorflow as tf
@@ -27,7 +28,6 @@ from configuration.config import Config
 from source.benchmarkers.gnns import GNNBenchmarker
 from source.data_builders.protgram import ProtGramDataBuilder
 from configuration.manager import DataManager
-from source.benchmarkers.nes import NetworkEmbeddingBenchmarker
 from source.experiments.ppi_1 import PPIPipeline
 from source.testers.unit_tests import run_all_tests
 from source.trainers.lstm import LSTMBasedEmbedder
@@ -36,7 +36,6 @@ from source.trainers.transformers import TransformerEmbedder
 from source.trainers.word2vec import Word2VecEmbedder
 from source.utils.models.hyperparameter_optimizer import HyperparameterOptimizer
 from source.utils.data.data_utils import DataUtils
-from source.utils.logging.file_logger import FileLogger
 from source.entry.checkpoints import CheckpointManager
 from source.entry.ui import UIManager
 
@@ -71,10 +70,6 @@ class PipelineOrchestrator:
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
         tf.get_logger().setLevel('WARNING')
 
-    # Add this import with the other local application imports at the top of the file
-
-
-    # Replace the existing function with this corrected version
     def _run_protgram_xgcn_trainer(self, config: Config):
         """
         Helper method to run ProtGramXGCNTrainer with a check for existing graph objects.
@@ -91,8 +86,7 @@ class PipelineOrchestrator:
         pipelines = [
             {"name": "ProtGram-XGCN", "flag": "RUN_PROTGRAM_XGCN_PIPELINE", "runner": lambda: self._run_protgram_xgcn_trainer(config),
              "formatter": lambda paths: [{"name": name, "path": path} for name, path in paths.items()]},
-            # --- FIX: Update formatter to handle a dictionary of paths (main + optional PCA) ---
-            {"name": "Word2Vec", "flag": "RUN_WORD2VEC_PIPELINE", "runner": lambda: Word2VecEmbedder(config).run(), # noqa
+            {"name": "Word2Vec", "flag": "RUN_WORD2VEC_PIPELINE", "runner": lambda: Word2VecEmbedder(config).run(),
              "formatter": lambda paths: [{"name": name, "path": path} for name, path in paths.items()]},
             {"name": "LSTM", "flag": "RUN_LSTM_PIPELINE", "runner": lambda: LSTMBasedEmbedder(config).run(),
              "formatter": lambda path: [{"name": "LSTM-Generated", "path": str(path)}]},
@@ -113,7 +107,6 @@ class PipelineOrchestrator:
                     if raw_result:
                         formatted_raw_results = p_config["formatter"](raw_result)
 
-                        # --- DEFINITIVE FIX: Only standardize if using the canonical mapping file ---
                         if config.USE_CANONICAL_ID_MAPPING_FILE:
                             print("  Standardizing generated embeddings using canonical ID map...")
                             standardized_files = []
@@ -162,46 +155,51 @@ class PipelineOrchestrator:
                         discovered_files.append({"name": model_name, "path": str(h5_file)})
         return discovered_files
 
+    def _run_singleton_gcn_eval_for_n(self, n: int, config: Config, fasta_file_path: Path) -> pd.DataFrame:
+        """Helper to run the singleton GCN evaluation for a single n-gram level."""
+        from source.data_structures.direct_ngram_graph import DirectedNgramGraph
+        from source.trainers.singleton_xgcn import SingletonXGCNTrainer
+
+        DataUtils.print_header(f"Running Singleton (n={n}) GCN Evaluation")
+        n_graph_dir = config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{n}"
+        if not (n_graph_dir.exists() and n_graph_dir.is_dir()):
+            print(f"  Warning: n={n} graph not found at {n_graph_dir}. It may not have been built. Skipping singleton evaluation.")
+            return pd.DataFrame()
+
+        print(f"  n={n} graph found. Proceeding...")
+        n_graph: DirectedNgramGraph = DirectedNgramGraph.load_from_dir(n_graph_dir)
+        if not n_graph:
+            return pd.DataFrame()
+
+        singleton_results_df = SingletonXGCNTrainer(config, n_graph).run()
+        if singleton_results_df is not None and not singleton_results_df.empty:
+            singleton_results_df = singleton_results_df.rename(columns={'Model': 'model'})
+            singleton_results_df['dataset'] = f"ProtGram_n{n}_Singleton_{fasta_file_path.stem}"
+            singleton_results_df['error'] = None
+            return singleton_results_df
+        return pd.DataFrame()
+
     def _run_pre_analysis_and_prompt(self, config: Config, fasta_file_path: Path) -> bool:
         """Runs preliminary benchmarks, displays a summary, and prompts the user to continue."""
         all_benchmark_results = []
 
-        # --- ERROR HANDLING: Wrap each benchmark suite to allow the pipeline to continue if one fails. ---
         try:
             if config.RUN_BENCHMARKING_PIPELINE:
-                # --- DEFINITIVE FIX: Use a single run for all benchmarks ---
                 with mlflow.start_run(run_name="Node_Classification_Benchmark_Suite"):
                     benchmark_results_df = GNNBenchmarker(config).run()
                     if benchmark_results_df is not None and not benchmark_results_df.empty:
                         all_benchmark_results.append(benchmark_results_df)
         except Exception as e:
-            print(f"\n--- NETWORK EMBEDDING BENCHMARKING FAILED: {e} ---\n")
+            print(f"\n--- GNN BENCHMARKING FAILED: {e} ---\n")
             import traceback
             traceback.print_exc()
 
         try:
             if config.RUN_SINGLETON_GCN_EVAL:
                 for n in range(1, 3):
-                    DataUtils.print_header(f"Running Singleton (n={n}) GCN Evaluation")
-
-                    # --- FIX: Use the new directory-based loading for graphs ---
-                    # The graph is now saved as a directory, not a single .pkl file.
-                    n_graph_dir = config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{n}"
-                    if n_graph_dir.exists() and n_graph_dir.is_dir():
-                        print(f"  n={n} graph found. Proceeding...")
-                        from source.data_structures.direct_ngram_graph import DirectedNgramGraph
-                        from source.trainers.singleton_xgcn import SingletonXGCNTrainer
-                        # Use the correct class method to load from the directory
-                        n_graph: DirectedNgramGraph = DirectedNgramGraph.load_from_dir(n_graph_dir)
-                        if n_graph:
-                            singleton_results_df = SingletonXGCNTrainer(config, n_graph).run()
-                            if singleton_results_df is not None and not singleton_results_df.empty:
-                                singleton_results_df = singleton_results_df.rename(columns={'Model': 'model'})
-                                singleton_results_df['dataset'] = f"ProtGram_n{n}_Singleton_{fasta_file_path.stem}"
-                                singleton_results_df['error'] = None
-                                all_benchmark_results.append(singleton_results_df)
-                    else:
-                        print(f"  Warning: n={n} graph not found at {n_graph_dir}. It may not have been built. Skipping singleton evaluation.")
+                    singleton_results = self._run_singleton_gcn_eval_for_n(n, config, fasta_file_path)
+                    if not singleton_results.empty:
+                        all_benchmark_results.append(singleton_results)
         except Exception as e:
             print(f"\n--- SINGLETON GCN EVALUATION FAILED: {e} ---\n")
             import traceback
@@ -217,27 +215,18 @@ class PipelineOrchestrator:
     def run(self):
         """Executes the entire pipeline."""
         script_start_time = time.monotonic()
-        # --- DEFINITIVE FIX for Duplicate Logs ---
-        # The FileLogger is now created and managed by the main `run.py` script.
-        # We remove the redundant logger here to prevent the creation of a second log file.
         try:
             DataUtils.print_header("Starting Protein-Protein Interaction Meta-Pipeline")
 
             data_manager = DataManager(self.base_config)
             print("\n--- Verifying local data integrity ---")
-            # --- DEFINITIVE FIX: Use the more robust setup check ---
             if not data_manager.is_setup_complete():
                 print("\n--- Local data is invalid or incomplete. Attempting to restore from cache... ---")
-                # Try to restore source files. This is just an optimization.
                 if data_manager.restore_data_from_cache():
                     print("  - ✅ Successfully restored source data from cache.")
                 else:
                     print("  - ℹ️ Could not restore from cache. Will proceed with full download.")
 
-                # Now, run the full setup. It's idempotent and will handle everything.
-                # If files were restored, it will skip downloading and just process.
-                # If restore failed, it will download and then process.
-                # This guarantees that the ID map cache is created.
                 print("\n--- Data setup is incomplete. Running full setup to generate derived files... ---")
                 data_manager.run_full_setup()
 
@@ -247,7 +236,6 @@ class PipelineOrchestrator:
             else:
                 print("  - ✅ Local data is valid.")
 
-            # --- NEW: Add dynamic system resource checks at the start ---
             DataUtils.report_system_resources(self.base_config.BASE_OUTPUT_DIR)
 
             if self.base_config.DEBUG_VERBOSE:
@@ -268,7 +256,7 @@ class PipelineOrchestrator:
                     print("!!! WARNING: GPU verification failed. Pipeline will run on CPU. !!!")
                     print("!" * 80 + "\n")
                     if sys.stdin.isatty():
-                        response = input("Continue with CPU-only execution? (y/n): ").lower().strip() # noqa
+                        response = input("Continue with CPU-only execution? (y/n): ").lower().strip()
                         if response not in ['y', 'yes']: sys.exit(0)
                 if not self.ui_manager.prompt_to_continue("Integrated Tests", self.base_config): sys.exit(0)
 
@@ -277,6 +265,7 @@ class PipelineOrchestrator:
                 if not files_to_process:
                     print("\nERROR: No sequence files defined. Cannot run experiments.")
                     return
+
                 if self.base_config.SEQUENCE_DOWNSAMPLE_FRACTION is not None and self.base_config.SEQUENCE_DOWNSAMPLE_FRACTION < 1.0:
                     DataUtils.print_header(f"FASTA Downsampling Active ({self.base_config.SEQUENCE_DOWNSAMPLE_FRACTION * 100:.1f}%)")
                 else:
@@ -294,22 +283,17 @@ class PipelineOrchestrator:
                                 is_pytorch_only = "tensorflow" not in info.tags and "tf" not in info.tags
                                 if is_pytorch_only:
                                     print(f"\n--- ACTION: Model '{model_id}' requires conversion. ---")
-                                    # --- DEFINITIVE FIX: Invoke the converter as a module (-m) ---
-                                    # This is the standard, robust way to run a script from within a package,
-                                    # as it correctly handles the Python path and avoids ModuleNotFoundError.
                                     module_path = "source.utils.models.model_converter"
                                     subprocess.run([sys.executable, "-m", module_path, model_id], check=True)
                             except Exception as e:
                                 print(f"  Warning: Could not verify or convert model '{model_id}': {e}")
 
                 for fasta_file_path in files_to_process:
-                    # --- NEW: Add robust error handling for each dataset ---
-                    # This prevents a failure on one FASTA file from stopping the entire orchestration.
                     try:
-                    # --- DEFINITIVE FIX for Multiple Run Directories: Use a shallow copy ---
-                    # deepcopy() re-runs __init__, creating a new timestamped directory.
-                    # copy() creates a new object but preserves the original attributes, including the unique BASE_OUTPUT_DIR.
-                    config = copy.copy(self.base_config)
+                        # --- DEFINITIVE FIX for Multiple Run Directories: Use a shallow copy ---
+                        # deepcopy() re-runs __init__, creating a new timestamped directory.
+                        # copy() creates a new object but preserves the original attributes, including the unique BASE_OUTPUT_DIR.
+                        config = copy.copy(self.base_config)
                         dataset_name = fasta_file_path.stem
                         DataUtils.print_header(f"PROCESSING DATASET: {dataset_name.upper()}")
                         config.SEQUENCE_FILE_PATHS = [fasta_file_path]
@@ -327,8 +311,6 @@ class PipelineOrchestrator:
                         checkpoint_dir_uri = os.path.join(str(config.BASE_OUTPUT_DIR), "checkpoints", dataset_name)
                         checkpoint_manager = CheckpointManager(checkpoint_dir_uri)
 
-                        # --- DEFINITIVE FIX: Add checkpointing for major pipeline stages ---
-                        # This prevents long-running steps from being re-executed unnecessarily.
                         # Graph Building Stage
                         if config.RUN_PROTGRAM_PIPELINE:
                             if not checkpoint_manager.get_checkpoint("GraphBuilding"):
@@ -340,44 +322,37 @@ class PipelineOrchestrator:
                             print("  INFO: Skipping graph building as RUN_PROTGRAM_PIPELINE is false.")
                             if not self.ui_manager.prompt_to_continue("Graph Building (skipped)", config): continue
 
-                        # Now, run the optional pre-analysis/benchmarking step, gated by its own checkpoint.
+                        # Pre-analysis/benchmarking step
                         if not checkpoint_manager.get_checkpoint("PreAnalysis"):
                             if not self._run_pre_analysis_and_prompt(config, fasta_file_path):
-                                continue  # User chose to stop after pre-analysis
+                                continue
                             checkpoint_manager.save_checkpoint("PreAnalysis", {"status": "completed"})
 
-                        # --- DEFINITIVE FIX: Decouple main embedding generation from pre-analysis ---
-                        # The main embedding pipelines have their own internal checkpointing and should
-                        # always be run to ensure the list of files to evaluate is populated.
+                        # Main embedding generation
                         generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)
                         generated_files = generated_files if isinstance(generated_files, list) else []
 
-                        # --- DEFINITIVE FIX for HPO Not Triggering ---
-                        # Discover pre-existing embeddings from previous runs.
+                        # Discover existing embeddings
                         discovered_files = self._discover_existing_embeddings(config, generated_files)
                         generated_files.extend(discovered_files)
                         config.LP_EMBEDDING_FILES_TO_EVALUATE = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_files
 
-                        # --- Run Hyperparameter Optimization ---
+                        # Hyperparameter Optimization
                         if config.RUN_HPO:
                             DataUtils.print_header("Running Hyperparameter Optimization")
                             optimizer = HyperparameterOptimizer(config)
                             target_model_name = config.HPO_TARGET_EMBEDDING_MODEL
-                            # --- DEFINITIVE FIX: Use a substring search to find the HPO target model ---
-                            # The previous exact match failed because filenames have suffixes (e.g., _n1, _pca).
-                            # This makes the matching robust.
                             target_embedding_path = None
                             for emb_file in config.LP_EMBEDDING_FILES_TO_EVALUATE:
                                 if target_model_name.lower() in emb_file['name'].lower():
                                     target_embedding_path = emb_file['path']
                                     break
-
                             if target_embedding_path:
                                 optimizer.optimize_ppi_mlp(str(target_embedding_path), target_model_name)
                             else:
                                 print(f"  Warning: HPO target embedding '{target_model_name}' not found in generated/configured files. Skipping HPO.")
 
-                        # --- Run Main PPI Evaluation ---
+                        # Main PPI Evaluation
                         if config.RUN_MAIN_PPI_EVALUATION:
                             DataUtils.print_header(f"Running Main Evaluation for Dataset: {dataset_name}")
                             if not checkpoint_manager.get_checkpoint("PPI_Evaluation"):
@@ -385,16 +360,12 @@ class PipelineOrchestrator:
                                     ppi_evaluator = PPIPipeline(config)
                                     ppi_evaluator.run()
                                     checkpoint_manager.save_checkpoint("PPI_Evaluation", {"status": "completed"})
-
-                    # --- FIX: Add the missing 'except' block for the per-dataset try block ---
-                    # This ensures that if one dataset fails, the pipeline can continue to the next.
                     except Exception as e:
                         print(f"\n--- ❌ ERROR processing dataset: {dataset_name} ---")
                         print(f"  This dataset will be skipped. The pipeline will continue with the next one.")
                         print(f"  Error details: {e}")
                         import traceback
                         traceback.print_exc()
-
 
             DataUtils.print_header(f"Full Orchestration Finished in {time.monotonic() - script_start_time:.2f} seconds.")
             self.ui_manager.launch_mlflow_ui(self.base_config)
@@ -407,5 +378,7 @@ class PipelineOrchestrator:
 
 
 if __name__ == '__main__':
-    orchestrator = PipelineOrchestrator()
+    # --- DEFINITIVE FIX for TypeError: Instantiate Config first, then pass it to the orchestrator ---
+    config = Config()
+    orchestrator = PipelineOrchestrator(config)
     orchestrator.run()
