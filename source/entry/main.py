@@ -306,7 +306,10 @@ class PipelineOrchestrator:
                     # --- NEW: Add robust error handling for each dataset ---
                     # This prevents a failure on one FASTA file from stopping the entire orchestration.
                     try:
-                        config = copy.deepcopy(self.base_config)
+                    # --- DEFINITIVE FIX for Multiple Run Directories: Use a shallow copy ---
+                    # deepcopy() re-runs __init__, creating a new timestamped directory.
+                    # copy() creates a new object but preserves the original attributes, including the unique BASE_OUTPUT_DIR.
+                    config = copy.copy(self.base_config)
                         dataset_name = fasta_file_path.stem
                         DataUtils.print_header(f"PROCESSING DATASET: {dataset_name.upper()}")
                         config.SEQUENCE_FILE_PATHS = [fasta_file_path]
