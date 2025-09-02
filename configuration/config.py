@@ -242,7 +242,22 @@ class ValidationSchema(BaseModel):
     hyperparameter_optimization: HPOParams = Field(default_factory=HPOParams)
 
 class Config:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(Config, cls).__new__(cls)
+            # Mark it as uninitialized. The __init__ will set this to True.
+            cls._instance._initialized = False
+        return cls._instance
+
     def __init__(self, config_path: str = 'configuration/config.yaml'):
+        # --- DEFINITIVE FIX for Multiple Run Directories: Implement Singleton Pattern ---
+        # This check ensures that the __init__ method (which creates the unique
+        # timestamped directory) is only ever run ONCE. All subsequent calls to
+        # Config() will return the already-initialized instance.
+        if hasattr(self, '_initialized') and self._initialized:
+            return
         # --- 0. LOAD YAML CONFIG ---
         self._config = self._load_yaml_config(config_path)
 
@@ -309,6 +324,9 @@ class Config:
 
         # --- LAST STEP: Link attributes now that all params are loaded ---
         self._link_data_sources_to_attributes()
+
+        # Mark initialization as complete for the singleton pattern
+        self._initialized = True
 
     def _load_yaml_config(self, config_path: str) -> Dict:
         """Loads the YAML configuration file."""

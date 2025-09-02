@@ -1,7 +1,7 @@
 # ==============================================================================
 # MODULE: source/entry/main.py
 # PURPOSE: Main pipeline entry point and orchestrator.
-# VERSION: 12.0 (Corrected IndentationError and Instantiation TypeError)
+# VERSION: 12.1 (Bug Fixes Applied)
 # AUTHOR: Islam Ebeid
 # ==============================================================================
 
@@ -55,9 +55,6 @@ class PipelineOrchestrator:
         """Configures GPU settings for TensorFlow."""
         gpus = tf.config.list_physical_devices('GPU')
         if gpus:
-            # --- DEFINITIVE FIX: Use the standalone tf_keras package for consistency ---
-            # The setup script explicitly installs `tf-keras`. To avoid namespace conflicts
-            # with the Keras bundled in TensorFlow, we will consistently use the `tf_keras` package.
             from tf_keras import mixed_precision
 
             policy = mixed_precision.Policy('mixed_float16')
@@ -74,10 +71,9 @@ class PipelineOrchestrator:
         """
         Helper method to run ProtGramXGCNTrainer with a check for existing graph objects.
         """
-        # If ProtGram pipeline was not run, check if graph objects exist.
         if not config.RUN_PROTGRAM_PIPELINE and not config.RESULTS_GRAPH_OBJECTS_DIR.exists():
             print(f"  Warning: Skipping ProtGram-XGCN pipeline. Graph objects not found in {config.RESULTS_GRAPH_OBJECTS_DIR}.")
-            return None # Return None to indicate no output files
+            return None
 
         return ProtGramXGCNTrainer(config).run()
 
@@ -236,6 +232,12 @@ class PipelineOrchestrator:
             else:
                 print("  - ✅ Local data is valid.")
 
+            # BUG FIX: Set the Dask temporary directory to be within the run's results folder.
+            dask_temp_dir = self.base_config.BASE_OUTPUT_DIR / "dask_temp"
+            dask_temp_dir.mkdir(exist_ok=True, parents=True)
+            os.environ['DASK_TEMPORARY_DIRECTORY'] = str(dask_temp_dir)
+            print(f"  - Dask temporary directory set to: {dask_temp_dir}")
+
             DataUtils.report_system_resources(self.base_config.BASE_OUTPUT_DIR)
 
             if self.base_config.DEBUG_VERBOSE:
@@ -249,6 +251,10 @@ class PipelineOrchestrator:
 
             if self.base_config.RUN_INTEGRATED_TESTS:
                 DataUtils.print_header("Running Integrated Test Suite")
+                # BUG FIX NOTE: The creation of multiple run directories likely stems from
+                # test suites creating new Config() instances. The ideal fix is to refactor
+                # run_all_tests and individual tests to accept a config object, e.g.,
+                # run_all_tests(self.base_config), but this cannot be done without modifying test files.
                 gpu_is_ok = run_all_tests()
                 DataUtils.print_header("Integrated Test Suite Finished.")
                 if not gpu_is_ok:
@@ -260,7 +266,10 @@ class PipelineOrchestrator:
                         if response not in ['y', 'yes']: sys.exit(0)
                 if not self.ui_manager.prompt_to_continue("Integrated Tests", self.base_config): sys.exit(0)
 
-            with tempfile.TemporaryDirectory() as temp_dir:
+            # BUG FIX: Use a temporary directory within the main results output directory.
+            temp_dir_base = self.base_config.BASE_OUTPUT_DIR / "temp_files"
+            temp_dir_base.mkdir(exist_ok=True, parents=True)
+            with tempfile.TemporaryDirectory(dir=temp_dir_base) as temp_dir:
                 files_to_process = self.ui_manager.get_fasta_files_to_process(self.base_config, Path(temp_dir))
                 if not files_to_process:
                     print("\nERROR: No sequence files defined. Cannot run experiments.")
@@ -290,13 +299,15 @@ class PipelineOrchestrator:
 
                 for fasta_file_path in files_to_process:
                     try:
-                        # --- DEFINITIVE FIX for Multiple Run Directories: Use a shallow copy ---
-                        # deepcopy() re-runs __init__, creating a new timestamped directory.
-                        # copy() creates a new object but preserves the original attributes, including the unique BASE_OUTPUT_DIR.
+                        # Use a shallow copy to avoid re-running Config.__init__ and creating new directories
                         config = copy.copy(self.base_config)
                         dataset_name = fasta_file_path.stem
                         DataUtils.print_header(f"PROCESSING DATASET: {dataset_name.upper()}")
+
+                        # BUG FIX: Ensure the correct (downsampled) file path is used.
+                        # Overwrite both variables to be safe in case protgram.py uses the wrong one.
                         config.SEQUENCE_FILE_PATHS = [fasta_file_path]
+                        config.ORIGINAL_SEQUENCE_FILE_PATHS = [fasta_file_path]
 
                         paths_to_specialize = [
                             'RESULTS_GRAPH_OBJECTS_DIR', 'RESULTS_GCN_EMBEDDINGS_DIR',
@@ -378,7 +389,6 @@ class PipelineOrchestrator:
 
 
 if __name__ == '__main__':
-    # --- DEFINITIVE FIX for TypeError: Instantiate Config first, then pass it to the orchestrator ---
     config = Config()
     orchestrator = PipelineOrchestrator(config)
     orchestrator.run()
