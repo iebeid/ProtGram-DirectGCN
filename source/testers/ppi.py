@@ -115,9 +115,10 @@ class PPIPipelineTests(unittest.TestCase):
         sanity_config = self.config
         sanity_config.EVAL_EPOCHS = 1
         sanity_config.EVAL_N_FOLDS = 2
-        sanity_config.LP_EMBEDDING_FILES_TO_EVALUATE = [{"name": "SanityCheckEmb", "path": str(dummy_emb_file)}]
-        sanity_config.POS_INTERACTIONS_PATH = pos_pairs
-        sanity_config.NEG_INTERACTIONS_PATH = neg_pairs
+        # --- DEFINITIVE FIX: Pass the correct file paths, not the in-memory lists ---
+        sanity_config.LP_EMBEDDING_FILES_TO_EVALUATE = [{"name": "SanityCheckEmb", "path": str(dummy_emb_file)}] # noqa
+        sanity_config.POS_INTERACTIONS_PATH = pos_fp
+        sanity_config.NEG_INTERACTIONS_PATH = neg_fp
 
         evaluator = PPIPipeline(sanity_config)
         evaluator.run()

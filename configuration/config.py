@@ -324,7 +324,6 @@ class Config:
         """Sets up all base, data, and results paths for the project."""
         self.BASE_CONFIG_DIR = self.PROJECT_ROOT / "configuration"
         self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
-        self.BASE_SOURCE_DIR = self.PROJECT_ROOT / "source"
         self.BASE_OUTPUT_DIR = self.PROJECT_ROOT / "results"
         self.PERSISTENT_DATA_CACHE = Path.home() / ".cache" / "protgram_directgcn"
         self.LOG_DIR = self.BASE_OUTPUT_DIR / "logs"
