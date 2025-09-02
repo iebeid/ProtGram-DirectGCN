@@ -42,6 +42,12 @@ class DataUtilityTests(unittest.TestCase):
         self.config.SEQUENCE_DOWNSAMPLE_FRACTION = None
         self.config.PROTGRAM_FASTA_MIN_LEN = 1
         self.config.PROJECT_ROOT = Path(self.temp_dir)
+        # --- DEFINITIVE FIX: Fully re-initialize all path-dependent configs ---
+        # This ensures that derived paths (like DATA_MAPPINGS_DIR) are updated
+        # to use the new temporary PROJECT_ROOT, preventing test contamination.
+        self.config._setup_paths()
+        self.config._setup_data_sources()
+        self.config._link_data_sources_to_attributes()
 
     def tearDown(self):
         # Restore original config values
@@ -77,12 +83,14 @@ class DataUtilityTests(unittest.TestCase):
         print("=" * 80)
         # 1. Setup: Create a dummy source .dat file, which is the correct input.
         # The previous implementation created a parquet file, which was never used.
-        DummyDataFactory.create_dummy_idmapping_dat(
-            str(self.config.PERSISTENT_DATA_CACHE), num_ids=5
-        )
 
         # 2. Configure the test
         self.config.ID_MAPPING_MODE = 'file'
+        # --- DEFINITIVE FIX: Make the test self-contained by creating the required raw file ---
+        # The IDMapper in 'file' mode requires this path to be set on the config object.
+        self.config.ID_MAPPING_RAW_PATH = DummyDataFactory.create_dummy_idmapping_dat(
+            str(self.config.DATA_MAPPINGS_DIR)
+        )
 
         # 3. Run the pre-generation
         mapper = IDMapper(self.config)

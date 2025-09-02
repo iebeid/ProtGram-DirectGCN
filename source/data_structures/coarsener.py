@@ -2,7 +2,7 @@
 # MODULE: data_structures/coarsener.py
 # PURPOSE: Implements graph coarsening techniques to reduce graph size.
 # VERSION: 1.1 (Refactored to use PyG's pool_edge)
-# AUTHOR: Gemini Code Assist
+# AUTHOR: Islam Ebeid
 # ==============================================================================
 
 from typing import Tuple, Optional, TYPE_CHECKING
@@ -36,7 +36,7 @@ def modularity(edge_index, cluster, weight=None, num_nodes=None):
         mod += sub_num_edges / num_edges - (sub_deg.sum() / (2 * num_edges))**2
 
     return mod
-    
+
 try:
     # For PyG >= 2.0
     from torch_geometric.nn.pool import graclus, edge_pool as pool_edge

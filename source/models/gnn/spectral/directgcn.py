@@ -154,6 +154,11 @@ class DirectGCNLayer(MessagePassing):
 
     def forward(self, x: torch.Tensor, data: Data) -> torch.Tensor:
         """Forward pass implementing the hierarchical, dual-path logic."""
+        # --- DEFINITIVE FIX for AttributeError on empty graphs ---
+        # If the input has no nodes, return an empty tensor immediately to prevent
+        # attempts to access attributes (like gating vectors) that were not created.
+        if x.shape[0] == 0:
+            return x
         # --- 0. Setup ---
         # Get original node indices if this is a subgraph from clustered training
         original_indices = getattr(data, 'original_indices', None)
@@ -268,7 +273,10 @@ class DirectGCN(nn.Module):
             out_channels = task_num_output_classes
 
             self.convs.append(DirectGCNLayer(in_channels, hidden_channels, num_graph_nodes, gating_mode, use_homo_hetero_paths))
-            self.norms.append(nn.LayerNorm(hidden_channels))
+            # --- DEFINITIVE FIX for IndexError: Append to the correct list ---
+            # The forward pass uses `self.layer_norms`. This was appending to `self.norms`.
+            self.layer_norms.append(nn.LayerNorm(hidden_channels))
+
             self.convs.append(DirectGCNLayer(hidden_channels, out_channels, num_graph_nodes, gating_mode, use_homo_hetero_paths))
 
         else: # Original logic for the main ProtGram pipeline

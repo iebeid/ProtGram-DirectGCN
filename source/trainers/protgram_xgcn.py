@@ -574,17 +574,10 @@ class ProtGramXGCNTrainer:
         if method == 'graclus':
             from source.data_structures.coarsener import GraphCoarsener
             coarsening_level = self.config.PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING
-
-            # --- DEFINITIVE FIX for Graclus "no undirected edges" error ---
-            # The GraphCoarsener expects a simple PyG Data object with an undirected
-            # edge_index. We create one here to ensure the coarsener receives the
-            # correct input format, resolving the error.
-            undirected_data = Data(
-                edge_index=graph_obj.A_undirected_w.indices(),
-                num_nodes=graph_obj.number_of_nodes
-            )
-
-            coarsening_result = GraphCoarsener.coarsen_graph(undirected_data, level=coarsening_level)
+            # --- DEFINITIVE FIX for AttributeError: Pass the correct graph object ---
+            # The GraphCoarsener expects the custom DirectedNgramGraph object to access
+            # its specific attributes like A_undirected_w.
+            coarsening_result = GraphCoarsener.coarsen_graph(graph_obj, level=coarsening_level)
             if coarsening_result is None:
                 print("  - WARNING: Graclus coarsening failed. Falling back to a single partition.")
                 return [list(range(graph_obj.number_of_nodes))]

@@ -134,8 +134,8 @@ class HyperparameterOptimizer:
                 # The _train_and_evaluate_fold method now returns the model, which we ignore during HPO.
                 metrics, _, _ = ppi_pipeline._train_and_evaluate_fold(
                     X_train=X_train, y_train=y_train,
-                    X_val=X_val, y_val=y_val,
-                    embedding_name=embedding_name, fold_num=trial.number
+                    X_val=X_val, y_val=y_val, # --- DEFINITIVE FIX: Remove unexpected keyword argument ---
+                    fold_num=trial.number
                 )
                 return float(metrics.get('auc_sklearn', 0.0))
             except Exception as e:
@@ -152,8 +152,8 @@ class HyperparameterOptimizer:
             mlflow_callback = MLflowCallback(
                 tracking_uri=mlflow.get_tracking_uri(),
                 metric_name="validation_auc",
-                create_experiment=False,
-                mlflow_kwargs={"run_name": f"hpo_trial_{embedding_name}"} # Base name for trials
+                create_experiment=False, # --- DEFINITIVE FIX: Enable nested runs for the callback ---
+                mlflow_kwargs={"run_name": f"hpo_trial_{embedding_name}", "nested": True}
             )
 
             # 4. Run the study

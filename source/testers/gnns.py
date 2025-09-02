@@ -57,8 +57,9 @@ class GNNBenchmarkerTests(unittest.TestCase):
             # --- DEFINITIVE FIX: Make assertion aware of the number of graph variants --- # noqa
             # The test runs on both original and undirected graphs if configured. # noqa
             num_variants = 2 if self.config.BENCHMARK_TEST_ON_UNDIRECTED else 1
-            expected_len = len(self.config.BENCHMARK_GNN_MODELS_TO_RUN) * num_variants
-            self.assertEqual(len(results), expected_len, f"Expected {expected_len} results, but got {len(results)}.")
+            # --- DEFINITIVE FIX: Account for both GNN and NE models in the expected count ---
+            expected_len = (len(self.config.BENCHMARK_GNN_MODELS_TO_RUN) * num_variants) + (len(self.config.BENCHMARK_NE_MODELS_TO_RUN) * 1)
+            self.assertEqual(len(results.get("model").unique()), expected_len, f"Expected {expected_len} models, but found {len(results.get('model').unique())}.")
             self.assertIn("model", results.columns, "Results DataFrame is missing 'model' column.")
             self.assertIn("Accuracy", results.columns, "Results DataFrame is missing 'Accuracy' column.")
 

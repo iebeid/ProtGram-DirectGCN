@@ -61,10 +61,14 @@ class CheckpointManager:
         for item in files_to_checksum:
             if isinstance(item, dict) and "path" in item:
                 # --- DEFINITIVE FIX: Handle checksum failures explicitly ---
-                # If checksum calculation fails (e.g., for a directory), store a
-                # specific marker. This prevents the "" == "" bug during validation.
-                checksum = FileUtils.calculate_sha256(item["path"])
-                item["sha256"] = checksum if checksum is not None else "checksum_failed"
+                # Wrap in a try-except block to prevent a crash if a single file
+                # is problematic (e.g., permissions error).
+                try:
+                    checksum = FileUtils.calculate_sha256(item["path"])
+                    item["sha256"] = checksum if checksum is not None else "checksum_failed"
+                except Exception as e:
+                    print(f"  - WARNING: Could not calculate checksum for {item['path']}. Error: {e}. Marking as invalid for next run.")
+                    item["sha256"] = "checksum_failed"
 
         self.data[step_name] = serializable_data
         # --- DEFINITIVE FIX: Implement atomic write to prevent corruption ---
