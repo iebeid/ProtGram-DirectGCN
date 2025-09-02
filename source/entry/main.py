@@ -277,16 +277,10 @@ class PipelineOrchestrator:
                 if not files_to_process:
                     print("\nERROR: No sequence files defined. Cannot run experiments.")
                     return
-
-                # --- DEFINITIVE FIX: Restore the missing FASTA sampling message ---
-                # This provides clear feedback to the user about which files are being processed.
                 if self.base_config.SEQUENCE_DOWNSAMPLE_FRACTION is not None and self.base_config.SEQUENCE_DOWNSAMPLE_FRACTION < 1.0:
-                    print(f"\n--- INFO: FASTA downsampling is active (fraction: {self.base_config.SEQUENCE_DOWNSAMPLE_FRACTION}). ---")
-                    print("--- The following sampled files will be processed by the pipelines: ---")
-                    for f in files_to_process:
-                        print(f"  - {f.name}")
+                    DataUtils.print_header(f"FASTA Downsampling Active ({self.base_config.SEQUENCE_DOWNSAMPLE_FRACTION * 100:.1f}%)")
                 else:
-                    print("\n--- INFO: FASTA downsampling is not active. Processing original files. ---")
+                    DataUtils.print_header("FASTA Downsampling Inactive (Processing Full Files)")
 
                 if self.base_config.RUN_TRANSFORMER_PIPELINE:
                     DataUtils.print_header("Verifying Transformer Model Availability")

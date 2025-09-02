@@ -323,8 +323,9 @@ class Config:
     def _setup_paths(self):
         """Sets up all base, data, and results paths for the project."""
         self.BASE_CONFIG_DIR = self.PROJECT_ROOT / "configuration"
-        self.BASE_DATA_DIR = self.PROJECT_ROOT / "data"
-        self.BASE_OUTPUT_DIR = self.PROJECT_ROOT / "results"
+        self.BASE_DATA_DIR = self.PROJECT_ROOT / "data" # --- DEFINITIVE FIX: Remove the line that overwrites the unique run directory ---
+        # The BASE_OUTPUT_DIR is now set correctly and uniquely in the __init__ method.
+        # This line was incorrectly resetting it back to the generic '/results' folder.
         self.PERSISTENT_DATA_CACHE = Path.home() / ".cache" / "protgram_directgcn"
         self.LOG_DIR = self.BASE_OUTPUT_DIR / "logs"
         self.DATA_SEQUENCES_DIR = self.BASE_DATA_DIR / "sequences"

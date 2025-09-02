@@ -72,12 +72,11 @@ echo "  - ✅ Pip package check complete."
 
 # --- Step 2: Update the Repository ---
 echo -e "\n--- STEP 2: Synchronizing project with the latest changes from Git ---"
-# --- DEFINITIVE FIX for Git Conflicts: Use fetch and reset ---
-# This is a robust way to update the code to match the remote repository exactly,
-# automatically resolving any local conflicts or changes to tracked files.
-# This command WILL NOT affect your 'data/' or 'results/' directories because they are git-ignored.
-git fetch origin
-git reset --hard origin/v2 # --- DEFINITIVE FIX: Point to the correct 'v2' branch ---
+# --- DEFINITIVE FIX for Preserving Local Changes: Use 'git pull' ---
+# The previous 'git reset --hard' command was destructive and would wipe out
+# any local code modifications. 'git pull' is the standard, safe way to
+# update the repository by fetching and merging changes.
+git pull origin v2
 echo "SUCCESS: Project repository is up to date."
 
 # --- Step 3: Run the Main Application ---
