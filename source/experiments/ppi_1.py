@@ -145,14 +145,15 @@ class PPIPipeline:
         try:
             # --- DEFINITIVE FIX: Restore the missing model.fit() call ---
             # The model must be trained on the training data for each fold.
-            print(f"    Starting model training for {self.config.EVAL_EPOCHS} epochs...")
+            print(f"    Starting model training for {self.config.EVAL_EPOCHS} epochs...") # noqa
             callbacks = [tf_keras.callbacks.EarlyStopping(monitor='val_loss',
                                                           patience=self.config.EARLY_STOPPING_PATIENCE,
                                                           restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else []
-            history = model.fit(X_train, y_train, epochs=self.config.EVAL_EPOCHS, validation_data=(X_val, y_val),
-                                batch_size=self.config.EVAL_BATCH_SIZE,
-                                verbose=1 if self.config.DEBUG_VERBOSE else 0,
-                                class_weight=class_weight, callbacks=callbacks)
+            history = model.fit(X_train, y_train, epochs=self.config.EVAL_EPOCHS, validation_data=(X_val, y_val), # noqa
+                                batch_size=self.config.EVAL_BATCH_SIZE, # noqa
+                                validation_batch_size=self.config.EVAL_BATCH_SIZE, # noqa
+                                verbose=1 if self.config.DEBUG_VERBOSE else 0, # noqa
+                                class_weight=class_weight, callbacks=callbacks) # noqa
             print("    Model training finished.")
 
             # --- Evaluate Model ---
