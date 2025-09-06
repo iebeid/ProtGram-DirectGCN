@@ -11,6 +11,8 @@ from typing import Optional, Dict, Any, Callable, Type
 import torch.nn as nn
 
 from configuration.config import Config
+from source.utils.data.data_utils import DataUtils
+from source.utils.data.data_utils import DataUtils
 # --- Import all models that can be registered ---
 from source.models.gnn.spectral.chebnet import ChebNet
 from source.models.gnn.spectral.directgcn import DirectGCN
@@ -119,19 +121,13 @@ class ModelFactory:
         if not model_class:
             raise ValueError(f"Unknown model name: '{model_name}'. Supported models are: {list(self._registry.keys())}")
 
-        # --- NEW: In-memory instance caching ---
-        # Create a unique key based on model name, context, and key parameters
-        cache_key_parts = [name_lower, self.context, in_channels, num_classes]
-        # Add other relevant kwargs to the key to ensure uniqueness
-        for k, v in sorted(kwargs.items()):
-            cache_key_parts.append(f"{k}={v}")
-        cache_key = ":".join(map(str, cache_key_parts))
-
-        if cache_key in self._instance_cache:
-            print(f"  Reusing cached instance of '{model_name}' for context '{self.context}'.")
-            return self._instance_cache[cache_key]
-
+        # Always create a fresh instance to avoid state leakage between datasets/runs
         print(f"  Creating new instance of '{model_name}' for context '{self.context}'.")
+        # Reseed before model construction to ensure deterministic initialization
+        try:
+            DataUtils.set_seeds(self.config.RANDOM_STATE)
+        except Exception:
+            pass
         # --- Get context-specific and model-specific parameters ---
         params = self._get_params(name_lower)
 
@@ -158,16 +154,24 @@ class ModelFactory:
 
         # --- Filter args to only those the constructor accepts ---
         model_signature = inspect.signature(model_class.__init__)
+
+        # Provide safe defaults for DirectGCN if these are required and not supplied
+        if name_lower == 'directgcn':
+            if 'num_graph_nodes' in model_signature.parameters and 'num_graph_nodes' not in constructor_args:
+                constructor_args['num_graph_nodes'] = 0
+            if 'l2_eps' in model_signature.parameters and 'l2_eps' not in constructor_args:
+                constructor_args['l2_eps'] = 1e-06
+
         valid_args = {k: v for k, v in constructor_args.items() if k in model_signature.parameters}
 
         try:
             model_instance = model_class(**valid_args)
-            self._instance_cache[cache_key] = model_instance
+            # Do not cache the instance to prevent state leakage between tasks/datasets
             return model_instance
         except TypeError as e:
             print(f"  ERROR: Failed to instantiate model '{model_name}'. Mismatch between provided and expected arguments.")
             print(f"    Provided: {sorted(constructor_args.keys())}")
-            print(f"    Expected: {sorted(model_signature.parameters.keys())}")
+            print(f"    Expected: {sorted([p for p in model_signature.parameters.keys() if p != 'self'])}")
             print(f"    Error: {e}")
             return None
 

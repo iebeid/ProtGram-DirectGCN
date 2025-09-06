@@ -289,16 +289,39 @@ class DirectedNgramGraph(Graph):
         return self._mathcal_A_in
 
     @staticmethod
+    def _count_unique_undirected_edges(sym_coalesced: torch.Tensor) -> int:
+        """
+        Counts unique undirected edges in a symmetric, coalesced sparse COO tensor.
+        For each unordered pair (i, j), i != j, counts once; self-loops (i == j) count once.
+        """
+        if sym_coalesced is None or sym_coalesced._nnz() == 0:
+            return 0
+        idx = sym_coalesced.indices()
+        row, col = idx[0], idx[1]
+        # Count one per unordered pair; include diagonal once
+        upper_mask = row <= col
+        upper_row = row[upper_mask]
+        upper_col = col[upper_mask]
+        # Unique pairs in the upper triangle (including diagonal)
+        # Stack then unique along columns
+        if upper_row.numel() == 0:
+            return 0
+        pairs = torch.stack([upper_row, upper_col], dim=0)
+        # Convert to tuple of ints for uniqueness if torch.unique with dim not available in older versions
+        try:
+            unique_pairs = torch.unique(pairs, dim=1)
+            return unique_pairs.size(1)
+        except Exception:
+            # Fallback: use Python set of tuples
+            return len(set((int(r), int(c)) for r, c in zip(upper_row.tolist(), upper_col.tolist())))
+
+    @staticmethod
     def split_edges_by_homophily(A_out_w: torch.Tensor, num_nodes: int, labels: torch.Tensor) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
         """
         Splits the raw weighted directed edge matrices (A_out_w, A_in_w) into
         homophilous (nodes in an edge have the same label) and heterophilous
         (nodes have different labels) components. This method is functional and
-        returns the normalized matrices instead
-        of modifying the object state, which is a safer design pattern.
-
-        Returns:
-            A tuple of (A_homo_norm, A_hetero_norm) or None if the graph is empty.
+        returns the normalized matrices instead of modifying the object state.
         """
         # --- ANTICIPATORY DEBUGGING: Check for invalid state before proceeding ---
         if num_nodes == 0 or A_out_w is None or A_out_w._nnz() == 0:
@@ -318,11 +341,15 @@ class DirectedNgramGraph(Graph):
         A_out_w_hetero = torch.sparse_coo_tensor(edge_index[:, hetero_mask], edge_weights[hetero_mask], A_out_w.shape).coalesce()
 
         print("    Normalizing homophilic and heterophilic matrices...")
-        A_homo_norm = DirectedNgramGraph._normalize_symmetric_matrix((A_out_w_homo + A_out_w_homo.t()).coalesce(), num_nodes)
-        A_hetero_norm = DirectedNgramGraph._normalize_symmetric_matrix((A_out_w_hetero + A_out_w_hetero.t()).coalesce(), num_nodes)
+        homo_sym = (A_out_w_homo + A_out_w_homo.t()).coalesce()
+        hetero_sym = (A_out_w_hetero + A_out_w_hetero.t()).coalesce()
+        A_homo_norm = DirectedNgramGraph._normalize_symmetric_matrix(homo_sym, num_nodes)
+        A_hetero_norm = DirectedNgramGraph._normalize_symmetric_matrix(hetero_sym, num_nodes)
 
-        print(f"    - Undirected Homophilous Edges: {(A_out_w_homo + A_out_w_homo.t())._nnz()}")
-        print(f"    - Undirected Heterophilous Edges: {(A_out_w_hetero + A_out_w_hetero.t())._nnz()}")
+        homo_undir_unique = DirectedNgramGraph._count_unique_undirected_edges(homo_sym)
+        hetero_undir_unique = DirectedNgramGraph._count_unique_undirected_edges(hetero_sym)
+        print(f"    - Undirected Homophilous Edges: {homo_undir_unique}")
+        print(f"    - Undirected Heterophilous Edges: {hetero_undir_unique}")
         return A_homo_norm, A_hetero_norm
 
     def create_subgraph_data_for_model(self, model_type: str,

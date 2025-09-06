@@ -239,6 +239,30 @@ class PipelineOrchestrator:
             os.environ['DASK_TEMPORARY_DIRECTORY'] = str(dask_temp_dir)
             print(f"  - Dask temporary directory set to: {dask_temp_dir}")
 
+            # Ensure all temporary files live under the run's results directory for reproducibility
+            tmp_root = self.base_config.BASE_OUTPUT_DIR / "tmp"
+            tmp_root.mkdir(exist_ok=True, parents=True)
+            os.environ['TMPDIR'] = str(tmp_root)
+            tempfile.tempdir = str(tmp_root)
+
+            # Route HuggingFace/Transformers cache under results to avoid /tmp usage
+            hf_cache = self.base_config.BASE_OUTPUT_DIR / "hf_cache"
+            hf_cache.mkdir(exist_ok=True, parents=True)
+            os.environ['TRANSFORMERS_CACHE'] = str(hf_cache)
+            os.environ['HF_HOME'] = str(hf_cache)
+
+            # Ensure all temporary files live under the run's results directory for reproducibility
+            tmp_root = self.base_config.BASE_OUTPUT_DIR / "tmp"
+            tmp_root.mkdir(exist_ok=True, parents=True)
+            os.environ['TMPDIR'] = str(tmp_root)
+            tempfile.tempdir = str(tmp_root)
+
+            # Route HuggingFace/Transformers cache under results to avoid /tmp usage
+            hf_cache = self.base_config.BASE_OUTPUT_DIR / "hf_cache"
+            hf_cache.mkdir(exist_ok=True, parents=True)
+            os.environ['TRANSFORMERS_CACHE'] = str(hf_cache)
+            os.environ['HF_HOME'] = str(hf_cache)
+
             DataUtils.report_system_resources(self.base_config.BASE_OUTPUT_DIR)
 
             if self.base_config.DEBUG_VERBOSE:
@@ -252,11 +276,7 @@ class PipelineOrchestrator:
 
             if self.base_config.RUN_INTEGRATED_TESTS:
                 DataUtils.print_header("Running Integrated Test Suite")
-                # BUG FIX NOTE: The creation of multiple run directories likely stems from
-                # test suites creating new Config() instances. The ideal fix is to refactor
-                # run_all_tests and individual tests to accept a config object, e.g.,
-                # run_all_tests(self.base_config), but this cannot be done without modifying test files.
-                gpu_is_ok = run_all_tests()
+                gpu_is_ok = run_all_tests(config=self.base_config)
                 DataUtils.print_header("Integrated Test Suite Finished.")
                 if not gpu_is_ok:
                     print("\n" + "!" * 80)

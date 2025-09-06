@@ -1,4 +1,4 @@
---- Logging all console output to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/logs/run_20250906_185431.log ---
+--- Logging all console output to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/logs/run_20250906_212418.log ---
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
 
 ========================================================
@@ -590,14 +590,14 @@
   - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.16.parquet
   - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.28.parquet
   - ✅ Local data is valid.
-  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/dask_temp
+  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/dask_temp
 
 ======================================
 ### System Resource Pre-flight Check ###
 ======================================
 
-RAM: 119.12 GB Available / 125.59 GB Total
-Disk (/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431): 755.07 GB Free / 883.50 GB Total
+RAM: 119.29 GB Available / 125.59 GB Total
+Disk (/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418): 755.06 GB Free / 883.50 GB Total
 GPU(s):
   - GPU 0 (NVIDIA RTX 6000 Ada Generation): 47.37 GB Total Memory
 --------------------------------------
@@ -608,7 +608,7 @@ GPU(s):
   APPLY_PCA_TO_W2V                         | True
   BASE_CONFIG_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/configuration
   BASE_DATA_DIR                            | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data
-  BASE_OUTPUT_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431
+  BASE_OUTPUT_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418
   BENCHMARK_CHEBNET_K                      | 3
   BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS    | [64]
   BENCHMARK_GAT_DROPOUT_RATE               | 0.5
@@ -678,7 +678,7 @@ GPU(s):
   HPO_TARGET_EMBEDDING_MODEL               | directgcn
   ID_MAPPING_MODE                          | regex
   ID_MAPPING_PATH                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/mappings/id_mapping.parquet
-  LOG_DIR                                  | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/logs
+  LOG_DIR                                  | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/logs
   LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE       | [{'name': 'ProtT5', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/models/per-protein.h5')}]
   LSTM_BATCH_SIZE                          | 64
   LSTM_DROPOUT_RATE                        | 0.5
@@ -701,7 +701,7 @@ GPU(s):
   MLFLOW_LLMS_EXPERIMENT_NAME              | LLMs
   MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME      | GNN-Benchmarking
   MLFLOW_PROTGRAM_XGCN_EXPERIMENT_NAME     | ProtGram-XGCN
-  MLFLOW_TRACKING_URI                      | file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/mlruns
+  MLFLOW_TRACKING_URI                      | file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/mlruns
   NEG_INTERACTIONS_PATH                    | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/negative_interactions.parquet
   NEG_INTERACTIONS_RAW_PATHS               | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_1.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_2.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_3.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_4.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_5.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_6.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_7.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_8.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_9.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_10.mitab')]
   ORIGINAL_SEQUENCE_FILE_PATHS             | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/sequences/uniprot_sprot.fasta')]
@@ -759,14 +759,14 @@ GPU(s):
   RANDOM_STATE                             | 42
   REGEX_COMPATIBILITY_SAMPLE_SIZE          | 1000
   REGEX_CONFIDENCE_THRESHOLD               | 0.95
-  RESULTS_BENCHMARKING_DIR                 | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/benchmarking_results
-  RESULTS_BENCHMARK_EMBEDDINGS_DIR         | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/benchmarking_results/embeddings
-  RESULTS_EVALUATION_DIR                   | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/evaluation_results
-  RESULTS_GCN_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/gcn_embeddings
-  RESULTS_GRAPH_OBJECTS_DIR                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/graph_objects
-  RESULTS_LSTM_EMBEDDINGS_DIR              | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/lstm_embeddings
-  RESULTS_TRANSFORMER_EMBEDDINGS_DIR       | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/transformer_embeddings
-  RESULTS_W2V_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/word2vec_embeddings
+  RESULTS_BENCHMARKING_DIR                 | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/benchmarking_results
+  RESULTS_BENCHMARK_EMBEDDINGS_DIR         | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/benchmarking_results/embeddings
+  RESULTS_EVALUATION_DIR                   | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/evaluation_results
+  RESULTS_GCN_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/gcn_embeddings
+  RESULTS_GRAPH_OBJECTS_DIR                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/graph_objects
+  RESULTS_LSTM_EMBEDDINGS_DIR              | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/lstm_embeddings
+  RESULTS_TRANSFORMER_EMBEDDINGS_DIR       | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/transformer_embeddings
+  RESULTS_W2V_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/word2vec_embeddings
   RUN_BENCHMARKING_PIPELINE                | True
   RUN_HPO                                  | True
   RUN_INTEGRATED_TESTS                     | True
@@ -814,7 +814,7 @@ GPU(s):
 ===================================
 
 --- Running Dummy PPI Pipeline Smoke Test ---
-Creating dummy data in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/dummy_data_temp
+Creating dummy data in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/dummy_data_temp
 PPIPipeline initialized.
 
 =========================================
@@ -832,7 +832,7 @@ PPIPipeline initialized.
 ### Processing Embedding: DummyEmb ###
 ====================================
 
-  Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/dummy_data_temp/dummy_embeddings.h5
+  Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/dummy_data_temp/dummy_embeddings.h5
   Memory Strategy ('high'): Attempting to load 'dummy_embeddings.h5' into RAM.
   Memory Strategy ('high'): Loading 'dummy_embeddings.h5' into RAM for faster access.
   Found 50 embeddings. Filtering interaction files against these IDs...
@@ -841,16 +841,16 @@ PPIPipeline initialized.
   High-performance filtering pairs from: dummy_negative_interactions.csv (label: 0)...
     Found 0 pairs with available embeddings.
   No interaction pairs remain after filtering against available embeddings for DummyEmb. Skipping CV.
---- Memory Usage (After processing DummyEmb): RSS = 1149.59 MB ---
+--- Memory Usage (After processing DummyEmb): RSS = 1150.07 MB ---
   GPU Memory: Allocated = 0.00 MB, Reserved = 0.00 MB
 
 
 =================================================================
-### PPI Evaluation Pipeline (MAIN EVALUATION) FINISHED in 0.27s ###
+### PPI Evaluation Pipeline (MAIN EVALUATION) FINISHED in 0.25s ###
 =================================================================
 
 --- Dummy PPI Pipeline Smoke Test Finished Successfully ---
-Cleaned up dummy data directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/dummy_data_temp
+Cleaned up dummy data directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/dummy_data_temp
 
 ================================================================================
 
@@ -911,7 +911,13 @@ Tests the IDMapper's pre-generation of cache files from a parquet source. ...
 
 ================================================================================
   INFO: Starting direct conversion of 'idmapping.dat' to dictionary...
-ERROR
+  - Filtering mappings to trusted databases...
+  - De-duplicating mappings to create a canonical one-to-one map...
+  - Dask is now writing the final Parquet file. This may take a while...
+
+  - ✅ Success! Generated ID map Parquet file at /tmp/tmp5ortw7iu/data/mappings/id_mapping.parquet.
+--- IDMapper Pregeneration Test Complete ---
+ok
 test_protgram_data_builder_smoke_test (source.testers.data_utility.DataUtilityTests.test_protgram_data_builder_smoke_test)
 Smoke test for the ProtGramDataBuilder to ensure it runs without crashing. ...
 ================================================================================
@@ -921,11 +927,11 @@ Smoke test for the ProtGramDataBuilder to ensure it runs without crashing. ...
 =====================================
 
 ================================================================================
-ProtGramDataBuilder initialized: n_max=2, configured_workers=31, output_dir='/tmp/tmpkfvjdfud/graph_objects'
-  - Dask temporary directory set to: /tmp/tmpkfvjdfud/temp_graph_builder
+ProtGramDataBuilder initialized: n_max=2, configured_workers=31, output_dir='/tmp/tmp3gb43y2q/graph_objects'
+  - Dask temporary directory set to: /tmp/tmp3gb43y2q/temp_graph_builder
 
 ==============================================================================
-### ProtGramDataBuilder Initialized (Output: /tmp/tmpkfvjdfud/graph_objects) ###
+### ProtGramDataBuilder Initialized (Output: /tmp/tmp3gb43y2q/graph_objects) ###
 ==============================================================================
 
 
@@ -941,8 +947,8 @@ ProtGramDataBuilder initialized: n_max=2, configured_workers=31, output_dir='/tm
 --------------------------------------
 
   Info: Graph file for n=1 not found. Will proceed with full build.
-Temporary files will be stored in: /tmp/tmpkfvjdfud/temp_graph_builder
-Final graph objects will be saved to: /tmp/tmpkfvjdfud/graph_objects
+Temporary files will be stored in: /tmp/tmp3gb43y2q/temp_graph_builder
+Final graph objects will be saved to: /tmp/tmp3gb43y2q/graph_objects
   - Cleaning enabled for FASTA parsing.
 
 =========================================
@@ -954,7 +960,7 @@ Final graph objects will be saved to: /tmp/tmpkfvjdfud/graph_objects
   - Creating map for n=2...
     Unique n-gram map for n=2 (size: 145) created.
 
-<<< Phase 1 finished in 0.13s.
+<<< Phase 1 finished in 0.18s.
 
 ===================================
 ### Phase 2: Generating All Edges ###
@@ -963,7 +969,7 @@ Final graph objects will be saved to: /tmp/tmpkfvjdfud/graph_objects
   - Aggregating edges for n=1...
   - Aggregating edges for n=2...
 
-<<< Phase 2 finished in 0.71s.
+<<< Phase 2 finished in 0.76s.
 
 ======================================================
 ### Phase 3: Building and saving final graph objects ###
@@ -974,9 +980,9 @@ Final graph objects will be saved to: /tmp/tmpkfvjdfud/graph_objects
   Loaded 21 n-grams for n=1 from map file.
   Instantiating DirectedNgramGraph object for n=1 from file...
     Loading edges from aggregated_edges_n1.parquet...
-  JSON data saved to /tmp/tmpkfvjdfud/graph_objects/ngram_graph_n1/metadata.json
-  JSON data saved to /tmp/tmpkfvjdfud/graph_objects/ngram_graph_n1/metadata.json
-  Graph components saved to directory: /tmp/tmpkfvjdfud/graph_objects/ngram_graph_n1
+  JSON data saved to /tmp/tmp3gb43y2q/graph_objects/ngram_graph_n1/metadata.json
+  JSON data saved to /tmp/tmp3gb43y2q/graph_objects/ngram_graph_n1/metadata.json
+  Graph components saved to directory: /tmp/tmp3gb43y2q/graph_objects/ngram_graph_n1
     --- Graph Statistics for n=1 ---
       Nodes: 21
       Edges (unique weighted): 145
@@ -993,15 +999,15 @@ Final graph objects will be saved to: /tmp/tmpkfvjdfud/graph_objects
       Degree Assortativity: -0.1037
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=1 ---
-  Graph for n=1 saved to /tmp/tmpkfvjdfud/graph_objects/ngram_graph_n1
+  Graph for n=1 saved to /tmp/tmp3gb43y2q/graph_objects/ngram_graph_n1
 
 --- Processing n = 2 for final graph object ---
   Loaded 145 n-grams for n=2 from map file.
   Instantiating DirectedNgramGraph object for n=2 from file...
     Loading edges from aggregated_edges_n2.parquet...
-  JSON data saved to /tmp/tmpkfvjdfud/graph_objects/ngram_graph_n2/metadata.json
-  JSON data saved to /tmp/tmpkfvjdfud/graph_objects/ngram_graph_n2/metadata.json
-  Graph components saved to directory: /tmp/tmpkfvjdfud/graph_objects/ngram_graph_n2
+  JSON data saved to /tmp/tmp3gb43y2q/graph_objects/ngram_graph_n2/metadata.json
+  JSON data saved to /tmp/tmp3gb43y2q/graph_objects/ngram_graph_n2/metadata.json
+  Graph components saved to directory: /tmp/tmp3gb43y2q/graph_objects/ngram_graph_n2
     --- Graph Statistics for n=2 ---
       Nodes: 145
       Edges (unique weighted): 168
@@ -1016,22 +1022,22 @@ Final graph objects will be saved to: /tmp/tmpkfvjdfud/graph_objects
       Degree Assortativity: -0.1040
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=2 ---
-  Graph for n=2 saved to /tmp/tmpkfvjdfud/graph_objects/ngram_graph_n2
+  Graph for n=2 saved to /tmp/tmp3gb43y2q/graph_objects/ngram_graph_n2
 
-<<< Phase 3 finished in 1.49s.
+<<< Phase 3 finished in 1.61s.
 
 ==========================================
 ### Phase 4: Cleaning up temporary files ###
 ==========================================
 
-  Temporary directory /tmp/tmpkfvjdfud/temp_graph_builder cleaned up.
+  Temporary directory /tmp/tmp3gb43y2q/temp_graph_builder cleaned up.
 <<< Phase 4 finished in 0.00s.
 
 =============================================
-### N-gram Graph Building FINISHED in 5.67s ###
+### N-gram Graph Building FINISHED in 5.74s ###
 =============================================
 
-  Successfully created graph directory: /tmp/tmpkfvjdfud/graph_objects/ngram_graph_n1
+  Successfully created graph directory: /tmp/tmp3gb43y2q/graph_objects/ngram_graph_n1
 --- ProtGramDataBuilder Smoke Test Complete ---
 ok
 test_graph_builder_full_run (source.testers.graph_utility.GraphBuilderTests.test_graph_builder_full_run)
@@ -1043,11 +1049,11 @@ Runs a full, synchronous test of the GraphBuilder pipeline. ...
 ============================================================
 
 ================================================================================
-ProtGramDataBuilder initialized: n_max=3, configured_workers=1, output_dir='/tmp/tmp3zdjrq78/graph_objects'
-  - Dask temporary directory set to: /tmp/tmp3zdjrq78/temp_graph_builder
+ProtGramDataBuilder initialized: n_max=3, configured_workers=1, output_dir='/tmp/tmpfysgu58t/graph_objects'
+  - Dask temporary directory set to: /tmp/tmpfysgu58t/temp_graph_builder
 
 ==============================================================================
-### ProtGramDataBuilder Initialized (Output: /tmp/tmp3zdjrq78/graph_objects) ###
+### ProtGramDataBuilder Initialized (Output: /tmp/tmpfysgu58t/graph_objects) ###
 ==============================================================================
 
 
@@ -1063,8 +1069,8 @@ ProtGramDataBuilder initialized: n_max=3, configured_workers=1, output_dir='/tmp
 --------------------------------------
 
   Info: Graph file for n=1 not found. Will proceed with full build.
-Temporary files will be stored in: /tmp/tmp3zdjrq78/temp_graph_builder
-Final graph objects will be saved to: /tmp/tmp3zdjrq78/graph_objects
+Temporary files will be stored in: /tmp/tmpfysgu58t/temp_graph_builder
+Final graph objects will be saved to: /tmp/tmpfysgu58t/graph_objects
   - Cleaning enabled for FASTA parsing.
 
 =========================================
@@ -1088,7 +1094,7 @@ Final graph objects will be saved to: /tmp/tmp3zdjrq78/graph_objects
   - Aggregating edges for n=2...
   - Aggregating edges for n=3...
 
-<<< Phase 2 finished in 0.36s.
+<<< Phase 2 finished in 0.37s.
 
 ======================================================
 ### Phase 3: Building and saving final graph objects ###
@@ -1099,9 +1105,9 @@ Final graph objects will be saved to: /tmp/tmp3zdjrq78/graph_objects
   Loaded 5 n-grams for n=1 from map file.
   Instantiating DirectedNgramGraph object for n=1 from file...
     Loading edges from aggregated_edges_n1.parquet...
-  JSON data saved to /tmp/tmp3zdjrq78/graph_objects/ngram_graph_n1/metadata.json
-  JSON data saved to /tmp/tmp3zdjrq78/graph_objects/ngram_graph_n1/metadata.json
-  Graph components saved to directory: /tmp/tmp3zdjrq78/graph_objects/ngram_graph_n1
+  JSON data saved to /tmp/tmpfysgu58t/graph_objects/ngram_graph_n1/metadata.json
+  JSON data saved to /tmp/tmpfysgu58t/graph_objects/ngram_graph_n1/metadata.json
+  Graph components saved to directory: /tmp/tmpfysgu58t/graph_objects/ngram_graph_n1
     --- Graph Statistics for n=1 ---
       Nodes: 5
       Edges (unique weighted): 11
@@ -1116,15 +1122,15 @@ Final graph objects will be saved to: /tmp/tmp3zdjrq78/graph_objects
       Degree Assortativity: -0.0408
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=1 ---
-  Graph for n=1 saved to /tmp/tmp3zdjrq78/graph_objects/ngram_graph_n1
+  Graph for n=1 saved to /tmp/tmpfysgu58t/graph_objects/ngram_graph_n1
 
 --- Processing n = 2 for final graph object ---
   Loaded 11 n-grams for n=2 from map file.
   Instantiating DirectedNgramGraph object for n=2 from file...
     Loading edges from aggregated_edges_n2.parquet...
-  JSON data saved to /tmp/tmp3zdjrq78/graph_objects/ngram_graph_n2/metadata.json
-  JSON data saved to /tmp/tmp3zdjrq78/graph_objects/ngram_graph_n2/metadata.json
-  Graph components saved to directory: /tmp/tmp3zdjrq78/graph_objects/ngram_graph_n2
+  JSON data saved to /tmp/tmpfysgu58t/graph_objects/ngram_graph_n2/metadata.json
+  JSON data saved to /tmp/tmpfysgu58t/graph_objects/ngram_graph_n2/metadata.json
+  Graph components saved to directory: /tmp/tmpfysgu58t/graph_objects/ngram_graph_n2
     --- Graph Statistics for n=2 ---
       Nodes: 11
       Edges (unique weighted): 9
@@ -1139,15 +1145,15 @@ Final graph objects will be saved to: /tmp/tmp3zdjrq78/graph_objects
       Degree Assortativity: -0.3776
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=2 ---
-  Graph for n=2 saved to /tmp/tmp3zdjrq78/graph_objects/ngram_graph_n2
+  Graph for n=2 saved to /tmp/tmpfysgu58t/graph_objects/ngram_graph_n2
 
 --- Processing n = 3 for final graph object ---
   Loaded 9 n-grams for n=3 from map file.
   Instantiating DirectedNgramGraph object for n=3 from file...
     Loading edges from aggregated_edges_n3.parquet...
-  JSON data saved to /tmp/tmp3zdjrq78/graph_objects/ngram_graph_n3/metadata.json
-  JSON data saved to /tmp/tmp3zdjrq78/graph_objects/ngram_graph_n3/metadata.json
-  Graph components saved to directory: /tmp/tmp3zdjrq78/graph_objects/ngram_graph_n3
+  JSON data saved to /tmp/tmpfysgu58t/graph_objects/ngram_graph_n3/metadata.json
+  JSON data saved to /tmp/tmpfysgu58t/graph_objects/ngram_graph_n3/metadata.json
+  Graph components saved to directory: /tmp/tmpfysgu58t/graph_objects/ngram_graph_n3
     --- Graph Statistics for n=3 ---
       Nodes: 9
       Edges (unique weighted): 6
@@ -1162,22 +1168,22 @@ Final graph objects will be saved to: /tmp/tmp3zdjrq78/graph_objects
       Degree Assortativity: -0.3333
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=3 ---
-  Graph for n=3 saved to /tmp/tmp3zdjrq78/graph_objects/ngram_graph_n3
+  Graph for n=3 saved to /tmp/tmpfysgu58t/graph_objects/ngram_graph_n3
 
-<<< Phase 3 finished in 2.20s.
+<<< Phase 3 finished in 2.42s.
 
 ==========================================
 ### Phase 4: Cleaning up temporary files ###
 ==========================================
 
-  Temporary directory /tmp/tmp3zdjrq78/temp_graph_builder cleaned up.
+  Temporary directory /tmp/tmpfysgu58t/temp_graph_builder cleaned up.
 <<< Phase 4 finished in 0.00s.
 
 =============================================
-### N-gram Graph Building FINISHED in 5.89s ###
+### N-gram Graph Building FINISHED in 6.15s ###
 =============================================
 
-Total time for script: 5.89s
+Total time for script: 6.15s
 --- GraphBuilder Full Run Test Complete ---
 ok
 test_graph_builder_smoke (source.testers.graph_utility.GraphBuilderTests.test_graph_builder_smoke)
@@ -1189,11 +1195,11 @@ Smoke test for GraphBuilder.run() with minimal config. ...
 ========================================
 
 ================================================================================
-ProtGramDataBuilder initialized: n_max=1, configured_workers=1, output_dir='/tmp/tmpq1k624sz/graph_objects'
-  - Dask temporary directory set to: /tmp/tmpq1k624sz/temp_graph_builder
+ProtGramDataBuilder initialized: n_max=1, configured_workers=1, output_dir='/tmp/tmpp891w8zx/graph_objects'
+  - Dask temporary directory set to: /tmp/tmpp891w8zx/temp_graph_builder
 
 ==============================================================================
-### ProtGramDataBuilder Initialized (Output: /tmp/tmpq1k624sz/graph_objects) ###
+### ProtGramDataBuilder Initialized (Output: /tmp/tmpp891w8zx/graph_objects) ###
 ==============================================================================
 
 
@@ -1209,8 +1215,8 @@ ProtGramDataBuilder initialized: n_max=1, configured_workers=1, output_dir='/tmp
 --------------------------------------
 
   Info: Graph file for n=1 not found. Will proceed with full build.
-Temporary files will be stored in: /tmp/tmpq1k624sz/temp_graph_builder
-Final graph objects will be saved to: /tmp/tmpq1k624sz/graph_objects
+Temporary files will be stored in: /tmp/tmpp891w8zx/temp_graph_builder
+Final graph objects will be saved to: /tmp/tmpp891w8zx/graph_objects
   - Cleaning enabled for FASTA parsing.
 
 =========================================
@@ -1220,7 +1226,7 @@ Final graph objects will be saved to: /tmp/tmpq1k624sz/graph_objects
   - Creating map for n=1...
     Unique n-gram map for n=1 (size: 5) created.
 
-<<< Phase 1 finished in 0.03s.
+<<< Phase 1 finished in 0.04s.
 
 ===================================
 ### Phase 2: Generating All Edges ###
@@ -1239,9 +1245,9 @@ Final graph objects will be saved to: /tmp/tmpq1k624sz/graph_objects
   Loaded 5 n-grams for n=1 from map file.
   Instantiating DirectedNgramGraph object for n=1 from file...
     Loading edges from aggregated_edges_n1.parquet...
-  JSON data saved to /tmp/tmpq1k624sz/graph_objects/ngram_graph_n1/metadata.json
-  JSON data saved to /tmp/tmpq1k624sz/graph_objects/ngram_graph_n1/metadata.json
-  Graph components saved to directory: /tmp/tmpq1k624sz/graph_objects/ngram_graph_n1
+  JSON data saved to /tmp/tmpp891w8zx/graph_objects/ngram_graph_n1/metadata.json
+  JSON data saved to /tmp/tmpp891w8zx/graph_objects/ngram_graph_n1/metadata.json
+  Graph components saved to directory: /tmp/tmpp891w8zx/graph_objects/ngram_graph_n1
     --- Graph Statistics for n=1 ---
       Nodes: 5
       Edges (unique weighted): 11
@@ -1256,19 +1262,19 @@ Final graph objects will be saved to: /tmp/tmpq1k624sz/graph_objects
       Degree Assortativity: -0.0408
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=1 ---
-  Graph for n=1 saved to /tmp/tmpq1k624sz/graph_objects/ngram_graph_n1
+  Graph for n=1 saved to /tmp/tmpp891w8zx/graph_objects/ngram_graph_n1
 
-<<< Phase 3 finished in 0.75s.
+<<< Phase 3 finished in 0.81s.
 
 ==========================================
 ### Phase 4: Cleaning up temporary files ###
 ==========================================
 
-  Temporary directory /tmp/tmpq1k624sz/temp_graph_builder cleaned up.
+  Temporary directory /tmp/tmpp891w8zx/temp_graph_builder cleaned up.
 <<< Phase 4 finished in 0.00s.
 
 =============================================
-### N-gram Graph Building FINISHED in 4.09s ###
+### N-gram Graph Building FINISHED in 4.17s ###
 =============================================
 
 
@@ -1363,13 +1369,13 @@ test_word2vec_pipeline_run (source.testers.word2vec.Word2VecPipelineTests.test_w
 ### Word2VecEmbedder Initialized ###
 ==================================
 
-2025/09/06 18:54:51 INFO mlflow.tracking.fluent: Experiment with name 'LLMs' does not exist. Creating a new experiment.
+2025/09/06 21:24:44 INFO mlflow.tracking.fluent: Experiment with name 'LLMs' does not exist. Creating a new experiment.
 
 ==============================================================
 ### PIPELINE STEP: Training Word2Vec & Generating Embeddings ###
 ==============================================================
 
-  Creating temporary line corpus at: /tmp/tmpwjoc2fs_.txt
+  Creating temporary line corpus at: /tmp/tmpznvuekk5.txt
 
 
 =====================================
@@ -1415,7 +1421,7 @@ test_transformer_embedder_pipeline_run (source.testers.transformers.TransformerP
   Created dummy ID map parquet file: id_mapping.parquet
 --- Checking for local pre-converted model: Rostlab/prot_bert ---
   Local model not found. Starting conversion process...
-  Output will be saved to: /tmp/tmpcm9jgewm/models/Rostlab/prot_bert
+  Output will be saved to: /tmp/tmpffjbk1u8/models/Rostlab/prot_bert
   Attempting to download native TensorFlow weights directly...
   Native TF weights not found. Attempting to convert from PyTorch weights...
   !!! THIS STEP IS MEMORY-INTENSIVE AND MAY TAKE A WHILE !!!
@@ -1425,16 +1431,16 @@ test_transformer_embedder_pipeline_run (source.testers.transformers.TransformerP
 
   Saving model and tokenizer to disk...
 
---- SUCCESS: Model is now available locally at: /tmp/tmpcm9jgewm/models/Rostlab/prot_bert ---
+--- SUCCESS: Model is now available locally at: /tmp/tmpffjbk1u8/models/Rostlab/prot_bert ---
 --- Checking for local pre-converted model: facebook/esm2_t6_8M_UR50D ---
   Local model not found. Starting conversion process...
-  Output will be saved to: /tmp/tmpcm9jgewm/models/facebook/esm2_t6_8M_UR50D
+  Output will be saved to: /tmp/tmpffjbk1u8/models/facebook/esm2_t6_8M_UR50D
   Attempting to download native TensorFlow weights directly...
   Native TF weights found. Saving them locally...
 
   Saving model and tokenizer to disk...
 
---- SUCCESS: Model is now available locally at: /tmp/tmpcm9jgewm/models/facebook/esm2_t6_8M_UR50D ---
+--- SUCCESS: Model is now available locally at: /tmp/tmpffjbk1u8/models/facebook/esm2_t6_8M_UR50D ---
 
 =====================================
 ### TransformerEmbedder Initialized ###
@@ -1455,11 +1461,11 @@ test_transformer_embedder_pipeline_run (source.testers.transformers.TransformerP
 ### Loading Transformer Model: ProtBERT (Rostlab/prot_bert) ###
 =============================================================
 
-  Found locally pre-converted TensorFlow model at: /tmp/tmpcm9jgewm/models/Rostlab/prot_bert
+  Found locally pre-converted TensorFlow model at: /tmp/tmpffjbk1u8/models/Rostlab/prot_bert
   Loading from local path...
   Creating inference function (is_t5=False, is_esm=False, use_xla=True)...
   JIT Compiling concrete function with XLA...
-  Model and tokenizer loaded in 18.52s. Embedding dim: 1024
+  Model and tokenizer loaded in 18.40s. Embedding dim: 1024
 
 
 
@@ -1473,10 +1479,10 @@ test_transformer_embedder_pipeline_run (source.testers.transformers.TransformerP
 =================================================================
 
   Temporarily setting policy to float32 for ESM model loading and compilation...
-  Found locally pre-converted TensorFlow model at: /tmp/tmpcm9jgewm/models/facebook/esm2_t6_8M_UR50D
+  Found locally pre-converted TensorFlow model at: /tmp/tmpffjbk1u8/models/facebook/esm2_t6_8M_UR50D
   Loading from local path...
   Creating inference function (is_t5=False, is_esm=True, use_xla=True)...
-  Model and tokenizer loaded in 4.05s. Embedding dim: 320
+  Model and tokenizer loaded in 4.08s. Embedding dim: 320
   Restoring original mixed precision policy...
 
 
@@ -1508,10 +1514,10 @@ test_gnn_benchmarker_run (source.testers.gnns.GNNBenchmarkerTests.test_gnn_bench
 =================================
 
   Device: cuda
-  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/benchmarking_results
+  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/benchmarking_results
   Dataset root: /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks
 ================================================================================
-Benchmark embeddings will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/benchmarking_results/embeddings
+Benchmark embeddings will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/benchmarking_results/embeddings
 
 ===============================
 ### PIPELINE: GNN BENCHMARKER ###
@@ -1611,7 +1617,7 @@ GAT(
 ===============================================
 
   Device: cuda
-  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/benchmarking_results
+  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/benchmarking_results
   Dataset root: /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks
 ================================================================================
 
@@ -1675,7 +1681,7 @@ PPIPipeline initialized.
 ### Processing Embedding: DummyEmb ###
 ====================================
 
-  Path: /tmp/tmpbkar5xkr/dummy_embeddings.h5
+  Path: /tmp/tmp78ff5h9f/dummy_embeddings.h5
   Memory Strategy ('high'): Attempting to load 'dummy_embeddings.h5' into RAM.
   Memory Strategy ('high'): Loading 'dummy_embeddings.h5' into RAM for faster access.
   Found 50 embeddings. Filtering interaction files against these IDs...
@@ -1684,12 +1690,12 @@ PPIPipeline initialized.
   High-performance filtering pairs from: dummy_negative_interactions.csv (label: 0)...
     Found 0 pairs with available embeddings.
   No interaction pairs remain after filtering against available embeddings for DummyEmb. Skipping CV.
---- Memory Usage (After processing DummyEmb): RSS = 3520.23 MB ---
+--- Memory Usage (After processing DummyEmb): RSS = 3525.32 MB ---
   GPU Memory: Allocated = 64.14 MB, Reserved = 66.00 MB
 
 
 =================================================================
-### PPI Evaluation Pipeline (MAIN EVALUATION) FINISHED in 0.21s ###
+### PPI Evaluation Pipeline (MAIN EVALUATION) FINISHED in 0.23s ###
 =================================================================
 
 
@@ -1728,7 +1734,7 @@ PPIPipeline initialized.
 ### Processing Embedding: SanityCheckEmb ###
 ==========================================
 
-  Path: /tmp/tmpt2yeho_c/sanity_check_embeddings.h5
+  Path: /tmp/tmplazj9u6y/sanity_check_embeddings.h5
   Memory Strategy ('high'): Attempting to load 'sanity_check_embeddings.h5' into RAM.
   Memory Strategy ('high'): Loading 'sanity_check_embeddings.h5' into RAM for faster access.
   Found 50 embeddings. Filtering interaction files against these IDs...
@@ -1752,21 +1758,24 @@ Starting CV workflow for SanityCheckEmb. Total samples: 109
     Starting model training for 1 epochs...
     Model training finished.
     Evaluating model on validation set...
-    Fold 1 Metrics: {'precision_sklearn': 0.1, 'recall_sklearn': 0.03571428571428571, 'f1_sklearn': 0.05263157894736842, 'auc_sklearn': 0.30224867724867727, 'roc_data': (array([0.        , 0.03703704, 0.2962963 , 0.33333333, 0.37037037,
-       0.37037037, 0.44444444, 0.44444444, 0.51851852, 0.51851852,
-       0.55555556, 0.55555556, 0.59259259, 0.7037037 , 0.7037037 ,
-       0.74074074, 0.74074074, 0.77777778, 0.81481481, 0.81481481,
-       0.85185185, 0.85185185, 0.88888889, 0.88888889, 0.92592593,
-       0.92592593, 0.96296296, 0.96296296, 1.        , 1.        ]), array([0.        , 0.        , 0.        , 0.03571429, 0.03571429,
-       0.07142857, 0.07142857, 0.25      , 0.25      , 0.32142857,
-       0.32142857, 0.35714286, 0.42857143, 0.42857143, 0.5       ,
-       0.5       , 0.53571429, 0.53571429, 0.57142857, 0.64285714,
-       0.64285714, 0.71428571, 0.75      , 0.78571429, 0.78571429,
-       0.82142857, 0.82142857, 0.89285714, 0.89285714, 1.        ]), array([   inf, 0.5337, 0.504 , 0.5005, 0.4985, 0.497 , 0.495 , 0.4905,
-       0.489 , 0.4858, 0.4854, 0.4849, 0.483 , 0.4807, 0.4768, 0.4763,
-       0.4746, 0.4727, 0.4714, 0.4697, 0.4668, 0.4622, 0.4604, 0.4597,
-       0.458 , 0.4556, 0.4514, 0.4443, 0.4429, 0.427 ], dtype=float16)), 'hits_at_50': 0.8571428571428571, 'ndcg_at_50': 0.5799374813229058, 'hits_at_100': 1.0, 'ndcg_at_100': 0.659238593011458}
-    Fold 1 completed in 9.42s.
+    Fold 1 Metrics: {'precision_sklearn': 0.4117647058823529, 'recall_sklearn': 0.25, 'f1_sklearn': 0.3111111111111111, 'auc_sklearn': 0.4173280423280423, 'roc_data': (array([0.        , 0.03703704, 0.14814815, 0.14814815, 0.2962963 ,
+       0.33333333, 0.33333333, 0.33333333, 0.33333333, 0.37037037,
+       0.37037037, 0.40740741, 0.40740741, 0.40740741, 0.48148148,
+       0.48148148, 0.51851852, 0.55555556, 0.55555556, 0.62962963,
+       0.66666667, 0.7037037 , 0.7037037 , 0.74074074, 0.74074074,
+       0.77777778, 0.81481481, 0.85185185, 0.85185185, 0.96296296,
+       0.96296296, 1.        , 1.        ]), array([0.        , 0.        , 0.        , 0.03571429, 0.03571429,
+       0.07142857, 0.14285714, 0.21428571, 0.25      , 0.25      ,
+       0.28571429, 0.28571429, 0.35714286, 0.39285714, 0.39285714,
+       0.46428571, 0.46428571, 0.5       , 0.57142857, 0.57142857,
+       0.60714286, 0.60714286, 0.67857143, 0.67857143, 0.71428571,
+       0.71428571, 0.78571429, 0.78571429, 0.85714286, 0.85714286,
+       0.96428571, 0.96428571, 1.        ]), array([   inf, 0.5405, 0.5137, 0.5127, 0.507 , 0.5063, 0.504 , 0.503 ,
+       0.5024, 0.5015, 0.4995, 0.497 , 0.496 , 0.495 , 0.4932, 0.4895,
+       0.489 , 0.4885, 0.4866, 0.4827, 0.4822, 0.4817, 0.4775, 0.4768,
+       0.4749, 0.4731, 0.4714, 0.4707, 0.4688, 0.4592, 0.433 , 0.4324,
+       0.4307], dtype=float16)), 'hits_at_50': 0.8571428571428571, 'ndcg_at_50': 0.6137875060101081, 'hits_at_100': 1.0, 'ndcg_at_100': 0.6932729200320249}
+    Fold 1 completed in 9.53s.
 
 [A
   --- Fold 2/2 for SanityCheckEmb ---
@@ -1782,26 +1791,24 @@ Starting CV workflow for SanityCheckEmb. Total samples: 109
     Starting model training for 1 epochs...
     Model training finished.
     Evaluating model on validation set...
-    Fold 2 Metrics: {'precision_sklearn': 0.5098039215686274, 'recall_sklearn': 0.9629629629629629, 'f1_sklearn': 0.6666666666666666, 'auc_sklearn': 0.6193415637860082, 'roc_data': (array([0.        , 0.        , 0.        , 0.07407407, 0.14814815,
-       0.14814815, 0.18518519, 0.18518519, 0.18518519, 0.22222222,
-       0.22222222, 0.25925926, 0.2962963 , 0.33333333, 0.40740741,
-       0.40740741, 0.51851852, 0.51851852, 0.59259259, 0.59259259,
-       0.74074074, 0.74074074, 0.77777778, 0.81481481, 0.85185185,
-       0.88888889, 0.88888889, 0.96296296, 0.96296296, 1.        ]), array([0.        , 0.03703704, 0.11111111, 0.11111111, 0.11111111,
-       0.25925926, 0.25925926, 0.33333333, 0.37037037, 0.37037037,
-       0.48148148, 0.48148148, 0.59259259, 0.59259259, 0.59259259,
-       0.62962963, 0.62962963, 0.66666667, 0.66666667, 0.77777778,
-       0.77777778, 0.85185185, 0.88888889, 0.88888889, 0.92592593,
-       0.92592593, 0.96296296, 0.96296296, 1.        , 1.        ]), array([   inf, 0.593 , 0.5854, 0.582 , 0.5703, 0.5586, 0.5576, 0.557 ,
-       0.5566, 0.555 , 0.552 , 0.548 , 0.544 , 0.5425, 0.542 , 0.541 ,
-       0.5376, 0.537 , 0.5356, 0.5317, 0.5264, 0.526 , 0.5244, 0.522 ,
-       0.515 , 0.5127, 0.512 , 0.496 , 0.4849, 0.4785], dtype=float16)), 'hits_at_50': 0.9629629629629629, 'ndcg_at_50': 0.8574465089517155, 'hits_at_100': 1.0, 'ndcg_at_100': 0.877769726757939}
-    Fold 2 completed in 1.93s.
+    Fold 2 Metrics: {'precision_sklearn': 0.5434782608695652, 'recall_sklearn': 0.9259259259259259, 'f1_sklearn': 0.684931506849315, 'auc_sklearn': 0.6625514403292181, 'roc_data': (array([0.        , 0.03703704, 0.03703704, 0.07407407, 0.07407407,
+       0.11111111, 0.18518519, 0.18518519, 0.22222222, 0.22222222,
+       0.33333333, 0.37037037, 0.44444444, 0.48148148, 0.48148148,
+       0.55555556, 0.59259259, 0.62962963, 0.62962963, 0.66666667,
+       0.66666667, 0.81481481, 0.96296296, 1.        , 1.        ]), array([0.        , 0.        , 0.11111111, 0.11111111, 0.25925926,
+       0.2962963 , 0.2962963 , 0.40740741, 0.40740741, 0.55555556,
+       0.55555556, 0.59259259, 0.62962963, 0.7037037 , 0.74074074,
+       0.77777778, 0.81481481, 0.81481481, 0.88888889, 0.88888889,
+       0.92592593, 0.92592593, 0.92592593, 0.96296296, 1.        ]), array([   inf, 0.5977, 0.577 , 0.5723, 0.544 , 0.543 , 0.5396, 0.538 ,
+       0.536 , 0.532 , 0.529 , 0.5283, 0.5273, 0.527 , 0.5234, 0.523 ,
+       0.522 , 0.5166, 0.512 , 0.5093, 0.508 , 0.499 , 0.4932, 0.483 ,
+       0.4795], dtype=float16)), 'hits_at_50': 0.9259259259259259, 'ndcg_at_50': 0.7926219183477258, 'hits_at_100': 1.0, 'ndcg_at_100': 0.833175296177235}
+    Fold 2 completed in 1.88s.
 
 [A
-[ACV workflow for SanityCheckEmb finished in 11.35s.
-  Saved training history plot to /tmp/tmpt2yeho_c/evaluation_results/plots/history_SanityCheckEmb.png
---- Memory Usage (After processing SanityCheckEmb): RSS = 3561.36 MB ---
+[ACV workflow for SanityCheckEmb finished in 11.42s.
+  Saved training history plot to /tmp/tmplazj9u6y/evaluation_results/plots/history_SanityCheckEmb.png
+--- Memory Usage (After processing SanityCheckEmb): RSS = 3565.61 MB ---
   GPU Memory: Allocated = 64.14 MB, Reserved = 66.00 MB
 
 
@@ -1809,33 +1816,19 @@ Starting CV workflow for SanityCheckEmb. Total samples: 109
 ### FINAL AGGREGATE RESULTS & REPORTING ###
 =========================================
 
-Machine-readable results summary saved to /tmp/tmpt2yeho_c/evaluation_results/evaluation_summary.csv
-Human-readable report with stats saved to /tmp/tmpt2yeho_c/evaluation_results/evaluation_summary.txt
-  Saved ROC comparison plot to /tmp/tmpt2yeho_c/evaluation_results/plots/comparison_roc_curves.png
-  Saved metrics comparison barchart to /tmp/tmpt2yeho_c/evaluation_results/plots/comparison_metrics_barchart.png
+Machine-readable results summary saved to /tmp/tmplazj9u6y/evaluation_results/evaluation_summary.csv
+Human-readable report with stats saved to /tmp/tmplazj9u6y/evaluation_results/evaluation_summary.txt
+  Saved ROC comparison plot to /tmp/tmplazj9u6y/evaluation_results/plots/comparison_roc_curves.png
+  Saved metrics comparison barchart to /tmp/tmplazj9u6y/evaluation_results/plots/comparison_metrics_barchart.png
 
 ==================================================================
-### PPI Evaluation Pipeline (MAIN EVALUATION) FINISHED in 12.38s ###
+### PPI Evaluation Pipeline (MAIN EVALUATION) FINISHED in 12.46s ###
 ==================================================================
 
 
   PPI Sanity Check logic test ran successfully.
 --- PPI Sanity Check Logic Smoke Test Complete ---
 ok
-
-======================================================================
-ERROR: test_id_mapper_pregeneration (source.testers.data_utility.DataUtilityTests.test_id_mapper_pregeneration)
-Tests the IDMapper's pre-generation of cache files from a parquet source.
-----------------------------------------------------------------------
-Traceback (most recent call last):
-  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/testers/data_utility.py", line 97, in test_id_mapper_pregeneration
-    mapper.pregenerate_caches()
-  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/data/id_mapper.py", line 135, in pregenerate_caches
-    self._generate_from_dat_file_direct()
-  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/data/id_mapper.py", line 158, in _generate_from_dat_file_direct
-    if not source_dat_path.exists():
-           ^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'str' object has no attribute 'exists'
 
 ======================================================================
 FAIL: test_model_factory (source.testers.models.ModelBuildTests.test_model_factory)
@@ -1847,9 +1840,9 @@ Traceback (most recent call last):
 AssertionError: unexpectedly None : Factory failed to create model: DirectGCN
 
 ----------------------------------------------------------------------
-Ran 13 tests in 67.942s
+Ran 13 tests in 73.779s
 
-FAILED (failures=1, errors=1)
+FAILED (failures=1)
   - Resetting ModelFactory instance cache.
 
 =====================================
@@ -1886,10 +1879,10 @@ FAILED (failures=1, errors=1)
 =================================
 
   Device: cuda
-  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/benchmarking_results
+  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/benchmarking_results
   Dataset root: /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks
 ================================================================================
-Benchmark embeddings will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/benchmarking_results/embeddings
+Benchmark embeddings will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/benchmarking_results/embeddings
 
 ===============================
 ### PIPELINE: GNN BENCHMARKER ###
@@ -5025,7 +5018,7 @@ DirectGCN(
 ===============================================
 
   Device: cuda
-  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/benchmarking_results
+  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/benchmarking_results
   Dataset root: /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks
 ================================================================================
 
@@ -5281,16 +5274,10 @@ DirectGCN   0.5294           0.3437            0.3367         0.3917  None
 --- Interactive prompts disabled. Automatically continuing after 'Preliminary Analysis'. ---
   ✅ Checkpoint saved for step: 'PreAnalysis'
   Scanning for existing, pre-generated embeddings...
-
-=========================================
-### Running Hyperparameter Optimization ###
-=========================================
-
-HyperparameterOptimizer initialized.
-  Warning: HPO target embedding 'directgcn' not found in generated/configured files. Skipping HPO.
+  Info: Skipping HPO. It requires both RUN_PROTGRAM_XGCN_PIPELINE and RUN_MAIN_PPI_EVALUATION to be enabled.
 
 ====================================================
-### Full Orchestration Finished in 307.71 seconds. ###
+### Full Orchestration Finished in 315.43 seconds. ###
 ====================================================
 
 
@@ -5301,7 +5288,7 @@ HyperparameterOptimizer initialized.
 --- Headless/SSH environment detected. ---
 To view the MLflow UI, run the following command on your local machine:
 
-  mlflow ui --backend-store-uri file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_185431/mlruns
+  mlflow ui --backend-store-uri file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_212418/mlruns
 
 If running on a remote server, you may need to use SSH port forwarding, for example:
   ssh -L 5000:localhost:5000 your_user@your_server

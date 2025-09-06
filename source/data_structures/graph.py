@@ -88,7 +88,7 @@ class Graph:
         dir_path = Path(dir_path)
         dir_path.mkdir(parents=True, exist_ok=True)
 
-        # Save metadata
+        # Prepare metadata (save once after collecting tensor shapes)
         metadata = {
             'number_of_nodes': self.number_of_nodes,
             'number_of_edges': self.number_of_edges,
@@ -96,13 +96,12 @@ class Graph:
             'edge_file_path': str(getattr(self, 'edge_file_path', None)),
             'epsilon_propagation': getattr(self, 'epsilon_propagation', None)
         }
-        FileUtils.save_json(metadata, dir_path / "metadata.json")
 
         # Save node map
         node_df = pd.DataFrame(self.idx_to_node.items(), columns=['id', 'node_name'])
         node_df.to_parquet(dir_path / "nodes.parquet", index=False)
 
-        # --- NEW: Save sparse tensor attributes ---
+        # Save sparse tensor attributes and record their shapes
         for attr_name, attr_value in self.__dict__.items():
             if isinstance(attr_value, torch.Tensor) and attr_value.is_sparse:
                 coalesced_tensor = attr_value.coalesce()
@@ -110,10 +109,10 @@ class Graph:
                 values = coalesced_tensor.values().cpu().numpy()
                 np.save(dir_path / f"{attr_name}_indices.npy", indices)
                 np.save(dir_path / f"{attr_name}_values.npy", values)
-                # Add shape to metadata
+                # Record shape for later reconstruction
                 metadata[f"{attr_name}_shape"] = list(coalesced_tensor.shape)
 
-        # Re-save metadata with sparse tensor shapes
+        # Save metadata exactly once, after shapes are known
         FileUtils.save_json(metadata, dir_path / "metadata.json")
 
         print(f"  Graph components saved to directory: {dir_path}")

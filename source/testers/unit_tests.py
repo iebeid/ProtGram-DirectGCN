@@ -22,6 +22,8 @@ from .transformers import TransformerPipelineTests
 from .gnns import GNNBenchmarkerTests
 from .ppi import PPIPipelineTests
 from configuration.config import Config
+from source.utils.data.data_utils import DataUtils
+from source.utils.data.data_utils import DataUtils
 
 
 def run_dummy_ppi_test(config):
@@ -59,9 +61,36 @@ def run_dummy_ppi_test(config):
             shutil.rmtree(dummy_data_dir)
             print(f"Cleaned up dummy data directory: {dummy_data_dir}")
 
-def run_all_tests(suites_to_run=None, verbosity=2):
+def run_all_tests(suites_to_run=None, verbosity=2, config=None):
     """Main function to run all tests."""
-    config = Config()
+    import os
+    import tempfile
+    import warnings
+
+    # Use the provided Config (from orchestrator) if available to avoid creating new run dirs
+    config = config or Config()
+
+    # Enforce run-scoped temp and cache directories so nothing spills to /tmp
+    tmp_root = config.BASE_OUTPUT_DIR / "tmp_tests"
+    tmp_root.mkdir(parents=True, exist_ok=True)
+    os.environ['TMPDIR'] = str(tmp_root)
+    tempfile.tempdir = str(tmp_root)
+
+    dask_tmp = config.BASE_OUTPUT_DIR / "dask_temp"
+    dask_tmp.mkdir(parents=True, exist_ok=True)
+    os.environ['DASK_TEMPORARY_DIRECTORY'] = str(dask_tmp)
+
+    hf_cache = config.BASE_OUTPUT_DIR / "hf_cache"
+    hf_cache.mkdir(parents=True, exist_ok=True)
+    os.environ['TRANSFORMERS_CACHE'] = str(hf_cache)
+    os.environ['HF_HOME'] = str(hf_cache)
+
+    # Re-apply seeds for strict determinism in unit tests
+    DataUtils.set_seeds(config.RANDOM_STATE)
+
+    # Suppress expected SciPy precision-loss warnings during statistical tests
+    warnings.filterwarnings("ignore", category=RuntimeWarning, module="scipy.stats._axis_nan_policy")
+
     run_dummy_ppi_test(config)
 
     gpu_ok = GPUTests.verify_full_gpu_environment()
