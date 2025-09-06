@@ -139,7 +139,8 @@ class PipelineOrchestrator:
             config.RESULTS_GCN_EMBEDDINGS_DIR,
             config.RESULTS_W2V_EMBEDDINGS_DIR,
             config.RESULTS_LSTM_EMBEDDINGS_DIR,
-            config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR
+            config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR,
+            config.RESULTS_BENCHMARK_EMBEDDINGS_DIR  # Include benchmark-saved embeddings (e.g., DirectGCN)
         ]
 
         for emb_dir in embedding_dirs:

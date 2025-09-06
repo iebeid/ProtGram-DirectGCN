@@ -149,7 +149,10 @@ class ModelFactory:
             layer_dims_config = constructor_args.pop('layer_dims_config', [])
             constructor_args['layer_dims'] = [in_channels] + layer_dims_config
             graph_obj = constructor_args.get('graph_obj')
-            constructor_args['num_graph_nodes'] = getattr(graph_obj, 'number_of_nodes', getattr(graph_obj, 'num_nodes', 0))
+            # Only infer num_graph_nodes from graph_obj if not explicitly provided (or is falsy)
+            if 'num_graph_nodes' not in constructor_args or not constructor_args['num_graph_nodes']:
+                if graph_obj is not None:
+                    constructor_args['num_graph_nodes'] = getattr(graph_obj, 'number_of_nodes', getattr(graph_obj, 'num_nodes', 0))
             constructor_args['task_num_output_classes'] = num_classes
             constructor_args['n_gram_len'] = kwargs.get('n_val', 1)
 
