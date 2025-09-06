@@ -1,4 +1,4 @@
---- Logging all console output to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/logs/run_20250906_215444.log ---
+--- Logging all console output to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/logs/run_20250906_225732.log ---
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
 
 ========================================================
@@ -590,14 +590,14 @@
   - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.16.parquet
   - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.28.parquet
   - ✅ Local data is valid.
-  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/dask_temp
+  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/dask_temp
 
 ======================================
 ### System Resource Pre-flight Check ###
 ======================================
 
 RAM: 119.15 GB Available / 125.59 GB Total
-Disk (/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444): 755.05 GB Free / 883.50 GB Total
+Disk (/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732): 755.03 GB Free / 883.50 GB Total
 GPU(s):
   - GPU 0 (NVIDIA RTX 6000 Ada Generation): 47.37 GB Total Memory
 --------------------------------------
@@ -608,9 +608,13 @@ GPU(s):
   APPLY_PCA_TO_W2V                         | True
   BASE_CONFIG_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/configuration
   BASE_DATA_DIR                            | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data
-  BASE_OUTPUT_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444
+  BASE_OUTPUT_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732
   BENCHMARK_CHEBNET_K                      | 3
+  BENCHMARK_DIRECTGCN_DECOMPOSE_PROJECTIONS | False
   BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS    | [64]
+  BENCHMARK_DIRECTGCN_NUM_BASES            | None
+  BENCHMARK_DIRECTGCN_NUM_BLOCKS           | None
+  BENCHMARK_DIRECTGCN_PROJ_NUM_BASES       | None
   BENCHMARK_GAT_DROPOUT_RATE               | 0.5
   BENCHMARK_GAT_HEADS                      | 2
   BENCHMARK_GNN_DROPOUT_RATE               | 0.5
@@ -651,7 +655,11 @@ GPU(s):
   DATA_SOURCES                             | {'UNIPROT_SPROT_FASTA': {'url': 'https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/sequences/uniprot_sprot.fasta'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'BIOGRID_INTERACTIONS': {'url': 'https://downloads.thebiogrid.org/Download/BioGRID/Release-Archive/BIOGRID-4.4.248/BIOGRID-ALL-4.4.248.mitab.zip', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/BIOGRID-ALL-4.4.248.mitab.txt'), 'post_process': 'unzip', 'checksum': None, 'cacheable': True}, 'PROTT5_MODEL': {'url': 'https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/models/per-protein.h5'), 'post_process': None, 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_1': {'url': 'https://www.russelllab.org/negatives/16169070_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_1.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_2': {'url': 'https://www.russelllab.org/negatives/14605208_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_2.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_3': {'url': 'https://www.russelllab.org/negatives/14704431_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_3.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_4': {'url': 'https://www.russelllab.org/negatives/19123269_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_4.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_5': {'url': 'https://www.russelllab.org/negatives/10688190_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_5.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_6': {'url': 'https://www.russelllab.org/negatives/11283351_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_6.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_7': {'url': 'https://www.russelllab.org/negatives/16267556_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_7.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_8': {'url': 'https://www.russelllab.org/negatives/18509523_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_8.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_9': {'url': 'https://www.russelllab.org/negatives/17615063_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_9.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_10': {'url': 'https://www.russelllab.org/negatives/18000013_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_10.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'BENCHMARK_KARATECLUB': {'type': 'pyg_dataset', 'name': 'KarateClub', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/KarateClub'), 'cacheable': True}, 'BENCHMARK_CORA': {'type': 'pyg_dataset', 'name': 'Cora', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/Cora'), 'cacheable': True}, 'BENCHMARK_CITESEER': {'type': 'pyg_dataset', 'name': 'CiteSeer', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/CiteSeer'), 'cacheable': True}, 'BENCHMARK_PUBMED': {'type': 'pyg_dataset', 'name': 'PubMed', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/PubMed'), 'cacheable': True}, 'BENCHMARK_CORNELL': {'type': 'pyg_dataset', 'name': 'Cornell', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/Cornell'), 'cacheable': True}, 'BENCHMARK_TEXAS': {'type': 'pyg_dataset', 'name': 'Texas', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/Texas'), 'cacheable': True}, 'BENCHMARK_WISCONSIN': {'type': 'pyg_dataset', 'name': 'Wisconsin', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/Wisconsin'), 'cacheable': True}}
   DATA_STANDARD_DATASETS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks
   DEBUG_VERBOSE                            | True
+  DIRECTGCN_DECOMPOSE_PROJECTIONS          | False
   DIRECTGCN_HIDDEN_LAYER_DIMS              | [512, 256, 128, 64]
+  DIRECTGCN_NUM_BASES                      | None
+  DIRECTGCN_NUM_BLOCKS                     | None
+  DIRECTGCN_PROJ_NUM_BASES                 | None
   DISABLE_INTERACTIVE_PROMPTS              | True
   EARLY_STOPPING_PATIENCE                  | 10
   ENABLE_FILE_LOGGING                      | True
@@ -678,7 +686,7 @@ GPU(s):
   HPO_TARGET_EMBEDDING_MODEL               | directgcn
   ID_MAPPING_MODE                          | regex
   ID_MAPPING_PATH                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/mappings/id_mapping.parquet
-  LOG_DIR                                  | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/logs
+  LOG_DIR                                  | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/logs
   LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE       | [{'name': 'ProtT5', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/models/per-protein.h5')}]
   LSTM_BATCH_SIZE                          | 64
   LSTM_DROPOUT_RATE                        | 0.5
@@ -701,7 +709,7 @@ GPU(s):
   MLFLOW_LLMS_EXPERIMENT_NAME              | LLMs
   MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME      | GNN-Benchmarking
   MLFLOW_PROTGRAM_XGCN_EXPERIMENT_NAME     | ProtGram-XGCN
-  MLFLOW_TRACKING_URI                      | file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/mlruns
+  MLFLOW_TRACKING_URI                      | file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/mlruns
   NEG_INTERACTIONS_PATH                    | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/negative_interactions.parquet
   NEG_INTERACTIONS_RAW_PATHS               | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_1.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_2.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_3.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_4.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_5.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_6.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_7.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_8.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_9.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_10.mitab')]
   ORIGINAL_SEQUENCE_FILE_PATHS             | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/sequences/uniprot_sprot.fasta')]
@@ -759,14 +767,14 @@ GPU(s):
   RANDOM_STATE                             | 42
   REGEX_COMPATIBILITY_SAMPLE_SIZE          | 1000
   REGEX_CONFIDENCE_THRESHOLD               | 0.95
-  RESULTS_BENCHMARKING_DIR                 | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/benchmarking_results
-  RESULTS_BENCHMARK_EMBEDDINGS_DIR         | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/benchmarking_results/embeddings
-  RESULTS_EVALUATION_DIR                   | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/evaluation_results
-  RESULTS_GCN_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/gcn_embeddings
-  RESULTS_GRAPH_OBJECTS_DIR                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/graph_objects
-  RESULTS_LSTM_EMBEDDINGS_DIR              | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/lstm_embeddings
-  RESULTS_TRANSFORMER_EMBEDDINGS_DIR       | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/transformer_embeddings
-  RESULTS_W2V_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/word2vec_embeddings
+  RESULTS_BENCHMARKING_DIR                 | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/benchmarking_results
+  RESULTS_BENCHMARK_EMBEDDINGS_DIR         | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/benchmarking_results/embeddings
+  RESULTS_EVALUATION_DIR                   | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/evaluation_results
+  RESULTS_GCN_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/gcn_embeddings
+  RESULTS_GRAPH_OBJECTS_DIR                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/graph_objects
+  RESULTS_LSTM_EMBEDDINGS_DIR              | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/lstm_embeddings
+  RESULTS_TRANSFORMER_EMBEDDINGS_DIR       | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/transformer_embeddings
+  RESULTS_W2V_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/word2vec_embeddings
   RUN_BENCHMARKING_PIPELINE                | True
   RUN_HPO                                  | True
   RUN_INTEGRATED_TESTS                     | True
@@ -780,7 +788,11 @@ GPU(s):
   SEQUENCE_DOWNSAMPLE_FRACTION             | 0.05
   SEQUENCE_FILE_PATHS                      | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/sequences/uniprot_sprot.fasta')]
   SINGLETON_CHEBNET_K                      | 3
+  SINGLETON_DIRECTGCN_DECOMPOSE_PROJECTIONS | False
   SINGLETON_DIRECTGCN_HIDDEN_LAYER_DIMS    | [64]
+  SINGLETON_DIRECTGCN_NUM_BASES            | None
+  SINGLETON_DIRECTGCN_NUM_BLOCKS           | None
+  SINGLETON_DIRECTGCN_PROJ_NUM_BASES       | None
   SINGLETON_EVAL_EPOCHS                    | 100
   SINGLETON_EVAL_GRADIENT_ACCUMULATION_STEPS | 1
   SINGLETON_EVAL_LR                        | 0.01
@@ -815,7 +827,7 @@ GPU(s):
 
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
 --- Running Dummy PPI Pipeline Smoke Test ---
-Creating dummy data in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/dummy_data_temp
+Creating dummy data in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/dummy_data_temp
 PPIPipeline initialized.
 
 =========================================
@@ -833,7 +845,7 @@ PPIPipeline initialized.
 ### Processing Embedding: DummyEmb ###
 ====================================
 
-  Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/dummy_data_temp/dummy_embeddings.h5
+  Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/dummy_data_temp/dummy_embeddings.h5
   Memory Strategy ('high'): Attempting to load 'dummy_embeddings.h5' into RAM.
   Memory Strategy ('high'): Loading 'dummy_embeddings.h5' into RAM for faster access.
   Found 50 embeddings. Filtering interaction files against these IDs...
@@ -842,16 +854,16 @@ PPIPipeline initialized.
   High-performance filtering pairs from: dummy_negative_interactions.csv (label: 0)...
     Found 0 pairs with available embeddings.
   No interaction pairs remain after filtering against available embeddings for DummyEmb. Skipping CV.
---- Memory Usage (After processing DummyEmb): RSS = 1149.74 MB ---
+--- Memory Usage (After processing DummyEmb): RSS = 1150.34 MB ---
   GPU Memory: Allocated = 0.00 MB, Reserved = 0.00 MB
 
 
 =================================================================
-### PPI Evaluation Pipeline (MAIN EVALUATION) FINISHED in 0.25s ###
+### PPI Evaluation Pipeline (MAIN EVALUATION) FINISHED in 0.26s ###
 =================================================================
 
 --- Dummy PPI Pipeline Smoke Test Finished Successfully ---
-Cleaned up dummy data directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/dummy_data_temp
+Cleaned up dummy data directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/dummy_data_temp
 
 ================================================================================
 
@@ -916,7 +928,7 @@ Tests the IDMapper's pre-generation of cache files from a parquet source. ...
   - De-duplicating mappings to create a canonical one-to-one map...
   - Dask is now writing the final Parquet file. This may take a while...
 
-  - ✅ Success! Generated ID map Parquet file at /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmplh4z2l_2/data/mappings/id_mapping.parquet.
+  - ✅ Success! Generated ID map Parquet file at /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpgihq9o9w/data/mappings/id_mapping.parquet.
 --- IDMapper Pregeneration Test Complete ---
 ok
 test_protgram_data_builder_smoke_test (source.testers.data_utility.DataUtilityTests.test_protgram_data_builder_smoke_test)
@@ -928,11 +940,11 @@ Smoke test for the ProtGramDataBuilder to ensure it runs without crashing. ...
 =====================================
 
 ================================================================================
-ProtGramDataBuilder initialized: n_max=2, configured_workers=31, output_dir='/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpk3192s_v/graph_objects'
-  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpk3192s_v/temp_graph_builder
+ProtGramDataBuilder initialized: n_max=2, configured_workers=31, output_dir='/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5iwcohk7/graph_objects'
+  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5iwcohk7/temp_graph_builder
 
 ===================================================================================================================================================================
-### ProtGramDataBuilder Initialized (Output: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpk3192s_v/graph_objects) ###
+### ProtGramDataBuilder Initialized (Output: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5iwcohk7/graph_objects) ###
 ===================================================================================================================================================================
 
 
@@ -948,8 +960,8 @@ ProtGramDataBuilder initialized: n_max=2, configured_workers=31, output_dir='/ho
 --------------------------------------
 
   Info: Graph file for n=1 not found. Will proceed with full build.
-Temporary files will be stored in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpk3192s_v/temp_graph_builder
-Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpk3192s_v/graph_objects
+Temporary files will be stored in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5iwcohk7/temp_graph_builder
+Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5iwcohk7/graph_objects
   - Cleaning enabled for FASTA parsing.
 
 =========================================
@@ -961,7 +973,7 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
   - Creating map for n=2...
     Unique n-gram map for n=2 (size: 145) created.
 
-<<< Phase 1 finished in 0.19s.
+<<< Phase 1 finished in 0.20s.
 
 ===================================
 ### Phase 2: Generating All Edges ###
@@ -970,7 +982,7 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
   - Aggregating edges for n=1...
   - Aggregating edges for n=2...
 
-<<< Phase 2 finished in 0.72s.
+<<< Phase 2 finished in 0.75s.
 
 ======================================================
 ### Phase 3: Building and saving final graph objects ###
@@ -981,8 +993,8 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
   Loaded 21 n-grams for n=1 from map file.
   Instantiating DirectedNgramGraph object for n=1 from file...
     Loading edges from aggregated_edges_n1.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpk3192s_v/graph_objects/ngram_graph_n1/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpk3192s_v/graph_objects/ngram_graph_n1
+  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5iwcohk7/graph_objects/ngram_graph_n1/metadata.json
+  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5iwcohk7/graph_objects/ngram_graph_n1
     --- Graph Statistics for n=1 ---
       Nodes: 21
       Edges (unique weighted): 145
@@ -999,14 +1011,14 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
       Degree Assortativity: -0.1037
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=1 ---
-  Graph for n=1 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpk3192s_v/graph_objects/ngram_graph_n1
+  Graph for n=1 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5iwcohk7/graph_objects/ngram_graph_n1
 
 --- Processing n = 2 for final graph object ---
   Loaded 145 n-grams for n=2 from map file.
   Instantiating DirectedNgramGraph object for n=2 from file...
     Loading edges from aggregated_edges_n2.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpk3192s_v/graph_objects/ngram_graph_n2/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpk3192s_v/graph_objects/ngram_graph_n2
+  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5iwcohk7/graph_objects/ngram_graph_n2/metadata.json
+  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5iwcohk7/graph_objects/ngram_graph_n2
     --- Graph Statistics for n=2 ---
       Nodes: 145
       Edges (unique weighted): 168
@@ -1021,22 +1033,22 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
       Degree Assortativity: -0.1040
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=2 ---
-  Graph for n=2 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpk3192s_v/graph_objects/ngram_graph_n2
+  Graph for n=2 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5iwcohk7/graph_objects/ngram_graph_n2
 
-<<< Phase 3 finished in 1.60s.
+<<< Phase 3 finished in 1.64s.
 
 ==========================================
 ### Phase 4: Cleaning up temporary files ###
 ==========================================
 
-  Temporary directory /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpk3192s_v/temp_graph_builder cleaned up.
+  Temporary directory /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5iwcohk7/temp_graph_builder cleaned up.
 <<< Phase 4 finished in 0.00s.
 
 =============================================
-### N-gram Graph Building FINISHED in 5.72s ###
+### N-gram Graph Building FINISHED in 5.82s ###
 =============================================
 
-  Successfully created graph directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpk3192s_v/graph_objects/ngram_graph_n1
+  Successfully created graph directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5iwcohk7/graph_objects/ngram_graph_n1
 --- ProtGramDataBuilder Smoke Test Complete ---
 ok
 test_graph_builder_full_run (source.testers.graph_utility.GraphBuilderTests.test_graph_builder_full_run)
@@ -1048,11 +1060,11 @@ Runs a full, synchronous test of the GraphBuilder pipeline. ...
 ============================================================
 
 ================================================================================
-ProtGramDataBuilder initialized: n_max=3, configured_workers=1, output_dir='/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/graph_objects'
-  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/temp_graph_builder
+ProtGramDataBuilder initialized: n_max=3, configured_workers=1, output_dir='/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/graph_objects'
+  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/temp_graph_builder
 
 ===================================================================================================================================================================
-### ProtGramDataBuilder Initialized (Output: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/graph_objects) ###
+### ProtGramDataBuilder Initialized (Output: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/graph_objects) ###
 ===================================================================================================================================================================
 
 
@@ -1068,8 +1080,8 @@ ProtGramDataBuilder initialized: n_max=3, configured_workers=1, output_dir='/hom
 --------------------------------------
 
   Info: Graph file for n=1 not found. Will proceed with full build.
-Temporary files will be stored in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/temp_graph_builder
-Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/graph_objects
+Temporary files will be stored in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/temp_graph_builder
+Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/graph_objects
   - Cleaning enabled for FASTA parsing.
 
 =========================================
@@ -1083,7 +1095,7 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
   - Creating map for n=3...
     Unique n-gram map for n=3 (size: 9) created.
 
-<<< Phase 1 finished in 0.16s.
+<<< Phase 1 finished in 0.15s.
 
 ===================================
 ### Phase 2: Generating All Edges ###
@@ -1104,8 +1116,8 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
   Loaded 5 n-grams for n=1 from map file.
   Instantiating DirectedNgramGraph object for n=1 from file...
     Loading edges from aggregated_edges_n1.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/graph_objects/ngram_graph_n1/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/graph_objects/ngram_graph_n1
+  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/graph_objects/ngram_graph_n1/metadata.json
+  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/graph_objects/ngram_graph_n1
     --- Graph Statistics for n=1 ---
       Nodes: 5
       Edges (unique weighted): 11
@@ -1120,14 +1132,14 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
       Degree Assortativity: -0.0408
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=1 ---
-  Graph for n=1 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/graph_objects/ngram_graph_n1
+  Graph for n=1 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/graph_objects/ngram_graph_n1
 
 --- Processing n = 2 for final graph object ---
   Loaded 11 n-grams for n=2 from map file.
   Instantiating DirectedNgramGraph object for n=2 from file...
     Loading edges from aggregated_edges_n2.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/graph_objects/ngram_graph_n2/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/graph_objects/ngram_graph_n2
+  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/graph_objects/ngram_graph_n2/metadata.json
+  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/graph_objects/ngram_graph_n2
     --- Graph Statistics for n=2 ---
       Nodes: 11
       Edges (unique weighted): 9
@@ -1142,14 +1154,14 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
       Degree Assortativity: -0.3776
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=2 ---
-  Graph for n=2 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/graph_objects/ngram_graph_n2
+  Graph for n=2 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/graph_objects/ngram_graph_n2
 
 --- Processing n = 3 for final graph object ---
   Loaded 9 n-grams for n=3 from map file.
   Instantiating DirectedNgramGraph object for n=3 from file...
     Loading edges from aggregated_edges_n3.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/graph_objects/ngram_graph_n3/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/graph_objects/ngram_graph_n3
+  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/graph_objects/ngram_graph_n3/metadata.json
+  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/graph_objects/ngram_graph_n3
     --- Graph Statistics for n=3 ---
       Nodes: 9
       Edges (unique weighted): 6
@@ -1164,22 +1176,22 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
       Degree Assortativity: -0.3333
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=3 ---
-  Graph for n=3 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/graph_objects/ngram_graph_n3
+  Graph for n=3 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/graph_objects/ngram_graph_n3
 
-<<< Phase 3 finished in 2.44s.
+<<< Phase 3 finished in 2.41s.
 
 ==========================================
 ### Phase 4: Cleaning up temporary files ###
 ==========================================
 
-  Temporary directory /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpt8op3uzp/temp_graph_builder cleaned up.
+  Temporary directory /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpry8zfria/temp_graph_builder cleaned up.
 <<< Phase 4 finished in 0.00s.
 
 =============================================
-### N-gram Graph Building FINISHED in 6.13s ###
+### N-gram Graph Building FINISHED in 6.11s ###
 =============================================
 
-Total time for script: 6.13s
+Total time for script: 6.11s
 --- GraphBuilder Full Run Test Complete ---
 ok
 test_graph_builder_smoke (source.testers.graph_utility.GraphBuilderTests.test_graph_builder_smoke)
@@ -1191,11 +1203,11 @@ Smoke test for GraphBuilder.run() with minimal config. ...
 ========================================
 
 ================================================================================
-ProtGramDataBuilder initialized: n_max=1, configured_workers=1, output_dir='/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp9qzhlcxc/graph_objects'
-  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp9qzhlcxc/temp_graph_builder
+ProtGramDataBuilder initialized: n_max=1, configured_workers=1, output_dir='/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpswb69om1/graph_objects'
+  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpswb69om1/temp_graph_builder
 
 ===================================================================================================================================================================
-### ProtGramDataBuilder Initialized (Output: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp9qzhlcxc/graph_objects) ###
+### ProtGramDataBuilder Initialized (Output: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpswb69om1/graph_objects) ###
 ===================================================================================================================================================================
 
 
@@ -1211,8 +1223,8 @@ ProtGramDataBuilder initialized: n_max=1, configured_workers=1, output_dir='/hom
 --------------------------------------
 
   Info: Graph file for n=1 not found. Will proceed with full build.
-Temporary files will be stored in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp9qzhlcxc/temp_graph_builder
-Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp9qzhlcxc/graph_objects
+Temporary files will be stored in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpswb69om1/temp_graph_builder
+Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpswb69om1/graph_objects
   - Cleaning enabled for FASTA parsing.
 
 =========================================
@@ -1222,7 +1234,7 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
   - Creating map for n=1...
     Unique n-gram map for n=1 (size: 5) created.
 
-<<< Phase 1 finished in 0.04s.
+<<< Phase 1 finished in 0.05s.
 
 ===================================
 ### Phase 2: Generating All Edges ###
@@ -1230,7 +1242,7 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
 
   - Aggregating edges for n=1...
 
-<<< Phase 2 finished in 0.11s.
+<<< Phase 2 finished in 0.12s.
 
 ======================================================
 ### Phase 3: Building and saving final graph objects ###
@@ -1241,8 +1253,8 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
   Loaded 5 n-grams for n=1 from map file.
   Instantiating DirectedNgramGraph object for n=1 from file...
     Loading edges from aggregated_edges_n1.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp9qzhlcxc/graph_objects/ngram_graph_n1/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp9qzhlcxc/graph_objects/ngram_graph_n1
+  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpswb69om1/graph_objects/ngram_graph_n1/metadata.json
+  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpswb69om1/graph_objects/ngram_graph_n1
     --- Graph Statistics for n=1 ---
       Nodes: 5
       Edges (unique weighted): 11
@@ -1257,15 +1269,15 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
       Degree Assortativity: -0.0408
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=1 ---
-  Graph for n=1 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp9qzhlcxc/graph_objects/ngram_graph_n1
+  Graph for n=1 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpswb69om1/graph_objects/ngram_graph_n1
 
-<<< Phase 3 finished in 0.82s.
+<<< Phase 3 finished in 0.81s.
 
 ==========================================
 ### Phase 4: Cleaning up temporary files ###
 ==========================================
 
-  Temporary directory /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp9qzhlcxc/temp_graph_builder cleaned up.
+  Temporary directory /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpswb69om1/temp_graph_builder cleaned up.
 <<< Phase 4 finished in 0.00s.
 
 =============================================
@@ -1365,13 +1377,13 @@ test_word2vec_pipeline_run (source.testers.word2vec.Word2VecPipelineTests.test_w
 ### Word2VecEmbedder Initialized ###
 ==================================
 
-2025/09/06 21:55:09 INFO mlflow.tracking.fluent: Experiment with name 'LLMs' does not exist. Creating a new experiment.
+2025/09/06 22:57:58 INFO mlflow.tracking.fluent: Experiment with name 'LLMs' does not exist. Creating a new experiment.
 
 ==============================================================
 ### PIPELINE STEP: Training Word2Vec & Generating Embeddings ###
 ==============================================================
 
-  Creating temporary line corpus at: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpyf4d97n4.txt
+  Creating temporary line corpus at: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpto4nsdns.txt
 
 
 =====================================
@@ -1417,7 +1429,7 @@ test_transformer_embedder_pipeline_run (source.testers.transformers.TransformerP
   Created dummy ID map parquet file: id_mapping.parquet
 --- Checking for local pre-converted model: Rostlab/prot_bert ---
   Local model not found. Starting conversion process...
-  Output will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpbjwhl1ch/models/Rostlab/prot_bert
+  Output will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpiwh0pcdw/models/Rostlab/prot_bert
   Attempting to download native TensorFlow weights directly...
   Native TF weights not found. Attempting to convert from PyTorch weights...
   !!! THIS STEP IS MEMORY-INTENSIVE AND MAY TAKE A WHILE !!!
@@ -1427,16 +1439,16 @@ test_transformer_embedder_pipeline_run (source.testers.transformers.TransformerP
 
   Saving model and tokenizer to disk...
 
---- SUCCESS: Model is now available locally at: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpbjwhl1ch/models/Rostlab/prot_bert ---
+--- SUCCESS: Model is now available locally at: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpiwh0pcdw/models/Rostlab/prot_bert ---
 --- Checking for local pre-converted model: facebook/esm2_t6_8M_UR50D ---
   Local model not found. Starting conversion process...
-  Output will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpbjwhl1ch/models/facebook/esm2_t6_8M_UR50D
+  Output will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpiwh0pcdw/models/facebook/esm2_t6_8M_UR50D
   Attempting to download native TensorFlow weights directly...
   Native TF weights found. Saving them locally...
 
   Saving model and tokenizer to disk...
 
---- SUCCESS: Model is now available locally at: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpbjwhl1ch/models/facebook/esm2_t6_8M_UR50D ---
+--- SUCCESS: Model is now available locally at: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpiwh0pcdw/models/facebook/esm2_t6_8M_UR50D ---
 
 =====================================
 ### TransformerEmbedder Initialized ###
@@ -1457,11 +1469,11 @@ test_transformer_embedder_pipeline_run (source.testers.transformers.TransformerP
 ### Loading Transformer Model: ProtBERT (Rostlab/prot_bert) ###
 =============================================================
 
-  Found locally pre-converted TensorFlow model at: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpbjwhl1ch/models/Rostlab/prot_bert
+  Found locally pre-converted TensorFlow model at: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpiwh0pcdw/models/Rostlab/prot_bert
   Loading from local path...
   Creating inference function (is_t5=False, is_esm=False, use_xla=True)...
   JIT Compiling concrete function with XLA...
-  Model and tokenizer loaded in 18.81s. Embedding dim: 1024
+  Model and tokenizer loaded in 18.80s. Embedding dim: 1024
 
 
 
@@ -1475,10 +1487,10 @@ test_transformer_embedder_pipeline_run (source.testers.transformers.TransformerP
 =================================================================
 
   Temporarily setting policy to float32 for ESM model loading and compilation...
-  Found locally pre-converted TensorFlow model at: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmpbjwhl1ch/models/facebook/esm2_t6_8M_UR50D
+  Found locally pre-converted TensorFlow model at: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmpiwh0pcdw/models/facebook/esm2_t6_8M_UR50D
   Loading from local path...
   Creating inference function (is_t5=False, is_esm=True, use_xla=True)...
-  Model and tokenizer loaded in 4.09s. Embedding dim: 320
+  Model and tokenizer loaded in 4.12s. Embedding dim: 320
   Restoring original mixed precision policy...
 
 
@@ -1510,10 +1522,10 @@ test_gnn_benchmarker_run (source.testers.gnns.GNNBenchmarkerTests.test_gnn_bench
 =================================
 
   Device: cuda
-  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/benchmarking_results
+  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/benchmarking_results
   Dataset root: /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks
 ================================================================================
-Benchmark embeddings will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/benchmarking_results/embeddings
+Benchmark embeddings will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/benchmarking_results/embeddings
 
 ===============================
 ### PIPELINE: GNN BENCHMARKER ###
@@ -1617,7 +1629,7 @@ GAT(
 ===============================================
 
   Device: cuda
-  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/benchmarking_results
+  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/benchmarking_results
   Dataset root: /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks
 ================================================================================
 
@@ -1681,7 +1693,7 @@ PPIPipeline initialized.
 ### Processing Embedding: DummyEmb ###
 ====================================
 
-  Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp7_6_zygb/dummy_embeddings.h5
+  Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp5ez4os1h/dummy_embeddings.h5
   Memory Strategy ('high'): Attempting to load 'dummy_embeddings.h5' into RAM.
   Memory Strategy ('high'): Loading 'dummy_embeddings.h5' into RAM for faster access.
   Found 50 embeddings. Filtering interaction files against these IDs...
@@ -1690,7 +1702,7 @@ PPIPipeline initialized.
   High-performance filtering pairs from: dummy_negative_interactions.csv (label: 0)...
     Found 0 pairs with available embeddings.
   No interaction pairs remain after filtering against available embeddings for DummyEmb. Skipping CV.
---- Memory Usage (After processing DummyEmb): RSS = 3552.50 MB ---
+--- Memory Usage (After processing DummyEmb): RSS = 3587.88 MB ---
   GPU Memory: Allocated = 64.00 MB, Reserved = 64.00 MB
 
 
@@ -1734,7 +1746,7 @@ PPIPipeline initialized.
 ### Processing Embedding: SanityCheckEmb ###
 ==========================================
 
-  Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp4bpwu0b7/sanity_check_embeddings.h5
+  Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp7t2381tc/sanity_check_embeddings.h5
   Memory Strategy ('high'): Attempting to load 'sanity_check_embeddings.h5' into RAM.
   Memory Strategy ('high'): Loading 'sanity_check_embeddings.h5' into RAM for faster access.
   Found 50 embeddings. Filtering interaction files against these IDs...
@@ -1758,24 +1770,24 @@ Starting CV workflow for SanityCheckEmb. Total samples: 109
     Starting model training for 1 epochs...
     Model training finished.
     Evaluating model on validation set...
-    Fold 1 Metrics: {'precision_sklearn': 0.0, 'recall_sklearn': 0.0, 'f1_sklearn': 0.0, 'auc_sklearn': 0.3201058201058201, 'roc_data': (array([0.        , 0.03703704, 0.25925926, 0.2962963 , 0.2962963 ,
-       0.37037037, 0.37037037, 0.40740741, 0.44444444, 0.44444444,
-       0.59259259, 0.59259259, 0.62962963, 0.62962963, 0.66666667,
-       0.66666667, 0.7037037 , 0.7037037 , 0.74074074, 0.74074074,
-       0.77777778, 0.77777778, 0.77777778, 0.85185185, 0.85185185,
-       0.88888889, 0.88888889, 0.96296296, 0.96296296, 0.96296296,
-       0.96296296, 1.        ]), array([0.        , 0.        , 0.        , 0.03571429, 0.10714286,
-       0.10714286, 0.14285714, 0.21428571, 0.21428571, 0.25      ,
-       0.25      , 0.35714286, 0.35714286, 0.39285714, 0.39285714,
-       0.42857143, 0.46428571, 0.5       , 0.5       , 0.53571429,
-       0.53571429, 0.60714286, 0.67857143, 0.67857143, 0.71428571,
-       0.71428571, 0.85714286, 0.85714286, 0.89285714, 0.96428571,
-       1.        , 1.        ]), array([   inf, 0.5366, 0.498 , 0.496 , 0.4932, 0.4915, 0.491 , 0.4895,
-       0.4866, 0.4858, 0.4812, 0.478 , 0.477 , 0.4758, 0.4749, 0.4731,
-       0.4714, 0.4707, 0.4685, 0.4663, 0.4646, 0.4622, 0.4597, 0.458 ,
-       0.4568, 0.4563, 0.4514, 0.4421, 0.4407, 0.4346, 0.4246, 0.4238],
-      dtype=float16)), 'hits_at_50': 0.8571428571428571, 'ndcg_at_50': 0.588245950532719, 'hits_at_100': 1.0, 'ndcg_at_100': 0.6678197910313338}
-    Fold 1 completed in 9.57s.
+    Fold 1 Metrics: {'precision_sklearn': 0.18181818181818182, 'recall_sklearn': 0.07142857142857142, 'f1_sklearn': 0.10256410256410256, 'auc_sklearn': 0.34391534391534395, 'roc_data': (array([0.        , 0.03703704, 0.18518519, 0.25925926, 0.2962963 ,
+       0.2962963 , 0.37037037, 0.37037037, 0.40740741, 0.44444444,
+       0.44444444, 0.48148148, 0.48148148, 0.51851852, 0.51851852,
+       0.55555556, 0.59259259, 0.59259259, 0.66666667, 0.66666667,
+       0.7037037 , 0.74074074, 0.77777778, 0.77777778, 0.77777778,
+       0.77777778, 0.81481481, 0.81481481, 0.85185185, 0.85185185,
+       0.88888889, 0.88888889, 0.96296296, 0.96296296, 1.        ]), array([0.        , 0.        , 0.        , 0.        , 0.        ,
+       0.07142857, 0.07142857, 0.14285714, 0.14285714, 0.17857143,
+       0.21428571, 0.21428571, 0.28571429, 0.28571429, 0.32142857,
+       0.32142857, 0.35714286, 0.39285714, 0.39285714, 0.42857143,
+       0.42857143, 0.46428571, 0.46428571, 0.5       , 0.57142857,
+       0.82142857, 0.82142857, 0.85714286, 0.89285714, 0.92857143,
+       0.92857143, 0.96428571, 0.96428571, 1.        , 1.        ]), array([   inf, 0.537 , 0.51  , 0.5093, 0.507 , 0.5044, 0.499 , 0.497 ,
+       0.496 , 0.495 , 0.4937, 0.4932, 0.4905, 0.49  , 0.487 , 0.4858,
+       0.4849, 0.4827, 0.4822, 0.4817, 0.4812, 0.4802, 0.4795, 0.479 ,
+       0.4785, 0.467 , 0.4646, 0.4612, 0.4604, 0.458 , 0.457 , 0.4524,
+       0.4507, 0.444 , 0.4287], dtype=float16)), 'hits_at_50': 0.9285714285714286, 'ndcg_at_50': 0.6264915307069496, 'hits_at_100': 1.0, 'ndcg_at_100': 0.6662810766665623}
+    Fold 1 completed in 9.70s.
 
 [A
   --- Fold 2/2 for SanityCheckEmb ---
@@ -1791,26 +1803,26 @@ Starting CV workflow for SanityCheckEmb. Total samples: 109
     Starting model training for 1 epochs...
     Model training finished.
     Evaluating model on validation set...
-    Fold 2 Metrics: {'precision_sklearn': 0.5, 'recall_sklearn': 0.8888888888888888, 'f1_sklearn': 0.64, 'auc_sklearn': 0.48079561042524005, 'roc_data': (array([0.        , 0.        , 0.        , 0.03703704, 0.11111111,
-       0.11111111, 0.14814815, 0.22222222, 0.22222222, 0.33333333,
-       0.33333333, 0.44444444, 0.44444444, 0.51851852, 0.55555556,
-       0.55555556, 0.59259259, 0.59259259, 0.62962963, 0.62962963,
-       0.66666667, 0.66666667, 0.7037037 , 0.7037037 , 0.74074074,
-       0.74074074, 0.96296296, 0.96296296, 1.        , 1.        ]), array([0.        , 0.03703704, 0.07407407, 0.11111111, 0.11111111,
-       0.14814815, 0.14814815, 0.14814815, 0.22222222, 0.22222222,
-       0.2962963 , 0.2962963 , 0.37037037, 0.40740741, 0.40740741,
-       0.48148148, 0.48148148, 0.55555556, 0.55555556, 0.66666667,
-       0.66666667, 0.74074074, 0.74074074, 0.77777778, 0.77777778,
-       0.88888889, 0.88888889, 0.92592593, 0.92592593, 1.        ]), array([   inf, 0.5967, 0.592 , 0.585 , 0.573 , 0.5693, 0.565 , 0.558 ,
-       0.5537, 0.5513, 0.5454, 0.542 , 0.5405, 0.539 , 0.5376, 0.536 ,
-       0.5356, 0.534 , 0.5312, 0.527 , 0.5254, 0.523 , 0.522 , 0.52  ,
-       0.5146, 0.5107, 0.496 , 0.4922, 0.489 , 0.4624], dtype=float16)), 'hits_at_50': 0.8888888888888888, 'ndcg_at_50': 0.7726045304950394, 'hits_at_100': 1.0, 'ndcg_at_100': 0.8336752434670596}
-    Fold 2 completed in 1.95s.
+    Fold 2 Metrics: {'precision_sklearn': 0.46938775510204084, 'recall_sklearn': 0.8518518518518519, 'f1_sklearn': 0.6052631578947368, 'auc_sklearn': 0.4705075445816187, 'roc_data': (array([0.        , 0.        , 0.        , 0.11111111, 0.18518519,
+       0.18518519, 0.22222222, 0.22222222, 0.25925926, 0.25925926,
+       0.2962963 , 0.33333333, 0.33333333, 0.37037037, 0.37037037,
+       0.48148148, 0.48148148, 0.51851852, 0.51851852, 0.55555556,
+       0.62962963, 0.74074074, 0.74074074, 0.77777778, 0.81481481,
+       0.81481481, 0.85185185, 0.85185185, 1.        , 1.        ]), array([0.        , 0.03703704, 0.07407407, 0.07407407, 0.07407407,
+       0.18518519, 0.18518519, 0.2962963 , 0.2962963 , 0.37037037,
+       0.40740741, 0.40740741, 0.44444444, 0.44444444, 0.48148148,
+       0.48148148, 0.51851852, 0.51851852, 0.55555556, 0.55555556,
+       0.55555556, 0.55555556, 0.59259259, 0.59259259, 0.62962963,
+       0.7037037 , 0.7037037 , 0.85185185, 0.85185185, 1.        ]), array([   inf, 0.603 , 0.598 , 0.581 , 0.573 , 0.565 , 0.564 , 0.559 ,
+       0.5576, 0.5537, 0.5513, 0.5503, 0.5493, 0.545 , 0.5435, 0.541 ,
+       0.5396, 0.5356, 0.535 , 0.5347, 0.533 , 0.53  , 0.5283, 0.5273,
+       0.527 , 0.524 , 0.5234, 0.5146, 0.4976, 0.4688], dtype=float16)), 'hits_at_50': 0.8518518518518519, 'ndcg_at_50': 0.7454456207108728, 'hits_at_100': 1.0, 'ndcg_at_100': 0.8269352331918074}
+    Fold 2 completed in 2.06s.
 
 [A
-[ACV workflow for SanityCheckEmb finished in 11.52s.
-  Saved training history plot to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp4bpwu0b7/evaluation_results/plots/history_SanityCheckEmb.png
---- Memory Usage (After processing SanityCheckEmb): RSS = 3591.32 MB ---
+[ACV workflow for SanityCheckEmb finished in 11.76s.
+  Saved training history plot to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp7t2381tc/evaluation_results/plots/history_SanityCheckEmb.png
+--- Memory Usage (After processing SanityCheckEmb): RSS = 3627.04 MB ---
   GPU Memory: Allocated = 64.00 MB, Reserved = 64.00 MB
 
 
@@ -1818,13 +1830,13 @@ Starting CV workflow for SanityCheckEmb. Total samples: 109
 ### FINAL AGGREGATE RESULTS & REPORTING ###
 =========================================
 
-Machine-readable results summary saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp4bpwu0b7/evaluation_results/evaluation_summary.csv
-Human-readable report with stats saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp4bpwu0b7/evaluation_results/evaluation_summary.txt
-  Saved ROC comparison plot to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp4bpwu0b7/evaluation_results/plots/comparison_roc_curves.png
-  Saved metrics comparison barchart to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/tmp_tests/tmp4bpwu0b7/evaluation_results/plots/comparison_metrics_barchart.png
+Machine-readable results summary saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp7t2381tc/evaluation_results/evaluation_summary.csv
+Human-readable report with stats saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp7t2381tc/evaluation_results/evaluation_summary.txt
+  Saved ROC comparison plot to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp7t2381tc/evaluation_results/plots/comparison_roc_curves.png
+  Saved metrics comparison barchart to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/tmp_tests/tmp7t2381tc/evaluation_results/plots/comparison_metrics_barchart.png
 
 ==================================================================
-### PPI Evaluation Pipeline (MAIN EVALUATION) FINISHED in 12.56s ###
+### PPI Evaluation Pipeline (MAIN EVALUATION) FINISHED in 12.78s ###
 ==================================================================
 
 
@@ -1833,7 +1845,7 @@ Human-readable report with stats saved to /home/iaebeid/documents/projects/ProtG
 ok
 
 ----------------------------------------------------------------------
-Ran 13 tests in 74.131s
+Ran 13 tests in 75.326s
 
 OK
   - Resetting ModelFactory instance cache.
@@ -1872,10 +1884,10 @@ OK
 =================================
 
   Device: cuda
-  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/benchmarking_results
+  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/benchmarking_results
   Dataset root: /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks
 ================================================================================
-Benchmark embeddings will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/benchmarking_results/embeddings
+Benchmark embeddings will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/benchmarking_results/embeddings
 
 ===============================
 ### PIPELINE: GNN BENCHMARKER ###
@@ -2099,17 +2111,17 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 4.6934, Val Acc: 0.3333, Test Acc: 0.5000
-    Epoch 010, Loss: 0.0031, Val Acc: 0.6667, Test Acc: 0.5000
-    Epoch 020, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5357
-    Epoch 030, Loss: 0.0001, Val Acc: 0.6667, Test Acc: 0.5357
-    Epoch 040, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5357
-    Epoch 050, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5357
-    Epoch 060, Loss: 0.0061, Val Acc: 0.6667, Test Acc: 0.5357
+    Epoch 001, Loss: 1.9276, Val Acc: 0.3333, Test Acc: 0.4643
+    Epoch 010, Loss: 0.0002, Val Acc: 0.6667, Test Acc: 0.5357
+    Epoch 020, Loss: 0.0001, Val Acc: 0.6667, Test Acc: 0.5714
+    Epoch 030, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5714
+    Epoch 040, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5714
+    Epoch 050, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5714
+    Epoch 060, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5714
     Epoch 070, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5357
-    Epoch 080, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5357
-    Epoch 090, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5357
-    Epoch 100, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5357
+    Epoch 080, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5714
+    Epoch 090, Loss: 0.0001, Val Acc: 0.6667, Test Acc: 0.5357
+    Epoch 100, Loss: 0.0001, Val Acc: 0.6667, Test Acc: 0.5357
   Finished training. Best Val Acc: 0.6667, Corresponding Test Acc: 0.5714
 
 ==================================================
@@ -2328,18 +2340,18 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 1.8294, Val Acc: 0.6667, Test Acc: 0.5357
-    Epoch 010, Loss: 0.0005, Val Acc: 0.6667, Test Acc: 0.4643
-    Epoch 020, Loss: 0.0000, Val Acc: 0.3333, Test Acc: 0.4286
-    Epoch 030, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5000
-    Epoch 040, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5000
-    Epoch 050, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5000
-    Epoch 060, Loss: 0.0003, Val Acc: 0.6667, Test Acc: 0.5000
-    Epoch 070, Loss: 0.0001, Val Acc: 0.6667, Test Acc: 0.5000
-    Epoch 080, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5000
-    Epoch 090, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5000
-    Epoch 100, Loss: 0.0000, Val Acc: 0.6667, Test Acc: 0.5000
-  Finished training. Best Val Acc: 0.6667, Corresponding Test Acc: 0.5357
+    Epoch 001, Loss: 2.5337, Val Acc: 0.3333, Test Acc: 0.5000
+    Epoch 010, Loss: 0.0011, Val Acc: 0.3333, Test Acc: 0.5000
+    Epoch 020, Loss: 0.0000, Val Acc: 0.3333, Test Acc: 0.5000
+    Epoch 030, Loss: 0.0000, Val Acc: 0.3333, Test Acc: 0.5000
+    Epoch 040, Loss: 0.0000, Val Acc: 0.3333, Test Acc: 0.5000
+    Epoch 050, Loss: 0.0000, Val Acc: 0.3333, Test Acc: 0.5000
+    Epoch 060, Loss: 0.0000, Val Acc: 0.3333, Test Acc: 0.5000
+    Epoch 070, Loss: 0.0001, Val Acc: 0.3333, Test Acc: 0.5000
+    Epoch 080, Loss: 0.0000, Val Acc: 0.3333, Test Acc: 0.5000
+    Epoch 090, Loss: 0.0009, Val Acc: 0.3333, Test Acc: 0.5000
+    Epoch 100, Loss: 0.0001, Val Acc: 0.3333, Test Acc: 0.5000
+  Finished training. Best Val Acc: 0.6667, Corresponding Test Acc: 0.5714
 
 ==================================================
 ### Benchmarking on Dataset: Cora_Original ###
@@ -2557,17 +2569,17 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 3.0581, Val Acc: 0.1520, Test Acc: 0.1110
-    Epoch 010, Loss: 0.2428, Val Acc: 0.2120, Test Acc: 0.2260
-    Epoch 020, Loss: 0.0537, Val Acc: 0.2500, Test Acc: 0.2300
-    Epoch 030, Loss: 0.0219, Val Acc: 0.2580, Test Acc: 0.2370
-    Epoch 040, Loss: 0.0184, Val Acc: 0.2580, Test Acc: 0.2360
-    Epoch 050, Loss: 0.0098, Val Acc: 0.2460, Test Acc: 0.2170
-    Epoch 060, Loss: 0.0043, Val Acc: 0.2420, Test Acc: 0.2120
-    Epoch 070, Loss: 0.0204, Val Acc: 0.2460, Test Acc: 0.2220
-    Epoch 080, Loss: 0.0187, Val Acc: 0.2280, Test Acc: 0.2280
-    Epoch 090, Loss: 0.0120, Val Acc: 0.2300, Test Acc: 0.2370
-    Epoch 100, Loss: 0.0153, Val Acc: 0.2300, Test Acc: 0.2310
+    Epoch 001, Loss: 2.8117, Val Acc: 0.2160, Test Acc: 0.2130
+    Epoch 010, Loss: 0.2664, Val Acc: 0.2280, Test Acc: 0.2220
+    Epoch 020, Loss: 0.0498, Val Acc: 0.2400, Test Acc: 0.2280
+    Epoch 030, Loss: 0.0177, Val Acc: 0.2300, Test Acc: 0.2240
+    Epoch 040, Loss: 0.0144, Val Acc: 0.2180, Test Acc: 0.2300
+    Epoch 050, Loss: 0.0111, Val Acc: 0.2240, Test Acc: 0.2330
+    Epoch 060, Loss: 0.0108, Val Acc: 0.2380, Test Acc: 0.2240
+    Epoch 070, Loss: 0.0094, Val Acc: 0.2420, Test Acc: 0.2400
+    Epoch 080, Loss: 0.0109, Val Acc: 0.2220, Test Acc: 0.2280
+    Epoch 090, Loss: 0.0123, Val Acc: 0.2500, Test Acc: 0.2390
+    Epoch 100, Loss: 0.0106, Val Acc: 0.2480, Test Acc: 0.2360
   Finished training. Best Val Acc: 0.2640, Corresponding Test Acc: 0.2380
 
 ==================================================
@@ -2786,18 +2798,18 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 3.0472, Val Acc: 0.1460, Test Acc: 0.1410
-    Epoch 010, Loss: 0.2947, Val Acc: 0.2240, Test Acc: 0.2710
-    Epoch 020, Loss: 0.0681, Val Acc: 0.2540, Test Acc: 0.2670
-    Epoch 030, Loss: 0.0336, Val Acc: 0.2460, Test Acc: 0.2810
-    Epoch 040, Loss: 0.0245, Val Acc: 0.2540, Test Acc: 0.2730
-    Epoch 050, Loss: 0.0198, Val Acc: 0.2400, Test Acc: 0.2590
-    Epoch 060, Loss: 0.0171, Val Acc: 0.2440, Test Acc: 0.2750
-    Epoch 070, Loss: 0.0152, Val Acc: 0.2380, Test Acc: 0.2640
-    Epoch 080, Loss: 0.0134, Val Acc: 0.2560, Test Acc: 0.2630
-    Epoch 090, Loss: 0.0282, Val Acc: 0.2300, Test Acc: 0.2860
-    Epoch 100, Loss: 0.0300, Val Acc: 0.2120, Test Acc: 0.2660
-  Finished training. Best Val Acc: 0.2660, Corresponding Test Acc: 0.2860
+    Epoch 001, Loss: 2.9601, Val Acc: 0.2360, Test Acc: 0.2230
+    Epoch 010, Loss: 0.2738, Val Acc: 0.2460, Test Acc: 0.2870
+    Epoch 020, Loss: 0.0804, Val Acc: 0.2600, Test Acc: 0.2980
+    Epoch 030, Loss: 0.0206, Val Acc: 0.2540, Test Acc: 0.2930
+    Epoch 040, Loss: 0.0183, Val Acc: 0.2580, Test Acc: 0.3160
+    Epoch 050, Loss: 0.0108, Val Acc: 0.2520, Test Acc: 0.2950
+    Epoch 060, Loss: 0.0282, Val Acc: 0.2540, Test Acc: 0.3050
+    Epoch 070, Loss: 0.0320, Val Acc: 0.2620, Test Acc: 0.2900
+    Epoch 080, Loss: 0.0101, Val Acc: 0.2560, Test Acc: 0.2860
+    Epoch 090, Loss: 0.0112, Val Acc: 0.2520, Test Acc: 0.2970
+    Epoch 100, Loss: 0.0202, Val Acc: 0.2600, Test Acc: 0.2790
+  Finished training. Best Val Acc: 0.2740, Corresponding Test Acc: 0.3160
 
 ==================================================
 ### Benchmarking on Dataset: CiteSeer_Original ###
@@ -3015,18 +3027,18 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 2.8525, Val Acc: 0.2060, Test Acc: 0.1560
-    Epoch 010, Loss: 0.2352, Val Acc: 0.2360, Test Acc: 0.2130
-    Epoch 020, Loss: 0.0707, Val Acc: 0.2460, Test Acc: 0.2110
-    Epoch 030, Loss: 0.0256, Val Acc: 0.2300, Test Acc: 0.2160
-    Epoch 040, Loss: 0.0151, Val Acc: 0.2340, Test Acc: 0.2250
-    Epoch 050, Loss: 0.0079, Val Acc: 0.2580, Test Acc: 0.2180
-    Epoch 060, Loss: 0.0274, Val Acc: 0.2420, Test Acc: 0.2200
-    Epoch 070, Loss: 0.0201, Val Acc: 0.2400, Test Acc: 0.2280
-    Epoch 080, Loss: 0.0189, Val Acc: 0.2300, Test Acc: 0.2310
-    Epoch 090, Loss: 0.0165, Val Acc: 0.2480, Test Acc: 0.2160
-    Epoch 100, Loss: 0.0302, Val Acc: 0.2500, Test Acc: 0.2110
-  Finished training. Best Val Acc: 0.2600, Corresponding Test Acc: 0.2140
+    Epoch 001, Loss: 3.5446, Val Acc: 0.1900, Test Acc: 0.1960
+    Epoch 010, Loss: 0.2222, Val Acc: 0.2240, Test Acc: 0.2130
+    Epoch 020, Loss: 0.0568, Val Acc: 0.2700, Test Acc: 0.2300
+    Epoch 030, Loss: 0.0171, Val Acc: 0.2300, Test Acc: 0.2230
+    Epoch 040, Loss: 0.0145, Val Acc: 0.2300, Test Acc: 0.2170
+    Epoch 050, Loss: 0.0066, Val Acc: 0.2100, Test Acc: 0.2070
+    Epoch 060, Loss: 0.0209, Val Acc: 0.2160, Test Acc: 0.2190
+    Epoch 070, Loss: 0.0047, Val Acc: 0.2120, Test Acc: 0.2220
+    Epoch 080, Loss: 0.0060, Val Acc: 0.2340, Test Acc: 0.2210
+    Epoch 090, Loss: 0.0064, Val Acc: 0.2060, Test Acc: 0.2200
+    Epoch 100, Loss: 0.0356, Val Acc: 0.2160, Test Acc: 0.2110
+  Finished training. Best Val Acc: 0.2700, Corresponding Test Acc: 0.2300
 
 ==================================================
 ### Benchmarking on Dataset: CiteSeer_Undirected ###
@@ -3244,18 +3256,18 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 2.8492, Val Acc: 0.1440, Test Acc: 0.1460
-    Epoch 010, Loss: 0.2287, Val Acc: 0.2360, Test Acc: 0.1920
-    Epoch 020, Loss: 0.0409, Val Acc: 0.2300, Test Acc: 0.2320
-    Epoch 030, Loss: 0.0262, Val Acc: 0.2260, Test Acc: 0.2200
-    Epoch 040, Loss: 0.0119, Val Acc: 0.2360, Test Acc: 0.2220
-    Epoch 050, Loss: 0.0064, Val Acc: 0.2400, Test Acc: 0.2320
-    Epoch 060, Loss: 0.0094, Val Acc: 0.2360, Test Acc: 0.2180
-    Epoch 070, Loss: 0.0126, Val Acc: 0.2320, Test Acc: 0.2150
-    Epoch 080, Loss: 0.0185, Val Acc: 0.2340, Test Acc: 0.2220
-    Epoch 090, Loss: 0.0142, Val Acc: 0.2340, Test Acc: 0.2170
-    Epoch 100, Loss: 0.0175, Val Acc: 0.2180, Test Acc: 0.1990
-  Finished training. Best Val Acc: 0.2480, Corresponding Test Acc: 0.1960
+    Epoch 001, Loss: 3.3528, Val Acc: 0.1960, Test Acc: 0.1870
+    Epoch 010, Loss: 0.3105, Val Acc: 0.2440, Test Acc: 0.2240
+    Epoch 020, Loss: 0.0842, Val Acc: 0.2240, Test Acc: 0.2260
+    Epoch 030, Loss: 0.0160, Val Acc: 0.2360, Test Acc: 0.2160
+    Epoch 040, Loss: 0.0157, Val Acc: 0.2200, Test Acc: 0.2210
+    Epoch 050, Loss: 0.0090, Val Acc: 0.2160, Test Acc: 0.2220
+    Epoch 060, Loss: 0.0086, Val Acc: 0.2180, Test Acc: 0.2220
+    Epoch 070, Loss: 0.0182, Val Acc: 0.2240, Test Acc: 0.2140
+    Epoch 080, Loss: 0.0142, Val Acc: 0.1980, Test Acc: 0.2130
+    Epoch 090, Loss: 0.0190, Val Acc: 0.2100, Test Acc: 0.2030
+    Epoch 100, Loss: 0.0097, Val Acc: 0.2080, Test Acc: 0.2210
+  Finished training. Best Val Acc: 0.2460, Corresponding Test Acc: 0.2120
 
 ==================================================
 ### Benchmarking on Dataset: PubMed_Original ###
@@ -3473,18 +3485,18 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 1.4924, Val Acc: 0.2560, Test Acc: 0.2310
-    Epoch 010, Loss: 0.1027, Val Acc: 0.3360, Test Acc: 0.3270
-    Epoch 020, Loss: 0.0139, Val Acc: 0.3700, Test Acc: 0.3500
-    Epoch 030, Loss: 0.0020, Val Acc: 0.3560, Test Acc: 0.3480
-    Epoch 040, Loss: 0.0021, Val Acc: 0.3480, Test Acc: 0.3370
-    Epoch 050, Loss: 0.0028, Val Acc: 0.3580, Test Acc: 0.3390
-    Epoch 060, Loss: 0.0009, Val Acc: 0.3580, Test Acc: 0.3370
-    Epoch 070, Loss: 0.0005, Val Acc: 0.3500, Test Acc: 0.3410
-    Epoch 080, Loss: 0.0005, Val Acc: 0.3740, Test Acc: 0.3460
-    Epoch 090, Loss: 0.0007, Val Acc: 0.3700, Test Acc: 0.3480
-    Epoch 100, Loss: 0.0023, Val Acc: 0.3640, Test Acc: 0.3400
-  Finished training. Best Val Acc: 0.3800, Corresponding Test Acc: 0.3500
+    Epoch 001, Loss: 1.9923, Val Acc: 0.3640, Test Acc: 0.3790
+    Epoch 010, Loss: 0.0968, Val Acc: 0.3620, Test Acc: 0.3550
+    Epoch 020, Loss: 0.0167, Val Acc: 0.3700, Test Acc: 0.3440
+    Epoch 030, Loss: 0.0059, Val Acc: 0.3600, Test Acc: 0.3440
+    Epoch 040, Loss: 0.0038, Val Acc: 0.3580, Test Acc: 0.3480
+    Epoch 050, Loss: 0.0009, Val Acc: 0.3760, Test Acc: 0.3570
+    Epoch 060, Loss: 0.0030, Val Acc: 0.3760, Test Acc: 0.3530
+    Epoch 070, Loss: 0.0016, Val Acc: 0.3660, Test Acc: 0.3530
+    Epoch 080, Loss: 0.0015, Val Acc: 0.3620, Test Acc: 0.3470
+    Epoch 090, Loss: 0.0004, Val Acc: 0.3560, Test Acc: 0.3550
+    Epoch 100, Loss: 0.0007, Val Acc: 0.3320, Test Acc: 0.3440
+  Finished training. Best Val Acc: 0.3840, Corresponding Test Acc: 0.3700
 
 ==================================================
 ### Benchmarking on Dataset: PubMed_Undirected ###
@@ -3702,18 +3714,18 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 1.7718, Val Acc: 0.2680, Test Acc: 0.2540
-    Epoch 010, Loss: 0.1089, Val Acc: 0.2980, Test Acc: 0.3310
-    Epoch 020, Loss: 0.0048, Val Acc: 0.2980, Test Acc: 0.3410
-    Epoch 030, Loss: 0.0043, Val Acc: 0.3020, Test Acc: 0.3300
-    Epoch 040, Loss: 0.0043, Val Acc: 0.3120, Test Acc: 0.3320
-    Epoch 050, Loss: 0.0007, Val Acc: 0.3000, Test Acc: 0.3360
-    Epoch 060, Loss: 0.0058, Val Acc: 0.2980, Test Acc: 0.3300
-    Epoch 070, Loss: 0.0043, Val Acc: 0.2960, Test Acc: 0.3300
-    Epoch 080, Loss: 0.0043, Val Acc: 0.3060, Test Acc: 0.3230
-    Epoch 090, Loss: 0.0005, Val Acc: 0.3100, Test Acc: 0.3320
-    Epoch 100, Loss: 0.0048, Val Acc: 0.3000, Test Acc: 0.3230
-  Finished training. Best Val Acc: 0.3240, Corresponding Test Acc: 0.3570
+    Epoch 001, Loss: 1.9412, Val Acc: 0.3240, Test Acc: 0.3520
+    Epoch 010, Loss: 0.1064, Val Acc: 0.3200, Test Acc: 0.3150
+    Epoch 020, Loss: 0.0229, Val Acc: 0.2860, Test Acc: 0.3390
+    Epoch 030, Loss: 0.0107, Val Acc: 0.2800, Test Acc: 0.3410
+    Epoch 040, Loss: 0.0142, Val Acc: 0.2840, Test Acc: 0.3410
+    Epoch 050, Loss: 0.0013, Val Acc: 0.2880, Test Acc: 0.3460
+    Epoch 060, Loss: 0.0062, Val Acc: 0.2840, Test Acc: 0.3300
+    Epoch 070, Loss: 0.0006, Val Acc: 0.2900, Test Acc: 0.3270
+    Epoch 080, Loss: 0.0027, Val Acc: 0.2840, Test Acc: 0.3280
+    Epoch 090, Loss: 0.0008, Val Acc: 0.2800, Test Acc: 0.3300
+    Epoch 100, Loss: 0.0009, Val Acc: 0.2780, Test Acc: 0.3260
+  Finished training. Best Val Acc: 0.3440, Corresponding Test Acc: 0.3360
 
 ==================================================
 ### Benchmarking on Dataset: Cornell_Original ###
@@ -3920,6 +3932,7 @@ DirGNN(
     Normalizing homophilic and heterophilic matrices...
     - Undirected Homophilous Edges: 37
     - Undirected Heterophilous Edges: 243
+    - Undirected Total Unique Edges: 280
   Creating new instance of 'DirectGCN' for context 'benchmark'.
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
   Model Architecture:
@@ -3935,18 +3948,18 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 2.1025, Val Acc: 0.4746, Test Acc: 0.4054
-    Epoch 010, Loss: 0.1921, Val Acc: 0.2712, Test Acc: 0.3243
-    Epoch 020, Loss: 0.0562, Val Acc: 0.3051, Test Acc: 0.2703
-    Epoch 030, Loss: 0.0222, Val Acc: 0.3051, Test Acc: 0.2973
-    Epoch 040, Loss: 0.0106, Val Acc: 0.3559, Test Acc: 0.2973
-    Epoch 050, Loss: 0.0118, Val Acc: 0.3390, Test Acc: 0.3243
-    Epoch 060, Loss: 0.0141, Val Acc: 0.2881, Test Acc: 0.2703
-    Epoch 070, Loss: 0.0217, Val Acc: 0.3220, Test Acc: 0.3243
-    Epoch 080, Loss: 0.0107, Val Acc: 0.3220, Test Acc: 0.2703
-    Epoch 090, Loss: 0.0252, Val Acc: 0.3220, Test Acc: 0.2703
-    Epoch 100, Loss: 0.0031, Val Acc: 0.3220, Test Acc: 0.2703
-  Finished training. Best Val Acc: 0.4746, Corresponding Test Acc: 0.4054
+    Epoch 001, Loss: 2.4497, Val Acc: 0.4746, Test Acc: 0.3243
+    Epoch 010, Loss: 0.1761, Val Acc: 0.4237, Test Acc: 0.2703
+    Epoch 020, Loss: 0.0401, Val Acc: 0.3559, Test Acc: 0.2703
+    Epoch 030, Loss: 0.0226, Val Acc: 0.3220, Test Acc: 0.2432
+    Epoch 040, Loss: 0.0116, Val Acc: 0.3559, Test Acc: 0.2973
+    Epoch 050, Loss: 0.0145, Val Acc: 0.3729, Test Acc: 0.2703
+    Epoch 060, Loss: 0.0153, Val Acc: 0.3390, Test Acc: 0.2973
+    Epoch 070, Loss: 0.0199, Val Acc: 0.3898, Test Acc: 0.2432
+    Epoch 080, Loss: 0.0047, Val Acc: 0.3390, Test Acc: 0.2432
+    Epoch 090, Loss: 0.0166, Val Acc: 0.3559, Test Acc: 0.2432
+    Epoch 100, Loss: 0.0120, Val Acc: 0.3729, Test Acc: 0.2973
+  Finished training. Best Val Acc: 0.4746, Corresponding Test Acc: 0.3243
 
 ==================================================
 ### Benchmarking on Dataset: Cornell_Undirected ###
@@ -4153,6 +4166,7 @@ DirGNN(
     Normalizing homophilic and heterophilic matrices...
     - Undirected Homophilous Edges: 37
     - Undirected Heterophilous Edges: 243
+    - Undirected Total Unique Edges: 280
   Creating new instance of 'DirectGCN' for context 'benchmark'.
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
   Model Architecture:
@@ -4168,18 +4182,18 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 2.4427, Val Acc: 0.5254, Test Acc: 0.3784
-    Epoch 010, Loss: 0.1983, Val Acc: 0.3220, Test Acc: 0.3514
-    Epoch 020, Loss: 0.0498, Val Acc: 0.3898, Test Acc: 0.4595
-    Epoch 030, Loss: 0.0101, Val Acc: 0.3220, Test Acc: 0.4595
-    Epoch 040, Loss: 0.0266, Val Acc: 0.3220, Test Acc: 0.4324
-    Epoch 050, Loss: 0.0117, Val Acc: 0.2881, Test Acc: 0.4054
-    Epoch 060, Loss: 0.0124, Val Acc: 0.2712, Test Acc: 0.4054
-    Epoch 070, Loss: 0.0036, Val Acc: 0.3051, Test Acc: 0.4054
-    Epoch 080, Loss: 0.0128, Val Acc: 0.3220, Test Acc: 0.3784
-    Epoch 090, Loss: 0.0030, Val Acc: 0.3559, Test Acc: 0.4324
-    Epoch 100, Loss: 0.0088, Val Acc: 0.3559, Test Acc: 0.4595
-  Finished training. Best Val Acc: 0.5254, Corresponding Test Acc: 0.3784
+    Epoch 001, Loss: 2.7592, Val Acc: 0.4746, Test Acc: 0.4324
+    Epoch 010, Loss: 0.2423, Val Acc: 0.4407, Test Acc: 0.4595
+    Epoch 020, Loss: 0.0671, Val Acc: 0.4407, Test Acc: 0.4595
+    Epoch 030, Loss: 0.0384, Val Acc: 0.4915, Test Acc: 0.4324
+    Epoch 040, Loss: 0.0142, Val Acc: 0.4237, Test Acc: 0.4324
+    Epoch 050, Loss: 0.0072, Val Acc: 0.4407, Test Acc: 0.4324
+    Epoch 060, Loss: 0.0078, Val Acc: 0.4237, Test Acc: 0.4324
+    Epoch 070, Loss: 0.0052, Val Acc: 0.4576, Test Acc: 0.4324
+    Epoch 080, Loss: 0.0050, Val Acc: 0.4407, Test Acc: 0.4595
+    Epoch 090, Loss: 0.0029, Val Acc: 0.4068, Test Acc: 0.4865
+    Epoch 100, Loss: 0.0075, Val Acc: 0.3898, Test Acc: 0.4595
+  Finished training. Best Val Acc: 0.4915, Corresponding Test Acc: 0.4595
 
 ==================================================
 ### Benchmarking on Dataset: Texas_Original ###
@@ -4386,6 +4400,7 @@ DirGNN(
     Normalizing homophilic and heterophilic matrices...
     - Undirected Homophilous Edges: 33
     - Undirected Heterophilous Edges: 262
+    - Undirected Total Unique Edges: 295
   Creating new instance of 'DirectGCN' for context 'benchmark'.
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
   Model Architecture:
@@ -4401,18 +4416,18 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 2.2668, Val Acc: 0.5085, Test Acc: 0.6486
-    Epoch 010, Loss: 0.1733, Val Acc: 0.4068, Test Acc: 0.5405
-    Epoch 020, Loss: 0.0464, Val Acc: 0.4237, Test Acc: 0.4054
-    Epoch 030, Loss: 0.0235, Val Acc: 0.3898, Test Acc: 0.4054
-    Epoch 040, Loss: 0.0174, Val Acc: 0.4407, Test Acc: 0.4595
-    Epoch 050, Loss: 0.0487, Val Acc: 0.4237, Test Acc: 0.4324
-    Epoch 060, Loss: 0.0054, Val Acc: 0.4407, Test Acc: 0.4595
-    Epoch 070, Loss: 0.0066, Val Acc: 0.4407, Test Acc: 0.4595
-    Epoch 080, Loss: 0.0076, Val Acc: 0.4407, Test Acc: 0.4595
-    Epoch 090, Loss: 0.0063, Val Acc: 0.4576, Test Acc: 0.4595
-    Epoch 100, Loss: 0.0070, Val Acc: 0.4237, Test Acc: 0.5135
-  Finished training. Best Val Acc: 0.5085, Corresponding Test Acc: 0.6486
+    Epoch 001, Loss: 2.1612, Val Acc: 0.5254, Test Acc: 0.5946
+    Epoch 010, Loss: 0.2015, Val Acc: 0.3390, Test Acc: 0.4324
+    Epoch 020, Loss: 0.0243, Val Acc: 0.3559, Test Acc: 0.5676
+    Epoch 030, Loss: 0.0080, Val Acc: 0.3729, Test Acc: 0.5405
+    Epoch 040, Loss: 0.0040, Val Acc: 0.3898, Test Acc: 0.5405
+    Epoch 050, Loss: 0.0116, Val Acc: 0.3390, Test Acc: 0.5405
+    Epoch 060, Loss: 0.0033, Val Acc: 0.3559, Test Acc: 0.5135
+    Epoch 070, Loss: 0.0019, Val Acc: 0.4237, Test Acc: 0.5405
+    Epoch 080, Loss: 0.0100, Val Acc: 0.4068, Test Acc: 0.4865
+    Epoch 090, Loss: 0.0061, Val Acc: 0.4068, Test Acc: 0.4595
+    Epoch 100, Loss: 0.0040, Val Acc: 0.4068, Test Acc: 0.4324
+  Finished training. Best Val Acc: 0.5254, Corresponding Test Acc: 0.5946
 
 ==================================================
 ### Benchmarking on Dataset: Texas_Undirected ###
@@ -4619,6 +4634,7 @@ DirGNN(
     Normalizing homophilic and heterophilic matrices...
     - Undirected Homophilous Edges: 33
     - Undirected Heterophilous Edges: 262
+    - Undirected Total Unique Edges: 295
   Creating new instance of 'DirectGCN' for context 'benchmark'.
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
   Model Architecture:
@@ -4634,17 +4650,17 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 2.4822, Val Acc: 0.5254, Test Acc: 0.6216
-    Epoch 010, Loss: 0.1397, Val Acc: 0.4237, Test Acc: 0.5135
-    Epoch 020, Loss: 0.0473, Val Acc: 0.4746, Test Acc: 0.4865
-    Epoch 030, Loss: 0.0136, Val Acc: 0.4407, Test Acc: 0.4865
-    Epoch 040, Loss: 0.0084, Val Acc: 0.4746, Test Acc: 0.5135
-    Epoch 050, Loss: 0.0259, Val Acc: 0.4576, Test Acc: 0.5135
-    Epoch 060, Loss: 0.0045, Val Acc: 0.4746, Test Acc: 0.5135
-    Epoch 070, Loss: 0.0018, Val Acc: 0.4915, Test Acc: 0.4865
-    Epoch 080, Loss: 0.0138, Val Acc: 0.4576, Test Acc: 0.4865
-    Epoch 090, Loss: 0.0144, Val Acc: 0.4576, Test Acc: 0.4865
-    Epoch 100, Loss: 0.0120, Val Acc: 0.3898, Test Acc: 0.5946
+    Epoch 001, Loss: 2.3560, Val Acc: 0.5254, Test Acc: 0.6216
+    Epoch 010, Loss: 0.2164, Val Acc: 0.3729, Test Acc: 0.4865
+    Epoch 020, Loss: 0.0301, Val Acc: 0.4237, Test Acc: 0.5676
+    Epoch 030, Loss: 0.0092, Val Acc: 0.4237, Test Acc: 0.5405
+    Epoch 040, Loss: 0.0065, Val Acc: 0.4068, Test Acc: 0.5405
+    Epoch 050, Loss: 0.0187, Val Acc: 0.4068, Test Acc: 0.5676
+    Epoch 060, Loss: 0.0029, Val Acc: 0.4237, Test Acc: 0.5405
+    Epoch 070, Loss: 0.0010, Val Acc: 0.4068, Test Acc: 0.5405
+    Epoch 080, Loss: 0.0120, Val Acc: 0.4237, Test Acc: 0.5676
+    Epoch 090, Loss: 0.0086, Val Acc: 0.4068, Test Acc: 0.5135
+    Epoch 100, Loss: 0.0160, Val Acc: 0.4068, Test Acc: 0.5135
   Finished training. Best Val Acc: 0.5254, Corresponding Test Acc: 0.6216
 
 ==================================================
@@ -4852,6 +4868,7 @@ DirGNN(
     Normalizing homophilic and heterophilic matrices...
     - Undirected Homophilous Edges: 96
     - Undirected Heterophilous Edges: 370
+    - Undirected Total Unique Edges: 466
   Creating new instance of 'DirectGCN' for context 'benchmark'.
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
   Model Architecture:
@@ -4867,18 +4884,18 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 2.2687, Val Acc: 0.3250, Test Acc: 0.3333
-    Epoch 010, Loss: 0.3097, Val Acc: 0.4500, Test Acc: 0.4314
-    Epoch 020, Loss: 0.0516, Val Acc: 0.4250, Test Acc: 0.3333
-    Epoch 030, Loss: 0.0308, Val Acc: 0.4625, Test Acc: 0.3725
-    Epoch 040, Loss: 0.0129, Val Acc: 0.4000, Test Acc: 0.3333
-    Epoch 050, Loss: 0.0158, Val Acc: 0.4250, Test Acc: 0.4118
-    Epoch 060, Loss: 0.0104, Val Acc: 0.4375, Test Acc: 0.3529
-    Epoch 070, Loss: 0.0195, Val Acc: 0.4250, Test Acc: 0.3725
-    Epoch 080, Loss: 0.0110, Val Acc: 0.4250, Test Acc: 0.3529
-    Epoch 090, Loss: 0.0208, Val Acc: 0.4375, Test Acc: 0.4118
-    Epoch 100, Loss: 0.0295, Val Acc: 0.4500, Test Acc: 0.4510
-  Finished training. Best Val Acc: 0.5000, Corresponding Test Acc: 0.3922
+    Epoch 001, Loss: 3.4161, Val Acc: 0.3875, Test Acc: 0.3333
+    Epoch 010, Loss: 0.2417, Val Acc: 0.4625, Test Acc: 0.3922
+    Epoch 020, Loss: 0.0972, Val Acc: 0.5125, Test Acc: 0.3725
+    Epoch 030, Loss: 0.0344, Val Acc: 0.4875, Test Acc: 0.3725
+    Epoch 040, Loss: 0.0081, Val Acc: 0.4750, Test Acc: 0.3922
+    Epoch 050, Loss: 0.0245, Val Acc: 0.4750, Test Acc: 0.3922
+    Epoch 060, Loss: 0.0138, Val Acc: 0.4750, Test Acc: 0.3529
+    Epoch 070, Loss: 0.0044, Val Acc: 0.4250, Test Acc: 0.3725
+    Epoch 080, Loss: 0.0182, Val Acc: 0.4000, Test Acc: 0.3725
+    Epoch 090, Loss: 0.0083, Val Acc: 0.4250, Test Acc: 0.4314
+    Epoch 100, Loss: 0.0096, Val Acc: 0.4375, Test Acc: 0.3333
+  Finished training. Best Val Acc: 0.5250, Corresponding Test Acc: 0.3725
 
 ==================================================
 ### Benchmarking on Dataset: Wisconsin_Undirected ###
@@ -5085,6 +5102,7 @@ DirGNN(
     Normalizing homophilic and heterophilic matrices...
     - Undirected Homophilous Edges: 96
     - Undirected Heterophilous Edges: 370
+    - Undirected Total Unique Edges: 466
   Creating new instance of 'DirectGCN' for context 'benchmark'.
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
   Model Architecture:
@@ -5100,18 +5118,18 @@ DirectGCN(
   (norms): ModuleList()
   (decoder_fc): Identity()
 )
-    Epoch 001, Loss: 2.5468, Val Acc: 0.3000, Test Acc: 0.2353
-    Epoch 010, Loss: 0.2132, Val Acc: 0.4125, Test Acc: 0.4510
-    Epoch 020, Loss: 0.0310, Val Acc: 0.4750, Test Acc: 0.3922
-    Epoch 030, Loss: 0.0281, Val Acc: 0.5375, Test Acc: 0.4510
-    Epoch 040, Loss: 0.0081, Val Acc: 0.5000, Test Acc: 0.4314
-    Epoch 050, Loss: 0.0047, Val Acc: 0.5000, Test Acc: 0.4510
-    Epoch 060, Loss: 0.0083, Val Acc: 0.5000, Test Acc: 0.4118
-    Epoch 070, Loss: 0.0037, Val Acc: 0.5000, Test Acc: 0.4314
-    Epoch 080, Loss: 0.0091, Val Acc: 0.5125, Test Acc: 0.3725
-    Epoch 090, Loss: 0.0080, Val Acc: 0.5000, Test Acc: 0.4118
-    Epoch 100, Loss: 0.0022, Val Acc: 0.4500, Test Acc: 0.4706
-  Finished training. Best Val Acc: 0.5375, Corresponding Test Acc: 0.4510
+    Epoch 001, Loss: 4.1612, Val Acc: 0.3000, Test Acc: 0.3333
+    Epoch 010, Loss: 0.2712, Val Acc: 0.4375, Test Acc: 0.3725
+    Epoch 020, Loss: 0.0398, Val Acc: 0.4750, Test Acc: 0.2941
+    Epoch 030, Loss: 0.0297, Val Acc: 0.4250, Test Acc: 0.3529
+    Epoch 040, Loss: 0.0109, Val Acc: 0.4500, Test Acc: 0.3725
+    Epoch 050, Loss: 0.0079, Val Acc: 0.4500, Test Acc: 0.3529
+    Epoch 060, Loss: 0.0077, Val Acc: 0.4750, Test Acc: 0.3529
+    Epoch 070, Loss: 0.0039, Val Acc: 0.4375, Test Acc: 0.3922
+    Epoch 080, Loss: 0.0037, Val Acc: 0.4250, Test Acc: 0.4118
+    Epoch 090, Loss: 0.0058, Val Acc: 0.4875, Test Acc: 0.4510
+    Epoch 100, Loss: 0.0175, Val Acc: 0.5250, Test Acc: 0.4118
+  Finished training. Best Val Acc: 0.5250, Corresponding Test Acc: 0.4118
 
 --- Launching Network Embedding Benchmark Sub-routine ---
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
@@ -5123,7 +5141,7 @@ DirectGCN(
 ===============================================
 
   Device: cuda
-  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/benchmarking_results
+  Output directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/benchmarking_results
   Dataset root: /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks
 ================================================================================
 
@@ -5222,7 +5240,7 @@ GraphSAGE   0.2160           0.2129            0.2216         0.2197  None
       GCN   0.2420           0.2351            0.2427         0.2438  None
      RGCN   0.2270           0.2193            0.2293         0.2288  None
    DirGNN   0.2310           0.2276            0.2353         0.2407  None
-DirectGCN   0.2140           0.2087            0.2196         0.2129  None
+DirectGCN   0.2300           0.2251            0.2276         0.2360  None
 
 --- Results for Dataset: CiteSeer_Undirected ---
     model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
@@ -5233,7 +5251,7 @@ GraphSAGE   0.2100           0.2005            0.2051         0.2023  None
       GCN   0.2560           0.2466            0.2545         0.2500  None
      RGCN   0.2110           0.2044            0.2132         0.2087  None
    DirGNN   0.2510           0.2437            0.2540         0.2512  None
-DirectGCN   0.1960           0.1872            0.2010         0.1959  None
+DirectGCN   0.2120           0.2011            0.2139         0.2066  None
 
 --- Results for Dataset: Cora ---
     model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
@@ -5245,7 +5263,7 @@ GraphSAGE   0.2940           0.2928            0.2896         0.3098  None
       GCN   0.3430           0.3389            0.3345         0.3586  None
      RGCN   0.3720           0.3643            0.3611         0.3871  None
    DirGNN   0.3310           0.3290            0.3229         0.3511  None
-DirectGCN   0.2380           0.2321            0.2320         0.2525  None
+DirectGCN   0.2380           0.2324            0.2372         0.2537  None
 
 --- Results for Dataset: Cora_Undirected ---
     model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
@@ -5256,7 +5274,7 @@ GraphSAGE   0.3180           0.3102            0.3103         0.3344  None
       GCN   0.3740           0.3656            0.3696         0.3912  None
      RGCN   0.3760           0.3629            0.3608         0.3856  None
    DirGNN   0.3540           0.3440            0.3451         0.3648  None
-DirectGCN   0.2860           0.2766            0.2819         0.2965  None
+DirectGCN   0.3160           0.3002            0.3007         0.3113  None
 
 --- Results for Dataset: Cornell ---
     model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
@@ -5268,7 +5286,7 @@ GraphSAGE   0.4324           0.1610            0.1938         0.2200  None
       GCN   0.3243           0.1067            0.0800         0.1600  None
      RGCN   0.5135           0.3844            0.4102         0.4200  None
    DirGNN   0.4054           0.1525            0.1875         0.2067  None
-DirectGCN   0.4054           0.1580            0.1632         0.2067  None
+DirectGCN   0.3243           0.1285            0.1400         0.1667  None
 
 --- Results for Dataset: Cornell_Undirected ---
     model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
@@ -5279,7 +5297,7 @@ GraphSAGE   0.4324           0.1558            0.1882         0.2200  None
       GCN   0.4595           0.2255            0.4882         0.2600  None
      RGCN   0.5135           0.2552            0.2667         0.2867  None
    DirGNN   0.4324           0.2222            0.4875         0.2467  None
-DirectGCN   0.3784           0.1098            0.0778         0.1867  None
+DirectGCN   0.4595           0.2222            0.2083         0.2533  None
 
 --- Results for Dataset: KarateClub ---
     model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
@@ -5291,7 +5309,7 @@ GraphSAGE   0.3214           0.2845            0.2801         0.3258  None
       GCN   0.4643           0.3778            0.4850         0.4167  None
      RGCN   0.2500           0.2365            0.1979         0.4015  None
    DirGNN   0.5357           0.5155            0.4417         0.6439  None
-DirectGCN   0.5714           0.5441            0.5125         0.6667  None
+DirectGCN   0.5714           0.5594            0.5310         0.6667  None
 
 --- Results for Dataset: KarateClub_Undirected ---
     model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
@@ -5302,7 +5320,7 @@ GraphSAGE   0.3571           0.3490            0.2898         0.5909  None
       GCN   0.5357           0.5089            0.4288         0.7045  None
      RGCN   0.5000           0.4036            0.3554         0.5606  None
    DirGNN   0.5000           0.4561            0.4119         0.6212  None
-DirectGCN   0.5357           0.4895            0.6190         0.6439  None
+DirectGCN   0.5714           0.5810            0.5625         0.6667  None
 
 --- Results for Dataset: PubMed ---
     model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
@@ -5314,7 +5332,7 @@ GraphSAGE   0.3230           0.3133            0.3298         0.3267  None
       GCN   0.3480           0.3449            0.3630         0.3722  None
      RGCN   0.3150           0.3102            0.3307         0.3289  None
    DirGNN   0.3520           0.3377            0.3457         0.3466  None
-DirectGCN   0.3500           0.3425            0.3595         0.3602  None
+DirectGCN   0.3700           0.3390            0.3431         0.3391  None
 
 --- Results for Dataset: PubMed_Undirected ---
     model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
@@ -5325,7 +5343,7 @@ GraphSAGE   0.3360           0.3297            0.3475         0.3478  None
       GCN   0.3750           0.3380            0.3430         0.3417  None
      RGCN   0.3230           0.3065            0.3166         0.3112  None
    DirGNN   0.3450           0.3268            0.3397         0.3382  None
-DirectGCN   0.3570           0.3464            0.3507         0.3578  None
+DirectGCN   0.3360           0.3255            0.3322         0.3364  None
 
 --- Results for Dataset: Texas ---
     model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
@@ -5337,7 +5355,7 @@ GraphSAGE   0.6216           0.3673            0.3536         0.3833  None
       GCN   0.4595           0.1604            0.1466         0.1771  None
      RGCN   0.6757           0.3255            0.3130         0.3396  None
    DirGNN   0.5946           0.1897            0.1618         0.2292  None
-DirectGCN   0.6486           0.2000            0.1667         0.2500  None
+DirectGCN   0.5946           0.1864            0.1571         0.2292  None
 
 --- Results for Dataset: Texas_Undirected ---
     model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
@@ -5360,7 +5378,7 @@ GraphSAGE   0.4118           0.3030            0.3062         0.3380  None
       GCN   0.4118           0.3020            0.2810         0.3472  None
      RGCN   0.4902           0.3284            0.3009         0.3685  None
    DirGNN   0.4706           0.1930            0.1758         0.2148  None
-DirectGCN   0.3922           0.3013            0.2877         0.3213  None
+DirectGCN   0.3725           0.2466            0.2270         0.2963  None
 
 --- Results for Dataset: Wisconsin_Undirected ---
     model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
@@ -5371,7 +5389,7 @@ GraphSAGE   0.4706           0.1862            0.1643         0.2148  None
       GCN   0.4314           0.2400            0.2258         0.2593  None
      RGCN   0.3922           0.2333            0.2298         0.2444  None
    DirGNN   0.3725           0.2014            0.1829         0.2278  None
-DirectGCN   0.4510           0.2510            0.2294         0.2852  None
+DirectGCN   0.4118           0.2176            0.2201         0.2194  None
 
 ################################################################################
 ### PRELIMINARY ANALYSIS COMPLETE ###
@@ -5382,7 +5400,7 @@ DirectGCN   0.4510           0.2510            0.2294         0.2852  None
   Info: Skipping HPO. It requires both RUN_PROTGRAM_XGCN_PIPELINE and RUN_MAIN_PPI_EVALUATION to be enabled.
 
 ====================================================
-### Full Orchestration Finished in 315.58 seconds. ###
+### Full Orchestration Finished in 314.95 seconds. ###
 ====================================================
 
 
@@ -5393,7 +5411,7 @@ DirectGCN   0.4510           0.2510            0.2294         0.2852  None
 --- Headless/SSH environment detected. ---
 To view the MLflow UI, run the following command on your local machine:
 
-  mlflow ui --backend-store-uri file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_215444/mlruns
+  mlflow ui --backend-store-uri file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_225732/mlruns
 
 If running on a remote server, you may need to use SSH port forwarding, for example:
   ssh -L 5000:localhost:5000 your_user@your_server

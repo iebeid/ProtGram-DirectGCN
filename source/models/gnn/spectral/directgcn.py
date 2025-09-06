@@ -75,7 +75,7 @@ class DecomposedLinear(nn.Module):
         elif self.num_blocks is not None:
             # x: [N, in_features] -> [N, B, block_in]
             B = self.weight_blocks.size(0)
-            x_blocks = x.view(x.size(0), B, self.block_in)
+            x_blocks = x.reshape(x.size(0), B, self.block_in)
             # weight_blocks: [B, block_in, block_out]; result: [N, B, block_out]
             out_blocks = torch.einsum('nbi,bio->nbo', x_blocks, self.weight_blocks)
             out = out_blocks.reshape(x.size(0), B * self.block_out)
@@ -225,13 +225,14 @@ class DirectGCNLayer(MessagePassing):
                 nn.init.xavier_uniform_(self.C_homo_vec)
                 nn.init.xavier_uniform_(self.C_hetero_vec)
         elif self.gating_mode == 'scalar':
-            nn.init.xavier_uniform_(self.C_in)
-            nn.init.xavier_uniform_(self.C_out)
-            nn.init.xavier_uniform_(self.C_undirected)
+            # Initialize scalar gates to zeros for stable start
+            nn.init.zeros_(self.C_in)
+            nn.init.zeros_(self.C_out)
+            nn.init.zeros_(self.C_undirected)
             # --- NEW: Initialize new gating scalars ---
             if self.use_homo_hetero_paths:
-                nn.init.xavier_uniform_(self.C_homo)
-                nn.init.xavier_uniform_(self.C_hetero)
+                nn.init.zeros_(self.C_homo)
+                nn.init.zeros_(self.C_hetero)
 
         if self.constant is not None:
             # --- FIX: Initialize bias-like constant to zeros for better stability ---

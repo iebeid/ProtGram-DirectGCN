@@ -153,8 +153,14 @@ class DirectedNgramGraph(Graph):
             return self._A_undirected_norm_sparse
 
         A_undir_w = self.A_undirected_w
-        if self.number_of_nodes == 0 or A_undir_w is None:
-            return self._initialize_empty_matrices()
+        if self.number_of_nodes == 0 or A_undir_w is None or A_undir_w._nnz() == 0:
+            empty_indices = torch.empty((2, 0), dtype=torch.long)
+            empty_values = torch.empty(0, dtype=torch.float32)
+            self._A_undirected_norm_sparse = torch.sparse_coo_tensor(
+                empty_indices, empty_values, (self.number_of_nodes, self.number_of_nodes)
+            ).coalesce()
+            return self._A_undirected_norm_sparse
+
         print(f"  Creating undirected normalized adjacency matrix for n={self.n_value}...")
 
         edge_index, edge_weight = add_self_loops(
