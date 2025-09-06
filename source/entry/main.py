@@ -350,7 +350,7 @@ class PipelineOrchestrator:
                         config.LP_EMBEDDING_FILES_TO_EVALUATE = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_files
 
                         # Hyperparameter Optimization
-                        if config.RUN_HPO:
+                        if config.RUN_HPO and config.RUN_PROTGRAM_XGCN_PIPELINE and config.RUN_MAIN_PPI_EVALUATION:
                             DataUtils.print_header("Running Hyperparameter Optimization")
                             optimizer = HyperparameterOptimizer(config)
                             target_model_name = config.HPO_TARGET_EMBEDDING_MODEL
@@ -363,6 +363,9 @@ class PipelineOrchestrator:
                                 optimizer.optimize_ppi_mlp(str(target_embedding_path), target_model_name)
                             else:
                                 print(f"  Warning: HPO target embedding '{target_model_name}' not found in generated/configured files. Skipping HPO.")
+                        else:
+                            if config.RUN_HPO:
+                                print("  Info: Skipping HPO. It requires both RUN_PROTGRAM_XGCN_PIPELINE and RUN_MAIN_PPI_EVALUATION to be enabled.")
 
                         # Main PPI Evaluation
                         if config.RUN_MAIN_PPI_EVALUATION:

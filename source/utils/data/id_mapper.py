@@ -7,6 +7,7 @@
 
 import gc
 import logging
+import os
 from multiprocessing import Pool
 from pathlib import Path
 from typing import Dict, Mapping, Optional, Any
@@ -154,6 +155,9 @@ class IDMapper:
         # --- DEFINITIVE FIX: Use the dynamic path from the config object ---
         # This removes the hardcoded 'idmapping.dat' filename.
         source_dat_path = self.config.ID_MAPPING_RAW_PATH
+        # Normalize to Path in case a string or PathLike was provided
+        if not isinstance(source_dat_path, Path):
+            source_dat_path = Path(os.fspath(source_dat_path))
 
         if not source_dat_path.exists():
             logging.error(f"'idmapping.dat' not found at expected location: {source_dat_path}")
