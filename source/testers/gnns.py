@@ -25,6 +25,8 @@ class GNNBenchmarkerTests(unittest.TestCase):
         self.original_base_output_dir = self.config.BASE_OUTPUT_DIR
         self.original_datasets = self.config.BENCHMARK_NODE_CLASSIFICATION_DATASETS
         self.original_epochs = self.config.BENCHMARK_GNN_EPOCHS
+        # --- DEFINITIVE FIX for State Pollution: Store the original model list ---
+        self.original_gnn_models = self.config.BENCHMARK_GNN_MODELS_TO_RUN
 
         self.config.BASE_OUTPUT_DIR = self.base_test_dir
         # --- DEFINITIVE FIX: Do NOT override the project root or cache for this test ---
@@ -36,6 +38,8 @@ class GNNBenchmarkerTests(unittest.TestCase):
     def tearDown(self):
         self.config.BASE_OUTPUT_DIR = self.original_base_output_dir
         self.config.BENCHMARK_NODE_CLASSIFICATION_DATASETS = self.original_datasets
+        # --- DEFINITIVE FIX for State Pollution: Restore the original model list ---
+        self.config.BENCHMARK_GNN_MODELS_TO_RUN = self.original_gnn_models
         self.config.BENCHMARK_GNN_EPOCHS = self.original_epochs
         shutil.rmtree(self.base_test_dir)
 
@@ -57,9 +61,10 @@ class GNNBenchmarkerTests(unittest.TestCase):
             # --- DEFINITIVE FIX: Make assertion aware of the number of graph variants --- # noqa
             # The test runs on both original and undirected graphs if configured. # noqa
             num_variants = 2 if self.config.BENCHMARK_TEST_ON_UNDIRECTED else 1
-            # --- DEFINITIVE FIX: Account for both GNN and NE models in the expected count ---
-            expected_len = (len(self.config.BENCHMARK_GNN_MODELS_TO_RUN) * num_variants) + (len(self.config.BENCHMARK_NE_MODELS_TO_RUN) * 1)
-            self.assertEqual(len(results.get("model").unique()), expected_len, f"Expected {expected_len} models, but found {len(results.get('model').unique())}.")
+            # --- DEFINITIVE FIX for AssertionError: Check total results, not unique models ---
+            # The number of rows in the results should equal the number of models run times the number of variants.
+            expected_len = (len(self.config.BENCHMARK_GNN_MODELS_TO_RUN) * num_variants) + len(self.config.BENCHMARK_NE_MODELS_TO_RUN)
+            self.assertEqual(len(results), expected_len, f"Expected {expected_len} results, but got {len(results)}.")
             self.assertIn("model", results.columns, "Results DataFrame is missing 'model' column.")
             self.assertIn("Accuracy", results.columns, "Results DataFrame is missing 'Accuracy' column.")
 
