@@ -229,13 +229,14 @@ class ProtGramXGCNTrainer:
             A_homo_norm, A_hetero_norm = None, None
             use_homo_hetero_paths_for_level = False
             if model_type == 'directgcn' and labels is not None:
-                homophily_ratio = homophily(graph_obj.A_undirected_norm_sparse.indices(), labels,
-                                            method='edge')
+                # Use a robust homophily computation on the undirected (no self-loops) structure
+                edge_index_undir = graph_obj.A_undirected_w.indices()
+                homophily_ratio = ProtgramDaskHelpers.safe_homophily(edge_index_undir, labels, default=0.5)
                 is_heterophilic = homophily_ratio < self.config.GCN_HETEROPHILY_THRESHOLD
                 print(f"  Graph n={n} Homophily Ratio: {homophily_ratio:.4f}. Is Heterophilic? -> {is_heterophilic}")
                 if is_heterophilic:
                     print(f"  -> Enabling specialized homophily/heterophily paths for DirectGCN at n={n}.")
-                    use_homo_hetero_paths_for_level = True # --- FIX: Call as a static method with the correct arguments ---
+                    use_homo_hetero_paths_for_level = True
                     split_result = DirectedNgramGraph.split_edges_by_homophily(
                         graph_obj.A_out_w, graph_obj.number_of_nodes, labels
                     )

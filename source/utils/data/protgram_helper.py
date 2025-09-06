@@ -23,6 +23,49 @@ class ProtgramDaskHelpers:
     """
 
     @staticmethod
+    def safe_homophily(edge_index: torch.Tensor, labels: torch.Tensor, default: float = 0.5) -> float:
+        """
+        Computes an edge-based homophily ratio robustly:
+        - Removes self-loops
+        - Ignores edges with invalid/NaN labels
+        - Returns `default` if there are no valid edges after filtering
+        """
+        if edge_index is None or edge_index.numel() == 0 or labels is None or labels.numel() == 0:
+            return float(default)
+        # Ensure 1-D labels of type long for indexing
+        lbl = labels.detach().to('cpu')
+        if lbl.dim() > 1:
+            lbl = lbl.squeeze()
+        # Build mask for valid labels (exclude NaNs and negative indices)
+        if lbl.dtype.is_floating_point:
+            valid_lbl_mask = ~torch.isnan(lbl)
+            lbl = lbl[valid_lbl_mask]
+        else:
+            valid_lbl_mask = torch.ones_like(lbl, dtype=torch.bool)
+        # Self-loop mask
+        ei = edge_index.detach().to('cpu')
+        if ei.numel() == 0:
+            return float(default)
+        src, dst = ei[0], ei[1]
+        self_loop_mask = src != dst
+        # Edges with both endpoints having valid labels
+        # Guard index range
+        max_idx = lbl.numel() - 1
+        in_range_src = (src >= 0) & (src <= max_idx)
+        in_range_dst = (dst >= 0) & (dst <= max_idx)
+        valid_edge_mask = self_loop_mask & in_range_src & in_range_dst
+        if not valid_edge_mask.any():
+            return float(default)
+        src_v = src[valid_edge_mask]
+        dst_v = dst[valid_edge_mask]
+        # Filter further by valid labels original mask (if labels were reduced by NaN removal, indices map directly)
+        same = (lbl[src_v] == lbl[dst_v])
+        total = same.numel()
+        if total == 0:
+            return float(default)
+        return float((same.sum().item()) / total)
+
+    @staticmethod
     def log_graph_statistics(graph_object: 'DirectedNgramGraph', n_val: int):
         """Logs key statistics for a given graph object."""
         print(f"    --- Graph Statistics for n={n_val} ---")
@@ -30,22 +73,21 @@ class ProtgramDaskHelpers:
         num_edges = graph_object.number_of_edges
         print(f"      Nodes: {num_nodes}")
         print(f"      Edges (unique weighted): {num_edges}")
-        if num_nodes > 1:
-            possible_edges_no_self_loops = num_nodes * (num_nodes - 1)
-            density = num_edges / possible_edges_no_self_loops if possible_edges_no_self_loops > 0 else 0
-            print(f"      Density (E / N(N-1)): {density:.4f}")
+        if num_nodes > 0:
+            possible_edges_with_self_loops = num_nodes * num_nodes
+            density = num_edges / possible_edges_with_self_loops if possible_edges_with_self_loops > 0 else 0.0
+            print(f"      Density (E / N^2): {density:.4f}")
 
         # Connected Components and Communities
-        # --- DEFINITIVE FIX: Pass a standard PyG Data object to the generic utility ---
         community_graph_data = Data(
             edge_index=graph_object.A_undirected_w.indices(),
             edge_attr=graph_object.A_undirected_w.values(), num_nodes=graph_object.number_of_nodes
         )
         labels, num_classes = DataUtils.generate_community_labels(community_graph_data)
-        # Homophily Score
+        # Homophily Score (robust)
         if labels is not None:
-            homophily_ratio = homophily(graph_object.A_undirected_w.indices(), labels, method='edge')
-            print(f"      Homophily Ratio: {homophily_ratio:.4f}")
+            h = ProtgramDaskHelpers.safe_homophily(graph_object.A_undirected_w.indices(), labels, default=0.5)
+            print(f"      Homophily Ratio: {h:.4f}")
 
         # Centrality Score (Degree Centrality)
         sparse_csr_tensor = graph_object.A_undirected_w.to_sparse_csr()
@@ -66,11 +108,7 @@ class ProtgramDaskHelpers:
         assortativity = nx.degree_assortativity_coefficient(G)
         print(f"      Degree Assortativity: {assortativity:.4f}")
 
-        # --- DEFINITIVE FIX: Disable expensive centrality calculations as per user request ---
-        # These metrics are very slow to compute on large graphs and are not
-        # critical for the main pipeline's execution.
         print("      - Closeness and Betweenness Centrality calculations have been disabled for performance.")
-
         print(f"    --- End of Graph Statistics for n={n_val} ---")
 
 

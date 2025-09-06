@@ -172,7 +172,7 @@ if __name__ == "__main__":
         # --- DEFINITIVE FIX for ModuleNotFoundError: Add the optuna-integration package ---
         # This package is now required for MLflow callbacks.
         "pip install --no-cache-dir optuna mlflow gdown 'transformers==4.41.2' 'safetensors==0.4.3' 'optuna-integration[mlflow]'",
-        (f"pip install torch-geometric pyg_lib torch-scatter torch-sparse "
+        (f"pip install torch-geometric pyg_lib torch-scatter torch-sparse torch-cluster "
          f"-f https://data.pyg.org/whl/torch-{PYTORCH_VERSION}%2Bcu{CUDA_VERSION.replace('.', '')}.html"),
 
         # STAGE 5: Create Conda activation scripts for LD_LIBRARY_PATH
