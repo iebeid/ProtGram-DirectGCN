@@ -348,8 +348,19 @@ class DirectedNgramGraph(Graph):
 
         homo_undir_unique = DirectedNgramGraph._count_unique_undirected_edges(homo_sym)
         hetero_undir_unique = DirectedNgramGraph._count_unique_undirected_edges(hetero_sym)
+        full_sym = (A_out_w + A_out_w.t()).coalesce()
+        full_undir_unique = DirectedNgramGraph._count_unique_undirected_edges(full_sym)
+
         print(f"    - Undirected Homophilous Edges: {homo_undir_unique}")
         print(f"    - Undirected Heterophilous Edges: {hetero_undir_unique}")
+        print(f"    - Undirected Total Unique Edges: {full_undir_unique}")
+
+        # Sanity assertion: splits must not exceed the total unique undirected edges
+        assert (homo_undir_unique + hetero_undir_unique) <= full_undir_unique, (
+            f"Sanity check failed: homo+hetero unique undirected edges "
+            f"({homo_undir_unique + hetero_undir_unique}) exceed total unique undirected edges "
+            f"({full_undir_unique})."
+        )
         return A_homo_norm, A_hetero_norm
 
     def create_subgraph_data_for_model(self, model_type: str,

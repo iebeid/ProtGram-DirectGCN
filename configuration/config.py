@@ -80,6 +80,11 @@ class GNNBenchmarkingParams(BaseGNNTrainingParams):
     CHEBNET_K: int = Field(gt=0)
     RGCN_NUM_RELATIONS: int = Field(gt=0)
     DIRECTGCN_HIDDEN_LAYER_DIMS: List[int]
+    # Decomposition controls (optional)
+    DIRECTGCN_NUM_BASES: Optional[int] = None
+    DIRECTGCN_NUM_BLOCKS: Optional[int] = None
+    DIRECTGCN_DECOMPOSE_PROJECTIONS: bool = Field(default=False)
+    DIRECTGCN_PROJ_NUM_BASES: Optional[int] = None
     GNN_INIT_DIM: int = Field(gt=0)
 
 class ProtGramGCNParams(BaseModel):
@@ -94,6 +99,11 @@ class ProtGramGCNParams(BaseModel):
     API_MAPPING_TO_DB: str
     PROTGRAM_MODELS_TO_TRAIN: List[str]
     DIRECTGCN_HIDDEN_LAYER_DIMS: List[int]
+    # Decomposition controls (optional)
+    DIRECTGCN_NUM_BASES: Optional[int] = None
+    DIRECTGCN_NUM_BLOCKS: Optional[int] = None
+    DIRECTGCN_DECOMPOSE_PROJECTIONS: bool = Field(default=False)
+    DIRECTGCN_PROJ_NUM_BASES: Optional[int] = None
     PROTGRAM_1GRAM_INIT_DIM: int = Field(gt=0)
     PROTGRAM_GNN_HIDDEN_CHANNELS: int = Field(gt=0)
     PROTGRAM_GNN_NUM_LAYERS: int = Field(gt=0)
@@ -182,6 +192,11 @@ class SingletonEvalParams(BaseGNNTrainingParams):
     RGCN_NUM_RELATIONS: int = Field(gt=0)
     GRADIENT_ACCUMULATION_STEPS: int = Field(default=1, ge=1)
     DIRECTGCN_HIDDEN_LAYER_DIMS: List[int]
+    # Decomposition controls (optional)
+    DIRECTGCN_NUM_BASES: Optional[int] = None
+    DIRECTGCN_NUM_BLOCKS: Optional[int] = None
+    DIRECTGCN_DECOMPOSE_PROJECTIONS: bool = Field(default=False)
+    DIRECTGCN_PROJ_NUM_BASES: Optional[int] = None
 
 class PPIEvaluationParams(BaseModel):
     PLOT_TRAINING_HISTORY: bool
@@ -428,6 +443,11 @@ class Config:
         self.BENCHMARK_GNN_LEARNING_RATE = params['LEARNING_RATE']
         self.BENCHMARK_RGCN_NUM_RELATIONS = params['RGCN_NUM_RELATIONS']
         self.BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS = params['DIRECTGCN_HIDDEN_LAYER_DIMS']
+        # DirectGCN decomposition controls
+        self.BENCHMARK_DIRECTGCN_NUM_BASES = params.get('DIRECTGCN_NUM_BASES')
+        self.BENCHMARK_DIRECTGCN_NUM_BLOCKS = params.get('DIRECTGCN_NUM_BLOCKS')
+        self.BENCHMARK_DIRECTGCN_DECOMPOSE_PROJECTIONS = params.get('DIRECTGCN_DECOMPOSE_PROJECTIONS', False)
+        self.BENCHMARK_DIRECTGCN_PROJ_NUM_BASES = params.get('DIRECTGCN_PROJ_NUM_BASES')
         self.BENCHMARK_GNN_INIT_DIM = params['GNN_INIT_DIM']
 
     def _setup_data_sources(self):
@@ -601,6 +621,11 @@ class Config:
         self.PROTGRAM_SANITY_CHECK_EPOCHS = params['PROTGRAM_SANITY_CHECK_EPOCHS']
         self.PROTGRAM_SANITY_CHECK_TEST_SPLIT = params['PROTGRAM_SANITY_CHECK_TEST_SPLIT']
         self.PROTGRAM_SANITY_CHECK_SAMPLE_SIZE = params['PROTGRAM_SANITY_CHECK_SAMPLE_SIZE']
+        # DirectGCN decomposition controls for ProtGram context
+        self.DIRECTGCN_NUM_BASES = params.get('DIRECTGCN_NUM_BASES')
+        self.DIRECTGCN_NUM_BLOCKS = params.get('DIRECTGCN_NUM_BLOCKS')
+        self.DIRECTGCN_DECOMPOSE_PROJECTIONS = params.get('DIRECTGCN_DECOMPOSE_PROJECTIONS', False)
+        self.DIRECTGCN_PROJ_NUM_BASES = params.get('DIRECTGCN_PROJ_NUM_BASES')
 
     def _setup_word2vec_params(self):
         """Sets Word2Vec parameters statically from the YAML config."""
@@ -659,6 +684,11 @@ class Config:
         self.SINGLETON_RGCN_NUM_RELATIONS = params['RGCN_NUM_RELATIONS']
         self.SINGLETON_EVAL_GRADIENT_ACCUMULATION_STEPS = params['GRADIENT_ACCUMULATION_STEPS']
         self.SINGLETON_DIRECTGCN_HIDDEN_LAYER_DIMS = params['DIRECTGCN_HIDDEN_LAYER_DIMS']
+        # DirectGCN decomposition controls for singleton context
+        self.SINGLETON_DIRECTGCN_NUM_BASES = params.get('DIRECTGCN_NUM_BASES')
+        self.SINGLETON_DIRECTGCN_NUM_BLOCKS = params.get('DIRECTGCN_NUM_BLOCKS')
+        self.SINGLETON_DIRECTGCN_DECOMPOSE_PROJECTIONS = params.get('DIRECTGCN_DECOMPOSE_PROJECTIONS', False)
+        self.SINGLETON_DIRECTGCN_PROJ_NUM_BASES = params.get('DIRECTGCN_PROJ_NUM_BASES')
 
     def _setup_evaluation_params(self):
         """Sets PPI evaluation parameters statically from the YAML config."""

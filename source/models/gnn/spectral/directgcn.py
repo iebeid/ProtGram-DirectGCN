@@ -16,6 +16,75 @@ from torch_geometric.nn import MessagePassing
 from source.utils.post.embedding_loader import EmbeddingLoader
 from source.utils.post.embedding_processor import EmbeddingProcessor
 
+class DecomposedLinear(nn.Module):
+    """
+    A linear layer that supports optional basis-decomposition or block-diagonal-decomposition
+    of its weight matrix to reduce overfitting and parameter count.
+
+    If num_bases is set, W = sum_k (comp[k] * B_k), where B_k are basis matrices.
+    If num_blocks is set, W is block-diagonal with `num_blocks` blocks.
+    """
+    def __init__(self, in_features: int, out_features: int,
+                 bias: bool = False,
+                 num_bases: Optional[int] = None,
+                 num_blocks: Optional[int] = None):
+        super().__init__()
+        if num_bases is not None and num_blocks is not None:
+            raise ValueError("Cannot use both basis and block decomposition at the same time.")
+        self.in_features = in_features
+        self.out_features = out_features
+        self.num_bases = num_bases
+        self.num_blocks = num_blocks
+
+        if self.num_bases is not None:
+            self.bases = nn.Parameter(torch.empty(self.num_bases, in_features, out_features))
+            self.comp = nn.Parameter(torch.empty(self.num_bases))
+            self.register_parameter('weight', None)
+        elif self.num_blocks is not None:
+            if in_features % num_blocks != 0 or out_features % num_blocks != 0:
+                raise ValueError("in_features and out_features must be divisible by num_blocks.")
+            self.block_in = in_features // num_blocks
+            self.block_out = out_features // num_blocks
+            self.weight_blocks = nn.Parameter(torch.empty(num_blocks, self.block_in, self.block_out))
+            self.register_parameter('weight', None)
+        else:
+            self.weight = nn.Parameter(torch.empty(in_features, out_features))
+
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(out_features))
+        else:
+            self.register_parameter('bias', None)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        if self.num_bases is not None:
+            nn.init.xavier_uniform_(self.bases)
+            nn.init.xavier_uniform_(self.comp.unsqueeze(0))
+        elif self.num_blocks is not None:
+            nn.init.xavier_uniform_(self.weight_blocks)
+        else:
+            nn.init.xavier_uniform_(self.weight)
+        if self.bias is not None:
+            nn.init.zeros_(self.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.num_bases is not None:
+            W = (self.comp @ self.bases.view(self.num_bases, -1)).view(self.in_features, self.out_features)
+            out = x @ W
+        elif self.num_blocks is not None:
+            # x: [N, in_features] -> [N, B, block_in]
+            B = self.weight_blocks.size(0)
+            x_blocks = x.view(x.size(0), B, self.block_in)
+            # weight_blocks: [B, block_in, block_out]; result: [N, B, block_out]
+            out_blocks = torch.einsum('nbi,bio->nbo', x_blocks, self.weight_blocks)
+            out = out_blocks.reshape(x.size(0), B * self.block_out)
+        else:
+            out = x @ self.weight
+        if self.bias is not None:
+            out = out + self.bias
+        return out
+
 
 class DirectGCNLayer(MessagePassing):
     """
@@ -37,29 +106,40 @@ class DirectGCNLayer(MessagePassing):
     """
 
     def __init__(self, in_channels: int, out_channels: int, num_nodes: int, gating_mode: str = 'vector',
-                 use_homo_hetero_paths: bool = False):
+                 use_homo_hetero_paths: bool = False,
+                 num_bases: Optional[int] = None,
+                 num_blocks: Optional[int] = None):
         super().__init__(aggr='add')
+        if num_bases is not None and num_blocks is not None:
+            raise ValueError("DirectGCNLayer: Cannot use both basis and block decomposition at the same time.")
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_nodes = num_nodes
         self.gating_mode = gating_mode
         self.use_homo_hetero_paths = use_homo_hetero_paths
+        self.num_bases = num_bases
+        self.num_blocks = num_blocks
 
         # --- Path-Specific Components ---
         if self.use_homo_hetero_paths:
             # --- NEW: Add layers for the new top-level homo/hetero paths ---
-            self.lin_homo = nn.Linear(in_channels, out_channels, bias=False)
-            self.lin_hetero = nn.Linear(in_channels, out_channels, bias=False)
+            self.lin_homo = DecomposedLinear(in_channels, out_channels, bias=False,
+                                             num_bases=num_bases, num_blocks=num_blocks)
+            self.lin_hetero = DecomposedLinear(in_channels, out_channels, bias=False,
+                                               num_bases=num_bases, num_blocks=num_blocks)
             self.bias_homo = nn.Parameter(torch.Tensor(out_channels))
             self.bias_hetero = nn.Parameter(torch.Tensor(out_channels))
         # Standard in/out paths are always present
-        self.lin_main_in = nn.Linear(in_channels, out_channels, bias=False)
-        self.lin_main_out = nn.Linear(in_channels, out_channels, bias=False)
+        self.lin_main_in = DecomposedLinear(in_channels, out_channels, bias=False,
+                                            num_bases=num_bases, num_blocks=num_blocks)
+        self.lin_main_out = DecomposedLinear(in_channels, out_channels, bias=False,
+                                             num_bases=num_bases, num_blocks=num_blocks)
         self.bias_main_in = nn.Parameter(torch.Tensor(out_channels))
         self.bias_main_out = nn.Parameter(torch.Tensor(out_channels))
 
         # Undirected path is always present
-        self.lin_undirected = nn.Linear(in_channels, out_channels, bias=False)
+        self.lin_undirected = DecomposedLinear(in_channels, out_channels, bias=False,
+                                               num_bases=num_bases, num_blocks=num_blocks)
         self.bias_undirected = nn.Parameter(torch.Tensor(out_channels))
 
         # --- Projection layers for concatenated path features ---
@@ -73,7 +153,8 @@ class DirectGCNLayer(MessagePassing):
             self.proj_hetero = nn.Linear(out_channels * 2, out_channels)
 
         # --- Shared Components (used by all paths) ---
-        self.lin_shared = nn.Linear(in_channels, out_channels, bias=False)
+        self.lin_shared = DecomposedLinear(in_channels, out_channels, bias=False,
+                                           num_bases=num_bases, num_blocks=num_blocks)
         self.bias_shared_in = nn.Parameter(torch.Tensor(out_channels))
         self.bias_shared_out = nn.Parameter(torch.Tensor(out_channels))
         self.bias_shared_undir = nn.Parameter(torch.Tensor(out_channels))
@@ -124,9 +205,13 @@ class DirectGCNLayer(MessagePassing):
             biases_to_init.extend([self.bias_homo, self.bias_hetero, self.bias_shared_homo, self.bias_shared_hetero])
 
         for lin in layers_to_init:
-            nn.init.xavier_uniform_(lin.weight)
-            if hasattr(lin, 'bias') and lin.bias is not None:
-                nn.init.zeros_(lin.bias)
+            # Support both nn.Linear and DecomposedLinear
+            if hasattr(lin, 'weight') and isinstance(lin, nn.Linear):
+                nn.init.xavier_uniform_(lin.weight)
+                if lin.bias is not None:
+                    nn.init.zeros_(lin.bias)
+            elif hasattr(lin, 'reset_parameters'):
+                lin.reset_parameters()
 
         for bias in biases_to_init:
             nn.init.zeros_(bias)
@@ -244,13 +329,19 @@ class DirectGCN(nn.Module):
     def __init__(self, layer_dims: List[int], num_graph_nodes: Optional[int], task_num_output_classes: int,
                  n_gram_len: int, use_homo_hetero_paths: bool,
                  dropout_rate: float, gating_mode: str,
-                 l2_eps: float = 1e-12):
+                 l2_eps: float = 1e-12,
+                 num_bases: Optional[int] = None,
+                 num_blocks: Optional[int] = None):
         super().__init__()
+        if num_bases is not None and num_blocks is not None:
+            raise ValueError("DirectGCN: Cannot use both basis and block decomposition at the same time.")
         self.n_gram_len = n_gram_len
         self.dropout_rate = dropout_rate
         self.l2_eps = l2_eps
         self.embedding_output = None
         self.use_homo_hetero_paths = use_homo_hetero_paths
+        self.num_bases = num_bases
+        self.num_blocks = num_blocks
 
         self.convs = nn.ModuleList()
         self.res_projs = nn.ModuleList()
@@ -265,31 +356,28 @@ class DirectGCN(nn.Module):
         is_benchmark_or_singleton = len(layer_dims) == 2
 
         if is_benchmark_or_singleton:
-            # --- DEFINITIVE FIX: Implement a 2-layer architecture for benchmarking ---
-            # This aligns DirectGCN with the other benchmark models (e.g., GCN, GAT)
-            # which all use a 2-layer structure for a fair comparison.
+            # --- 2-layer architecture for benchmarking (no residuals, no decoder) ---
             in_channels = layer_dims[0]
             hidden_channels = layer_dims[1]
             out_channels = task_num_output_classes
 
-            self.convs.append(DirectGCNLayer(in_channels, hidden_channels, num_graph_nodes, gating_mode, use_homo_hetero_paths))
-            # --- DEFINITIVE FIX for IndexError: Append to the correct list ---
-            # The forward pass uses `self.layer_norms`. This was appending to `self.norms`.
+            self.convs.append(DirectGCNLayer(in_channels, hidden_channels, num_graph_nodes, gating_mode,
+                                             use_homo_hetero_paths, num_bases=num_bases, num_blocks=num_blocks))
             self.layer_norms.append(nn.LayerNorm(hidden_channels))
-
-            self.convs.append(DirectGCNLayer(hidden_channels, out_channels, num_graph_nodes, gating_mode, use_homo_hetero_paths))
+            self.convs.append(DirectGCNLayer(hidden_channels, out_channels, num_graph_nodes, gating_mode,
+                                             use_homo_hetero_paths, num_bases=num_bases, num_blocks=num_blocks))
 
         else: # Original logic for the main ProtGram pipeline
             for i in range(len(layer_dims) - 1):
                 in_dim, out_dim = layer_dims[i], layer_dims[i + 1]
-                self.convs.append(DirectGCNLayer(in_dim, out_dim, num_graph_nodes, gating_mode, use_homo_hetero_paths))
+                self.convs.append(DirectGCNLayer(in_dim, out_dim, num_graph_nodes, gating_mode,
+                                                 use_homo_hetero_paths, num_bases=num_bases, num_blocks=num_blocks))
                 self.res_projs.append(nn.Linear(in_dim, out_dim) if in_dim != out_dim else nn.Identity())
                 self.layer_norms.append(nn.LayerNorm(out_dim))
 
-        # --- DEFINITIVE FIX: Use the robust context flag to build the correct decoder ---
+        # --- Decoder handling ---
         if is_benchmark_or_singleton:
             # The decoder is now the second convolutional layer, so no separate FC layer is needed.
-            # Set to Identity to maintain architectural consistency for the forward pass logic.
             self.decoder_fc = nn.Identity()
         else:  # Main pipeline context
             final_embedding_dim = layer_dims[-1]
