@@ -145,7 +145,7 @@ Protein sequences can be conceptualized as a sequence of amino acids (or peptide
 	\begin{itemize}
 		\item \textbf{Input Layer}: The initial node features for the n-grams, $H^{(0)} \in \mathbb{R}^{N \times F^{(0)}}$, are either identity initialized (for $n=1$) or derived from the embeddings of the previous n-gram level (for $n>1$).
 		\item \textbf{Hidden Layers}: The model stacks $L$ hidden layers. For each layer $l \in \{0, \dots, L-1\}$, the output $H^{(l+1)}$ is computed by applying the $DirectGCN$ layer transformation (Equations 3-7) to the previous layer's output $H^{(l)}$. A residual connection is included to facilitate deeper architectures, and a Leaky ReLU activation function followed by dropout is applied after each layer to introduce non-linearity and prevent overfitting.
-		\item \textbf{Output Layer}: The output of the final hidden layer, $H^{(L)}$, serves as the learned n-gram embedding, $Z_{n-gram}$. For the auxiliary node classification tasks (community detection, next node prediction or masked node prediction) on $G_{n}$, these embeddings are passed through a final linear decoder, which is a small feed forward layer, to produce the final class logits:
+		\item \textbf{Output Layer}: The output of the final hidden layer, $H^{(L)}$, serves as the learned n-gram embedding, $Z_{n-gram}$. For the auxiliary node classification tasks (community detection \cite{blondel_fast_2008} or next node prediction) on $G_{n}$, these embeddings are passed through a final linear decoder, which is a small feed forward layer, to produce the final class logits:
 		\begin{equation}
 			\text{Logits} = \text{Decoder}(Z_{n-gram})
 		\end{equation}
@@ -266,8 +266,8 @@ Protein sequences can be conceptualized as a sequence of amino acids (or peptide
 	\subsection{$ProtGram$: Construction of Hierarchical $G_{n}$ Graphs}
 	The primary dataset for our methodology is a hierarchy of global n-gram graphs, $G_{n}$, constructed from the UniProt Swiss-Prot sequence database.
 	\begin{itemize}
-		\item \textbf{Corpus}: We used the curated and reviewed UniProt Swiss-Prot dataset, containing $573,230$ protein sequences.
-		\item \textbf{Graph Construction}: For each n-gram level from $n=1$ to $n=4$, we constructed a separate graph $G_{n}$. The nodes $V_{n}$ are the unique n-grams of length $n$ found in the corpus. A directed edge $(u, v)$ exists if n-gram $v$ can be formed by shifting a one-character window over n-gram $u$. The edge weight $w_{uv}$ is the total frequency of this transition across all sequences. This process resulted in four graphs of increasing size and complexity, as detailed in Table \ref{tab:gn_stats}.
+		\item \textbf{Corpus}: We used the curated and reviewed UniProt Swiss-Prot dataset, containing $573,230$ protein sequences. Larger and more diverse sequence files liek UniRef50 and UniRef100 and PDB are in our plans to train our model on.
+		\item \textbf{Graph Construction}: For each n-gram level from $n=1$ to $n=3$, we constructed a separate graph $G_{n}$. The nodes $V_{n}$ are the unique n-grams of length $n$ found in the corpus. A directed edge $(u, v)$ exists if n-gram $v$ can be formed by shifting a one-character window over n-gram $u$. The edge weight $w_{uv}$ is the total frequency of this transition across all sequences. This process resulted in $3$ graphs of increasing size and complexity, as detailed in Table \ref{tab:gn_stats}.
 	\end{itemize}
 	
 	\begin{table}[h!]
@@ -289,17 +289,17 @@ Protein sequences can be conceptualized as a sequence of amino acids (or peptide
 	\subsection{$ProtGram-DirectGCN$: Learning N-gram Embeddings from $G_{n}$}
 	The constructed $G_{n}$ graphs serve as the foundation for learning informative vector representations (embeddings) for each n-gram. This is achieved through a self-supervised training task designed to force the model to understand the sequential grammar inherent in the protein sequences from which the graph was built.
 	\begin{itemize}
-		\item \textbf{Self-Supervised Task: Next-Node Prediction}: For each n-gram node $u \in V_n$, we define its label $y_u$ as its most likely successor in the sequence. This successor is determined by identifying the outgoing edge $(u,v)$ with the highest transition frequency (weight) in the raw graph. The task for the GNN is therefore to predict this most probable next n-gram for every node in the graph. This objective compels the model to learn embeddings that encode the sequential and transitional logic of the n-gram language. An n-gram's representation becomes a function of not only its own identity but also the likely sequences it participates in.
+		\item \textbf{Self-Supervised Task: Next-Node Prediction}: For each n-gram node $u \in V_n$, we define its label $y_u$ as its most likely successor in the sequence. This successor is determined by identifying the outgoing edge $(u,v)$ with the highest transition frequency (weight) in the raw graph. The task for the GNN is therefore to predict this most probable next n-gram for every node in the graph. This objective compels the model to learn embeddings that encode the sequential and transitional logic of the n-gram language. An n-gram's representation becomes a function of not only its own identity but also the likely sequences it participates in. Final n-gram level is trained on a Louvain community detection \cite{blondel_fast_2008} label task. The community detection is analgous to a larger context window in the graph or a larger neighborhood aggregation. Community detection can be difficult to detect in the smaller n-gram levels because of the inherent faint signal associated with each node but as the number of n-gram levels increase. 
 		
 		\item \textbf{Hierarchical Training}: The training process is hierarchical. For the base level ($n=1$), node features are identity initialized. For each subsequent level $n > 1$, the initial features for a given n-gram node are generated by attention-pooling the final, learned embeddings of its two constituent (n-1)-gram nodes from the previously trained level. This creates a rich, multi-scale representation, where higher-order n-gram features are built upon the learned representations of their sub-components.
 		
 		\item \textbf{Implementation Details}: The model for each level $n$ is trained for a set number of epochs using the Adam optimizer and a negative log-likelihood loss function on the next-node prediction task. For larger graphs ($n \geq 3$), a Cluster-GCN \cite{chiang_cluster-gcn_2019} approach is used to partition the graph into mini-batches for memory-efficient training. The final output of this stage is a comprehensive set of learned embeddings for all n-grams at the highest level, $n=4$. Please see the supplementary material for experimental details.
 	\end{itemize}
 	
-	\subsection{Ablation Study to Optimize the Design of $ProtGram-DirectGCN$}
+	\subsection{Ablation Study of $ProtGram-DirectGCN$}
 	Here we are going to understand the properties of the n-gram graph and its generated residue representation. This step is crucial as the smallest pertubation in the data or the model affect the final per protein embedding due to the hierarchical nature of the model.
 	
-	\subsubsection{The effect of the size of the data}
+	\subsubsection{The Size Effect}
 	The diversity of the protein sequences greatly affect the quality of the generated representations to understand this after we build the n-gram graphs we run our model alongside other models on a community detection task. The goal is to asses the different sizes of the generated n-gram graphs built from different sizes of sampled sequences. 
 	
 	\subsection{Protein-Protein Interaction (PPI) Link Prediction}

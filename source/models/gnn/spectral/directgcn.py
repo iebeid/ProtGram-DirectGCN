@@ -198,29 +198,29 @@ class DirectGCNLayer(MessagePassing):
         if self.gating_mode is None or self.gating_mode == 'none':
             # In 'none' mode, all paths contribute equally (summation).
             final_combination = torch.stack(path_combinations, dim=0).sum(dim=0)
-        else:
-            # --- DEFINITIVE FIX: Move gating logic inside the conditional block ---
+        # --- DEFINITIVE FIX for AttributeError: Use explicit if/elif for each gating mode for clarity and correctness ---
+        elif self.gating_mode in ['vector', 'node_gate_vector']:
             gating_logits_list = []
-            if self.gating_mode in ['vector', 'node_gate_vector']:
-                gating_logits_list.extend([self.C_in_vec, self.C_out_vec, self.C_undirected_vec])
-                if self.use_homo_hetero_paths:
-                    gating_logits_list.extend([self.C_homo_vec, self.C_hetero_vec])
-                gating_logits_full = torch.stack(gating_logits_list, dim=-1)
-                gating_logits = gating_logits_full[original_indices] if original_indices is not None else gating_logits_full
-            else:  # scalar mode
-                gating_logits_list.extend([self.C_in, self.C_out, self.C_undirected])
-                if self.use_homo_hetero_paths:
-                    gating_logits_list.extend([self.C_homo, self.C_hetero])
-                gating_logits = torch.cat(gating_logits_list, dim=0)
-
+            gating_logits_list.extend([self.C_in_vec, self.C_out_vec, self.C_undirected_vec])
+            if self.use_homo_hetero_paths:
+                gating_logits_list.extend([self.C_homo_vec, self.C_hetero_vec])
+            gating_logits_full = torch.stack(gating_logits_list, dim=-1)
+            gating_logits = gating_logits_full[original_indices] if original_indices is not None else gating_logits_full
             gating_weights = torch.sigmoid(gating_logits)
             final_combination = torch.zeros_like(path_combinations[0])
-            if self.gating_mode == 'scalar':
-                for i, path_emb in enumerate(path_combinations):
-                    final_combination += gating_weights[i] * path_emb
-            else:  # vector and node_gate_vector modes
-                for i, path_emb in enumerate(path_combinations):
-                    final_combination += gating_weights[:, :, i] * path_emb
+            for i, path_emb in enumerate(path_combinations):
+                final_combination += gating_weights[:, :, i] * path_emb
+        elif self.gating_mode == 'scalar':
+            gating_logits_list = [self.C_in, self.C_out, self.C_undirected]
+            if self.use_homo_hetero_paths:
+                gating_logits_list.extend([self.C_homo, self.C_hetero])
+            gating_logits = torch.cat(gating_logits_list, dim=0)
+            gating_weights = torch.sigmoid(gating_logits)
+            final_combination = torch.zeros_like(path_combinations[0])
+            for i, path_emb in enumerate(path_combinations):
+                final_combination += gating_weights[i] * path_emb
+        else:
+            raise ValueError(f"Unsupported gating mode: {self.gating_mode}")
 
         # --- 4. Final Node-Specific Bias ---
         # A learnable, node-specific constant is added to the final combined
