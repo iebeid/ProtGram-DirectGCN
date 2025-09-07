@@ -1,4 +1,4 @@
---- Logging all console output to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/logs/run_20250906_231836.log ---
+--- Logging all console output to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/logs/run_20250906_235459.log ---
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
 
 ========================================================
@@ -590,14 +590,14 @@
   - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.16.parquet
   - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.28.parquet
   - ✅ Local data is valid.
-  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/dask_temp
+  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/dask_temp
 
 ======================================
 ### System Resource Pre-flight Check ###
 ======================================
 
-RAM: 119.14 GB Available / 125.59 GB Total
-Disk (/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836): 755.01 GB Free / 883.50 GB Total
+RAM: 118.58 GB Available / 125.59 GB Total
+Disk (/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459): 755.00 GB Free / 883.50 GB Total
 GPU(s):
   - GPU 0 (NVIDIA RTX 6000 Ada Generation): 47.37 GB Total Memory
 --------------------------------------
@@ -608,7 +608,7 @@ GPU(s):
   APPLY_PCA_TO_W2V                         | True
   BASE_CONFIG_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/configuration
   BASE_DATA_DIR                            | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data
-  BASE_OUTPUT_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836
+  BASE_OUTPUT_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459
   BENCHMARK_CHEBNET_K                      | 3
   BENCHMARK_DIRECTGCN_DECOMPOSE_PROJECTIONS | False
   BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS    | [64]
@@ -686,7 +686,7 @@ GPU(s):
   HPO_TARGET_EMBEDDING_MODEL               | directgcn
   ID_MAPPING_MODE                          | regex
   ID_MAPPING_PATH                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/mappings/id_mapping.parquet
-  LOG_DIR                                  | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/logs
+  LOG_DIR                                  | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/logs
   LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE       | [{'name': 'ProtT5', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/models/per-protein.h5')}]
   LSTM_BATCH_SIZE                          | 64
   LSTM_DROPOUT_RATE                        | 0.5
@@ -709,7 +709,7 @@ GPU(s):
   MLFLOW_LLMS_EXPERIMENT_NAME              | LLMs
   MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME      | GNN-Benchmarking
   MLFLOW_PROTGRAM_XGCN_EXPERIMENT_NAME     | ProtGram-XGCN
-  MLFLOW_TRACKING_URI                      | file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/mlruns
+  MLFLOW_TRACKING_URI                      | file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/mlruns
   NEG_INTERACTIONS_PATH                    | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/negative_interactions.parquet
   NEG_INTERACTIONS_RAW_PATHS               | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_1.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_2.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_3.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_4.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_5.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_6.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_7.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_8.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_9.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_10.mitab')]
   ORIGINAL_SEQUENCE_FILE_PATHS             | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/sequences/uniprot_sprot.fasta')]
@@ -767,14 +767,14 @@ GPU(s):
   RANDOM_STATE                             | 42
   REGEX_COMPATIBILITY_SAMPLE_SIZE          | 1000
   REGEX_CONFIDENCE_THRESHOLD               | 0.95
-  RESULTS_BENCHMARKING_DIR                 | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/benchmarking_results
-  RESULTS_BENCHMARK_EMBEDDINGS_DIR         | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/benchmarking_results/embeddings
-  RESULTS_EVALUATION_DIR                   | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/evaluation_results
-  RESULTS_GCN_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/gcn_embeddings
-  RESULTS_GRAPH_OBJECTS_DIR                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects
-  RESULTS_LSTM_EMBEDDINGS_DIR              | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/lstm_embeddings
-  RESULTS_TRANSFORMER_EMBEDDINGS_DIR       | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/transformer_embeddings
-  RESULTS_W2V_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/word2vec_embeddings
+  RESULTS_BENCHMARKING_DIR                 | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/benchmarking_results
+  RESULTS_BENCHMARK_EMBEDDINGS_DIR         | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/benchmarking_results/embeddings
+  RESULTS_EVALUATION_DIR                   | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/evaluation_results
+  RESULTS_GCN_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/gcn_embeddings
+  RESULTS_GRAPH_OBJECTS_DIR                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects
+  RESULTS_LSTM_EMBEDDINGS_DIR              | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/lstm_embeddings
+  RESULTS_TRANSFORMER_EMBEDDINGS_DIR       | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/transformer_embeddings
+  RESULTS_W2V_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/word2vec_embeddings
   RUN_BENCHMARKING_PIPELINE                | False
   RUN_HPO                                  | True
   RUN_INTEGRATED_TESTS                     | False
@@ -843,11 +843,11 @@ GPU(s):
 ### Building all n-gram graphs for the main pipeline ###
 ======================================================
 
-ProtGramDataBuilder initialized: n_max=3, configured_workers=31, output_dir='/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled'
-  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/temp_graph_builder
+ProtGramDataBuilder initialized: n_max=3, configured_workers=31, output_dir='/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled'
+  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/temp_graph_builder
 
 ===================================================================================================================================================================
-### ProtGramDataBuilder Initialized (Output: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled) ###
+### ProtGramDataBuilder Initialized (Output: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled) ###
 ===================================================================================================================================================================
 
 
@@ -863,8 +863,8 @@ ProtGramDataBuilder initialized: n_max=3, configured_workers=31, output_dir='/ho
 --------------------------------------
 
   Info: Graph file for n=1 not found. Will proceed with full build.
-Temporary files will be stored in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/temp_graph_builder
-Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled
+Temporary files will be stored in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/temp_graph_builder
+Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled
   - Cleaning enabled for FASTA parsing.
 
 =========================================
@@ -878,7 +878,7 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
   - Creating map for n=3...
     Unique n-gram map for n=3 (size: 8,401) created.
 
-<<< Phase 1 finished in 96.88s.
+<<< Phase 1 finished in 100.41s.
 
 ===================================
 ### Phase 2: Generating All Edges ###
@@ -888,7 +888,7 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
   - Aggregating edges for n=2...
   - Aggregating edges for n=3...
 
-<<< Phase 2 finished in 243.56s.
+<<< Phase 2 finished in 248.76s.
 
 ======================================================
 ### Phase 3: Building and saving final graph objects ###
@@ -899,58 +899,58 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
   Loaded 21 n-grams for n=1 from map file.
   Instantiating DirectedNgramGraph object for n=1 from file...
     Loading edges from aggregated_edges_n1.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled/ngram_graph_n1/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
+  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled/ngram_graph_n1/metadata.json
+  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
     --- Graph Statistics for n=1 ---
       Nodes: 21
       Edges (unique weighted): 421
-      Density (E / N(N-1)): 1.0024
+      Density (E / N^2): 0.9546
     Generating community labels for all connected components...
       Found 1 connected components.
       Graph has one component, running Louvain community detection...
       Found 9 communities across all components.
-      Homophily Ratio: 0.1545
-/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/data/protgram_helper.py:51: UserWarning: Sparse CSR tensor support is in beta state. If you miss a functionality in the sparse tensor support, please submit a feature request to https://github.com/pytorch/pytorch/issues. (Triggered internally at ../aten/src/ATen/SparseCsrTensorImpl.cpp:53.)
+      Homophily Ratio: 0.1143
+/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/data/protgram_helper.py:93: UserWarning: Sparse CSR tensor support is in beta state. If you miss a functionality in the sparse tensor support, please submit a feature request to https://github.com/pytorch/pytorch/issues. (Triggered internally at ../aten/src/ATen/SparseCsrTensorImpl.cpp:53.)
   sparse_csr_tensor = graph_object.A_undirected_w.to_sparse_csr()
       Average Degree Centrality: 1.0952
       Average Clustering Coefficient: 1.0000
       Degree Assortativity: -0.0476
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=1 ---
-  Graph for n=1 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
+  Graph for n=1 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
 
 --- Processing n = 2 for final graph object ---
   Loaded 421 n-grams for n=2 from map file.
   Instantiating DirectedNgramGraph object for n=2 from file...
     Loading edges from aggregated_edges_n2.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled/ngram_graph_n2/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
+  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled/ngram_graph_n2/metadata.json
+  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
     --- Graph Statistics for n=2 ---
       Nodes: 421
       Edges (unique weighted): 8401
-      Density (E / N(N-1)): 0.0475
+      Density (E / N^2): 0.0474
     Generating community labels for all connected components...
       Found 1 connected components.
       Graph has one component, running Louvain community detection...
       Found 14 communities across all components.
-      Homophily Ratio: 0.3992
+      Homophily Ratio: 0.3985
       Average Degree Centrality: 0.0929
       Average Clustering Coefficient: 0.0951
       Degree Assortativity: -0.0255
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=2 ---
-  Graph for n=2 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
+  Graph for n=2 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
 
 --- Processing n = 3 for final graph object ---
   Loaded 8401 n-grams for n=3 from map file.
   Instantiating DirectedNgramGraph object for n=3 from file...
     Loading edges from aggregated_edges_n3.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled/ngram_graph_n3/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
+  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled/ngram_graph_n3/metadata.json
+  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
     --- Graph Statistics for n=3 ---
       Nodes: 8401
       Edges (unique weighted): 165315
-      Density (E / N(N-1)): 0.0023
+      Density (E / N^2): 0.0023
     Generating community labels for all connected components...
       Found 1 connected components.
       Graph has one component, running Louvain community detection...
@@ -961,19 +961,19 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
       Degree Assortativity: -0.0135
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=3 ---
-  Graph for n=3 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
+  Graph for n=3 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
 
-<<< Phase 3 finished in 11.16s.
+<<< Phase 3 finished in 10.91s.
 
 ==========================================
 ### Phase 4: Cleaning up temporary files ###
 ==========================================
 
-  Temporary directory /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/temp_graph_builder cleaned up.
+  Temporary directory /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/temp_graph_builder cleaned up.
 <<< Phase 4 finished in 0.00s.
 
 ===============================================
-### N-gram Graph Building FINISHED in 356.01s ###
+### N-gram Graph Building FINISHED in 364.46s ###
 ===============================================
 
   ✅ Checkpoint saved for step: 'GraphBuilding'
@@ -994,7 +994,7 @@ No benchmark results were generated to aggregate.
   - No checkpoint found for step: 'ProtGram-XGCN'.
 Using device: cuda
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-2025/09/06 23:24:38 INFO mlflow.tracking.fluent: Experiment with name 'ProtGram-XGCN' does not exist. Creating a new experiment.
+2025/09/07 00:01:09 INFO mlflow.tracking.fluent: Experiment with name 'ProtGram-XGCN' does not exist. Creating a new experiment.
 
 =====================================================================
 ### PIPELINE STEP: Training ProtGram Models & Generating Embeddings ###
@@ -1010,11 +1010,11 @@ Using device: cuda
 ### Processing N-gram Level: n = 1 for model 'directgcn' ###
 ==========================================================
 
-  Loading graph for n=1 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
+  Loading graph for n=1 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
   Initializing n=1 features with random noise (dim=512).
   Generating self-supervised labels for task: 'next_node'
     Generating next_node labels for all 21 nodes.
-  Graph n=1 Homophily Ratio: nan. Is Heterophilic? -> False
+  Graph n=1 Homophily Ratio: 0.7333. Is Heterophilic? -> False
   Creating new instance of 'directgcn' for context 'protgram'.
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
   Preparing specialized graph views for 'directgcn'.
@@ -1044,81 +1044,95 @@ Using device: cuda
 ### Processing N-gram Level: n = 2 for model 'directgcn' ###
 ==========================================================
 
-  Loading graph for n=2 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
+  Loading graph for n=2 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
   Pooling (n-1)-gram embeddings to initialize features for n=2 graph (Strategy: attention)...
   Generating self-supervised labels for task: 'next_node'
     Generating next_node labels for all 421 nodes.
-  Graph n=2 Homophily Ratio: nan. Is Heterophilic? -> False
+  Graph n=2 Homophily Ratio: 0.0199. Is Heterophilic? -> True
+  -> Enabling specialized homophily/heterophily paths for DirectGCN at n=2.
+  Splitting 8401 directed edges by homophily...
+    Normalizing homophilic and heterophilic matrices...
+    - Undirected Homophilous Edges: 183
+    - Undirected Heterophilous Edges: 8028
+    - Undirected Total Unique Edges: 8211
   Creating new instance of 'directgcn' for context 'protgram'.
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
   Preparing specialized graph views for 'directgcn'.
+    -> Adding normalized homophily/heterophily paths for DirectGCN.
   Starting full-batch training for up to 500 epochs (Task: next_node)...
-    Epoch: 001, Loss: 6.0991, Train Acc: 0.0000, LR: 0.005000
-    Epoch: 010, Loss: 5.0068, Train Acc: 0.0238, LR: 0.005000
-    Epoch: 020, Loss: 4.1530, Train Acc: 0.0285, LR: 0.005000
-    Epoch: 030, Loss: 3.8896, Train Acc: 0.0499, LR: 0.005000
-    Epoch: 040, Loss: 3.7225, Train Acc: 0.0831, LR: 0.005000
-    Epoch: 050, Loss: 3.6533, Train Acc: 0.0594, LR: 0.005000
-    Epoch: 060, Loss: 3.5811, Train Acc: 0.0713, LR: 0.005000
-    Epoch: 070, Loss: 3.6099, Train Acc: 0.0523, LR: 0.005000
-    Epoch: 080, Loss: 3.5582, Train Acc: 0.0641, LR: 0.005000
-    Epoch: 090, Loss: 3.5463, Train Acc: 0.0808, LR: 0.005000
-    Epoch: 100, Loss: 3.5263, Train Acc: 0.0808, LR: 0.005000
-    Epoch: 110, Loss: 3.5083, Train Acc: 0.0618, LR: 0.005000
-    Epoch: 120, Loss: 3.3989, Train Acc: 0.0665, LR: 0.005000
-    Epoch: 130, Loss: 3.3482, Train Acc: 0.0926, LR: 0.005000
-    Epoch: 140, Loss: 3.1631, Train Acc: 0.1211, LR: 0.005000
-    Epoch: 150, Loss: 2.9636, Train Acc: 0.1188, LR: 0.005000
-    Epoch: 160, Loss: 2.6329, Train Acc: 0.2019, LR: 0.005000
-    Epoch: 170, Loss: 2.4257, Train Acc: 0.2375, LR: 0.005000
-    Epoch: 180, Loss: 2.3115, Train Acc: 0.2494, LR: 0.005000
-    Epoch: 190, Loss: 2.1421, Train Acc: 0.2993, LR: 0.005000
-    Epoch: 200, Loss: 2.0857, Train Acc: 0.3159, LR: 0.005000
-    Epoch: 210, Loss: 1.9539, Train Acc: 0.3159, LR: 0.005000
-    Epoch: 220, Loss: 1.9297, Train Acc: 0.3634, LR: 0.005000
-    Epoch: 230, Loss: 1.7926, Train Acc: 0.3872, LR: 0.005000
-    Epoch: 240, Loss: 1.7596, Train Acc: 0.3967, LR: 0.005000
-    Epoch: 250, Loss: 1.6904, Train Acc: 0.3777, LR: 0.005000
-    Epoch: 260, Loss: 1.6389, Train Acc: 0.4371, LR: 0.005000
-    Epoch: 270, Loss: 1.4994, Train Acc: 0.4941, LR: 0.005000
-    Epoch: 280, Loss: 1.4573, Train Acc: 0.5154, LR: 0.005000
-    Epoch: 290, Loss: 1.4443, Train Acc: 0.4988, LR: 0.005000
-    Epoch: 300, Loss: 1.3486, Train Acc: 0.5511, LR: 0.005000
-    Epoch: 310, Loss: 1.3611, Train Acc: 0.5344, LR: 0.005000
-    Epoch: 320, Loss: 1.2093, Train Acc: 0.5938, LR: 0.005000
-    Epoch: 330, Loss: 1.2114, Train Acc: 0.5914, LR: 0.005000
-    Epoch: 340, Loss: 1.1419, Train Acc: 0.6437, LR: 0.005000
-    Epoch: 350, Loss: 1.0804, Train Acc: 0.6295, LR: 0.005000
-    Epoch: 360, Loss: 1.1001, Train Acc: 0.6318, LR: 0.005000
-    Epoch: 370, Loss: 1.1322, Train Acc: 0.6390, LR: 0.005000
-    Epoch: 380, Loss: 1.0147, Train Acc: 0.6508, LR: 0.005000
-    Epoch: 390, Loss: 1.0477, Train Acc: 0.6793, LR: 0.005000
-    Epoch: 400, Loss: 1.0079, Train Acc: 0.6722, LR: 0.005000
-    Epoch: 410, Loss: 0.9517, Train Acc: 0.6770, LR: 0.005000
-    Epoch: 420, Loss: 0.8894, Train Acc: 0.6912, LR: 0.005000
-    Epoch: 430, Loss: 0.9356, Train Acc: 0.7102, LR: 0.005000
-    Epoch: 440, Loss: 0.9250, Train Acc: 0.7150, LR: 0.005000
-    Epoch: 450, Loss: 0.9676, Train Acc: 0.6698, LR: 0.005000
-    Epoch: 460, Loss: 0.9507, Train Acc: 0.7078, LR: 0.005000
-    Epoch: 470, Loss: 0.9417, Train Acc: 0.6746, LR: 0.005000
-    Epoch: 480, Loss: 0.7683, Train Acc: 0.7601, LR: 0.005000
-    Epoch: 490, Loss: 0.8172, Train Acc: 0.7150, LR: 0.005000
-    Epoch: 500, Loss: 0.8352, Train Acc: 0.7150, LR: 0.005000
+    Epoch: 001, Loss: 6.1308, Train Acc: 0.0024, LR: 0.005000
+    Epoch: 010, Loss: 4.8588, Train Acc: 0.0285, LR: 0.005000
+    Epoch: 020, Loss: 4.1497, Train Acc: 0.0451, LR: 0.005000
+    Epoch: 030, Loss: 3.6481, Train Acc: 0.0665, LR: 0.005000
+    Epoch: 040, Loss: 3.3491, Train Acc: 0.0808, LR: 0.005000
+    Epoch: 050, Loss: 3.0933, Train Acc: 0.1069, LR: 0.005000
+    Epoch: 060, Loss: 3.0340, Train Acc: 0.1045, LR: 0.005000
+    Epoch: 070, Loss: 2.7988, Train Acc: 0.1568, LR: 0.005000
+    Epoch: 080, Loss: 2.7294, Train Acc: 0.1829, LR: 0.005000
+    Epoch: 090, Loss: 2.7048, Train Acc: 0.1781, LR: 0.005000
+    Epoch: 100, Loss: 2.6811, Train Acc: 0.1496, LR: 0.005000
+    Epoch: 110, Loss: 2.5745, Train Acc: 0.2114, LR: 0.005000
+    Epoch: 120, Loss: 2.5357, Train Acc: 0.2138, LR: 0.005000
+    Epoch: 130, Loss: 2.4710, Train Acc: 0.2162, LR: 0.005000
+    Epoch: 140, Loss: 2.4527, Train Acc: 0.2470, LR: 0.005000
+    Epoch: 150, Loss: 2.4190, Train Acc: 0.2589, LR: 0.005000
+    Epoch: 160, Loss: 2.3330, Train Acc: 0.2470, LR: 0.005000
+    Epoch: 170, Loss: 2.2095, Train Acc: 0.2850, LR: 0.005000
+    Epoch: 180, Loss: 2.2653, Train Acc: 0.2518, LR: 0.005000
+    Epoch: 190, Loss: 2.1376, Train Acc: 0.2898, LR: 0.005000
+    Epoch: 200, Loss: 2.1923, Train Acc: 0.2708, LR: 0.005000
+    Epoch: 210, Loss: 2.1325, Train Acc: 0.2755, LR: 0.005000
+    Epoch: 220, Loss: 2.0713, Train Acc: 0.3254, LR: 0.005000
+    Epoch: 230, Loss: 2.0250, Train Acc: 0.3230, LR: 0.005000
+    Epoch: 240, Loss: 2.1606, Train Acc: 0.2755, LR: 0.005000
+    Epoch: 250, Loss: 1.9289, Train Acc: 0.3587, LR: 0.005000
+    Epoch: 260, Loss: 1.9526, Train Acc: 0.3800, LR: 0.005000
+    Epoch: 270, Loss: 2.0377, Train Acc: 0.3444, LR: 0.005000
+    Epoch: 280, Loss: 1.9385, Train Acc: 0.3397, LR: 0.005000
+    Epoch: 290, Loss: 1.8488, Train Acc: 0.3943, LR: 0.005000
+    Epoch: 300, Loss: 1.8400, Train Acc: 0.3800, LR: 0.005000
+    Epoch: 310, Loss: 1.8016, Train Acc: 0.4133, LR: 0.005000
+    Epoch: 320, Loss: 1.8224, Train Acc: 0.3800, LR: 0.005000
+    Epoch: 330, Loss: 1.7383, Train Acc: 0.4062, LR: 0.005000
+    Epoch: 340, Loss: 1.7875, Train Acc: 0.3967, LR: 0.005000
+    Epoch: 350, Loss: 1.7999, Train Acc: 0.3943, LR: 0.005000
+    Epoch: 360, Loss: 1.7515, Train Acc: 0.4276, LR: 0.005000
+    Epoch: 370, Loss: 1.7366, Train Acc: 0.3990, LR: 0.005000
+    Epoch: 380, Loss: 1.8676, Train Acc: 0.3777, LR: 0.005000
+    Epoch: 390, Loss: 1.7264, Train Acc: 0.4204, LR: 0.005000
+    Epoch: 400, Loss: 1.7717, Train Acc: 0.4204, LR: 0.005000
+    Epoch: 410, Loss: 1.6938, Train Acc: 0.4394, LR: 0.005000
+    Epoch: 420, Loss: 1.5974, Train Acc: 0.4466, LR: 0.005000
+    Epoch: 430, Loss: 1.6333, Train Acc: 0.4727, LR: 0.005000
+    Epoch: 440, Loss: 1.5883, Train Acc: 0.4584, LR: 0.005000
+    Epoch: 450, Loss: 1.6157, Train Acc: 0.4608, LR: 0.005000
+    Epoch: 460, Loss: 1.6038, Train Acc: 0.4656, LR: 0.005000
+    Epoch: 470, Loss: 1.6100, Train Acc: 0.4656, LR: 0.005000
+    Epoch: 480, Loss: 1.5227, Train Acc: 0.4584, LR: 0.005000
+    Epoch: 490, Loss: 1.5362, Train Acc: 0.4798, LR: 0.005000
+    Epoch: 500, Loss: 1.6129, Train Acc: 0.4679, LR: 0.005000
   Extracting embeddings for 421 nodes using full-batch inference...
   Preparing specialized graph views for 'directgcn'.
+    -> Adding normalized homophily/heterophily paths for DirectGCN.
 
 ==========================================================
 ### Processing N-gram Level: n = 3 for model 'directgcn' ###
 ==========================================================
 
-  Loading graph for n=3 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_231836/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
+  Loading graph for n=3 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250906_235459/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
   Pooling (n-1)-gram embeddings to initialize features for n=3 graph (Strategy: attention)...
   Generating self-supervised labels for task: 'community'
     Generating community labels for all connected components...
       Found 1 connected components.
       Graph has one component, running Louvain community detection...
       Found 18 communities across all components.
-  Graph n=3 Homophily Ratio: nan. Is Heterophilic? -> False
+  Graph n=3 Homophily Ratio: 0.5127. Is Heterophilic? -> True
+  -> Enabling specialized homophily/heterophily paths for DirectGCN at n=3.
+  Splitting 165315 directed edges by homophily...
+    Normalizing homophilic and heterophilic matrices...
+    - Undirected Homophilous Edges: 84669
+    - Undirected Heterophilous Edges: 80458
+    - Undirected Total Unique Edges: 165127
   Creating new instance of 'directgcn' for context 'protgram'.
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
   Partitioning graph with 8401 nodes for clustered training (Method: graclus)...
@@ -1130,7 +1144,7 @@ Using device: cuda
   Initial graph: 8401 nodes, 330235 edges.
 
 --- ❌ ERROR in pipeline: ProtGram-XGCN ---
-Error: `graclus` requires `torch-cluster`.
+Error: 'module' object is not callable
 Traceback (most recent call last):
   File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/entry/main.py", line 102, in _run_main_embedding_pipelines
     raw_result = p_config["runner"]()
@@ -1144,20 +1158,18 @@ Traceback (most recent call last):
   File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/trainers/protgram_xgcn.py", line 89, in run
     ngram_embeddings_per_level, attention_logs_for_model = self._train_gnns_hierarchically(
                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/trainers/protgram_xgcn.py", line 257, in _train_gnns_hierarchically
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/trainers/protgram_xgcn.py", line 258, in _train_gnns_hierarchically
     self._train_single_level(model, graph_obj, data, optimizer)
-  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/trainers/protgram_xgcn.py", line 287, in _train_single_level
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/trainers/protgram_xgcn.py", line 288, in _train_single_level
     node_partitions = self._partition_graph(graph_obj)
                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/trainers/protgram_xgcn.py", line 580, in _partition_graph
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/trainers/protgram_xgcn.py", line 581, in _partition_graph
     coarsening_result = GraphCoarsener.coarsen_graph(graph_obj, level=coarsening_level)
                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/data_structures/coarsener.py", line 109, in coarsen_graph
-    clusters = graclus(edge_index, edge_weight)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/torch_geometric/nn/pool/graclus.py", line 34, in graclus
-    raise ImportError('`graclus` requires `torch-cluster`.')
-ImportError: `graclus` requires `torch-cluster`.
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/data_structures/coarsener.py", line 114, in coarsen_graph
+    edge_index, edge_weight = pool_edge(clusters, edge_index, edge_weight, reduce='add')
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'module' object is not callable
 --- Skipping pipeline ProtGram-XGCN and continuing. ---
   Scanning for existing, pre-generated embeddings...
 
@@ -1193,6 +1205,112 @@ PPIPipeline initialized.
   Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/models/per-protein.h5
   Memory Strategy ('high'): Attempting to load 'per-protein.h5' into RAM.
   Memory Strategy ('high'): Loading 'per-protein.h5' into RAM for faster access.
---- Memory Usage (After processing ProtT5): RSS = 5393.52 MB ---
+  Found 573650 embeddings. Filtering interaction files against these IDs...
+  High-performance filtering pairs from: positive_interactions.parquet (label: 1)...
+    Found 2111935 pairs with available embeddings.
+  High-performance filtering pairs from: negative_interactions.parquet (label: 0)...
+    Applying random sampling to keep up to 2111935 pairs...
+    Found 2111935 pairs with available embeddings.
+Starting CV workflow for ProtT5. Total samples: 4223870
+
+[A
+  --- Fold 1/2 for ProtT5 ---
+
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A[A
+
+[A--- Memory Usage (After processing ProtT5): RSS = 11069.23 MB ---
   GPU Memory: Allocated = 64.00 MB, Reserved = 86.00 MB
 

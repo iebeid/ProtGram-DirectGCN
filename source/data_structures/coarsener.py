@@ -39,11 +39,14 @@ def modularity(edge_index, cluster, weight=None, num_nodes=None):
 
 try:
     # For PyG >= 2.0
-    from torch_geometric.nn.pool import graclus, edge_pool as pool_edge
+    from torch_geometric.nn.pool import graclus
+    # Import the actual function (not the module) to avoid 'module is not callable'
+    from torch_geometric.nn.pool.pool import pool_edge
 except ImportError:
     # Fallback for PyG < 2.0
     from torch_geometric.nn import functional as F
     graclus = F.graclus
+    pool_edge = None  # type: ignore
 from torch_geometric.utils import to_scipy_sparse_matrix, from_scipy_sparse_matrix, get_laplacian
 from tqdm.auto import tqdm
 
@@ -110,9 +113,10 @@ class GraphCoarsener:
             cluster_map = clusters[cluster_map]
 
             # --- REFACTOR: Use the idiomatic PyG function for coarsening edges ---
-            # This is cleaner and more direct than converting to SciPy and back.
-            edge_index, edge_weight = pool_edge(clusters, edge_index, edge_weight, reduce='add')
-            num_nodes = int(clusters.max().item()) + 1
+            # Provide explicit size to be robust across PyG versions.
+            num_coarsened = int(clusters.max().item()) + 1
+            edge_index, edge_weight = pool_edge(clusters, edge_index, edge_weight, size=num_coarsened, reduce='add')
+            num_nodes = num_coarsened
 
             print(f"  Level {i + 1}: Coarsened to {num_nodes} nodes, {edge_index.size(1)} edges.")
 

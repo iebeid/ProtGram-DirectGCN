@@ -27,38 +27,42 @@ class ProtgramDaskHelpers:
         """
         Computes an edge-based homophily ratio robustly:
         - Removes self-loops
-        - Ignores edges with invalid/NaN labels
+        - Filters edges whose endpoints have invalid labels (e.g., NaN for float labels)
+        - Preserves label indexing (does not shrink the label vector)
         - Returns `default` if there are no valid edges after filtering
         """
         if edge_index is None or edge_index.numel() == 0 or labels is None or labels.numel() == 0:
             return float(default)
-        # Ensure 1-D labels of type long for indexing
+
+        # Ensure 1-D labels
         lbl = labels.detach().to('cpu')
         if lbl.dim() > 1:
             lbl = lbl.squeeze()
-        # Build mask for valid labels (exclude NaNs and negative indices)
+
+        # Build validity mask over nodes (do not shrink labels)
         if lbl.dtype.is_floating_point:
-            valid_lbl_mask = ~torch.isnan(lbl)
-            lbl = lbl[valid_lbl_mask]
+            node_valid = ~torch.isnan(lbl)
         else:
-            valid_lbl_mask = torch.ones_like(lbl, dtype=torch.bool)
-        # Self-loop mask
+            node_valid = torch.ones_like(lbl, dtype=torch.bool)
+
+        # Self-loop and in-range masks
         ei = edge_index.detach().to('cpu')
         if ei.numel() == 0:
             return float(default)
         src, dst = ei[0], ei[1]
         self_loop_mask = src != dst
-        # Edges with both endpoints having valid labels
-        # Guard index range
         max_idx = lbl.numel() - 1
         in_range_src = (src >= 0) & (src <= max_idx)
         in_range_dst = (dst >= 0) & (dst <= max_idx)
-        valid_edge_mask = self_loop_mask & in_range_src & in_range_dst
+
+        # Endpoints must be valid and in range
+        endpoints_valid = node_valid[src] & node_valid[dst]
+        valid_edge_mask = self_loop_mask & in_range_src & in_range_dst & endpoints_valid
         if not valid_edge_mask.any():
             return float(default)
+
         src_v = src[valid_edge_mask]
         dst_v = dst[valid_edge_mask]
-        # Filter further by valid labels original mask (if labels were reduced by NaN removal, indices map directly)
         same = (lbl[src_v] == lbl[dst_v])
         total = same.numel()
         if total == 0:

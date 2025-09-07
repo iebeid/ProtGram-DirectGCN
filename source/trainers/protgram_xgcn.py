@@ -575,10 +575,12 @@ class ProtGramXGCNTrainer:
         if method == 'graclus':
             from source.data_structures.coarsener import GraphCoarsener
             coarsening_level = self.config.PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING
-            # --- DEFINITIVE FIX for AttributeError: Pass the correct graph object ---
-            # The GraphCoarsener expects the custom DirectedNgramGraph object to access
-            # its specific attributes like A_undirected_w.
-            coarsening_result = GraphCoarsener.coarsen_graph(graph_obj, level=coarsening_level)
+            # --- Robust coarsening: catch any errors and fall back gracefully ---
+            try:
+                coarsening_result = GraphCoarsener.coarsen_graph(graph_obj, level=coarsening_level)
+            except Exception as e:
+                print(f"  - ERROR: Graclus coarsening failed ({e}). Falling back to a single partition.")
+                return [list(range(graph_obj.number_of_nodes))]
             if coarsening_result is None:
                 print("  - WARNING: Graclus coarsening failed. Falling back to a single partition.")
                 return [list(range(graph_obj.number_of_nodes))]
