@@ -360,6 +360,18 @@ class PipelineOrchestrator:
                                 continue
                             checkpoint_manager.save_checkpoint("PreAnalysis", {"status": "completed"})
 
+                        # Optional: Hyperparameter tuning for ProtGram-XGCN before training
+                        if config.RUN_HPO and config.RUN_PROTGRAM_XGCN_PIPELINE:
+                            DataUtils.print_header("Running HPO for ProtGram-XGCN")
+                            optimizer = HyperparameterOptimizer(config)
+                            best_xgcn_params = optimizer.optimize_protgram_xgcn()
+                            if isinstance(best_xgcn_params, dict) and best_xgcn_params:
+                                # Apply best params to runtime config
+                                for k, v in best_xgcn_params.items():
+                                    if hasattr(config, k):
+                                        setattr(config, k, v)
+                                print("  Applied best ProtGram-XGCN hyperparameters to config.")
+
                         # Main embedding generation
                         generated_files = self._run_main_embedding_pipelines(config, checkpoint_manager)
                         generated_files = generated_files if isinstance(generated_files, list) else []
@@ -380,7 +392,22 @@ class PipelineOrchestrator:
                                     target_embedding_path = emb_file['path']
                                     break
                             if target_embedding_path:
-                                optimizer.optimize_ppi_mlp(str(target_embedding_path), target_model_name)
+                                best_params = optimizer.optimize_ppi_mlp(str(target_embedding_path), target_model_name)
+                                # Apply best hyperparameters to the runtime Config so PPI uses them
+                                if isinstance(best_params, dict) and best_params:
+                                    mapping = {
+                                        'MLP_LEARNING_RATE': 'EVAL_MLP_LEARNING_RATE',
+                                        'DENSE1_UNITS': 'EVAL_MLP_DENSE1_UNITS',
+                                        'DROPOUT1_RATE': 'EVAL_MLP_DROPOUT1_RATE',
+                                        'DENSE2_UNITS': 'EVAL_MLP_DENSE2_UNITS',
+                                        'DROPOUT2_RATE': 'EVAL_MLP_DROPOUT2_RATE',
+                                        'L2_REG': 'EVAL_MLP_L2_REG',
+                                        'BATCH_SIZE': 'EVAL_BATCH_SIZE',
+                                    }
+                                    for k, v in best_params.items():
+                                        if k in mapping:
+                                            setattr(config, mapping[k], v)
+                                    print("  Applied best HPO hyperparameters to PPI config.")
                             else:
                                 print(f"  Warning: HPO target embedding '{target_model_name}' not found in generated/configured files. Skipping HPO.")
                         else:

@@ -65,6 +65,8 @@ class ProtGramXGCNTrainer:
         self._loaded_graphs: Dict[int, DirectedNgramGraph] = {}
         # --- NEW: Set seeds for reproducibility of model initialization and training ---
         DataUtils.set_seeds(self.config.RANDOM_STATE)
+        # --- NEW: Collect per-level training losses for HPO ---
+        self._training_metrics: Dict[int, float] = {}
 
     def run(self) -> Dict[str, str]:
         """
@@ -275,7 +277,13 @@ class ProtGramXGCNTrainer:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-        return ngram_embeddings_per_level, hierarchical_attention_per_level
+        # Return the correctly labeled attention logs so downstream saving uses model names.
+        return ngram_embeddings_per_level, final_attention_logs
+
+    # --- NEW: Getter for HPO to consume per-level training losses ---
+    def get_training_metrics(self) -> Dict[int, float]:
+        """Returns a mapping of n-value -> recorded training loss for that level."""
+        return dict(self._training_metrics)
 
     def _train_single_level(self, model: nn.Module, graph_obj: DirectedNgramGraph, data: Data, optimizer: torch.optim.Optimizer):
         """Orchestrates the training for a single level, choosing between full-batch and clustered training."""
@@ -382,7 +390,21 @@ class ProtGramXGCNTrainer:
                 print(log_str)
             if early_stopper and early_stopper.early_stop(unnormalized_loss):
                 print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
+                # --- NEW: Record per-level best loss for HPO ---
+                try:
+                    level_id = int(getattr(full_data_gpu.graph_obj, 'n_value', 0))
+                    best_loss = float(early_stopper.best_loss) if early_stopper and early_stopper.best_loss is not None else float(unnormalized_loss)
+                    self._training_metrics[level_id] = best_loss
+                except Exception:
+                    pass
                 break
+        # --- NEW: If no early stop, record last loss ---
+        if getattr(early_stopper, 'best_loss', None) is None:
+            try:
+                level_id = int(getattr(full_data_gpu.graph_obj, 'n_value', 0))
+                self._training_metrics[level_id] = float(unnormalized_loss)
+            except Exception:
+                pass
 
     def _calculate_loss(self, model: nn.Module, data: Data, criterion, task_type: str) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -518,7 +540,21 @@ class ProtGramXGCNTrainer:
             if scheduler: scheduler.step(avg_epoch_loss)
             if early_stopper and early_stopper.early_stop(avg_epoch_loss):
                 print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
+                # --- NEW: Record per-level best loss for HPO ---
+                try:
+                    level_id = int(getattr(full_data, 'graph_obj', getattr(full_data, 'n_value', 0)).n_value if hasattr(full_data, 'graph_obj') else getattr(full_data, 'n_value', 0))
+                    best_loss = float(early_stopper.best_loss) if early_stopper and early_stopper.best_loss is not None else float(avg_epoch_loss)
+                    self._training_metrics[level_id] = best_loss
+                except Exception:
+                    pass
                 break
+        # --- NEW: If no early stop, record last average batch loss ---
+        if getattr(early_stopper, 'best_loss', None) is None:
+            try:
+                level_id = int(getattr(full_data, 'graph_obj', getattr(full_data, 'n_value', 0)).n_value if hasattr(full_data, 'graph_obj') else getattr(full_data, 'n_value', 0))
+                self._training_metrics[level_id] = float(avg_epoch_loss)
+            except Exception:
+                pass
 
     def _load_graph_for_level(self, n: int) -> Optional[DirectedNgramGraph]:
         """

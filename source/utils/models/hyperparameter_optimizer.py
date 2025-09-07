@@ -171,3 +171,80 @@ class HyperparameterOptimizer:
                 mlflow.log_param(f"best_{key}", value)
             mlflow.log_metric("best_auc", best_trial.value)
             return best_trial.params
+
+    def optimize_protgram_xgcn(self) -> Optional[Dict[str, Any]]:
+        """
+        Runs an Optuna study to tune key hyperparameters of the ProtGram-XGCN trainer.
+        The objective minimizes the average per-level training loss over the configured n-gram levels.
+        """
+        from copy import deepcopy
+        from source.trainers.protgram_xgcn import ProtGramXGCNTrainer
+
+        # Default search space if not provided in Config
+        default_space = {
+            'PROTGRAM_LR': {'type': 'loguniform', 'low': 1e-4, 'high': 5e-2},
+            'PROTGRAM_WEIGHT_DECAY': {'type': 'loguniform', 'low': 1e-6, 'high': 1e-2},
+            'PROTGRAM_GNN_HIDDEN_CHANNELS': {'type': 'categorical', 'choices': [32, 64, 128]},
+            'PROTGRAM_GNN_NUM_LAYERS': {'type': 'categorical', 'choices': [2, 3]},
+            'PROTGRAM_GATING_COEFF_MODE': {'type': 'categorical', 'choices': ['vector', None]},
+        }
+        search_space = getattr(self.base_config, 'HPO_PROTGRAM_XGCN_SEARCH_SPACE', default_space)
+
+        def suggest(trial: optuna.Trial, name: str):
+            spec = search_space[name]
+            t = spec['type']
+            if t == 'categorical':
+                return trial.suggest_categorical(name, spec['choices'])
+            if t == 'int':
+                return trial.suggest_int(name, int(spec['low']), int(spec['high']), step=spec.get('step', 1))
+            if t == 'uniform':
+                return trial.suggest_float(name, float(spec['low']), float(spec['high']))
+            if t == 'loguniform':
+                return trial.suggest_float(name, float(spec['low']), float(spec['high']), log=True)
+            raise ValueError(f"Unsupported Optuna type: {t}")
+
+        def objective(trial: optuna.Trial) -> float:
+            trial_cfg = deepcopy(self.base_config)
+            # Apply trial params
+            trial_cfg.PROTGRAM_LR = suggest(trial, 'PROTGRAM_LR')
+            trial_cfg.PROTGRAM_WEIGHT_DECAY = suggest(trial, 'PROTGRAM_WEIGHT_DECAY')
+            trial_cfg.PROTGRAM_GNN_HIDDEN_CHANNELS = suggest(trial, 'PROTGRAM_GNN_HIDDEN_CHANNELS')
+            trial_cfg.PROTGRAM_GNN_NUM_LAYERS = suggest(trial, 'PROTGRAM_GNN_NUM_LAYERS')
+            trial_cfg.PROTGRAM_GATING_COEFF_MODE = suggest(trial, 'PROTGRAM_GATING_COEFF_MODE')
+
+            # Speed up trial: cap epochs conservatively
+            try_epochs = min(getattr(self.base_config, 'PROTGRAM_EPOCHS_PER_LEVEL', 200), 50)
+            trial_cfg.PROTGRAM_EPOCHS_PER_LEVEL = try_epochs
+
+            # Restrict models to 'directgcn' for trial speed unless explicitly set
+            trial_cfg.PROTGRAM_MODELS_TO_TRAIN = ['directgcn']
+
+            # Ensure trainer runs without logging heavy artifacts
+            trial_cfg.PROTGRAM_LOG_ATTENTION_WEIGHTS = False
+
+            trainer = ProtGramXGCNTrainer(trial_cfg)
+            try:
+                trainer.run()
+                stats = trainer.get_training_metrics()
+                if not stats:
+                    return float('inf')
+                # Minimize the average per-level training loss
+                return float(np.mean(list(stats.values())))
+            except Exception as e:
+                print(f"  Trial {trial.number} failed in ProtGram-XGCN with error: {e}")
+                return float('inf')
+
+        mlflow.set_experiment(self.base_config.MLFLOW_PROTGRAM_XGCN_EXPERIMENT_NAME)
+        with mlflow.start_run(run_name="HPO_ProtGram-XGCN"):
+            mlflow.set_tag("optuna.study_name", "hpo_protgram_xgcn")
+            study = optuna.create_study(direction='minimize', sampler=optuna.samplers.TPESampler(seed=self.base_config.RANDOM_STATE))
+            study.optimize(objective, n_trials=getattr(self.base_config, 'HPO_N_TRIALS', 10), show_progress_bar=True)
+
+            best = study.best_trial
+            DataUtils.print_header("ProtGram-XGCN HPO Finished")
+            print(f"  Best average training loss: {best.value:.4f}")
+            for k, v in best.params.items():
+                print(f"    - {k}: {v}")
+                mlflow.log_param(f"best_protgram_{k}", v)
+            mlflow.log_metric("best_protgram_avg_loss", best.value)
+            return best.params

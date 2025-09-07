@@ -113,9 +113,9 @@ class GraphCoarsener:
             cluster_map = clusters[cluster_map]
 
             # --- REFACTOR: Use the idiomatic PyG function for coarsening edges ---
-            # Provide explicit size to be robust across PyG versions.
+            # Call without 'size' to be compatible across PyG versions.
             num_coarsened = int(clusters.max().item()) + 1
-            edge_index, edge_weight = pool_edge(clusters, edge_index, edge_weight, size=num_coarsened, reduce='add')
+            edge_index, edge_weight = pool_edge(clusters, edge_index, edge_weight, reduce='add')
             num_nodes = num_coarsened
 
             print(f"  Level {i + 1}: Coarsened to {num_nodes} nodes, {edge_index.size(1)} edges.")

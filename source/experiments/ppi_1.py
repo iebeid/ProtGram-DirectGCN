@@ -149,11 +149,39 @@ class PPIPipeline:
             callbacks = [tf_keras.callbacks.EarlyStopping(monitor='val_loss',
                                                           patience=self.config.EARLY_STOPPING_PATIENCE,
                                                           restore_best_weights=True)] if self.config.EARLY_STOPPING_PATIENCE > 0 else []
-            history = model.fit(X_train, y_train, epochs=self.config.EVAL_EPOCHS, validation_data=(X_val, y_val), # noqa
-                                batch_size=self.config.EVAL_BATCH_SIZE, # noqa
-                                validation_batch_size=self.config.EVAL_BATCH_SIZE, # noqa
-                                verbose=1 if self.config.DEBUG_VERBOSE else 0, # noqa
-                                class_weight=class_weight, callbacks=callbacks) # noqa
+            try:
+                history = model.fit(X_train, y_train, epochs=self.config.EVAL_EPOCHS, validation_data=(X_val, y_val), # noqa
+                                    batch_size=self.config.EVAL_BATCH_SIZE, # noqa
+                                    validation_batch_size=self.config.EVAL_BATCH_SIZE, # noqa
+                                    verbose=1 if self.config.DEBUG_VERBOSE else 0, # noqa
+                                    class_weight=class_weight, callbacks=callbacks) # noqa
+            except (tf.errors.InternalError, tf.errors.ResourceExhaustedError) as e:
+                # Robust fallback for device copy/init issues on very large datasets (e.g., ProtT5)
+                if "Failed copying input tensor" in str(e) or isinstance(e, tf.errors.ResourceExhaustedError):
+                    print("    WARNING: GPU training failed (device copy/init). Falling back to CPU for this fold.")
+                    # Switch to float32 to avoid mixed-precision issues on CPU, rebuild, and retry on CPU.
+                    try:
+                        from tf_keras import mixed_precision
+                        old_policy = mixed_precision.global_policy()
+                        mixed_precision.set_global_policy('float32')
+                    except Exception:
+                        old_policy = None
+                    tf_keras.backend.clear_session()
+                    with tf.device('/CPU:0'):
+                        model = MLP.build(input_dim=X_train.shape[1], config=self.config)
+                        history = model.fit(X_train, y_train, epochs=self.config.EVAL_EPOCHS, validation_data=(X_val, y_val), # noqa
+                                            batch_size=self.config.EVAL_BATCH_SIZE, # noqa
+                                            validation_batch_size=self.config.EVAL_BATCH_SIZE, # noqa
+                                            verbose=1 if self.config.DEBUG_VERBOSE else 0, # noqa
+                                            class_weight=class_weight, callbacks=callbacks) # noqa
+                    # Restore original policy if we changed it
+                    try:
+                        if old_policy is not None:
+                            mixed_precision.set_global_policy(old_policy)
+                    except Exception:
+                        pass
+                else:
+                    raise
             print("    Model training finished.")
 
             # --- Evaluate Model ---
