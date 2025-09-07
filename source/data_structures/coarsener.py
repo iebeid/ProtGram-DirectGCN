@@ -95,8 +95,10 @@ class GraphCoarsener:
         DataUtils.print_header(f"Graph Coarsening (Levels: {level})")
 
         # Start with the raw, undirected, weighted adjacency matrix
-        edge_index = graph.A_undirected_w.coalesce().indices()
-        edge_weight = graph.A_undirected_w.coalesce().values()
+        # --- Robustness: Run coarsening on CPU with contiguous tensors to avoid stride/view errors ---
+        coalesced = graph.A_undirected_w.coalesce()
+        edge_index = coalesced.indices().to(dtype=torch.long, device='cpu').contiguous()
+        edge_weight = coalesced.values().to(dtype=torch.float32, device='cpu').contiguous()
 
         # Initialize the cluster map where each node is its own cluster
         num_nodes = graph.number_of_nodes
