@@ -83,15 +83,15 @@ class SingletonXGCNTrainer:
         else:
             print("  Homophily calculation skipped for non-classification task (e.g., masked_node).")
 
-        print(f"  Initializing features with identity matrix.")
-        initial_features = torch.eye(self.graph.number_of_nodes)
-        # --- NEW: Apply BatchNorm for consistency with the main pipeline's feature handling ---
-        # This ensures that the model is always tested under similar input conditions,
-        # even though the random features for n=1 are already somewhat normalized.
+        # Initialize compact random features to keep memory usage bounded even for large graphs.
+        init_dim = int(getattr(self.config, 'SINGLETON_INIT_DIM',
+                               getattr(self.config, 'BENCHMARK_GNN_INIT_DIM', 64)))
+        print(f"  Initializing random features with dimension: {init_dim}")
+        initial_features = torch.randn((self.graph.number_of_nodes, init_dim), device=self.device)
+        # --- Keep BatchNorm for consistency with the main pipeline's feature handling ---
         bn = torch.nn.BatchNorm1d(initial_features.shape[1]).to(self.device)
-        # Move features to device for normalization, then detach them from the computation graph.
-        # This prevents the "trying to backward through the graph a second time" error.
-        initial_features = bn(initial_features.to(self.device)).detach()
+        # Normalize and detach to avoid retaining computation graph
+        initial_features = bn(initial_features).detach()
 
         import numpy as np
         node_indices = np.arange(self.graph.number_of_nodes)

@@ -357,7 +357,6 @@ class GNNBenchmarker(BaseBenchmarker):
                         result_row = {"dataset": variant_name, "model": model_name, "error": None}
                         result_row.update(metrics)
                         results.append(result_row)
-                        results.append(result_row)
 
                         mlflow.log_metrics({
                             "test_accuracy": metrics.get('Accuracy', 0.0),

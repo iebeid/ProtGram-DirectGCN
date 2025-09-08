@@ -276,6 +276,7 @@ class UIManager:
                 break
         return ok
 
+    @staticmethod
     def display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
         """
         Standardizes, concatenates, and displays a final summary of all benchmark results.
