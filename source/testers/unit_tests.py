@@ -31,7 +31,7 @@ def run_dummy_ppi_test(config):
     Runs a smoke test of the PPI pipeline using dummy data.
     """
     print("--- Running Dummy PPI Pipeline Smoke Test ---")
-    dummy_data_dir = config.BASE_OUTPUT_DIR / "dummy_data_temp"
+    dummy_data_dir = config.TEMP_TESTS_DIR / "dummy_data_temp"
     if dummy_data_dir.exists():
         shutil.rmtree(dummy_data_dir)
     dummy_data_dir.mkdir(parents=True, exist_ok=True)
@@ -71,12 +71,12 @@ def run_all_tests(suites_to_run=None, verbosity=2, config=None):
     config = config or Config()
 
     # Enforce run-scoped temp and cache directories so nothing spills to /tmp
-    tmp_root = config.BASE_OUTPUT_DIR / "tmp_tests"
+    tmp_root = config.TEMP_TESTS_DIR
     tmp_root.mkdir(parents=True, exist_ok=True)
     os.environ['TMPDIR'] = str(tmp_root)
     tempfile.tempdir = str(tmp_root)
 
-    dask_tmp = config.BASE_OUTPUT_DIR / "dask_temp"
+    dask_tmp = config.TEMP_TESTS_DIR / "dask"
     dask_tmp.mkdir(parents=True, exist_ok=True)
     os.environ['DASK_TEMPORARY_DIRECTORY'] = str(dask_tmp)
 

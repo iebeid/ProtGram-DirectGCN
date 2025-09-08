@@ -40,8 +40,6 @@ class GNNBenchmarker(BaseBenchmarker):
         print(f"    Extracting embeddings for {model.__class__.__name__}...")
         with torch.no_grad():
             model.eval()
-            # The 'data' object is already on the correct device when this is called
-            # from _train_and_evaluate, so we can pass it directly.
             _, embeddings = model(data)
         if embeddings is None:
             print("    Warning: Could not extract embeddings.")
@@ -53,19 +51,26 @@ class GNNBenchmarker(BaseBenchmarker):
         # Construct the full path for the output file
         dataset_name = getattr(data, 'name', 'unknown_dataset')
         model_name = model.__class__.__name__
+        variant_suffix = getattr(data, 'variant_suffix', None)
         emb_dim = embeddings_np.shape[1]
 
-        h5_filename = f"{model_name}_embeddings_dim{emb_dim}.h5"
+        base_name = f"{model_name}_embeddings_dim{emb_dim}" if not variant_suffix else f"{model_name}_{variant_suffix}_embeddings_dim{emb_dim}"
+        h5_filename = f"{base_name}.h5"
         full_h5_path = self.embedding_dir / dataset_name / h5_filename
 
         FileUtils.write_h5(emb_dict, full_h5_path, f"Writing H5 for {model_name}")
         print(f"      Saved embeddings to {full_h5_path}")
 
-    def _train_and_evaluate(self, model: torch.nn.Module, data: Data) -> Tuple[Dict[str, float], pd.DataFrame]:
+    def _train_and_evaluate(self, model: torch.nn.Module, data: Data,
+                            epochs_override: Optional[int] = None,
+                            lr_override: Optional[float] = None,
+                            wd_override: Optional[float] = None) -> Tuple[Dict[str, float], pd.DataFrame]:
         """Handles the training and evaluation loop for a given model and data."""
         model.to(self.device)
         data = data.to(self.device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=self.config.BENCHMARK_GNN_LEARNING_RATE, weight_decay=self.config.BENCHMARK_GNN_WEIGHT_DECAY)
+        lr = lr_override if lr_override is not None else self.config.BENCHMARK_GNN_LEARNING_RATE
+        wd = wd_override if wd_override is not None else self.config.BENCHMARK_GNN_WEIGHT_DECAY
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
 
         best_val_acc = -1
         test_acc_at_best_val = -1
@@ -80,7 +85,8 @@ class GNNBenchmarker(BaseBenchmarker):
         val_mask = self._get_1d_mask(data.val_mask)
         test_mask = self._get_1d_mask(data.test_mask)
 
-        for epoch in range(1, self.config.BENCHMARK_GNN_EPOCHS + 1):
+        total_epochs = int(epochs_override) if epochs_override is not None else int(self.config.BENCHMARK_GNN_EPOCHS)
+        for epoch in range(1, total_epochs + 1):
             model.train()
             optimizer.zero_grad()
             logits, _ = model(data)
@@ -249,9 +255,82 @@ class GNNBenchmarker(BaseBenchmarker):
         results = []
         for model_name in self.config.BENCHMARK_GNN_MODELS_TO_RUN:
             print(f"\n--- Benchmarking Model: {model_name} on Dataset: {variant_name} ---")
-            # --- ERROR HANDLING: Wrap each model's evaluation to prevent one failure from stopping the suite. ---
             try:
-                with mlflow.start_run(run_name=f"{model_name}_on_{variant_name}", nested=True):
+                if model_name.lower() == 'directgcn':
+                    # Small ablation sweep with tuned hyperparameters
+                    base_lr = float(self.config.BENCHMARK_GNN_LEARNING_RATE)
+                    base_wd = float(self.config.BENCHMARK_GNN_WEIGHT_DECAY)
+                    base_epochs = int(self.config.BENCHMARK_GNN_EPOCHS)
+                    try:
+                        base_dropout = float(self.config.BENCHMARK_GNN_DROPOUT_RATE)
+                    except Exception:
+                        base_dropout = 0.5
+
+                    variants = [
+                        {'suffix': 'full_scalar', 'gating_mode': 'scalar', 'path_selection': 'full',
+                         'dropout': min(0.3, base_dropout), 'lr': base_lr * 0.5, 'wd': base_wd * 2.0, 'epochs': base_epochs * 2},
+                        {'suffix': 'undir_none', 'gating_mode': 'none', 'path_selection': 'undirected',
+                         'dropout': min(0.3, base_dropout), 'lr': base_lr * 0.5, 'wd': base_wd * 2.0, 'epochs': base_epochs * 2},
+                        {'suffix': 'inout_scalar', 'gating_mode': 'scalar', 'path_selection': 'in_out',
+                         'dropout': min(0.3, base_dropout), 'lr': base_lr * 0.5, 'wd': base_wd * 2.0, 'epochs': base_epochs * 2},
+                    ]
+
+                    for var in variants:
+                        variant_name_tag = f"{model_name}[{var['suffix']}]"
+                        with mlflow.start_run(run_name=f"{variant_name_tag}_on_{variant_name}", nested=True):
+                            mlflow.set_tag("model_name", variant_name_tag)
+                            mlflow.set_tag("dataset_name", variant_name)
+                            mlflow.log_param("epochs", var['epochs'])
+                            mlflow.log_param("learning_rate", var['lr'])
+                            mlflow.log_param("weight_decay", var['wd'])
+                            mlflow.log_param("gating_mode", var['gating_mode'])
+                            mlflow.log_param("path_selection", var['path_selection'])
+                            mlflow.log_param("is_undirected", "_Undirected" in variant_name)
+
+                            data_for_model = self._prepare_data_for_model(
+                                model_name=model_name,
+                                data=data,
+                                is_heterophilic=is_heterophilic
+                            )
+                            # mark variant for embedding filenames
+                            setattr(data_for_model, 'variant_suffix', var['suffix'])
+
+                            model = self.model_factory.create_model(
+                                model_name=model_name, in_channels=data_for_model.num_features,
+                                num_classes=num_classes, num_graph_nodes=data.num_nodes,
+                                use_homo_heterophilic=False if not is_heterophilic else True,  # typo-safe
+                                use_homo_hetero_paths=is_heterophilic,
+                                gating_mode=var['gating_mode'],
+                                dropout_rate=var['dropout'],
+                                path_selection=var['path_selection']
+                            )
+
+                            if self.config.DEBUG_VERBOSE:
+                                print("  Variant Architecture:")
+                                print(model)
+
+                            metrics, history_df = self._train_and_evaluate(
+                                model, data_for_model,
+                                epochs_override=var['epochs'],
+                                lr_override=var['lr'],
+                                wd_override=var['wd']
+                            )
+                            result_row = {"dataset": variant_name, "model": variant_name_tag, "error": None}
+                            result_row.update(metrics)
+                            results.append(result_row)
+
+                            mlflow.log_metrics({
+                                "test_accuracy": metrics.get('Accuracy', 0.0),
+                                "f1_macro": metrics.get('F1-Score (Macro)', 0.0)
+                            })
+                            Path(self.output_dir).mkdir(parents=True, exist_ok=True)
+                            history_path = Path(self.output_dir) / f"history_{variant_name_tag}_{variant_name}.csv"
+                            history_df.to_csv(history_path, index=False)
+                            mlflow.log_artifact(str(history_path), "training_history")
+                            if os.path.exists(history_path):
+                                os.remove(history_path)
+                else:
+                    with mlflow.start_run(run_name=f"{model_name}_on_{variant_name}", nested=True):
                         mlflow.set_tag("model_name", model_name)
                         mlflow.set_tag("dataset_name", variant_name)
                         mlflow.log_param("epochs", self.config.BENCHMARK_GNN_EPOCHS)
@@ -264,9 +343,6 @@ class GNNBenchmarker(BaseBenchmarker):
                             is_heterophilic=is_heterophilic
                         )
 
-                        # --- DEFINITIVE FIX: Pass num_nodes explicitly instead of the wrong graph_obj type ---
-                        # The model factory expects `num_graph_nodes` for some models, but was being
-                        # passed a PyG Data object, which would cause an AttributeError.
                         model = self.model_factory.create_model(
                             model_name=model_name, in_channels=data_for_model.num_features,
                             num_classes=num_classes, num_graph_nodes=data.num_nodes,
@@ -280,6 +356,7 @@ class GNNBenchmarker(BaseBenchmarker):
                         metrics, history_df = self._train_and_evaluate(model, data_for_model)
                         result_row = {"dataset": variant_name, "model": model_name, "error": None}
                         result_row.update(metrics)
+                        results.append(result_row)
                         results.append(result_row)
 
                         mlflow.log_metrics({

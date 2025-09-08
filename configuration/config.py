@@ -421,12 +421,15 @@ class Config:
         graph_builder_workers = _resolve_workers(worker_settings.get('graph_builder_workers', default_workers), default_workers)
         w2v_workers = _resolve_workers(worker_settings.get('w2v_workers', default_workers), default_workers)
         dataloader_workers = _resolve_workers(worker_settings.get('dataloader_workers', 0), 0)
+        ne_loader_workers = _resolve_workers(worker_settings.get('ne_loader_workers', dataloader_workers), dataloader_workers)
 
         # Expose standardized attributes for use across the codebase
         self.DEFAULT_WORKERS = default_workers
         self.GRAPH_BUILDER_WORKERS = graph_builder_workers
         self.W2V_WORKERS = w2v_workers
         self.DATALOADER_WORKERS = dataloader_workers
+        # For Network Embedding loaders (e.g., Node2Vec)
+        self.BENCHMARK_NE_LOADER_WORKERS = ne_loader_workers
 
     def _setup_pipeline_flags(self):
         """Sets flags statically from the YAML config."""

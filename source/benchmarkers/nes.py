@@ -96,7 +96,9 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
         # Setting num_workers=0 forces data loading to happen in the main thread, resolving both.
         # --- FIX: Use configurable hyperparameters instead of hardcoded values ---
         loader = node2vec_model.loader(
-            batch_size=self.config.BENCHMARK_NE_BATCH_SIZE, shuffle=True, num_workers=0
+            batch_size=self.config.BENCHMARK_NE_BATCH_SIZE,
+            shuffle=True,
+            num_workers=int(getattr(self.config, 'BENCHMARK_NE_LOADER_WORKERS', 0))
         )
         optimizer = torch.optim.SparseAdam(
             list(node2vec_model.parameters()), lr=self.config.BENCHMARK_NE_LEARNING_RATE

@@ -278,8 +278,8 @@ class PipelineOrchestrator:
                         if response not in ['y', 'yes']: sys.exit(0)
                 if not self.ui_manager.prompt_to_continue("Integrated Tests", self.base_config): sys.exit(0)
 
-            # BUG FIX: Use a temporary directory within the main results output directory.
-            temp_dir_base = self.base_config.BASE_OUTPUT_DIR / "temp_files"
+            # Use unified pipeline TEMP directory for transient dataset files
+            temp_dir_base = self.base_config.TEMP_PIPELINE_DIR
             temp_dir_base.mkdir(exist_ok=True, parents=True)
             with tempfile.TemporaryDirectory(dir=temp_dir_base) as temp_dir:
                 files_to_process = self.ui_manager.get_fasta_files_to_process(self.base_config, Path(temp_dir))

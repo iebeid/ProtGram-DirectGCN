@@ -46,7 +46,11 @@ class ProtGramDataBuilder:
         # This change forces Dask to use a temporary directory *within our project's
         # results folder*, where we know there is ample space.
         self.temp_dir = Path(config.TEMP_PIPELINE_DIR) / "graph_builder"
-        dask.config.set({'temporary_directory': str(self.temp_dir)})
+        dask.config.set({
+            'temporary_directory': str(self.temp_dir),
+            # Force disk-based shuffle to avoid large in-memory shuffles during joins/groupbys
+            'dataframe.shuffle.method': 'disk',
+        })
 
         self.gcn_propagation_epsilon = getattr(config, 'GCN_PROPAGATION_EPSILON', 1e-9)
 
@@ -160,38 +164,50 @@ class ProtGramDataBuilder:
                 print(f"    Unique n-gram map for n={n} (size: {num_unique_ngrams:,}) created.")
             print(f"<<< Phase 1 finished in {time.monotonic() - phase1_start_time:.2f}s.")
 
-            # --- REFACTOR: Generate all edges for all levels in a single pass ---
+            # --- REFACTOR: Generate and aggregate edges per level using a small broadcast map (no large joins) ---
             DataUtils.print_header("Phase 2: Generating All Edges")
             phase2_start_time = time.monotonic()
             extract_all_edges_partial = partial(ProtgramDaskHelpers.extract_all_string_edges, n_max=self.n_max)
+            # Build the full edge bag lazily; we will filter by n per-iteration to limit memory footprint.
             all_string_edges_bag = final_preprocessed_input_bag.map(extract_all_edges_partial).flatten()
-            all_string_edges_ddf = all_string_edges_bag.to_dataframe(meta={'n': 'i4', 'source_str': 'str', 'target_str': 'str'})
 
             for n in tqdm(n_values, desc="Aggregating Edges"):
-                print(f"  - Aggregating edges for n={n}...") # noqa
+                print(f"  - Aggregating edges for n={n}...")  # noqa
 
-                # Filter the pre-computed dataframe for the current n
-                string_edges_ddf = all_string_edges_ddf[all_string_edges_ddf['n'] == n]
-
-                # 2. Load the corresponding n-gram map from disk
+                # Load the n-gram map into a small in-memory dictionary for fast mapping
                 ngram_map_path = os.path.join(self.temp_dir, f'ngram_map_n{n}.parquet')
-                ngram_map_ddf = dd.read_parquet(ngram_map_path)
+                try:
+                    ngram_map_pdf = pd.read_parquet(ngram_map_path, columns=['id', 'ngram'])
+                    str_to_id = dict(zip(ngram_map_pdf['ngram'].astype(str), ngram_map_pdf['id'].astype(int)))
+                    del ngram_map_pdf
+                except Exception as e_map:
+                    print(f"  ❌ Error loading n-gram map for n={n}: {e_map}. Skipping.")
+                    continue
 
-                # --- DEFINITIVE FIX for Dask UserWarning: Ensure consistent dtypes before merge ---
-                # Explicitly casting to string prevents potential mismatches between 'object' and 'string' dtypes.
-                string_edges_ddf['source_str'] = string_edges_ddf['source_str'].astype(str)
-                ngram_map_ddf['ngram'] = ngram_map_ddf['ngram'].astype(str)
+                # Define a small, serializable mapper function
+                def _map_edge_record(rec, mapper=str_to_id):
+                    sid = mapper.get(str(rec['source_str']))
+                    tid = mapper.get(str(rec['target_str']))
+                    if sid is None or tid is None:
+                        return None
+                    return {'source': int(sid), 'target': int(tid)}
 
-                # 3. Perform two joins to map string edges to integer IDs
-                merged_source = string_edges_ddf.merge(ngram_map_ddf, left_on='source_str', right_on='ngram', how='inner')
-                merged_source = merged_source.rename(columns={'id': 'source'}).drop(columns=['ngram', 'source_str', 'n'])
-                merged_target = merged_source.merge(ngram_map_ddf, left_on='target_str', right_on='ngram', how='inner')
-                edges_for_n_ddf = merged_target.rename(columns={'id': 'target'}).drop(columns=['ngram', 'target_str'])
+                # Filter bag to current n, map strings to IDs, drop misses
+                edges_bag_n = (
+                    all_string_edges_bag
+                    .filter(lambda r, nn=n: r['n'] == nn)
+                    .map(_map_edge_record)
+                    .filter(lambda r: r is not None)
+                )
 
-                # 4. Aggregate and save the weighted edges
-                weighted_edges_ddf = edges_for_n_ddf.groupby(['source', 'target']).size().to_frame('weight').reset_index()
+                # Convert to a compact Dask DataFrame and aggregate
+                edges_ddf = edges_bag_n.to_dataframe(meta={'source': 'i8', 'target': 'i8'})
+                weighted_edges_ddf = edges_ddf.groupby(['source', 'target']).size().to_frame('weight').reset_index()
+
+                # Save aggregated edges for this n to disk
                 temp_edge_file_path = os.path.join(self.temp_dir, f"aggregated_edges_n{n}.parquet")
                 weighted_edges_ddf.to_parquet(temp_edge_file_path, engine='pyarrow', write_index=False, overwrite=True)
+
             print(f"<<< Phase 2 finished in {time.monotonic() - phase2_start_time:.2f}s.")
 
             # --- Phase 2: Build and save final graph objects ---

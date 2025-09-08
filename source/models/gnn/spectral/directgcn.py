@@ -103,13 +103,21 @@ class DirectGCNLayer(MessagePassing):
     3.  **Hierarchical Gating:** A learnable gating mechanism weights the contribution
         of each path to the final node representation, allowing the model to
         dynamically decide which graph views are most important for each node.
+
+    New (benchmark aid): enable/disable specific paths (in/out/undirected) to support ablations.
     """
 
     def __init__(self, in_channels: int, out_channels: int, num_nodes: int, gating_mode: str = 'vector',
                  use_homo_hetero_paths: bool = False,
                  num_bases: Optional[int] = None,
-                 num_blocks: Optional[int] = None):
+                 num_blocks: Optional[int] = None,
+                 enable_in: bool = True,
+                 enable_out: bool = True,
+                 enable_undirected: bool = True):
         super().__init__(aggr='add')
+        self.enable_in = enable_in
+        self.enable_out = enable_out
+        self.enable_undirected = enable_undirected
         if num_bases is not None and num_blocks is not None:
             raise ValueError("DirectGCNLayer: Cannot use both basis and block decomposition at the same time.")
         self.in_channels = in_channels
@@ -262,12 +270,25 @@ class DirectGCNLayer(MessagePassing):
         # and a final projection layer, creating a rich, path-aware representation.
         path_combinations = []
 
-        h_main_in = self.propagate(data.edge_index_mathcal_in, x=self.lin_main_in(x), edge_weight=data.edge_weight_mathcal_in) + self.bias_main_in
-        h_main_out = self.propagate(data.edge_index_mathcal_out, x=self.lin_main_out(x), edge_weight=data.edge_weight_mathcal_out) + self.bias_main_out
-        h_main_undir = self.propagate(data.edge_index_undirected_norm, x=self.lin_undirected(x), edge_weight=data.edge_weight_undirected_norm) + self.bias_undirected
-        path_combinations.append(self.proj_in(torch.cat([h_main_in, h_shared + self.bias_shared_in], dim=-1)))
-        path_combinations.append(self.proj_out(torch.cat([h_main_out, h_shared + self.bias_shared_out], dim=-1)))
-        path_combinations.append(self.proj_undir(torch.cat([h_main_undir, h_shared + self.bias_shared_undir], dim=-1)))
+        zero_like = torch.zeros_like(h_shared)
+
+        if self.enable_in:
+            h_main_in = self.propagate(data.edge_index_mathcal_in, x=self.lin_main_in(x), edge_weight=data.edge_weight_mathcal_in) + self.bias_main_in
+            path_combinations.append(self.proj_in(torch.cat([h_main_in, h_shared + self.bias_shared_in], dim=-1)))
+        else:
+            path_combinations.append(self.proj_in(torch.cat([zero_like, h_shared + self.bias_shared_in], dim=-1)))
+
+        if self.enable_out:
+            h_main_out = self.propagate(data.edge_index_mathcal_out, x=self.lin_main_out(x), edge_weight=data.edge_weight_mathcal_out) + self.bias_main_out
+            path_combinations.append(self.proj_out(torch.cat([h_main_out, h_shared + self.bias_shared_out], dim=-1)))
+        else:
+            path_combinations.append(self.proj_out(torch.cat([zero_like, h_shared + self.bias_shared_out], dim=-1)))
+
+        if self.enable_undirected:
+            h_main_undir = self.propagate(data.edge_index_undirected_norm, x=self.lin_undirected(x), edge_weight=data.edge_weight_undirected_norm) + self.bias_undirected
+            path_combinations.append(self.proj_undir(torch.cat([h_main_undir, h_shared + self.bias_shared_undir], dim=-1)))
+        else:
+            path_combinations.append(self.proj_undir(torch.cat([zero_like, h_shared + self.bias_shared_undir], dim=-1)))
 
         # Conditional paths for homophily/heterophily
         if self.use_homo_hetero_paths:
@@ -332,8 +353,11 @@ class DirectGCN(nn.Module):
                  dropout_rate: float, gating_mode: str,
                  l2_eps: float = 1e-12,
                  num_bases: Optional[int] = None,
-                 num_blocks: Optional[int] = None):
+                 num_blocks: Optional[int] = None,
+                 path_selection: str = 'full'):
         super().__init__()
+        # path_selection: 'full' | 'undirected' | 'in_out'
+        self.path_selection = path_selection
         if num_bases is not None and num_blocks is not None:
             raise ValueError("DirectGCN: Cannot use both basis and block decomposition at the same time.")
         self.n_gram_len = n_gram_len
@@ -362,11 +386,17 @@ class DirectGCN(nn.Module):
             hidden_channels = layer_dims[1]
             out_channels = task_num_output_classes
 
+            enable_in = self.path_selection in ('full', 'in_out')
+            enable_out = self.path_selection in ('full', 'in_out')
+            enable_undirected = self.path_selection in ('full', 'undirected')
+
             self.convs.append(DirectGCNLayer(in_channels, hidden_channels, num_graph_nodes, gating_mode,
-                                             use_homo_hetero_paths, num_bases=num_bases, num_blocks=num_blocks))
+                                             use_homo_hetero_paths, num_bases=num_bases, num_blocks=num_blocks,
+                                             enable_in=enable_in, enable_out=enable_out, enable_undirected=enable_undirected))
             self.layer_norms.append(nn.LayerNorm(hidden_channels))
             self.convs.append(DirectGCNLayer(hidden_channels, out_channels, num_graph_nodes, gating_mode,
-                                             use_homo_hetero_paths, num_bases=num_bases, num_blocks=num_blocks))
+                                             use_homo_hetero_paths, num_bases=num_bases, num_blocks=num_blocks,
+                                             enable_in=enable_in, enable_out=enable_out, enable_undirected=enable_undirected))
 
         else: # Original logic for the main ProtGram pipeline
             for i in range(len(layer_dims) - 1):
