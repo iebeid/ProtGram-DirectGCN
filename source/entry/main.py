@@ -193,7 +193,8 @@ class PipelineOrchestrator:
 
         try:
             if config.RUN_SINGLETON_GCN_EVAL:
-                for n in range(1, config.PROTGRAM_NGRAM_MAX_N + 1):
+                # Limit Singleton evaluation to n=1 as a lightweight smoke test
+                for n in [1]:
                     singleton_results = self._run_singleton_gcn_eval_for_n(n, config, fasta_file_path)
                     if not singleton_results.empty:
                         all_benchmark_results.append(singleton_results)

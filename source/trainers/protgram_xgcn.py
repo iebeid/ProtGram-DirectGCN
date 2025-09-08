@@ -672,7 +672,33 @@ class ProtGramXGCNTrainer:
             raise ValueError(f"Unknown partitioning method: '{method}'")
 
         print(f"    Created {len(partitions)} partitions.")
-        return [p for p in partitions if p]  # Return non-empty partitions
+        # --- NEW: Rebalance partitions if coarsening yields too many/small clusters ---
+        partitions = [p for p in partitions if p]  # keep non-empty
+        target_size = int(getattr(self.config, 'PROTGRAM_TARGET_NODES_PER_CLUSTER', 2000))
+        min_clusters = int(getattr(self.config, 'PROTGRAM_MIN_CLUSTERS', 2))
+        max_clusters = int(getattr(self.config, 'PROTGRAM_MAX_CLUSTERS', 500))
+        total_nodes = graph_obj.number_of_nodes
+        avg_size = (sum(len(p) for p in partitions) / max(1, len(partitions))) if partitions else 0
+        # Trigger rebalancing if partitions are too many or average size is too small
+        if (len(partitions) > max_clusters) or (avg_size < max(1, target_size // 4)):
+            print(f"  - Rebalancing partitions: {len(partitions)} -> ", end="")
+            # Deterministic shuffle for reproducibility
+            rng = random.Random(self.config.RANDOM_STATE)
+            all_nodes = list(range(total_nodes))
+            rng.shuffle(all_nodes)
+            # Primary chunking by target size
+            rebalanced = [all_nodes[i:i + target_size] for i in range(0, total_nodes, target_size)]
+            # Enforce minimum number of clusters
+            if len(rebalanced) < min_clusters:
+                chunk = max(1, total_nodes // min_clusters)
+                rebalanced = [all_nodes[i:i + chunk] for i in range(0, total_nodes, chunk)]
+            # Enforce maximum number of clusters by merging into larger bins
+            if len(rebalanced) > max_clusters:
+                per_bin = math.ceil(total_nodes / max_clusters)
+                rebalanced = [all_nodes[i:i + per_bin] for i in range(0, total_nodes, per_bin)]
+            print(f"{len(rebalanced)} (target size ~{target_size})")
+            partitions = rebalanced
+        return partitions
 
     def _get_level_ngram_maps(self) -> Dict[int, Dict[str, int]]:
         """Returns the node_to_idx maps for all loaded graph levels."""

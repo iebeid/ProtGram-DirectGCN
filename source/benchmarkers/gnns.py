@@ -315,7 +315,13 @@ class GNNBenchmarker(BaseBenchmarker):
                                 lr_override=var['lr'],
                                 wd_override=var['wd']
                             )
-                            result_row = {"dataset": variant_name, "model": variant_name_tag, "error": None}
+                            # Keep base model name for summary categorization; store variant separately
+                            result_row = {
+                                "dataset": variant_name,
+                                "model": model_name,
+                                "variant": var['suffix'],
+                                "error": None
+                            }
                             result_row.update(metrics)
                             results.append(result_row)
 
