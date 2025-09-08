@@ -153,7 +153,8 @@ class UIManager:
             print("  ssh -L 5000:localhost:5000 your_user@your_server")
 
     @staticmethod
-    def prompt_graph_objects_reuse_or_rebuild(self, config: 'Config', dataset_name: str, expected_output_dir: Path, n_max: int) -> dict:
+    @staticmethod
+    def prompt_graph_objects_reuse_or_rebuild(config: 'Config', dataset_name: str, expected_output_dir: Path, n_max: int) -> dict:
         """
         Prompts the user to decide how to provide graph objects for the current run:
         - manual: User manually copies prebuilt graphs into expected_output_dir and confirms.

@@ -1,4 +1,179 @@
---- Logging all console output to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/logs/run_20250908_174442.log ---
+(base) iaebeid@acc-node-1:~/documents/projects/ProtGram-DirectGCN$ bash start.sh
+INFO: Project root directory verified.
+
+--- STEP 1: Activating Conda Environment 'ppi-env' ---
+SUCCESS: Environment 'ppi-env' activated.
+Python 3.11.13
+
+--- STEP 1.5: Ensuring all critical Python packages are installed ---
+Requirement already satisfied: dask in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (2025.7.0)
+Requirement already satisfied: pandas in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (2.3.2)
+Requirement already satisfied: seaborn in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (0.13.2)
+Requirement already satisfied: matplotlib in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (3.10.5)
+Requirement already satisfied: scikit-learn in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (1.7.1)
+Requirement already satisfied: gensim in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (4.3.3)
+Requirement already satisfied: python-louvain in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (0.16)
+Requirement already satisfied: h5py in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (3.14.0)
+Requirement already satisfied: pyyaml in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (6.0.2)
+Requirement already satisfied: networkx==3.2.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (3.2.1)
+Requirement already satisfied: optuna in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (4.5.0)
+Requirement already satisfied: mlflow in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (3.3.2)
+Requirement already satisfied: gdown in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (5.2.0)
+Requirement already satisfied: transformers==4.41.2 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (4.41.2)
+Requirement already satisfied: safetensors==0.4.3 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (0.4.3)
+Requirement already satisfied: optuna-integration[mlflow] in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (4.5.0)
+Requirement already satisfied: filelock in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from transformers==4.41.2) (3.19.1)
+Requirement already satisfied: huggingface-hub<1.0,>=0.23.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from transformers==4.41.2) (0.34.4)
+Requirement already satisfied: numpy>=1.17 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from transformers==4.41.2) (1.26.4)
+Requirement already satisfied: packaging>=20.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from transformers==4.41.2) (25.0)
+Requirement already satisfied: regex!=2019.12.17 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from transformers==4.41.2) (2025.9.1)
+Requirement already satisfied: requests in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from transformers==4.41.2) (2.32.5)
+Requirement already satisfied: tokenizers<0.20,>=0.19 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from transformers==4.41.2) (0.19.1)
+Requirement already satisfied: tqdm>=4.27 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from transformers==4.41.2) (4.67.1)
+Requirement already satisfied: fsspec>=2023.5.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from huggingface-hub<1.0,>=0.23.0->transformers==4.41.2) (2025.7.0)
+Requirement already satisfied: typing-extensions>=3.7.4.3 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from huggingface-hub<1.0,>=0.23.0->transformers==4.41.2) (4.15.0)
+Requirement already satisfied: hf-xet<2.0.0,>=1.1.3 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from huggingface-hub<1.0,>=0.23.0->transformers==4.41.2) (1.1.9)
+Requirement already satisfied: click>=8.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from dask) (8.2.1)
+Requirement already satisfied: cloudpickle>=3.0.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from dask) (3.1.1)
+Requirement already satisfied: partd>=1.4.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from dask) (1.4.2)
+Requirement already satisfied: toolz>=0.10.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from dask) (1.0.0)
+Requirement already satisfied: importlib_metadata>=4.13.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from dask) (8.7.0)
+Requirement already satisfied: python-dateutil>=2.8.2 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from pandas) (2.9.0.post0)
+Requirement already satisfied: pytz>=2020.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from pandas) (2025.2)
+Requirement already satisfied: tzdata>=2022.7 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from pandas) (2025.2)
+Requirement already satisfied: contourpy>=1.0.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from matplotlib) (1.3.3)
+Requirement already satisfied: cycler>=0.10 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from matplotlib) (0.12.1)
+Requirement already satisfied: fonttools>=4.22.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from matplotlib) (4.59.2)
+Requirement already satisfied: kiwisolver>=1.3.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from matplotlib) (1.4.9)
+Requirement already satisfied: pillow>=8 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from matplotlib) (11.3.0)
+Requirement already satisfied: pyparsing>=2.3.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from matplotlib) (3.2.3)
+Requirement already satisfied: scipy>=1.8.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from scikit-learn) (1.13.1)
+Requirement already satisfied: joblib>=1.2.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from scikit-learn) (1.5.2)
+Requirement already satisfied: threadpoolctl>=3.1.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from scikit-learn) (3.6.0)
+Requirement already satisfied: smart-open>=1.8.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from gensim) (7.3.0.post1)
+Requirement already satisfied: alembic>=1.5.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from optuna) (1.16.5)
+Requirement already satisfied: colorlog in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from optuna) (6.9.0)
+Requirement already satisfied: sqlalchemy>=1.4.2 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from optuna) (2.0.43)
+Requirement already satisfied: mlflow-skinny==3.3.2 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow) (3.3.2)
+Requirement already satisfied: mlflow-tracing==3.3.2 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow) (3.3.2)
+Requirement already satisfied: Flask<4 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow) (3.1.2)
+Requirement already satisfied: cryptography<46,>=43.0.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow) (45.0.7)
+Requirement already satisfied: docker<8,>=4.0.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow) (7.1.0)
+Requirement already satisfied: graphene<4 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow) (3.4.3)
+Requirement already satisfied: gunicorn<24 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow) (23.0.0)
+Requirement already satisfied: pyarrow<22,>=4.0.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow) (21.0.0)
+Requirement already satisfied: cachetools<7,>=5.0.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow-skinny==3.3.2->mlflow) (5.5.2)
+Requirement already satisfied: databricks-sdk<1,>=0.20.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow-skinny==3.3.2->mlflow) (0.64.0)
+Requirement already satisfied: fastapi<1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow-skinny==3.3.2->mlflow) (0.116.1)
+Requirement already satisfied: gitpython<4,>=3.1.9 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow-skinny==3.3.2->mlflow) (3.1.45)
+Requirement already satisfied: opentelemetry-api<3,>=1.9.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow-skinny==3.3.2->mlflow) (1.36.0)
+Requirement already satisfied: opentelemetry-sdk<3,>=1.9.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow-skinny==3.3.2->mlflow) (1.36.0)
+Requirement already satisfied: protobuf<7,>=3.12.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow-skinny==3.3.2->mlflow) (4.25.8)
+Requirement already satisfied: pydantic<3,>=1.10.8 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow-skinny==3.3.2->mlflow) (2.11.7)
+Requirement already satisfied: sqlparse<1,>=0.4.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow-skinny==3.3.2->mlflow) (0.5.3)
+Requirement already satisfied: uvicorn<1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from mlflow-skinny==3.3.2->mlflow) (0.35.0)
+Requirement already satisfied: Mako in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from alembic>=1.5.0->optuna) (1.3.10)
+Requirement already satisfied: cffi>=1.14 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from cryptography<46,>=43.0.0->mlflow) (1.17.1)
+Requirement already satisfied: google-auth~=2.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from databricks-sdk<1,>=0.20.0->mlflow-skinny==3.3.2->mlflow) (2.40.3)
+Requirement already satisfied: urllib3>=1.26.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from docker<8,>=4.0.0->mlflow) (2.5.0)
+Requirement already satisfied: starlette<0.48.0,>=0.40.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from fastapi<1->mlflow-skinny==3.3.2->mlflow) (0.47.3)
+Requirement already satisfied: blinker>=1.9.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from Flask<4->mlflow) (1.9.0)
+Requirement already satisfied: itsdangerous>=2.2.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from Flask<4->mlflow) (2.2.0)
+Requirement already satisfied: jinja2>=3.1.2 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from Flask<4->mlflow) (3.1.6)
+Requirement already satisfied: markupsafe>=2.1.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from Flask<4->mlflow) (3.0.2)
+Requirement already satisfied: werkzeug>=3.1.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from Flask<4->mlflow) (3.1.3)
+Requirement already satisfied: gitdb<5,>=4.0.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from gitpython<4,>=3.1.9->mlflow-skinny==3.3.2->mlflow) (4.0.12)
+Requirement already satisfied: smmap<6,>=3.0.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from gitdb<5,>=4.0.1->gitpython<4,>=3.1.9->mlflow-skinny==3.3.2->mlflow) (5.0.2)
+Requirement already satisfied: pyasn1-modules>=0.2.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from google-auth~=2.0->databricks-sdk<1,>=0.20.0->mlflow-skinny==3.3.2->mlflow) (0.4.2)
+Requirement already satisfied: rsa<5,>=3.1.4 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from google-auth~=2.0->databricks-sdk<1,>=0.20.0->mlflow-skinny==3.3.2->mlflow) (4.9.1)
+Requirement already satisfied: graphql-core<3.3,>=3.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from graphene<4->mlflow) (3.2.6)
+Requirement already satisfied: graphql-relay<3.3,>=3.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from graphene<4->mlflow) (3.2.0)
+Requirement already satisfied: zipp>=3.20 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from importlib_metadata>=4.13.0->dask) (3.23.0)
+Requirement already satisfied: opentelemetry-semantic-conventions==0.57b0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from opentelemetry-sdk<3,>=1.9.0->mlflow-skinny==3.3.2->mlflow) (0.57b0)
+Requirement already satisfied: annotated-types>=0.6.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from pydantic<3,>=1.10.8->mlflow-skinny==3.3.2->mlflow) (0.7.0)
+Requirement already satisfied: pydantic-core==2.33.2 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from pydantic<3,>=1.10.8->mlflow-skinny==3.3.2->mlflow) (2.33.2)
+Requirement already satisfied: typing-inspection>=0.4.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from pydantic<3,>=1.10.8->mlflow-skinny==3.3.2->mlflow) (0.4.1)
+Requirement already satisfied: six>=1.5 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from python-dateutil>=2.8.2->pandas) (1.17.0)
+Requirement already satisfied: charset_normalizer<4,>=2 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from requests->transformers==4.41.2) (3.4.3)
+Requirement already satisfied: idna<4,>=2.5 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from requests->transformers==4.41.2) (3.10)
+Requirement already satisfied: certifi>=2017.4.17 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from requests->transformers==4.41.2) (2025.8.3)
+Requirement already satisfied: pyasn1>=0.1.3 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from rsa<5,>=3.1.4->google-auth~=2.0->databricks-sdk<1,>=0.20.0->mlflow-skinny==3.3.2->mlflow) (0.6.1)
+Requirement already satisfied: greenlet>=1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from sqlalchemy>=1.4.2->optuna) (3.2.4)
+Requirement already satisfied: anyio<5,>=3.6.2 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from starlette<0.48.0,>=0.40.0->fastapi<1->mlflow-skinny==3.3.2->mlflow) (4.10.0)
+Requirement already satisfied: sniffio>=1.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from anyio<5,>=3.6.2->starlette<0.48.0,>=0.40.0->fastapi<1->mlflow-skinny==3.3.2->mlflow) (1.3.1)
+Requirement already satisfied: h11>=0.8 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from uvicorn<1->mlflow-skinny==3.3.2->mlflow) (0.16.0)
+Requirement already satisfied: beautifulsoup4 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from gdown) (4.13.5)
+Requirement already satisfied: pycparser in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from cffi>=1.14->cryptography<46,>=43.0.0->mlflow) (2.22)
+Requirement already satisfied: locket in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from partd>=1.4.0->dask) (1.0.0)
+Requirement already satisfied: wrapt in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from smart-open>=1.8.1->gensim) (1.14.2)
+Requirement already satisfied: soupsieve>1.2 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from beautifulsoup4->gdown) (2.8)
+Requirement already satisfied: PySocks!=1.5.7,>=1.5.6 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from requests[socks]->gdown) (1.7.1)
+Looking in links: https://data.pyg.org/whl/torch-2.1.2%2Bcu121.html
+Requirement already satisfied: torch-geometric in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (2.6.1)
+Requirement already satisfied: pyg_lib in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (0.4.0+pt21cu121)
+Requirement already satisfied: torch-scatter in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (2.1.2+pt21cu121)
+Requirement already satisfied: torch-sparse in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (0.6.18+pt21cu121)
+Requirement already satisfied: aiohttp in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from torch-geometric) (3.12.15)
+Requirement already satisfied: fsspec in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from torch-geometric) (2025.7.0)
+Requirement already satisfied: jinja2 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from torch-geometric) (3.1.6)
+Requirement already satisfied: numpy in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from torch-geometric) (1.26.4)
+Requirement already satisfied: psutil>=5.8.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from torch-geometric) (7.0.0)
+Requirement already satisfied: pyparsing in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from torch-geometric) (3.2.3)
+Requirement already satisfied: requests in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from torch-geometric) (2.32.5)
+Requirement already satisfied: tqdm in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from torch-geometric) (4.67.1)
+Requirement already satisfied: scipy in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from torch-sparse) (1.13.1)
+Requirement already satisfied: aiohappyeyeballs>=2.5.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from aiohttp->torch-geometric) (2.6.1)
+Requirement already satisfied: aiosignal>=1.4.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from aiohttp->torch-geometric) (1.4.0)
+Requirement already satisfied: attrs>=17.3.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from aiohttp->torch-geometric) (25.3.0)
+Requirement already satisfied: frozenlist>=1.1.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from aiohttp->torch-geometric) (1.7.0)
+Requirement already satisfied: multidict<7.0,>=4.5 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from aiohttp->torch-geometric) (6.6.4)
+Requirement already satisfied: propcache>=0.2.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from aiohttp->torch-geometric) (0.3.2)
+Requirement already satisfied: yarl<2.0,>=1.17.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from aiohttp->torch-geometric) (1.20.1)
+Requirement already satisfied: idna>=2.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from yarl<2.0,>=1.17.0->aiohttp->torch-geometric) (3.10)
+Requirement already satisfied: typing-extensions>=4.2 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from aiosignal>=1.4.0->aiohttp->torch-geometric) (4.15.0)
+Requirement already satisfied: MarkupSafe>=2.0 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from jinja2->torch-geometric) (3.0.2)
+Requirement already satisfied: charset_normalizer<4,>=2 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from requests->torch-geometric) (3.4.3)
+Requirement already satisfied: urllib3<3,>=1.21.1 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from requests->torch-geometric) (2.5.0)
+Requirement already satisfied: certifi>=2017.4.17 in /home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages (from requests->torch-geometric) (2025.8.3)
+  - ✅ Pip package check complete.
+
+--- STEP 2: Synchronizing project with the latest changes from Git ---
+remote: Enumerating objects: 31, done.
+remote: Counting objects: 100% (31/31), done.
+remote: Compressing objects: 100% (2/2), done.
+remote: Total 16 (delta 14), reused 16 (delta 14), pack-reused 0 (from 0)
+Unpacking objects: 100% (16/16), 4.35 KiB | 742.00 KiB/s, done.
+From https://github.com/iebeid/ProtGram-DirectGCN
+ * branch            v2         -> FETCH_HEAD
+   b4e1280..5982bff  v2         -> origin/v2
+Updating b4e1280..5982bff
+Fast-forward
+ configuration/config.yaml                       |   8 ++++----
+ run.py                                          |   7 +++----
+ source/data_structures/coarsener.py             |  14 +++++++++-----
+ source/entry/main.py                            |  42 +++++++++++++++++++++++++++++++++++++++---
+ source/entry/ui.py                              | 122 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ source/trainers/protgram_xgcn.py                |  11 +++++++++--
+ source/utils/models/hyperparameter_optimizer.py |   8 ++++++--
+ 7 files changed, 192 insertions(+), 20 deletions(-)
+SUCCESS: Project repository is up to date.
+
+--- STEP 3: Executing the main application via run.py ---
+INFO: The 'run.py' script will automatically validate local data and restore from cache if needed.
+--- Launching main application. Python script will handle all further validation... ---
+--- INFO: Automatic cleaning of the 'results' directory has been disabled. ---
+--- Validating environment by checking for critical packages... ---
+2025-09-08 21:25:28.191739: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2025-09-08 21:25:28.423590: E external/local_xla/xla/stream_executor/cuda/cuda_dnn.cc:9261] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+2025-09-08 21:25:28.423780: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:607] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+2025-09-08 21:25:28.470153: E external/local_xla/xla/stream_executor/cuda/cuda_blas.cc:1515] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+2025-09-08 21:25:28.603616: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX512F AVX512_VNNI AVX512_BF16 AVX_VNNI AMX_TILE AMX_INT8 AMX_BF16 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2025-09-08 21:25:29.373965: W tensorflow/compiler/tf2tensorrt/utils/py_utils.cc:38] TF-TRT Warning: Could not find TensorRT
+--- Environment validation PASSED. ---
+--- Validating configuration parameters using Pydantic schema... ---
+  ✅ Configuration is valid.
+--- Logging all console output to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/logs/run_20250908_212531.log ---
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
 
 ========================================================
@@ -590,14 +765,14 @@
   - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.16.parquet
   - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.28.parquet
   - ✅ Local data is valid.
-  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/temp/main/dask
+  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/temp/main/dask
 
 ======================================
 ### System Resource Pre-flight Check ###
 ======================================
 
-RAM: 119.81 GB Available / 125.59 GB Total
-Disk (/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442): 754.34 GB Free / 883.50 GB Total
+RAM: 119.91 GB Available / 125.59 GB Total
+Disk (/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531): 754.14 GB Free / 883.50 GB Total
 GPU(s):
   - GPU 0 (NVIDIA RTX 6000 Ada Generation): 47.36 GB Total Memory
 --------------------------------------
@@ -608,16 +783,16 @@ GPU(s):
   APPLY_PCA_TO_W2V                         | True
   BASE_CONFIG_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/configuration
   BASE_DATA_DIR                            | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data
-  BASE_OUTPUT_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442
+  BASE_OUTPUT_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531
   BENCHMARK_CHEBNET_K                      | 3
   BENCHMARK_DIRECTGCN_DECOMPOSE_PROJECTIONS | False
   BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS    | [64]
   BENCHMARK_DIRECTGCN_NUM_BASES            | None
   BENCHMARK_DIRECTGCN_NUM_BLOCKS           | None
   BENCHMARK_DIRECTGCN_PROJ_NUM_BASES       | None
-  BENCHMARK_GAT_DROPOUT_RATE               | 0.5
+  BENCHMARK_GAT_DROPOUT_RATE               | 0.25
   BENCHMARK_GAT_HEADS                      | 2
-  BENCHMARK_GNN_DROPOUT_RATE               | 0.5
+  BENCHMARK_GNN_DROPOUT_RATE               | 0.25
   BENCHMARK_GNN_EPOCHS                     | 100
   BENCHMARK_GNN_HIDDEN_CHANNELS            | 64
   BENCHMARK_GNN_INIT_DIM                   | 64
@@ -633,6 +808,7 @@ GPU(s):
   BENCHMARK_NE_EMBEDDING_DIM               | 64
   BENCHMARK_NE_EPOCHS                      | 5
   BENCHMARK_NE_LEARNING_RATE               | 0.01
+  BENCHMARK_NE_LOADER_WORKERS              | 1
   BENCHMARK_NE_MODELS_TO_RUN               | ['Node2Vec']
   BENCHMARK_NE_NUM_NEGATIVE_SAMPLES        | 1
   BENCHMARK_NE_WALKS_PER_NODE              | 10
@@ -680,7 +856,7 @@ GPU(s):
   EVAL_N_FOLDS                             | 2
   EVAL_STATISTICAL_TEST_ALPHA              | 0.05
   FASTA_FILE_TO_PROCESS                    | UNIPROT_SPROT_FASTA
-  GCN_HETEROPHILY_THRESHOLD                | 0.6
+  GCN_HETEROPHILY_THRESHOLD                | 0.5
   GCN_PROPAGATION_EPSILON                  | 1e-09
   GRAPH_BUILDER_WORKERS                    | 31
   HPO_N_TRIALS                             | 2
@@ -688,7 +864,7 @@ GPU(s):
   HPO_TARGET_EMBEDDING_MODEL               | directgcn
   ID_MAPPING_MODE                          | regex
   ID_MAPPING_PATH                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/mappings/id_mapping.parquet
-  LOG_DIR                                  | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/logs
+  LOG_DIR                                  | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/logs
   LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE       | [{'name': 'ProtT5', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/models/per-protein.h5')}]
   LSTM_BATCH_SIZE                          | 64
   LSTM_DROPOUT_RATE                        | 0.5
@@ -711,7 +887,7 @@ GPU(s):
   MLFLOW_LLMS_EXPERIMENT_NAME              | LLMs
   MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME      | GNN-Benchmarking
   MLFLOW_PROTGRAM_XGCN_EXPERIMENT_NAME     | ProtGram-XGCN
-  MLFLOW_TRACKING_URI                      | file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/mlruns
+  MLFLOW_TRACKING_URI                      | file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/mlruns
   NEG_INTERACTIONS_PATH                    | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/negative_interactions.parquet
   NEG_INTERACTIONS_RAW_PATHS               | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_1.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_2.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_3.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_4.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_5.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_6.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_7.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_8.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_9.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_10.mitab')]
   ORIGINAL_SEQUENCE_FILE_PATHS             | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/sequences/uniprot_sprot.fasta')]
@@ -728,10 +904,10 @@ GPU(s):
   PROTGRAM_CLEAN_FASTA_ON_PARSE            | True
   PROTGRAM_CLOSEST_AA_K_HOPS               | 3
   PROTGRAM_CLUSTER_GROUP_SIZE              | 5
-  PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES | 5000
+  PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES | 3000
   PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING | 1
   PROTGRAM_DEFAULT_TASK_TYPE               | community
-  PROTGRAM_DROPOUT_RATE                    | 0.5
+  PROTGRAM_DROPOUT_RATE                    | 0.25
   PROTGRAM_EARLY_STOPPING_MIN_DELTA        | 1e-05
   PROTGRAM_EARLY_STOPPING_PATIENCE         | 50
   PROTGRAM_EPOCHS_PER_LEVEL                | 500
@@ -769,22 +945,22 @@ GPU(s):
   RANDOM_STATE                             | 42
   REGEX_COMPATIBILITY_SAMPLE_SIZE          | 1000
   REGEX_CONFIDENCE_THRESHOLD               | 0.95
-  RESULTS_BENCHMARKING_DIR                 | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/benchmarking_results
-  RESULTS_BENCHMARK_EMBEDDINGS_DIR         | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/benchmarking_results/embeddings
-  RESULTS_EVALUATION_DIR                   | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/evaluation_results
-  RESULTS_GCN_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/gcn_embeddings
-  RESULTS_GRAPH_OBJECTS_DIR                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/graph_objects
-  RESULTS_LSTM_EMBEDDINGS_DIR              | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/lstm_embeddings
-  RESULTS_TRANSFORMER_EMBEDDINGS_DIR       | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/transformer_embeddings
-  RESULTS_W2V_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/word2vec_embeddings
-  RUN_BENCHMARKING_PIPELINE                | False
+  RESULTS_BENCHMARKING_DIR                 | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/benchmarking_results
+  RESULTS_BENCHMARK_EMBEDDINGS_DIR         | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/benchmarking_results/embeddings
+  RESULTS_EVALUATION_DIR                   | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/evaluation_results
+  RESULTS_GCN_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/gcn_embeddings
+  RESULTS_GRAPH_OBJECTS_DIR                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/graph_objects
+  RESULTS_LSTM_EMBEDDINGS_DIR              | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/lstm_embeddings
+  RESULTS_TRANSFORMER_EMBEDDINGS_DIR       | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/transformer_embeddings
+  RESULTS_W2V_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/word2vec_embeddings
+  RUN_BENCHMARKING_PIPELINE                | True
   RUN_HPO                                  | True
   RUN_INTEGRATED_TESTS                     | False
   RUN_LSTM_PIPELINE                        | False
   RUN_MAIN_PPI_EVALUATION                  | True
   RUN_PROTGRAM_PIPELINE                    | True
   RUN_PROTGRAM_XGCN_PIPELINE               | True
-  RUN_SINGLETON_GCN_EVAL                   | False
+  RUN_SINGLETON_GCN_EVAL                   | True
   RUN_TRANSFORMER_PIPELINE                 | False
   RUN_WORD2VEC_PIPELINE                    | False
   SEQUENCE_DOWNSAMPLE_FRACTION             | 0.99
@@ -800,15 +976,15 @@ GPU(s):
   SINGLETON_EVAL_LR                        | 0.01
   SINGLETON_EVAL_MODELS_TO_RUN             | ['DirectGCN', 'GCN', 'RGCN', 'DirGNN']
   SINGLETON_EVAL_TEST_SPLIT                | 0.2
-  SINGLETON_GAT_DROPOUT_RATE               | 0.5
+  SINGLETON_GAT_DROPOUT_RATE               | 0.25
   SINGLETON_GAT_HEADS                      | 2
-  SINGLETON_GNN_DROPOUT_RATE               | 0.5
+  SINGLETON_GNN_DROPOUT_RATE               | 0.25
   SINGLETON_GNN_HIDDEN_CHANNELS            | 64
   SINGLETON_GNN_NUM_LAYERS                 | 2
   SINGLETON_RGCN_NUM_RELATIONS             | 2
-  TEMP_PIPELINE_DIR                        | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/temp/main
-  TEMP_ROOT                                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/temp
-  TEMP_TESTS_DIR                           | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/temp/tests
+  TEMP_PIPELINE_DIR                        | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/temp/main
+  TEMP_ROOT                                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/temp
+  TEMP_TESTS_DIR                           | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/temp/tests
   TRANSFORMER_BASE_BATCH_SIZE              | 16
   TRANSFORMER_CHUNK_SIZE                   | 10000
   TRANSFORMER_INFERENCE_SAMPLE_FRACTION    | 1.0
@@ -844,49 +1020,32 @@ GPU(s):
 
   - No checkpoint found for step: 'GraphBuilding'.
 
-======================================================
-### Building all n-gram graphs for the main pipeline ###
-======================================================
+--- ❌ ERROR processing dataset: uniprot_sprot_sampled ---
+  This dataset will be skipped. The pipeline will continue with the next one.
+  Error details: UIManager.prompt_graph_objects_reuse_or_rebuild() missing 1 required positional argument: 'self'
+Traceback (most recent call last):
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/entry/main.py", line 343, in run
+    user_decision = self.ui_manager.prompt_graph_objects_reuse_or_rebuild(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: UIManager.prompt_graph_objects_reuse_or_rebuild() missing 1 required positional argument: 'self'
 
-ProtGramDataBuilder initialized: n_max=3, configured_workers=31, output_dir='/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/graph_objects/uniprot_sprot_sampled'
-  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/temp/main/graph_builder
-
-===================================================================================================================================================================
-### ProtGramDataBuilder Initialized (Output: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/graph_objects/uniprot_sprot_sampled) ###
-===================================================================================================================================================================
-
-
-=============================================
-### PIPELINE STEP 1: Building N-gram Graphs ###
-=============================================
+==================================================
+### Full Orchestration Finished in 5.11 seconds. ###
+==================================================
 
 
---- Resource Alert: Graph Building ---
-  Input FASTA size is ~0.20 GB.
-  This process can generate intermediate files up to 3-5x this size (~0.59 - 0.98 GB).
-  Please ensure you have sufficient free disk space.
---------------------------------------
+=========================
+### Launching MLflow UI ###
+=========================
 
-  Info: Graph file for n=1 not found. Will proceed with full build.
-Temporary files will be stored in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/temp/main/graph_builder
-Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_174442/graph_objects/uniprot_sprot_sampled
-  - Cleaning enabled for FASTA parsing.
+--- Headless/SSH environment detected. ---
+To view the MLflow UI, run the following command on your local machine:
 
-=========================================
-### Phase 1: Generating All N-Gram Maps ###
-=========================================
+  mlflow ui --backend-store-uri file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250908_212531/mlruns
 
-  - Creating map for n=1...
-    Unique n-gram map for n=1 (size: 21) created.
-  - Creating map for n=2...
-    Unique n-gram map for n=2 (size: 421) created.
-  - Creating map for n=3...
-    Unique n-gram map for n=3 (size: 8,401) created.
+If running on a remote server, you may need to use SSH port forwarding, for example:
+  ssh -L 5000:localhost:5000 your_user@your_server
+--- File logging stopped. Console output is back to normal. ---
 
-<<< Phase 1 finished in 1598.20s.
-
-===================================
-### Phase 2: Generating All Edges ###
-===================================
-
-  - Aggregating edges for n=1...
+--- SCRIPT FINISHED ---
+(base) iaebeid@acc-node-1:~/documents/projects/ProtGram-DirectGCN$
