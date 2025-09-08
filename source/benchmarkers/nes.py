@@ -89,16 +89,25 @@ class NetworkEmbeddingBenchmarker(BaseBenchmarker):
             sparse=True,
         ).to(self.device)
 
-        # --- ANTICIPATORY DEBUGGING: Set num_workers=0 to prevent hangs. ---
-        # Using multiple worker processes (num_workers > 0) can cause two issues:
-        # 1. The main script hangs before an input() prompt, waiting for background processes.
-        # 2. It introduces non-determinism unless a specific `worker_init_fn` is used.
-        # Setting num_workers=0 forces data loading to happen in the main thread, resolving both.
-        # --- FIX: Use configurable hyperparameters instead of hardcoded values ---
+        # --- CRITICAL FIX: Force num_workers=0 to avoid AF_UNIX 'path too long' errors ---
+        # Some environments set TMPDIR to a very long path, causing multiprocessing sockets to exceed limits.
+        # Keeping data loading on the main thread prevents torch.multiprocessing from creating AF_UNIX listeners.
+        # Additionally, ensure a short TMPDIR is used if one is required elsewhere.
+        try:
+            import os, tempfile
+            current_tmp = os.environ.get('TMPDIR') or tempfile.gettempdir()
+            if len(current_tmp) > 80:
+                safe_tmp = "/tmp/pg_bench"
+                os.makedirs(safe_tmp, exist_ok=True)
+                os.environ['TMPDIR'] = safe_tmp
+        except Exception:
+            pass
+
+        # --- FIX: Use configurable hyperparameters except for num_workers, which must be 0 here ---
         loader = node2vec_model.loader(
             batch_size=self.config.BENCHMARK_NE_BATCH_SIZE,
             shuffle=True,
-            num_workers=int(getattr(self.config, 'BENCHMARK_NE_LOADER_WORKERS', 0))
+            num_workers=0
         )
         optimizer = torch.optim.SparseAdam(
             list(node2vec_model.parameters()), lr=self.config.BENCHMARK_NE_LEARNING_RATE
