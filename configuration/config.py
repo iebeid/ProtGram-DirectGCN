@@ -404,23 +404,29 @@ class Config:
         worker_settings = params.get('worker_settings', {})
         cpu_cores = os.cpu_count() or 1
 
-        def _resolve_workers(val, fallback: int) -> int:
+        def _resolve_workers(val, fallback: int, allow_zero: bool = False) -> int:
+            def clamp(n: int) -> int:
+                return max(0 if allow_zero else 1, n)
             if isinstance(val, str):
-                if val.strip().lower() == 'auto':
-                    return max(1, (cpu_cores - 1))
+                v = val.strip().lower()
+                if v == 'auto':
+                    return clamp((cpu_cores - 1))
                 try:
-                    return max(1, int(val))
+                    return clamp(int(val))
                 except ValueError:
-                    return fallback
+                    return clamp(int(fallback))
             if isinstance(val, (int, float)):
-                return max(1, int(val))
-            return fallback
+                return clamp(int(val))
+            return clamp(int(fallback))
 
         # Defaults in case keys are missing
         default_workers = _resolve_workers(worker_settings.get('default_workers', 'auto'), max(1, cpu_cores - 1))
         graph_builder_workers = _resolve_workers(worker_settings.get('graph_builder_workers', default_workers), default_workers)
         w2v_workers = _resolve_workers(worker_settings.get('w2v_workers', default_workers), default_workers)
-        dataloader_workers = _resolve_workers(worker_settings.get('dataloader_workers', 0), 0)
+        # Allow zero for DataLoader workers
+        dataloader_workers = _resolve_workers(worker_settings.get('dataloader_workers', 0), 0, allow_zero=True)
+        # NE loader workers default to dataloader_workers; allow zero as well
+        ne_loader_workers = _resolve_workers(worker_settings.get('ne_loader_workers', dataloader_workers), dataloader_workers, allow_zero=True)
         ne_loader_workers = _resolve_workers(worker_settings.get('ne_loader_workers', dataloader_workers), dataloader_workers)
 
         # Expose standardized attributes for use across the codebase
