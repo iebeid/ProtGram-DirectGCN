@@ -315,12 +315,14 @@ class PPIPipeline:
 
         # --- NEW: Generate and log attention heatmap for ProtGram models ---
         if "protgram" in embedding_name.lower() or "directgcn" in embedding_name.lower() or "gcn" in embedding_name.lower():
+            # Ensure plots go under the dataset-specific evaluation directory
+            local_reporter = EvaluationReporter(base_output_dir=str(self.config.RESULTS_EVALUATION_DIR), k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE)
             attention_log_path = self.config.RESULTS_GCN_EMBEDDINGS_DIR / f"attention_log_{embedding_name}.json"
             if attention_log_path.exists():
                 try:
                     with open(attention_log_path, 'r') as f:
                         attention_data = json.load(f)
-                    heatmap_path = reporter.plot_attention_heatmap(attention_data, embedding_name)
+                    heatmap_path = local_reporter.plot_attention_heatmap(attention_data, embedding_name)
                     if heatmap_path and mlflow.active_run():
                         mlflow.set_experiment(self.config.MLFLOW_INTERPRETABILITY_EXPERIMENT_NAME)
                         mlflow.log_artifact(str(heatmap_path), "attention_heatmaps")

@@ -193,7 +193,7 @@ class PipelineOrchestrator:
 
         try:
             if config.RUN_SINGLETON_GCN_EVAL:
-                for n in range(1, 3):
+                for n in range(1, config.PROTGRAM_NGRAM_MAX_N + 1):
                     singleton_results = self._run_singleton_gcn_eval_for_n(n, config, fasta_file_path)
                     if not singleton_results.empty:
                         all_benchmark_results.append(singleton_results)
@@ -233,29 +233,20 @@ class PipelineOrchestrator:
             else:
                 print("  - ✅ Local data is valid.")
 
-            # BUG FIX: Set the Dask temporary directory to be within the run's results folder.
-            dask_temp_dir = self.base_config.BASE_OUTPUT_DIR / "dask_temp"
+            # Unified TEMP directories for this run
+            self.base_config.TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+            self.base_config.TEMP_PIPELINE_DIR.mkdir(parents=True, exist_ok=True)
+            self.base_config.TEMP_TESTS_DIR.mkdir(parents=True, exist_ok=True)
+
+            # Set Dask temp inside unified TEMP_PIPELINE_DIR
+            dask_temp_dir = self.base_config.TEMP_PIPELINE_DIR / "dask"
             dask_temp_dir.mkdir(exist_ok=True, parents=True)
             os.environ['DASK_TEMPORARY_DIRECTORY'] = str(dask_temp_dir)
             print(f"  - Dask temporary directory set to: {dask_temp_dir}")
 
-            # Ensure all temporary files live under the run's results directory for reproducibility
-            tmp_root = self.base_config.BASE_OUTPUT_DIR / "tmp"
-            tmp_root.mkdir(exist_ok=True, parents=True)
-            os.environ['TMPDIR'] = str(tmp_root)
-            tempfile.tempdir = str(tmp_root)
-
-            # Route HuggingFace/Transformers cache under results to avoid /tmp usage
-            hf_cache = self.base_config.BASE_OUTPUT_DIR / "hf_cache"
-            hf_cache.mkdir(exist_ok=True, parents=True)
-            os.environ['TRANSFORMERS_CACHE'] = str(hf_cache)
-            os.environ['HF_HOME'] = str(hf_cache)
-
-            # Ensure all temporary files live under the run's results directory for reproducibility
-            tmp_root = self.base_config.BASE_OUTPUT_DIR / "tmp"
-            tmp_root.mkdir(exist_ok=True, parents=True)
-            os.environ['TMPDIR'] = str(tmp_root)
-            tempfile.tempdir = str(tmp_root)
+            # Ensure all temporary files live under the unified pipeline TEMP directory
+            os.environ['TMPDIR'] = str(self.base_config.TEMP_PIPELINE_DIR)
+            tempfile.tempdir = str(self.base_config.TEMP_PIPELINE_DIR)
 
             # Route HuggingFace/Transformers cache under results to avoid /tmp usage
             hf_cache = self.base_config.BASE_OUTPUT_DIR / "hf_cache"

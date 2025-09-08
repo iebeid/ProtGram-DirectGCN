@@ -210,7 +210,7 @@ class PPIEvaluationParams(BaseModel):
     MLP_DENSE2_UNITS: int = Field(gt=0)
     MLP_DROPOUT2_RATE: float = Field(ge=0.0, lt=1.0)
     MLP_L2_REG: float = Field(ge=0.0)
-    BATCH_SIZE: int = Field(gt=0)
+    EVAL_BATCH_SIZE: int = Field(gt=0)
     EPOCHS: int = Field(gt=0)
     MLP_LEARNING_RATE: float = Field(gt=0)
     K_VALUES_FOR_TABLE: List[int]
@@ -374,6 +374,12 @@ class Config:
         self.RESULTS_EVALUATION_DIR = self.BASE_OUTPUT_DIR / "evaluation_results"
         self.RESULTS_BENCHMARKING_DIR = self.BASE_OUTPUT_DIR / "benchmarking_results"
         self.RESULTS_BENCHMARK_EMBEDDINGS_DIR = self.RESULTS_BENCHMARKING_DIR / "embeddings"
+
+        # Unified temporary directories
+        self.TEMP_ROOT = self.BASE_OUTPUT_DIR / "temp"
+        self.TEMP_PIPELINE_DIR = self.TEMP_ROOT / "main"
+        self.TEMP_TESTS_DIR = self.TEMP_ROOT / "tests"
+
         # --- DEFINITIVE FIX for Test Isolation ---
         # These paths depend on the base paths above. They must be re-calculated
         # whenever _setup_paths is called to ensure that unit tests using a
@@ -388,10 +394,39 @@ class Config:
         """
         Sets the memory usage strategy from the config. The actual logic for how
         to use this strategy is handled by the components that need it (e.g., EmbeddingLoader).
+        Also centralizes worker settings for all subcomponents.
         """
         params = self._config['resource_management']
         self.MEMORY_USAGE_STRATEGY = params['MEMORY_USAGE_STRATEGY']
         self.CHECKSUM_SKIP_SIZE_BYTES = params['CHECKSUM_SKIP_SIZE_MB'] * 1024 * 1024
+
+        # Centralized worker configuration
+        worker_settings = params.get('worker_settings', {})
+        cpu_cores = os.cpu_count() or 1
+
+        def _resolve_workers(val, fallback: int) -> int:
+            if isinstance(val, str):
+                if val.strip().lower() == 'auto':
+                    return max(1, (cpu_cores - 1))
+                try:
+                    return max(1, int(val))
+                except ValueError:
+                    return fallback
+            if isinstance(val, (int, float)):
+                return max(1, int(val))
+            return fallback
+
+        # Defaults in case keys are missing
+        default_workers = _resolve_workers(worker_settings.get('default_workers', 'auto'), max(1, cpu_cores - 1))
+        graph_builder_workers = _resolve_workers(worker_settings.get('graph_builder_workers', default_workers), default_workers)
+        w2v_workers = _resolve_workers(worker_settings.get('w2v_workers', default_workers), default_workers)
+        dataloader_workers = _resolve_workers(worker_settings.get('dataloader_workers', 0), 0)
+
+        # Expose standardized attributes for use across the codebase
+        self.DEFAULT_WORKERS = default_workers
+        self.GRAPH_BUILDER_WORKERS = graph_builder_workers
+        self.W2V_WORKERS = w2v_workers
+        self.DATALOADER_WORKERS = dataloader_workers
 
     def _setup_pipeline_flags(self):
         """Sets flags statically from the YAML config."""
@@ -569,7 +604,9 @@ class Config:
         self.PROTGRAM_NGRAM_MAX_N = params['PROTGRAM_NGRAM_MAX_N']
         self.FASTA_FILE_TO_PROCESS = params['FASTA_FILE_TO_PROCESS']
         self.DASK_N_PARTITIONS = os.cpu_count() or 1
-        self.GRAPH_BUILDER_WORKERS: Optional[int] = max(1, cpu_cores - 1) if cpu_cores is not None else 1
+        # Respect centralized worker settings if already applied
+        if not hasattr(self, 'GRAPH_BUILDER_WORKERS') or self.GRAPH_BUILDER_WORKERS is None:
+            self.GRAPH_BUILDER_WORKERS = max(1, cpu_cores - 1) if cpu_cores is not None else 1
         self.ID_MAPPING_MODE = params['ID_MAPPING_MODE']
         self.USE_CANONICAL_ID_MAPPING_FILE = params['USE_CANONICAL_ID_MAPPING_FILE']
         self.REGEX_CONFIDENCE_THRESHOLD = params['REGEX_CONFIDENCE_THRESHOLD']
@@ -635,7 +672,8 @@ class Config:
         self.W2V_WINDOW = params['W2V_WINDOW']
         self.W2V_MIN_COUNT = params['W2V_MIN_COUNT']
         self.W2V_EPOCHS = params['W2V_EPOCHS']
-        self.W2V_WORKERS: Optional[int] = max(1, cpu_cores - 4) if cpu_cores is not None else 1
+        if not hasattr(self, 'W2V_WORKERS') or self.W2V_WORKERS is None:
+            self.W2V_WORKERS = max(1, cpu_cores - 4) if cpu_cores is not None else 1
         self.W2V_POOLING_STRATEGY = params['W2V_POOLING_STRATEGY']
         self.APPLY_PCA_TO_W2V = params['APPLY_PCA_TO_W2V']
 
@@ -704,7 +742,8 @@ class Config:
         self.EVAL_MLP_DENSE2_UNITS = params['MLP_DENSE2_UNITS']
         self.EVAL_MLP_DROPOUT2_RATE = params['MLP_DROPOUT2_RATE']
         self.EVAL_MLP_L2_REG = params['MLP_L2_REG']
-        self.EVAL_BATCH_SIZE = params['BATCH_SIZE']
+        # Use only EVAL_BATCH_SIZE for PPI MLP batch size
+        self.EVAL_BATCH_SIZE = params['EVAL_BATCH_SIZE']
         self.EVAL_EPOCHS = params['EPOCHS']
         self.EVAL_MLP_LEARNING_RATE = params['MLP_LEARNING_RATE']
         self.EVAL_K_VALUES_FOR_TABLE = params['K_VALUES_FOR_TABLE']
@@ -753,3 +792,32 @@ class Config:
             print("="*80)
             print("\n--- Please correct the configuration file and try again. ---")
             sys.exit(1)  # Exit with an error code
+
+    def get_as_dict(self, prefix: str) -> Dict[str, Any]:
+        """
+        Returns a dictionary of configuration attributes whose names start with the given prefix.
+        Example: prefix='lstm' will collect all attributes beginning with 'LSTM_'.
+        Falls back to a curated list for some known groups if no prefix-based attributes are found.
+        """
+        normalized = (prefix or "").strip().upper()
+        result: Dict[str, Any] = {}
+        for key, value in self.__dict__.items():
+            if key.startswith(normalized + "_"):
+                result[key] = value
+
+        if not result:
+            group_map = {
+                "LSTM": [
+                    "LSTM_EMBEDDING_DIM", "LSTM_HIDDEN_DIM", "LSTM_NUM_LAYERS",
+                    "LSTM_EPOCHS", "LSTM_BATCH_SIZE", "LSTM_TRAIN_SEQ_LEN",
+                    "LSTM_TRAIN_STEP", "LSTM_LEARNING_RATE", "LSTM_POOLING_STRATEGY",
+                    "LSTM_VALIDATION_SPLIT", "LSTM_USE_EARLY_STOPPING",
+                    "LSTM_EARLY_STOPPING_PATIENCE", "LSTM_DROPOUT_RATE",
+                    "LSTM_EARLY_STOPPING_MIN_DELTA"
+                ]
+            }
+            keys = group_map.get(normalized, [])
+            for k in keys:
+                if hasattr(self, k):
+                    result[k] = getattr(self, k)
+        return result

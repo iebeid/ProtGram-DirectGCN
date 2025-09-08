@@ -221,6 +221,8 @@ class HyperparameterOptimizer:
 
             # Ensure trainer runs without logging heavy artifacts
             trial_cfg.PROTGRAM_LOG_ATTENTION_WEIGHTS = False
+            # Disable MLflow inside trainer during HPO to avoid nested run conflicts
+            trial_cfg.USE_MLFLOW = False
 
             trainer = ProtGramXGCNTrainer(trial_cfg)
             try:

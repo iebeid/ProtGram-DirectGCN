@@ -340,6 +340,15 @@ class GNNBenchmarker(BaseBenchmarker):
         # --- Save a final, grand summary of all results ---
         if all_results:
             summary_df = pd.DataFrame(all_results)
+            # Save grand summary under the configured benchmarking directory
+            Path(self.output_dir).mkdir(parents=True, exist_ok=True)
+            summary_path = Path(self.output_dir) / "summary.csv"
+            try:
+                summary_df.to_csv(summary_path, index=False)
+                print(f"  Benchmarking summary saved to: {summary_path}")
+            except Exception as e:
+                print(f"  WARNING: Could not save benchmarking summary: {e}")
+
             DataUtils.print_header("GNN Benchmarking PIPELINE FINISHED")
             # --- FIX: Explicitly clean up resources to prevent hangs before user prompts ---
             del all_results

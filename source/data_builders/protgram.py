@@ -45,7 +45,7 @@ class ProtGramDataBuilder:
         # to the system's /tmp directory, which is often on a small partition.
         # This change forces Dask to use a temporary directory *within our project's
         # results folder*, where we know there is ample space.
-        self.temp_dir = Path(config.BASE_OUTPUT_DIR) / "temp_graph_builder"
+        self.temp_dir = Path(config.TEMP_PIPELINE_DIR) / "graph_builder"
         dask.config.set({'temporary_directory': str(self.temp_dir)})
 
         self.gcn_propagation_epsilon = getattr(config, 'GCN_PROPAGATION_EPSILON', 1e-9)

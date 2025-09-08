@@ -29,15 +29,15 @@ data_urls:
 # 3. PIPELINE CONTROL FLAGS
 pipeline_flags:
   RUN_PROTGRAM_XGCN_PIPELINE: true
-  RUN_LSTM_PIPELINE: true
-  RUN_WORD2VEC_PIPELINE: true
-  RUN_TRANSFORMER_PIPELINE: true
-  RUN_BENCHMARKING_PIPELINE: true
+  RUN_LSTM_PIPELINE: false
+  RUN_WORD2VEC_PIPELINE: false
+  RUN_TRANSFORMER_PIPELINE: false
+  RUN_BENCHMARKING_PIPELINE: false
   RUN_PROTGRAM_PIPELINE: true
   
   RUN_MAIN_PPI_EVALUATION: true
-  RUN_INTEGRATED_TESTS: true
-  RUN_SINGLETON_GCN_EVAL: true
+  RUN_INTEGRATED_TESTS: false
+  RUN_SINGLETON_GCN_EVAL: false
   SEQUENCE_DOWNSAMPLE_FRACTION: 0.99
   
   ENABLE_FILE_LOGGING: true
@@ -242,7 +242,7 @@ ppi_evaluation:
   MLP_DENSE2_UNITS: 64
   MLP_DROPOUT2_RATE: 0.4
   MLP_L2_REG: 0.00001
-  BATCH_SIZE: 2048
+  EVAL_BATCH_SIZE: 512
   EPOCHS: 2
   MLP_LEARNING_RATE: 0.001
   K_VALUES_FOR_TABLE: [50, 100]
@@ -273,4 +273,4 @@ hyperparameter_optimization:
     DENSE2_UNITS: {type: 'int', low: 16, high: 256, step: 16}
     DROPOUT2_RATE: {type: 'uniform', low: 0.1, high: 0.6}
     L2_REG: {type: 'loguniform', low: 1.0e-6, high: 1.0e-3}
-    BATCH_SIZE: {type: 'categorical', choices: [512, 1024, 2048, 4096]}
+    EVAL_BATCH_SIZE: {type: 'categorical', choices: [512, 1024, 2048, 4096]}

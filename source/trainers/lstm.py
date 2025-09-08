@@ -105,7 +105,7 @@ class LSTMBasedEmbedder:
             char_to_int=self.char_to_int
         )
 
-        num_workers = getattr(self.config, 'GRAPH_BUILDER_WORKERS', 0)
+        num_workers = getattr(self.config, 'DATALOADER_WORKERS', 0)
         train_dataloader = DataLoader(train_dataset, batch_size=self.config.LSTM_BATCH_SIZE, shuffle=True, num_workers=num_workers)
         val_dataloader = DataLoader(val_dataset, batch_size=self.config.LSTM_BATCH_SIZE, shuffle=False, num_workers=num_workers)
 

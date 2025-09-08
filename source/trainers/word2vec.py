@@ -79,8 +79,8 @@ class Word2VecEmbedder:
             # This new approach first converts the FASTA file into a line-by-line sentence corpus,
             # which allows gensim's highly optimized C routines to handle the file reading,
             # dramatically improving performance and reducing memory overhead.
-            with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix=".txt", encoding='utf-8') as temp_corpus_file: # noqa
-                corpus_path = temp_corpus_file.name # noqa
+            with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix=".txt", encoding='utf-8', dir=str(self.config.TEMP_PIPELINE_DIR)) as temp_corpus_file:  # noqa
+                corpus_path = temp_corpus_file.name  # noqa
                 print(f"  Creating temporary line corpus at: {corpus_path}")
 
                 # Read the large FASTA file in chunks and process in parallel
