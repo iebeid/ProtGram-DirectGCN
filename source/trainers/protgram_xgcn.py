@@ -100,6 +100,8 @@ class ProtGramXGCNTrainer:
                         )
                         final_attention_logs.update(attention_logs_for_model)  # Aggregate logs
 
+                        # All hierarchical training for this model is complete; proceed to protein-level pooling.
+                        print("  Hierarchical training complete. Starting protein-level pooling...")
                         pooled_results = self._pool_to_protein_level(
                             ngram_embeddings_per_level, protein_sequences,
                             level_ngram_to_idx=self._get_level_ngram_maps()
@@ -113,6 +115,8 @@ class ProtGramXGCNTrainer:
                     ngram_embeddings_per_level, attention_logs_for_model = self._train_gnns_hierarchically(model_type)
                     final_attention_logs.update(attention_logs_for_model)  # Aggregate logs
 
+                    # All hierarchical training for this model is complete; proceed to protein-level pooling.
+                    print("  Hierarchical training complete. Starting protein-level pooling...")
                     pooled_results = self._pool_to_protein_level(
                         ngram_embeddings_per_level, protein_sequences,
                         level_ngram_to_idx=self._get_level_ngram_maps()
@@ -678,14 +682,23 @@ class ProtGramXGCNTrainer:
         min_clusters = int(getattr(self.config, 'PROTGRAM_MIN_CLUSTERS', 2))
         max_clusters = int(getattr(self.config, 'PROTGRAM_MAX_CLUSTERS', 500))
         total_nodes = graph_obj.number_of_nodes
-        avg_size = (sum(len(p) for p in partitions) / max(1, len(partitions))) if partitions else 0
-        # Trigger rebalancing if partitions are too many or average size is too small
-        if (len(partitions) > max_clusters) or (avg_size < max(1, target_size // 4)):
-            print(f"  - Rebalancing partitions: {len(partitions)} -> ", end="")
+        start_count = len(partitions)
+        avg_size = (sum(len(p) for p in partitions) / max(1, start_count)) if start_count else 0
+
+        need_rebalance = (start_count > max_clusters) or (avg_size < max(1, target_size // 4))
+        if need_rebalance:
+            reason = []
+            if start_count > max_clusters:
+                reason.append(f"too many partitions ({start_count} > max {max_clusters})")
+            if avg_size < max(1, target_size // 4):
+                reason.append(f"avg size too small (~{int(avg_size)} < {max(1, target_size // 4)})")
+            print(f"  - Rebalancing partitions due to {' and '.join(reason)}.")
+
             # Deterministic shuffle for reproducibility
             rng = random.Random(self.config.RANDOM_STATE)
             all_nodes = list(range(total_nodes))
             rng.shuffle(all_nodes)
+
             # Primary chunking by target size
             rebalanced = [all_nodes[i:i + target_size] for i in range(0, total_nodes, target_size)]
             # Enforce minimum number of clusters
@@ -696,8 +709,10 @@ class ProtGramXGCNTrainer:
             if len(rebalanced) > max_clusters:
                 per_bin = math.ceil(total_nodes / max_clusters)
                 rebalanced = [all_nodes[i:i + per_bin] for i in range(0, total_nodes, per_bin)]
-            print(f"{len(rebalanced)} (target size ~{target_size})")
+
+            print(f"  - Rebalancing partitions: {start_count} -> {len(rebalanced)} (target size ~{target_size})")
             partitions = rebalanced
+
         return partitions
 
     def _get_level_ngram_maps(self) -> Dict[int, Dict[str, int]]:
