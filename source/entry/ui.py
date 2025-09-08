@@ -153,6 +153,128 @@ class UIManager:
             print("  ssh -L 5000:localhost:5000 your_user@your_server")
 
     @staticmethod
+    def prompt_graph_objects_reuse_or_rebuild(self, config: 'Config', dataset_name: str, expected_output_dir: Path, n_max: int) -> dict:
+        """
+        Prompts the user to decide how to provide graph objects for the current run:
+        - manual: User manually copies prebuilt graphs into expected_output_dir and confirms.
+        - auto_copy: User provides a source directory and we copy graphs automatically.
+        - rebuild: Run the graph builder to generate graphs from scratch.
+
+        Returns a dict with keys: {'choice': 'manual'|'auto_copy'|'rebuild', 'source': Optional[Path]}
+        """
+        result = {'choice': 'rebuild', 'source': None}
+        if config.DISABLE_INTERACTIVE_PROMPTS or not sys.stdin.isatty():
+            # Non-interactive mode: default to rebuild
+            print("--- Interactive prompts disabled or not a TTY. Proceeding to rebuild graph objects. ---")
+            return result
+
+        print("\n=== Graph Objects Availability ===")
+        print(f"Target dataset: {dataset_name}")
+        print(f"Expected graph objects directory:\n  {expected_output_dir}")
+        print("\nYou have three options:")
+        print("  1) Manually copy: I will copy previously built graph objects into the directory above and then continue.")
+        print("  2) Auto-copy:     Copy graph objects automatically from a previous run directory I will provide.")
+        print("  3) Rebuild:       Rebuild graph objects now (may take significant time).")
+
+        while True:
+            try:
+                sys.stdout.write("\nChoose an option [1=manual copy, 2=auto-copy, 3=rebuild]: ")
+                sys.stdout.flush()
+                resp = sys.stdin.readline().strip()
+                if resp in ('1', '2', '3'):
+                    break
+                print("  Invalid input. Please enter 1, 2, or 3.")
+            except (KeyboardInterrupt, EOFError):
+                print("\nOperation cancelled by user. Defaulting to rebuild.")
+                return result
+
+        if resp == '1':
+            print("\nManual copy selected.")
+            print(f"Please copy directories named 'ngram_graph_n1'..'ngram_graph_n{n_max}' into:")
+            print(f"  {expected_output_dir}")
+            print("Press Enter when you are done and ready to continue...")
+            try:
+                sys.stdin.readline()
+            except (KeyboardInterrupt, EOFError):
+                print("\nOperation cancelled by user. Defaulting to rebuild.")
+                return result
+            result['choice'] = 'manual'
+            return result
+
+        if resp == '2':
+            print("\nAuto-copy selected.")
+            print("Provide the absolute path to the directory containing your prebuilt graph objects.")
+            print("You can specify either:")
+            print("  - The dataset directory with 'ngram_graph_n*' subdirectories, or")
+            print("  - The parent 'graph_objects' directory that contains one or more dataset subdirectories.")
+            sys.stdout.write("Enter source path: ")
+            sys.stdout.flush()
+            try:
+                src_str = sys.stdin.readline().strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\nOperation cancelled by user. Defaulting to rebuild.")
+                return result
+
+            src_path = Path(src_str).expanduser().resolve()
+            if not src_path.exists():
+                print(f"  ❌ Source path not found: {src_path}")
+                return result
+
+            result['choice'] = 'auto_copy'
+            result['source'] = src_path
+            return result
+
+        # Default to rebuild
+        print("\nRebuild selected. Proceeding to rebuild graph objects.")
+        result['choice'] = 'rebuild'
+        return result
+
+    @staticmethod
+    def copy_graph_objects_from_source(source_root: Path, dest_dataset_dir: Path, n_max: int) -> bool:
+        """
+        Copies n-gram graph directories from source_root to dest_dataset_dir.
+        Accepts either:
+          - source_root containing 'ngram_graph_n*' directly, or
+          - a parent directory containing a single dataset subdirectory.
+        Returns True on success (all expected 'n' levels found and copied), False otherwise.
+        """
+        import shutil
+
+        def has_ngram_dirs(p: Path) -> bool:
+            return any((p / f"ngram_graph_n{i}").exists() for i in range(1, n_max + 1))
+
+        src = source_root
+        if not has_ngram_dirs(src):
+            # Try to detect a single dataset subdirectory that has the ngram dirs
+            candidates = [d for d in src.iterdir() if d.is_dir()]
+            candidates = [d for d in candidates if has_ngram_dirs(d)]
+            if len(candidates) == 1:
+                src = candidates[0]
+            else:
+                print("  ❌ Could not locate 'ngram_graph_n*' directories under the provided path.")
+                return False
+
+        dest_dataset_dir.mkdir(parents=True, exist_ok=True)
+        ok = True
+        for n in range(1, n_max + 1):
+            src_dir = src / f"ngram_graph_n{n}"
+            dest_dir = dest_dataset_dir / f"ngram_graph_n{n}"
+            if not src_dir.exists():
+                print(f"  ❌ Missing source directory: {src_dir}")
+                ok = False
+                break
+            # Remove existing dest to ensure a clean copy
+            if dest_dir.exists():
+                shutil.rmtree(dest_dir, ignore_errors=True)
+            try:
+                shutil.copytree(src_dir, dest_dir)
+                print(f"  ✅ Copied {src_dir} -> {dest_dir}")
+            except Exception as e:
+                print(f"  ❌ Failed to copy {src_dir} -> {dest_dir}: {e}")
+                ok = False
+                break
+        return ok
+
     def display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
         """
         Standardizes, concatenates, and displays a final summary of all benchmark results.

@@ -337,9 +337,45 @@ class PipelineOrchestrator:
                         # Graph Building Stage
                         if config.RUN_PROTGRAM_PIPELINE:
                             if not checkpoint_manager.get_checkpoint("GraphBuilding"):
-                                DataUtils.print_header("Building all n-gram graphs for the main pipeline")
-                                ProtGramDataBuilder(config).run()
-                                checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "completed"})
+                                # Offer reuse/copy option before rebuilding
+                                expected_graphs_dir = config.RESULTS_GRAPH_OBJECTS_DIR
+                                # If interactive prompts are enabled, ask the user
+                                user_decision = self.ui_manager.prompt_graph_objects_reuse_or_rebuild(
+                                    config=config,
+                                    dataset_name=dataset_name,
+                                    expected_output_dir=expected_graphs_dir,
+                                    n_max=config.PROTGRAM_NGRAM_MAX_N
+                                )
+                                proceed_to_build = True
+                                if user_decision.get('choice') == 'manual':
+                                    # Verify existence after manual copy
+                                    all_present = all((expected_graphs_dir / f"ngram_graph_n{i}").exists()
+                                                      for i in range(1, config.PROTGRAM_NGRAM_MAX_N + 1))
+                                    if all_present:
+                                        print("  ✅ Detected manually copied graph objects. Skipping rebuild.")
+                                        checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "reused"})
+                                        proceed_to_build = False
+                                    else:
+                                        print("  ❌ Expected graph objects not found after manual copy. Proceeding to rebuild.")
+                                elif user_decision.get('choice') == 'auto_copy' and user_decision.get('source'):
+                                    src_path = user_decision['source']
+                                    print(f"  Attempting to copy graph objects from: {src_path}")
+                                    success = self.ui_manager.copy_graph_objects_from_source(
+                                        source_root=Path(src_path),
+                                        dest_dataset_dir=expected_graphs_dir,
+                                        n_max=config.PROTGRAM_NGRAM_MAX_N
+                                    )
+                                    if success:
+                                        print("  ✅ Graph objects copied successfully. Skipping rebuild.")
+                                        checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "copied"})
+                                        proceed_to_build = False
+                                    else:
+                                        print("  ❌ Copy failed or incomplete. Proceeding to rebuild.")
+                                # Rebuild if needed
+                                if proceed_to_build:
+                                    DataUtils.print_header("Building all n-gram graphs for the main pipeline")
+                                    ProtGramDataBuilder(config).run()
+                                    checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "completed"})
                             if not self.ui_manager.prompt_to_continue("Graph Building", config): continue
                         else:
                             print("  INFO: Skipping graph building as RUN_PROTGRAM_PIPELINE is false.")

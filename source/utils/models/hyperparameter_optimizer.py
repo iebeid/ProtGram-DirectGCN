@@ -14,6 +14,7 @@ import optuna
 from optuna_integration import MLflowCallback
 import numpy as np
 from sklearn.model_selection import train_test_split
+from contextlib import nullcontext
 
 # --- Add project root to sys.path to allow for relative imports ---
 # This ensures that local modules can be found when the script is run directly.
@@ -236,8 +237,11 @@ class HyperparameterOptimizer:
                 print(f"  Trial {trial.number} failed in ProtGram-XGCN with error: {e}")
                 return float('inf')
 
-        mlflow.set_experiment(self.base_config.MLFLOW_PROTGRAM_XGCN_EXPERIMENT_NAME)
-        with mlflow.start_run(run_name="HPO_ProtGram-XGCN"):
+        run_ctx = nullcontext()
+        if getattr(self.base_config, 'USE_MLFLOW', False):
+            mlflow.set_experiment(self.base_config.MLFLOW_PROTGRAM_XGCN_EXPERIMENT_NAME)
+            run_ctx = mlflow.start_run(run_name="HPO_ProtGram-XGCN")
+        with run_ctx:
             mlflow.set_tag("optuna.study_name", "hpo_protgram_xgcn")
             study = optuna.create_study(direction='minimize', sampler=optuna.samplers.TPESampler(seed=self.base_config.RANDOM_STATE))
             study.optimize(objective, n_trials=getattr(self.base_config, 'HPO_N_TRIALS', 10), show_progress_bar=True)

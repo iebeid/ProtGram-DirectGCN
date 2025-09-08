@@ -23,6 +23,7 @@ from torch_geometric.utils import homophily
 from tqdm.auto import tqdm
 from functools import partial
 import mlflow
+from contextlib import nullcontext
 from configuration.config import Config
 from source.data_structures.direct_ngram_graph import DirectedNgramGraph
 from source.data_builders.xgcn import XGCNDataBuilder
@@ -73,8 +74,14 @@ class ProtGramXGCNTrainer:
         Main execution function. Loops through n-gram levels, trains models,
         and generates final protein-level embeddings with raw IDs.
         """
-        mlflow.set_experiment(self.config.MLFLOW_PROTGRAM_XGCN_EXPERIMENT_NAME)
-        with mlflow.start_run(run_name=f"ProtGram-XGCN_{Path(self.config.SEQUENCE_FILE_PATHS[0]).stem}"):
+        run_ctx = nullcontext()
+        if getattr(self.config, 'USE_MLFLOW', False):
+            mlflow.set_experiment(self.config.MLFLOW_PROTGRAM_XGCN_EXPERIMENT_NAME)
+            run_ctx = mlflow.start_run(
+                run_name=f"ProtGram-XGCN_{Path(self.config.SEQUENCE_FILE_PATHS[0]).stem}",
+                nested=mlflow.active_run() is not None
+            )
+        with run_ctx:
             DataUtils.print_header("PIPELINE STEP: Training ProtGram Models & Generating Embeddings")
 
             final_protein_embeddings_per_model: Dict[str, Dict[str, np.ndarray]] = {}

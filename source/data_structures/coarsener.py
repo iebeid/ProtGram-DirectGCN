@@ -47,7 +47,7 @@ except ImportError:
     from torch_geometric.nn import functional as F
     graclus = F.graclus
     pool_edge = None  # type: ignore
-from torch_geometric.utils import to_scipy_sparse_matrix, from_scipy_sparse_matrix, get_laplacian
+from torch_geometric.utils import to_scipy_sparse_matrix, from_scipy_sparse_matrix, get_laplacian, remove_self_loops
 from tqdm.auto import tqdm
 
 # --- FIX: Use a forward reference to prevent circular import errors ---
@@ -100,6 +100,9 @@ class GraphCoarsener:
         edge_index = coalesced.indices().to(dtype=torch.long, device='cpu').contiguous()
         edge_weight = coalesced.values().to(dtype=torch.float32, device='cpu').contiguous()
 
+        # Remove self-loops before clustering; self-loops can cause degenerate "no-merge" behavior.
+        edge_index, edge_weight = remove_self_loops(edge_index, edge_weight)
+
         # Initialize the cluster map where each node is its own cluster
         num_nodes = graph.number_of_nodes
         cluster_map = torch.arange(num_nodes, device=edge_index.device)
@@ -111,7 +114,8 @@ class GraphCoarsener:
                 print(f"  - Coarsening stopped at level {i+1}: No edges remain.")
                 break
 
-            clusters = graclus(edge_index, edge_weight)
+            # Use topology-only matching for stability across datasets
+            clusters = graclus(edge_index)
             cluster_map = clusters[cluster_map]
 
             # --- REFACTOR: Use the idiomatic PyG function for coarsening edges ---
@@ -148,7 +152,7 @@ class GraphCoarsener:
 
         # 1. Basic Statistics
         num_original_nodes = original_graph.number_of_nodes
-        num_original_edges = original_graph.A_undirected_norm_sparse.coalesce()._nnz()
+        num_original_edges = original_graph.A_undirected_w.coalesce()._nnz()
         num_coarsened_nodes = int(cluster_map.max().item()) + 1
         num_coarsened_edges = coarsened_edge_index.size(1)
 
@@ -159,8 +163,8 @@ class GraphCoarsener:
         print(f"  - Edge Reduction: {num_original_edges} -> {num_coarsened_edges} ({edge_reduction:.2f}%)")
 
         # 2. Modularity
-        original_edge_index = original_graph.A_undirected_norm_sparse.coalesce().indices()
-        original_edge_weight = original_graph.A_undirected_norm_sparse.coalesce().values()
+        original_edge_index = original_graph.A_undirected_w.coalesce().indices()
+        original_edge_weight = original_graph.A_undirected_w.coalesce().values()
         mod = modularity(original_edge_index, cluster_map, original_edge_weight, num_nodes=num_original_nodes)
         print(f"  - Partition Modularity: {mod:.4f} (Higher is better, >0.3 is often significant)")
 

@@ -107,10 +107,9 @@ if __name__ == "__main__":
         logger = FileLogger(base_config.LOG_DIR, enabled=base_config.ENABLE_FILE_LOGGING)
 
         # --- DEFINITIVE FIX for "No space left on device" and "FileNotFoundError" ---
-        # Configure Dask's temporary directory globally at the start of the application.
-        # This ensures that ALL Dask operations (in any module) use a safe location
-        # within the project's results directory, preventing crashes due to a full /tmp partition.
-        dask_temp_dir = base_config.BASE_OUTPUT_DIR / "dask_temp"
+        # Configure Dask's temporary directory to the unified per-run TEMP directory.
+        # This prevents creating redundant directories like 'dask_temp' at the results root.
+        dask_temp_dir = base_config.TEMP_PIPELINE_DIR / "dask"
         dask.config.set({'temporary_directory': str(dask_temp_dir)})
         # CRITICAL: Ensure the directory exists before any Dask operations are called.
         dask_temp_dir.mkdir(parents=True, exist_ok=True)
