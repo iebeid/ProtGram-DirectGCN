@@ -7,7 +7,7 @@
 
 import os
 import traceback
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 import mlflow
 from pathlib import Path
 import numpy as np
