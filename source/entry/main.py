@@ -373,9 +373,13 @@ class PipelineOrchestrator:
                                         print("  ❌ Copy failed or incomplete. Proceeding to rebuild.")
                                 # Rebuild if needed
                                 if proceed_to_build:
-                                    DataUtils.print_header("Building all n-gram graphs for the main pipeline")
-                                    ProtGramDataBuilder(config).run()
-                                    checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "completed"})
+                                    try:
+                                        DataUtils.print_header("Building all n-gram graphs for the main pipeline")
+                                        ProtGramDataBuilder(config).run()
+                                        checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "completed"})
+                                    except KeyboardInterrupt:
+                                        print("\n--- Received interrupt during graph build. Cleanup has run. Exiting gracefully. ---")
+                                        return
                             if not self.ui_manager.prompt_to_continue("Graph Building", config): continue
                         else:
                             print("  INFO: Skipping graph building as RUN_PROTGRAM_PIPELINE is false.")

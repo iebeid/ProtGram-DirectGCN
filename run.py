@@ -117,4 +117,8 @@ if __name__ == "__main__":
         with logger:
             from source.entry.main import PipelineOrchestrator
             orchestrator = PipelineOrchestrator(base_config)
-            orchestrator.run()
+            try:
+                orchestrator.run()
+            except KeyboardInterrupt:
+                print("\nInterrupted by user. Exiting gracefully.")
+                sys.exit(0)

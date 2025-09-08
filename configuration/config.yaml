@@ -41,7 +41,7 @@ pipeline_flags:
   SEQUENCE_DOWNSAMPLE_FRACTION: 0.99
   
   ENABLE_FILE_LOGGING: true
-  DISABLE_INTERACTIVE_PROMPTS: true # Set to true to run the entire pipeline without user prompts.
+  DISABLE_INTERACTIVE_PROMPTS: false # Set to true to run the entire pipeline without user prompts.
   PROCESS_ID_MAPPING_FILE: false
 
 # 4. RESOURCE MANAGEMENT
