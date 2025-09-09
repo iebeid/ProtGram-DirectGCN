@@ -277,6 +277,210 @@ class UIManager:
         return ok
 
     @staticmethod
+    def prompt_artifacts_reuse_or_copy(config: 'Config', dataset_name: str, expected_dir_map: dict) -> dict:
+        """
+        Prompts the user to decide how to provide ALL intermediate artifacts for the current run:
+        - manual: User manually copies artifacts into the expected directories and then continues.
+        - auto_copy: User provides a source directory and we copy artifacts automatically.
+        - skip: Do nothing and proceed normally.
+
+        expected_dir_map: {component_name (str) -> destination Path}
+        Returns: {'choice': 'manual'|'auto_copy'|'skip', 'source': Optional[Path]}
+        """
+        result = {'choice': 'skip', 'source': None}
+        # Non-interactive or prompts disabled: do nothing
+        if config.DISABLE_INTERACTIVE_PROMPTS or not sys.stdin.isatty():
+            return result
+
+        print("\n=== Existing Artifacts Availability ===")
+        print(f"Target dataset: {dataset_name}")
+        print("You can populate the newly created results directories with artifacts from a previous run.")
+        print("Components to consider:")
+        for name, path in expected_dir_map.items():
+            print(f"  - {name}: {path}")
+        print("\nOptions:")
+        print("  1) Manual copy: I will copy all desired artifacts into the listed directories and then continue.")
+        print("  2) Auto-copy:   Copy artifacts automatically from a previous run directory I will provide.")
+        print("  3) Skip:        Do nothing and proceed normally.")
+
+        while True:
+            try:
+                sys.stdout.write("\nChoose an option [1=manual copy, 2=auto-copy, 3=skip]: ")
+                sys.stdout.flush()
+                resp = sys.stdin.readline().strip()
+                if resp in ('1', '2', '3'):
+                    break
+                print("  Invalid input. Please enter 1, 2, or 3.")
+            except (KeyboardInterrupt, EOFError):
+                print("\nOperation cancelled by user. Defaulting to skip.")
+                return result
+
+        if resp == '1':
+            print("\nManual copy selected.")
+            print("Please copy the artifacts you want into the listed destination directories.")
+            print("Press Enter when you are done and ready to continue...")
+            try:
+                sys.stdin.readline()
+            except (KeyboardInterrupt, EOFError):
+                print("\nOperation cancelled by user. Defaulting to skip.")
+                return result
+            result['choice'] = 'manual'
+            return result
+
+        if resp == '2':
+            print("\nAuto-copy selected.")
+            print("Provide the absolute path to a previous 'results' run directory or a dataset subdirectory under it.")
+            print("We will try to locate and copy artifacts for the components listed above.")
+            sys.stdout.write("Enter source path: ")
+            sys.stdout.flush()
+            try:
+                src_str = sys.stdin.readline().strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\nOperation cancelled by user. Defaulting to skip.")
+                return result
+
+            src_path = Path(src_str).expanduser().resolve()
+            if not src_path.exists():
+                print(f"  ❌ Source path not found: {src_path}")
+                return result
+
+            result['choice'] = 'auto_copy'
+            result['source'] = src_path
+            return result
+
+        # Default: skip
+        return result
+
+    @staticmethod
+    def copy_artifacts_from_source(source_root: Path, expected_dir_map: dict, n_max: int) -> dict:
+        """
+        Copies artifacts for all components from source_root into the destination directories in expected_dir_map.
+        Heuristics:
+          - If source_root/<component>/<dataset_name> exists, copy from there.
+          - Else if source_root looks like a dataset-level directory (contains expected content), copy directly.
+        Returns a dict: {component_name -> bool} indicating which components were successfully copied.
+        """
+        import shutil
+        copied = {name: False for name in expected_dir_map.keys()}
+
+        # Normalize component keys to their expected top-level directory names
+        # expected_dir_map keys are already user-readable component names like:
+        # 'graph_objects', 'gcn_embeddings', 'word2vec_embeddings', 'lstm_embeddings', 'transformer_embeddings', 'evaluation_results'
+        def looks_like_graphs_dir(p: Path) -> bool:
+            return any((p / f"ngram_graph_n{i}").exists() for i in range(1, n_max + 1))
+
+        def looks_like_embeddings_dir(p: Path) -> bool:
+            return any(p.glob("**/*.h5"))
+
+        def looks_like_eval_dir(p: Path) -> bool:
+            return (p / "evaluation_summary.csv").exists() or (p / "plots").exists()
+
+        # Try component-wise copy
+        for component, dest_dir in expected_dir_map.items():
+            try:
+                # First, try source_root/<component>/<dataset_name>
+                # Detect if source_root is a 'results' root containing component directories
+                potential_src = source_root / dest_dir.parent.name / dest_dir.name
+                # Example: results/<component>/<dataset_name>
+                if potential_src.exists():
+                    # Copy entire directory tree
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    # Remove existing destination to ensure clean copy
+                    if any(dest_dir.iterdir()):
+                        shutil.rmtree(dest_dir, ignore_errors=True)
+                        dest_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(potential_src, dest_dir, dirs_exist_ok=True)
+                    print(f"  ✅ Copied {potential_src} -> {dest_dir}")
+                    copied[component] = True
+                    continue
+
+                # Next, consider that source_root may itself be the dataset-level directory for this component
+                # e.g., .../results/<component>/<dataset_name> (passed as source_root)
+                # Use heuristics to decide if it matches the component type
+                if looks_like_graphs_dir(source_root) and component == 'graph_objects':
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    if any(dest_dir.iterdir()):
+                        shutil.rmtree(dest_dir, ignore_errors=True)
+                        dest_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(source_root, dest_dir, dirs_exist_ok=True)
+                    print(f"  ✅ Copied graphs {source_root} -> {dest_dir}")
+                    copied[component] = True
+                    continue
+
+                if looks_like_embeddings_dir(source_root) and component.endswith('_embeddings'):
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    for item in source_root.glob("**/*.h5"):
+                        rel = item.relative_to(source_root)
+                        target = dest_dir / rel
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(item, target)
+                    print(f"  ✅ Copied embeddings {source_root} -> {dest_dir}")
+                    copied[component] = True
+                    continue
+
+                if looks_like_eval_dir(source_root) and component == 'evaluation_results':
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    # Copy files and plots folder if present
+                    for child in source_root.iterdir():
+                        target = dest_dir / child.name
+                        if child.is_dir():
+                            if target.exists():
+                                shutil.rmtree(target, ignore_errors=True)
+                            shutil.copytree(child, target)
+                        else:
+                            shutil.copy2(child, target)
+                    print(f"  ✅ Copied evaluation results {source_root} -> {dest_dir}")
+                    copied[component] = True
+                    continue
+
+                # Lastly, try to detect a single dataset subdirectory under a component folder at source_root
+                # For example: source_root/<component>/<some_dataset> where <some_dataset> contains expected structure.
+                comp_parent = source_root / dest_dir.parent.name
+                if comp_parent.exists() and comp_parent.is_dir():
+                    candidates = [d for d in comp_parent.iterdir() if d.is_dir()]
+                    # Prioritize dirs that "look like" relevant component
+                    for d in candidates:
+                        if component == 'graph_objects' and looks_like_graphs_dir(d):
+                            src = d
+                            dest_dir.mkdir(parents=True, exist_ok=True)
+                            if any(dest_dir.iterdir()):
+                                shutil.rmtree(dest_dir, ignore_errors=True)
+                                dest_dir.mkdir(parents=True, exist_ok=True)
+                            shutil.copytree(src, dest_dir, dirs_exist_ok=True)
+                            print(f"  ✅ Copied graphs {src} -> {dest_dir}")
+                            copied[component] = True
+                            break
+                        if component.endswith('_embeddings') and looks_like_embeddings_dir(d):
+                            dest_dir.mkdir(parents=True, exist_ok=True)
+                            for item in d.glob("**/*.h5"):
+                                rel = item.relative_to(d)
+                                target = dest_dir / rel
+                                target.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(item, target)
+                            print(f"  ✅ Copied embeddings {d} -> {dest_dir}")
+                            copied[component] = True
+                            break
+                        if component == 'evaluation_results' and looks_like_eval_dir(d):
+                            dest_dir.mkdir(parents=True, exist_ok=True)
+                            for child in d.iterdir():
+                                target = dest_dir / child.name
+                                if child.is_dir():
+                                    if target.exists():
+                                        shutil.rmtree(target, ignore_errors=True)
+                                    shutil.copytree(child, target)
+                                else:
+                                    shutil.copy2(child, target)
+                            print(f"  ✅ Copied evaluation results {d} -> {dest_dir}")
+                            copied[component] = True
+                            break
+
+            except Exception as e:
+                print(f"  ❌ Failed to copy artifacts for component '{component}': {e}")
+                copied[component] = False
+
+        return copied
+
+    @staticmethod
     def display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
         """
         Standardizes, concatenates, and displays a final summary of all benchmark results.

@@ -340,6 +340,52 @@ class PipelineOrchestrator:
                         checkpoint_dir_uri = os.path.join(str(config.BASE_OUTPUT_DIR), "checkpoints", dataset_name)
                         checkpoint_manager = CheckpointManager(checkpoint_dir_uri)
 
+                        # Offer reuse/copy for ALL intermediate artifacts (graphs, embeddings, evaluation)
+                        expected_dir_map = {
+                            'graph_objects': config.RESULTS_GRAPH_OBJECTS_DIR,
+                            'gcn_embeddings': config.RESULTS_GCN_EMBEDDINGS_DIR,
+                            'word2vec_embeddings': config.RESULTS_W2V_EMBEDDINGS_DIR,
+                            'lstm_embeddings': config.RESULTS_LSTM_EMBEDDINGS_DIR,
+                            'transformer_embeddings': config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR,
+                            'evaluation_results': config.RESULTS_EVALUATION_DIR,
+                        }
+                        decision_all = self.ui_manager.prompt_artifacts_reuse_or_copy(config, dataset_name, expected_dir_map)
+                        if decision_all.get('choice') == 'auto_copy' and decision_all.get('source'):
+                            copy_results = self.ui_manager.copy_artifacts_from_source(
+                                decision_all['source'], expected_dir_map, config.PROTGRAM_NGRAM_MAX_N
+                            )
+                        else:
+                            copy_results = {}
+
+                        # Detect which artifacts are present now and checkpoint accordingly
+                        def _graphs_present() -> bool:
+                            return all((config.RESULTS_GRAPH_OBJECTS_DIR / f"ngram_graph_n{i}").exists()
+                                       for i in range(1, config.PROTGRAM_NGRAM_MAX_N + 1))
+
+                        def _has_h5(dir_path: Path) -> bool:
+                            return dir_path.exists() and any(dir_path.glob("**/*.h5"))
+
+                        def _eval_present() -> bool:
+                            return config.RESULTS_EVALUATION_DIR.exists() and \
+                                   ((config.RESULTS_EVALUATION_DIR / "evaluation_summary.csv").exists() or
+                                    (config.RESULTS_EVALUATION_DIR / "plots").exists())
+
+                        # Graphs
+                        if copy_results.get('graph_objects') or _graphs_present():
+                            checkpoint_manager.save_checkpoint("GraphBuilding", {"status": "copied"})
+                        # Embeddings
+                        if copy_results.get('gcn_embeddings') or _has_h5(config.RESULTS_GCN_EMBEDDINGS_DIR):
+                            checkpoint_manager.save_checkpoint("ProtGram-XGCN", {"status": "copied"})
+                        if copy_results.get('word2vec_embeddings') or _has_h5(config.RESULTS_W2V_EMBEDDINGS_DIR):
+                            checkpoint_manager.save_checkpoint("Word2Vec", {"status": "copied"})
+                        if copy_results.get('lstm_embeddings') or _has_h5(config.RESULTS_LSTM_EMBEDDINGS_DIR):
+                            checkpoint_manager.save_checkpoint("LSTM", {"status": "copied"})
+                        if copy_results.get('transformer_embeddings') or _has_h5(config.RESULTS_TRANSFORMER_EMBEDDINGS_DIR):
+                            checkpoint_manager.save_checkpoint("Transformer", {"status": "copied"})
+                        # Evaluation
+                        if copy_results.get('evaluation_results') or _eval_present():
+                            checkpoint_manager.save_checkpoint("PPI_Evaluation", {"status": "copied"})
+
                         # Graph Building Stage
                         if config.RUN_PROTGRAM_PIPELINE:
                             if not checkpoint_manager.get_checkpoint("GraphBuilding"):
@@ -440,6 +486,7 @@ class PipelineOrchestrator:
                                         'DROPOUT2_RATE': 'EVAL_MLP_DROPOUT2_RATE',
                                         'L2_REG': 'EVAL_MLP_L2_REG',
                                         'BATCH_SIZE': 'EVAL_BATCH_SIZE',
+                                        'EVAL_BATCH_SIZE': 'EVAL_BATCH_SIZE',  # allow either key from Optuna results
                                     }
                                     for k, v in best_params.items():
                                         if k in mapping:

@@ -121,7 +121,9 @@ class HyperparameterOptimizer:
             trial_config.EVAL_MLP_DENSE2_UNITS = self._get_trial_param(trial, 'DENSE2_UNITS', search_space)
             trial_config.EVAL_MLP_DROPOUT2_RATE = self._get_trial_param(trial, 'DROPOUT2_RATE', search_space)
             trial_config.EVAL_MLP_L2_REG = self._get_trial_param(trial, 'L2_REG', search_space)
-            trial_config.EVAL_BATCH_SIZE = self._get_trial_param(trial, 'BATCH_SIZE', search_space)
+            # Support both legacy 'BATCH_SIZE' and new 'EVAL_BATCH_SIZE' keys in the search space
+            batch_key = 'BATCH_SIZE' if 'BATCH_SIZE' in search_space else 'EVAL_BATCH_SIZE'
+            trial_config.EVAL_BATCH_SIZE = self._get_trial_param(trial, batch_key, search_space)
 
             # --- DEFINITIVE FIX for HPO Inefficiency: Disable slow analysis ---
             # SHAP analysis is computationally expensive and not needed for every HPO trial.
