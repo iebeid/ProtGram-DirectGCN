@@ -236,6 +236,9 @@ ppi_evaluation:
   EARLY_STOPPING_PATIENCE: 10
   EDGE_EMBEDDING_METHOD: 'concatenate'
   N_FOLDS: 2
+  # Limit the number of positive and negative pairs used (per class) to avoid OOM.
+  # Set to null to use all available pairs.
+  MAX_PAIRS_PER_CLASS: 200000
   MLP_DENSE1_UNITS: 128
   MLP_DROPOUT1_RATE: 0.4
   MLP_DENSE2_UNITS: 64

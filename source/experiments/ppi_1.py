@@ -394,8 +394,12 @@ class PPIPipeline:
                             continue
 
                         print(f"  Found {len(available_ids)} embeddings. Filtering interaction files against these IDs...")
+                        # Cap positives using config (if set), and balance negatives to the actual positive count.
+                        pos_limit = getattr(self.config, 'MAX_PAIRS_PER_CLASS', None)
+                        if pos_limit:
+                            print(f"  Applying cap on positive pairs: up to {pos_limit} per class.")
                         pos_pairs = GroundTruthLoader.load_interaction_pairs_filtered(
-                            pos_fp, 1, available_ids, random_state=self.config.RANDOM_STATE, config=self.config
+                            pos_fp, 1, available_ids, sample_n=pos_limit, random_state=self.config.RANDOM_STATE, config=self.config
                         )
                         num_pos_for_sampling = len(pos_pairs)
                         neg_pairs = GroundTruthLoader.load_interaction_pairs_filtered(
