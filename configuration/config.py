@@ -205,6 +205,8 @@ class PPIEvaluationParams(BaseModel):
     EARLY_STOPPING_PATIENCE: int = Field(ge=0)
     EDGE_EMBEDDING_METHOD: str
     N_FOLDS: int = Field(gt=1)
+    # Optional cap on the number of pairs per class (positive integer if provided)
+    MAX_PAIRS_PER_CLASS: Optional[int] = Field(default=None, gt=0)
     MLP_DENSE1_UNITS: int = Field(gt=0)
     MLP_DROPOUT1_RATE: float = Field(ge=0.0, lt=1.0)
     MLP_DENSE2_UNITS: int = Field(gt=0)
@@ -746,6 +748,8 @@ class Config:
         self.EARLY_STOPPING_PATIENCE = params['EARLY_STOPPING_PATIENCE']
         self.EVAL_EDGE_EMBEDDING_METHOD = params['EDGE_EMBEDDING_METHOD']
         self.EVAL_N_FOLDS = params['N_FOLDS']
+        # New optional cap for pairs per class (validated by Pydantic)
+        self.MAX_PAIRS_PER_CLASS = params.get('MAX_PAIRS_PER_CLASS')
         self.EVAL_MLP_DENSE1_UNITS = params['MLP_DENSE1_UNITS']
         self.EVAL_MLP_DROPOUT1_RATE = params['MLP_DROPOUT1_RATE']
         self.EVAL_MLP_DENSE2_UNITS = params['MLP_DENSE2_UNITS']
