@@ -317,6 +317,11 @@ class PipelineOrchestrator:
                         dataset_name = fasta_file_path.stem
                         DataUtils.print_header(f"PROCESSING DATASET: {dataset_name.upper()}")
 
+                        # Ensure ProtGram settings (including PROTGRAM_NGRAM_MAX_N) are restored from YAML
+                        # to avoid leaked overrides from earlier steps/tests.
+                        if hasattr(config, "_setup_gcn_params"):
+                            config._setup_gcn_params()
+
                         # BUG FIX: Ensure the correct (downsampled) file path is used.
                         # Overwrite both variables to be safe in case protgram.py uses the wrong one.
                         config.SEQUENCE_FILE_PATHS = [fasta_file_path]
