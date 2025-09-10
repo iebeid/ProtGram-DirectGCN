@@ -1,1927 +1,277 @@
---- Logging all console output to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/logs/run_20250910_012311.log ---
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-
-========================================================
-### Starting Protein-Protein Interaction Meta-Pipeline ###
-========================================================
 
 
---- Verifying local data integrity ---
---- Validating data against manifest: data_manifest.json ---
-  - ✅ VALID: data/benchmarks
-  - ✅ VALID: data/models
-  - ✅ VALID: data/sequences
-  - ✅ VALID: data/ground_truth
-  - ✅ VALID: data/benchmarks/cornell
-  - ✅ VALID: data/benchmarks/CiteSeer
-  - ✅ VALID: data/benchmarks/Cora
-  - ✅ VALID: data/benchmarks/PubMed
-  - ✅ VALID: data/benchmarks/wisconsin
-  - ✅ VALID: data/benchmarks/texas
-  - ✅ VALID: data/benchmarks/cornell/raw
-  - ✅ VALID: data/benchmarks/cornell/processed
-  - ✅ VALID: data/benchmarks/cornell/raw/cornell_split_0.6_0.2_9.npz
-  - ✅ VALID: data/benchmarks/cornell/raw/cornell_split_0.6_0.2_6.npz
-  - ✅ VALID: data/benchmarks/cornell/raw/cornell_split_0.6_0.2_0.npz
-  - ✅ VALID: data/benchmarks/cornell/raw/cornell_split_0.6_0.2_7.npz
-  - ✅ VALID: data/benchmarks/cornell/raw/cornell_split_0.6_0.2_8.npz
-  - ✅ VALID: data/benchmarks/cornell/raw/cornell_split_0.6_0.2_4.npz
-  - ✅ VALID: data/benchmarks/cornell/raw/cornell_split_0.6_0.2_3.npz
-  - ✅ VALID: data/benchmarks/cornell/raw/cornell_split_0.6_0.2_1.npz
-  - ✅ VALID: data/benchmarks/cornell/raw/cornell_split_0.6_0.2_2.npz
-  - ✅ VALID: data/benchmarks/cornell/raw/out1_node_feature_label.txt
-  - ✅ VALID: data/benchmarks/cornell/raw/cornell_split_0.6_0.2_5.npz
-  - ✅ VALID: data/benchmarks/cornell/raw/out1_graph_edges.txt
-  - ✅ VALID: data/benchmarks/cornell/processed/pre_filter.pt
-  - ✅ VALID: data/benchmarks/cornell/processed/data.pt
-  - ✅ VALID: data/benchmarks/cornell/processed/pre_transform.pt
-  - ✅ VALID: data/benchmarks/CiteSeer/raw
-  - ✅ VALID: data/benchmarks/CiteSeer/processed
-  - ✅ VALID: data/benchmarks/CiteSeer/raw/ind.citeseer.y
-  - ✅ VALID: data/benchmarks/CiteSeer/raw/ind.citeseer.test.index
-  - ✅ VALID: data/benchmarks/CiteSeer/raw/ind.citeseer.graph
-  - ✅ VALID: data/benchmarks/CiteSeer/raw/ind.citeseer.ty
-  - ✅ VALID: data/benchmarks/CiteSeer/raw/ind.citeseer.allx
-  - ✅ VALID: data/benchmarks/CiteSeer/raw/ind.citeseer.ally
-  - ✅ VALID: data/benchmarks/CiteSeer/raw/ind.citeseer.x
-  - ✅ VALID: data/benchmarks/CiteSeer/raw/ind.citeseer.tx
-  - ✅ VALID: data/benchmarks/CiteSeer/processed/pre_filter.pt
-  - ✅ VALID: data/benchmarks/CiteSeer/processed/data.pt
-  - ✅ VALID: data/benchmarks/CiteSeer/processed/pre_transform.pt
-  - ✅ VALID: data/benchmarks/Cora/raw
-  - ✅ VALID: data/benchmarks/Cora/processed
-  - ✅ VALID: data/benchmarks/Cora/raw/ind.cora.graph
-  - ✅ VALID: data/benchmarks/Cora/raw/ind.cora.ty
-  - ✅ VALID: data/benchmarks/Cora/raw/ind.cora.test.index
-  - ✅ VALID: data/benchmarks/Cora/raw/ind.cora.x
-  - ✅ VALID: data/benchmarks/Cora/raw/ind.cora.allx
-  - ✅ VALID: data/benchmarks/Cora/raw/ind.cora.y
-  - ✅ VALID: data/benchmarks/Cora/raw/ind.cora.tx
-  - ✅ VALID: data/benchmarks/Cora/raw/ind.cora.ally
-  - ✅ VALID: data/benchmarks/Cora/processed/pre_filter.pt
-  - ✅ VALID: data/benchmarks/Cora/processed/data.pt
-  - ✅ VALID: data/benchmarks/Cora/processed/pre_transform.pt
-  - ✅ VALID: data/benchmarks/PubMed/raw
-  - ✅ VALID: data/benchmarks/PubMed/processed
-  - ✅ VALID: data/benchmarks/PubMed/raw/ind.pubmed.test.index
-  - ✅ VALID: data/benchmarks/PubMed/raw/ind.pubmed.graph
-  - ✅ VALID: data/benchmarks/PubMed/raw/ind.pubmed.tx
-  - ✅ VALID: data/benchmarks/PubMed/raw/ind.pubmed.x
-  - ✅ VALID: data/benchmarks/PubMed/raw/ind.pubmed.y
-  - ✅ VALID: data/benchmarks/PubMed/raw/ind.pubmed.ally
-  - ✅ VALID: data/benchmarks/PubMed/raw/ind.pubmed.allx
-  - ✅ VALID: data/benchmarks/PubMed/raw/ind.pubmed.ty
-  - ✅ VALID: data/benchmarks/PubMed/processed/pre_filter.pt
-  - ✅ VALID: data/benchmarks/PubMed/processed/data.pt
-  - ✅ VALID: data/benchmarks/PubMed/processed/pre_transform.pt
-  - ✅ VALID: data/benchmarks/wisconsin/raw
-  - ✅ VALID: data/benchmarks/wisconsin/processed
-  - ✅ VALID: data/benchmarks/wisconsin/raw/wisconsin_split_0.6_0.2_4.npz
-  - ✅ VALID: data/benchmarks/wisconsin/raw/wisconsin_split_0.6_0.2_2.npz
-  - ✅ VALID: data/benchmarks/wisconsin/raw/wisconsin_split_0.6_0.2_9.npz
-  - ✅ VALID: data/benchmarks/wisconsin/raw/wisconsin_split_0.6_0.2_0.npz
-  - ✅ VALID: data/benchmarks/wisconsin/raw/wisconsin_split_0.6_0.2_6.npz
-  - ✅ VALID: data/benchmarks/wisconsin/raw/wisconsin_split_0.6_0.2_7.npz
-  - ✅ VALID: data/benchmarks/wisconsin/raw/wisconsin_split_0.6_0.2_3.npz
-  - ✅ VALID: data/benchmarks/wisconsin/raw/wisconsin_split_0.6_0.2_8.npz
-  - ✅ VALID: data/benchmarks/wisconsin/raw/out1_node_feature_label.txt
-  - ✅ VALID: data/benchmarks/wisconsin/raw/wisconsin_split_0.6_0.2_5.npz
-  - ✅ VALID: data/benchmarks/wisconsin/raw/out1_graph_edges.txt
-  - ✅ VALID: data/benchmarks/wisconsin/raw/wisconsin_split_0.6_0.2_1.npz
-  - ✅ VALID: data/benchmarks/wisconsin/processed/pre_filter.pt
-  - ✅ VALID: data/benchmarks/wisconsin/processed/data.pt
-  - ✅ VALID: data/benchmarks/wisconsin/processed/pre_transform.pt
-  - ✅ VALID: data/benchmarks/texas/raw
-  - ✅ VALID: data/benchmarks/texas/processed
-  - ✅ VALID: data/benchmarks/texas/raw/texas_split_0.6_0.2_8.npz
-  - ✅ VALID: data/benchmarks/texas/raw/texas_split_0.6_0.2_9.npz
-  - ✅ VALID: data/benchmarks/texas/raw/texas_split_0.6_0.2_4.npz
-  - ✅ VALID: data/benchmarks/texas/raw/texas_split_0.6_0.2_3.npz
-  - ✅ VALID: data/benchmarks/texas/raw/texas_split_0.6_0.2_7.npz
-  - ✅ VALID: data/benchmarks/texas/raw/texas_split_0.6_0.2_0.npz
-  - ✅ VALID: data/benchmarks/texas/raw/texas_split_0.6_0.2_1.npz
-  - ✅ VALID: data/benchmarks/texas/raw/out1_node_feature_label.txt
-  - ✅ VALID: data/benchmarks/texas/raw/texas_split_0.6_0.2_6.npz
-  - ✅ VALID: data/benchmarks/texas/raw/texas_split_0.6_0.2_2.npz
-  - ✅ VALID: data/benchmarks/texas/raw/texas_split_0.6_0.2_5.npz
-  - ✅ VALID: data/benchmarks/texas/raw/out1_graph_edges.txt
-  - ✅ VALID: data/benchmarks/texas/processed/pre_filter.pt
-  - ✅ VALID: data/benchmarks/texas/processed/data.pt
-  - ✅ VALID: data/benchmarks/texas/processed/pre_transform.pt
-  - ✅ VALID: data/models/per-protein.h5
-  - ✅ VALID: data/sequences/uniprot_sprot.fasta
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet
-  - ✅ VALID: data/ground_truth/BIOGRID-ALL-4.4.248.mitab.txt
-  - ✅ VALID: data/ground_truth/neg_6.mitab
-  - ✅ VALID: data/ground_truth/neg_10.mitab
-  - ✅ VALID: data/ground_truth/neg_2.mitab
-  - ✅ VALID: data/ground_truth/neg_3.mitab
-  - ✅ VALID: data/ground_truth/neg_1.mitab
-  - ✅ VALID: data/ground_truth/neg_9.mitab
-  - ✅ VALID: data/ground_truth/neg_5.mitab
-  - ✅ VALID: data/ground_truth/neg_8.mitab
-  - ✅ VALID: data/ground_truth/neg_7.mitab
-  - ✅ VALID: data/ground_truth/neg_4.mitab
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.287.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.166.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.106.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.388.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.72.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.355.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.245.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.132.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.4.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.329.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.110.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.247.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.98.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.193.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.56.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.350.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.258.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.400.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.307.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.22.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.356.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.157.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.340.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.320.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.362.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.246.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.342.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.113.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.323.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.60.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.364.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.238.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.67.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.374.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.146.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.268.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.341.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.122.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.231.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.274.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.286.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.94.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.391.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.95.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.148.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.269.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.319.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.101.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.334.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.181.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.345.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.74.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.219.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.360.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.201.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.86.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.377.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.154.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.379.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.233.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.326.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.137.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.267.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.111.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.175.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.97.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.422.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.24.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.143.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.291.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.33.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.222.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.264.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.318.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.90.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.96.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.206.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.413.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.152.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.338.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.171.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.322.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.399.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.160.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.223.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.129.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.6.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.285.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.249.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.354.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.303.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.369.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.120.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.346.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.190.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.426.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.53.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.306.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.107.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.153.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.83.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.150.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.235.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.251.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.283.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.373.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.133.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.8.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.2.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.64.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.411.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.42.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.48.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.381.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.280.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.293.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.45.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.311.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.430.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.234.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.198.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.314.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.192.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.279.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.5.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.304.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.278.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.296.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.328.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.89.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.292.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.82.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.321.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.401.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.299.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.382.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.173.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.420.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.271.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.139.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.138.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.257.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.367.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.368.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.263.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.187.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.212.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.393.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.109.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.79.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.65.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.155.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.259.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.276.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.58.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.77.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.205.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.425.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.390.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.242.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.140.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.119.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.88.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.225.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.180.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.290.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.27.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.349.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.197.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.141.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.214.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.270.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.224.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.158.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.199.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.256.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.380.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.404.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.185.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.14.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.333.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.207.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.228.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.26.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.21.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.147.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.396.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.54.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.217.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.301.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.305.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.210.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.32.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.308.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.237.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.221.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.227.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.332.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.395.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.23.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.131.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.10.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.117.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.357.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.309.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.266.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.298.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.128.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.273.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.108.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.7.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.347.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.179.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.66.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.39.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.130.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.44.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.358.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.169.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.339.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.226.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.315.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.183.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.423.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.284.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.392.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.218.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.365.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.195.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.127.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.17.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.313.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.168.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.417.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.125.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.178.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.402.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.261.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.397.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.151.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.405.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.229.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.384.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.85.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.124.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.300.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.51.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.20.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.162.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.100.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.55.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.19.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.243.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.0.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.325.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.68.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.31.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.189.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.40.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.398.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.297.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.13.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.419.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.25.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.371.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.156.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.428.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.385.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.277.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.194.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.421.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.330.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.383.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.282.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.62.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.136.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.255.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.103.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.18.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.431.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.61.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.406.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.312.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.211.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.9.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.289.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.36.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.352.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.403.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.29.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.15.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.361.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.200.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.170.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.165.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.351.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.220.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.3.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.104.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.310.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.30.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.262.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.184.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.394.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.41.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.335.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.203.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.265.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.57.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.11.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.93.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.240.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.370.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.415.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.1.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.272.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.149.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.418.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.182.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.254.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.34.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.164.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.59.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.99.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.410.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.248.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.424.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.378.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.46.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.118.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.50.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.316.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.331.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.239.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.73.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.43.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.70.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.202.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.363.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.230.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.260.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.389.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.215.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.87.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.188.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.80.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.115.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.47.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.376.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.416.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.12.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.324.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.204.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.116.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.344.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.145.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.159.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.134.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.348.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.144.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.241.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.78.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.75.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.69.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.236.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.288.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.121.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.186.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.295.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.92.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.232.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.336.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.408.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.105.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.213.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.114.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.208.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.414.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.16.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.63.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.71.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.375.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.172.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.253.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.302.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.167.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.216.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.174.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.176.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.91.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.387.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.427.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.49.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.343.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.76.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.294.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.135.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.366.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.372.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.28.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.123.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.407.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.126.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.209.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.412.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.252.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.177.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.327.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.191.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.353.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.161.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.163.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.37.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.112.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.81.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.429.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.359.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.244.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.38.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.386.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.337.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.52.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.409.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.317.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.275.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.84.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.102.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.281.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.196.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.250.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.35.parquet
-  - ✅ VALID: data/ground_truth/negative_interactions.parquet/part.142.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.4.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.22.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.24.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.33.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.6.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.8.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.2.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.5.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.27.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.14.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.26.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.21.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.32.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.23.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.10.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.7.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.17.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.20.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.19.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.0.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.31.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.13.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.25.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.18.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.9.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.29.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.15.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.3.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.30.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.11.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.1.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.12.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.16.parquet
-  - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.28.parquet
-  - ✅ Local data is valid.
-  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/temp/main/dask
 
-======================================
-### System Resource Pre-flight Check ###
-======================================
-
-RAM: 119.67 GB Available / 125.59 GB Total
-Disk (/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311): 751.64 GB Free / 883.50 GB Total
-GPU(s):
-  - GPU 0 (NVIDIA RTX 6000 Ada Generation): 47.36 GB Total Memory
---------------------------------------
-
---- Full Configuration Values ---
-  API_MAPPING_FROM_DB                      | None
-  API_MAPPING_TO_DB                        | UniProtKB
-  APPLY_PCA_TO_W2V                         | True
-  BASE_CONFIG_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/configuration
-  BASE_DATA_DIR                            | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data
-  BASE_OUTPUT_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311
-  BENCHMARK_CHEBNET_K                      | 3
-  BENCHMARK_DIRECTGCN_DECOMPOSE_PROJECTIONS | False
-  BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS    | [64]
-  BENCHMARK_DIRECTGCN_NUM_BASES            | None
-  BENCHMARK_DIRECTGCN_NUM_BLOCKS           | None
-  BENCHMARK_DIRECTGCN_PROJ_NUM_BASES       | None
-  BENCHMARK_GAT_DROPOUT_RATE               | 0.25
-  BENCHMARK_GAT_HEADS                      | 2
-  BENCHMARK_GNN_DROPOUT_RATE               | 0.25
-  BENCHMARK_GNN_EPOCHS                     | 300
-  BENCHMARK_GNN_HIDDEN_CHANNELS            | 64
-  BENCHMARK_GNN_INIT_DIM                   | 64
-  BENCHMARK_GNN_LEARNING_RATE              | 0.01
-  BENCHMARK_GNN_MODELS_TO_RUN              | ['GCN', 'GAT', 'GraphSAGE', 'GIN', 'ChebNet', 'RGCN', 'DirGNN', 'DirectGCN']
-  BENCHMARK_GNN_NUM_LAYERS                 | 2
-  BENCHMARK_GNN_WEIGHT_DECAY               | 0.0005
-  BENCHMARK_NE_BATCH_SIZE                  | 128
-  BENCHMARK_NE_CLASSIFIER_C                | 1.0
-  BENCHMARK_NE_CLASSIFIER_MAX_ITER         | 1000
-  BENCHMARK_NE_CLASSIFIER_SOLVER           | lbfgs
-  BENCHMARK_NE_CONTEXT_SIZE                | 10
-  BENCHMARK_NE_EMBEDDING_DIM               | 64
-  BENCHMARK_NE_EPOCHS                      | 20
-  BENCHMARK_NE_LEARNING_RATE               | 0.01
-  BENCHMARK_NE_LOADER_WORKERS              | 1
-  BENCHMARK_NE_MODELS_TO_RUN               | ['Node2Vec']
-  BENCHMARK_NE_NUM_NEGATIVE_SAMPLES        | 1
-  BENCHMARK_NE_WALKS_PER_NODE              | 10
-  BENCHMARK_NE_WALK_LENGTH                 | 20
-  BENCHMARK_NODE_CLASSIFICATION_DATASETS   | ['KarateClub', 'Cora', 'CiteSeer', 'PubMed', 'Cornell', 'Texas', 'Wisconsin']
-  BENCHMARK_PCA_TARGET_DIM                 | 64
-  BENCHMARK_RGCN_NUM_RELATIONS             | 2
-  BENCHMARK_SAVE_EMBEDDINGS                | True
-  BENCHMARK_SPLIT_RATIOS                   | {'train': 0.2, 'val': 0.2, 'test': 0.6}
-  BENCHMARK_TEST_ON_UNDIRECTED             | True
-  BIOGRID_RAW_PATH                         | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/BIOGRID-ALL-4.4.248.mitab.txt
-  CHECKSUM_SKIP_SIZE_BYTES                 | 524288000
-  DASK_N_PARTITIONS                        | 32
-  DATALOADER_WORKERS                       | 0
-  DATA_BUNDLE_PATH                         | /home/iaebeid/.cache/protgram_directgcn/data_bundle.tar.gz
-  DATA_GROUND_TRUTH_DIR                    | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth
-  DATA_MANIFEST_PATH                       | /home/iaebeid/.cache/protgram_directgcn/data_manifest.json
-  DATA_MAPPINGS_DIR                        | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/mappings
-  DATA_MODELS_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/models
-  DATA_SEQUENCES_DIR                       | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/sequences
-  DATA_SOURCES                             | {'UNIPROT_SPROT_FASTA': {'url': 'https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/sequences/uniprot_sprot.fasta'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'BIOGRID_INTERACTIONS': {'url': 'https://downloads.thebiogrid.org/Download/BioGRID/Release-Archive/BIOGRID-4.4.248/BIOGRID-ALL-4.4.248.mitab.zip', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/BIOGRID-ALL-4.4.248.mitab.txt'), 'post_process': 'unzip', 'checksum': None, 'cacheable': True}, 'PROTT5_MODEL': {'url': 'https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/models/per-protein.h5'), 'post_process': None, 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_1': {'url': 'https://www.russelllab.org/negatives/16169070_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_1.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_2': {'url': 'https://www.russelllab.org/negatives/14605208_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_2.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_3': {'url': 'https://www.russelllab.org/negatives/14704431_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_3.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_4': {'url': 'https://www.russelllab.org/negatives/19123269_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_4.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_5': {'url': 'https://www.russelllab.org/negatives/10688190_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_5.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_6': {'url': 'https://www.russelllab.org/negatives/11283351_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_6.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_7': {'url': 'https://www.russelllab.org/negatives/16267556_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_7.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_8': {'url': 'https://www.russelllab.org/negatives/18509523_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_8.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_9': {'url': 'https://www.russelllab.org/negatives/17615063_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_9.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'NEG_INTERACTIONS_10': {'url': 'https://www.russelllab.org/negatives/18000013_neg.mitab.gz', 'type': 'file', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_10.mitab'), 'post_process': 'ungzip', 'checksum': None, 'cacheable': True}, 'BENCHMARK_KARATECLUB': {'type': 'pyg_dataset', 'name': 'KarateClub', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/KarateClub'), 'cacheable': True}, 'BENCHMARK_CORA': {'type': 'pyg_dataset', 'name': 'Cora', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/Cora'), 'cacheable': True}, 'BENCHMARK_CITESEER': {'type': 'pyg_dataset', 'name': 'CiteSeer', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/CiteSeer'), 'cacheable': True}, 'BENCHMARK_PUBMED': {'type': 'pyg_dataset', 'name': 'PubMed', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/PubMed'), 'cacheable': True}, 'BENCHMARK_CORNELL': {'type': 'pyg_dataset', 'name': 'Cornell', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/Cornell'), 'cacheable': True}, 'BENCHMARK_TEXAS': {'type': 'pyg_dataset', 'name': 'Texas', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/Texas'), 'cacheable': True}, 'BENCHMARK_WISCONSIN': {'type': 'pyg_dataset', 'name': 'Wisconsin', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks/Wisconsin'), 'cacheable': True}}
-  DATA_STANDARD_DATASETS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/benchmarks
-  DEBUG_VERBOSE                            | True
-  DEFAULT_WORKERS                          | 31
-  DIRECTGCN_DECOMPOSE_PROJECTIONS          | False
-  DIRECTGCN_HIDDEN_LAYER_DIMS              | [512, 256, 128, 64]
-  DIRECTGCN_NUM_BASES                      | None
-  DIRECTGCN_NUM_BLOCKS                     | None
-  DIRECTGCN_PROJ_NUM_BASES                 | None
-  DISABLE_INTERACTIVE_PROMPTS              | False
-  EARLY_STOPPING_PATIENCE                  | 10
-  ENABLE_FILE_LOGGING                      | True
-  EVAL_BATCH_SIZE                          | 512
-  EVAL_EDGE_EMBEDDING_METHOD               | concatenate
-  EVAL_EPOCHS                              | 2
-  EVAL_GENERATE_SHAP_SUMMARY               | True
-  EVAL_K_VALUES_FOR_TABLE                  | [50, 100]
-  EVAL_MAIN_EMBEDDING_FOR_STATS            | directgcn
-  EVAL_MLP_DENSE1_UNITS                    | 128
-  EVAL_MLP_DENSE2_UNITS                    | 64
-  EVAL_MLP_DROPOUT1_RATE                   | 0.4
-  EVAL_MLP_DROPOUT2_RATE                   | 0.4
-  EVAL_MLP_L2_REG                          | 1e-05
-  EVAL_MLP_LEARNING_RATE                   | 0.001
-  EVAL_N_FOLDS                             | 2
-  EVAL_STATISTICAL_TEST_ALPHA              | 0.05
-  FASTA_FILE_TO_PROCESS                    | UNIPROT_SPROT_FASTA
-  GCN_HETEROPHILY_THRESHOLD                | 0.0
-  GCN_PROPAGATION_EPSILON                  | 1e-09
-  GRAPH_BUILDER_WORKERS                    | 31
-  HPO_N_TRIALS                             | 2
-  HPO_PPI_MLP_SEARCH_SPACE                 | {'MLP_LEARNING_RATE': {'type': 'loguniform', 'low': 1e-05, 'high': 0.01, 'step': None, 'choices': None}, 'DENSE1_UNITS': {'type': 'int', 'low': 32.0, 'high': 512.0, 'step': 32, 'choices': None}, 'DROPOUT1_RATE': {'type': 'uniform', 'low': 0.1, 'high': 0.6, 'step': None, 'choices': None}, 'DENSE2_UNITS': {'type': 'int', 'low': 16.0, 'high': 256.0, 'step': 16, 'choices': None}, 'DROPOUT2_RATE': {'type': 'uniform', 'low': 0.1, 'high': 0.6, 'step': None, 'choices': None}, 'L2_REG': {'type': 'loguniform', 'low': 1e-06, 'high': 0.001, 'step': None, 'choices': None}, 'EVAL_BATCH_SIZE': {'type': 'categorical', 'low': None, 'high': None, 'step': None, 'choices': [512, 1024, 2048, 4096]}}
-  HPO_TARGET_EMBEDDING_MODEL               | directgcn
-  ID_MAPPING_MODE                          | regex
-  ID_MAPPING_PATH                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/mappings/id_mapping.parquet
-  LOG_DIR                                  | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/logs
-  LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE       | [{'name': 'ProtT5', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/models/per-protein.h5')}]
-  LSTM_BATCH_SIZE                          | 64
-  LSTM_DROPOUT_RATE                        | 0.5
-  LSTM_EARLY_STOPPING_MIN_DELTA            | 0.001
-  LSTM_EARLY_STOPPING_PATIENCE             | 10
-  LSTM_EMBEDDING_DIM                       | 100
-  LSTM_EPOCHS                              | 20
-  LSTM_HIDDEN_DIM                          | 256
-  LSTM_LEARNING_RATE                       | 0.001
-  LSTM_NUM_LAYERS                          | 2
-  LSTM_POOLING_STRATEGY                    | mean
-  LSTM_TRAIN_SEQ_LEN                       | 50
-  LSTM_TRAIN_STEP                          | 50
-  LSTM_USE_EARLY_STOPPING                  | True
-  LSTM_VALIDATION_SPLIT                    | 0.1
-  MAX_PAIRS_PER_CLASS                      | 200000
-  MEMORY_USAGE_STRATEGY                    | high
-  MLFLOW_BENCHMARK_EXPERIMENT_NAME         | GNN-Benchmarking
-  MLFLOW_EXPERIMENT_NAME                   | PPI-Link-Prediction
-  MLFLOW_INTERPRETABILITY_EXPERIMENT_NAME  | Interpretability
-  MLFLOW_LLMS_EXPERIMENT_NAME              | LLMs
-  MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME      | GNN-Benchmarking
-  MLFLOW_PROTGRAM_XGCN_EXPERIMENT_NAME     | ProtGram-XGCN
-  MLFLOW_TRACKING_URI                      | file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/mlruns
-  NEG_INTERACTIONS_PATH                    | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/negative_interactions.parquet
-  NEG_INTERACTIONS_RAW_PATHS               | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_1.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_2.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_3.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_4.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_5.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_6.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_7.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_8.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_9.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_10.mitab')]
-  ORIGINAL_SEQUENCE_FILE_PATHS             | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/sequences/uniprot_sprot.fasta')]
-  PCA_TARGET_DIMENSION                     | 64
-  PERFORM_H5_INTEGRITY_CHECK               | True
-  PERSISTENT_DATA_CACHE                    | /home/iaebeid/.cache/protgram_directgcn
-  PLOT_TRAINING_HISTORY                    | True
-  POOLING_WORKERS                          | 31
-  POS_INTERACTIONS_PATH                    | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/positive_interactions.parquet
-  PROCESSED_FILE_DEPENDENCIES              | {'positive_interactions.parquet': {'dependencies': ['BIOGRID-ALL-4.4.248.mitab.txt'], 'destination_dir_attr': 'DATA_GROUND_TRUTH_DIR'}, 'negative_interactions.parquet': {'dependencies': ['neg_1.mitab', 'neg_2.mitab', 'neg_3.mitab', 'neg_4.mitab', 'neg_5.mitab', 'neg_6.mitab', 'neg_7.mitab', 'neg_8.mitab', 'neg_9.mitab', 'neg_10.mitab'], 'destination_dir_attr': 'DATA_GROUND_TRUTH_DIR'}}
-  PROCESS_ID_MAPPING_FILE                  | False
-  PROJECT_ROOT                             | /home/iaebeid/documents/projects/ProtGram-DirectGCN
-  PROTGRAM_1GRAM_INIT_DIM                  | 512
-  PROTGRAM_CLEAN_FASTA_ON_PARSE            | True
-  PROTGRAM_CLOSEST_AA_K_HOPS               | 3
-  PROTGRAM_CLUSTER_GROUP_SIZE              | 5
-  PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES | 3000
-  PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING | 1
-  PROTGRAM_DEFAULT_TASK_TYPE               | next_node
-  PROTGRAM_DIRECTGCN_PATH_SELECTION        | full
-  PROTGRAM_DISABLE_GRAPH_COARSENING        | True
-  PROTGRAM_DROPOUT_RATE                    | 0.25
-  PROTGRAM_EARLY_STOPPING_MIN_DELTA        | 1e-05
-  PROTGRAM_EARLY_STOPPING_PATIENCE         | 50
-  PROTGRAM_EPOCHS_PER_LEVEL                | 300
-  PROTGRAM_EPOCHS_PER_LEVEL_ORIG           | 300
-  PROTGRAM_FASTA_ALPHABET                  | protein
-  PROTGRAM_FASTA_MAX_LEN                   | 10000
-  PROTGRAM_FASTA_MIN_LEN                   | 50
-  PROTGRAM_GATING_COEFF_MODE               | vector
-  PROTGRAM_GNN_HIDDEN_CHANNELS             | 64
-  PROTGRAM_GNN_NUM_LAYERS                  | 2
-  PROTGRAM_GRADIENT_ACCUMULATION_STEPS     | 1
-  PROTGRAM_HIERARCHICAL_POOLING_STRATEGY   | attention
-  PROTGRAM_LOG_ATTENTION_WEIGHTS           | True
-  PROTGRAM_LR                              | 0.005
-  PROTGRAM_LR_SCHEDULER_FACTOR             | 0.5
-  PROTGRAM_LR_SCHEDULER_PATIENCE           | 10
-  PROTGRAM_MASKED_NODE_FRACTION            | 0.15
-  PROTGRAM_MAX_CLUSTERS                    | 500
-  PROTGRAM_MIN_CLUSTERS                    | 2
-  PROTGRAM_MODELS_TO_TRAIN                 | ['directgcn']
-  PROTGRAM_NGRAM_MAX_N                     | 2
-  PROTGRAM_PARTITIONING_METHOD             | graclus
-  PROTGRAM_PROTEIN_POOLING_STRATEGY        | attention
-  PROTGRAM_RUN_SANITY_CHECK_PPI            | True
-  PROTGRAM_SANITY_CHECK_EPOCHS             | 5
-  PROTGRAM_SANITY_CHECK_SAMPLE_SIZE        | 2000
-  PROTGRAM_SANITY_CHECK_TEST_SPLIT         | 0.2
-  PROTGRAM_TARGET_NODES_PER_CLUSTER        | 1500
-  PROTGRAM_TASK_TYPES_PER_LEVEL            | {1: 'community', 2: 'next_node'}
-  PROTGRAM_USE_CLUSTER_TRAINING            | True
-  PROTGRAM_USE_EARLY_STOPPING              | True
-  PROTGRAM_USE_LR_SCHEDULER                | True
-  PROTGRAM_VALIDATE_COARSENING             | True
-  PROTGRAM_WEIGHT_DECAY                    | 0.0001
-  PROTT5_MODEL_PATH                        | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/models/per-protein.h5
-  RANDOM_STATE                             | 42
-  REGEX_COMPATIBILITY_SAMPLE_SIZE          | 1000
-  REGEX_CONFIDENCE_THRESHOLD               | 0.95
-  RESULTS_BENCHMARKING_DIR                 | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/benchmarking_results
-  RESULTS_BENCHMARK_EMBEDDINGS_DIR         | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/benchmarking_results/embeddings
-  RESULTS_EVALUATION_DIR                   | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/evaluation_results
-  RESULTS_GCN_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/gcn_embeddings
-  RESULTS_GRAPH_OBJECTS_DIR                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects
-  RESULTS_LSTM_EMBEDDINGS_DIR              | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/lstm_embeddings
-  RESULTS_TRANSFORMER_EMBEDDINGS_DIR       | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/transformer_embeddings
-  RESULTS_W2V_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/word2vec_embeddings
-  RUN_BENCHMARKING_PIPELINE                | False
-  RUN_HPO                                  | True
-  RUN_INTEGRATED_TESTS                     | False
-  RUN_LSTM_PIPELINE                        | False
-  RUN_MAIN_PPI_EVALUATION                  | True
-  RUN_PROTGRAM_PIPELINE                    | True
-  RUN_PROTGRAM_XGCN_PIPELINE               | True
-  RUN_SINGLETON_GCN_EVAL                   | False
-  RUN_TRANSFORMER_PIPELINE                 | False
-  RUN_WORD2VEC_PIPELINE                    | False
-  SEQUENCE_DOWNSAMPLE_FRACTION             | 0.01
-  SEQUENCE_FILE_PATHS                      | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/sequences/uniprot_sprot.fasta')]
-  SINGLETON_CHEBNET_K                      | 3
-  SINGLETON_DIRECTGCN_DECOMPOSE_PROJECTIONS | False
-  SINGLETON_DIRECTGCN_HIDDEN_LAYER_DIMS    | [64]
-  SINGLETON_DIRECTGCN_NUM_BASES            | None
-  SINGLETON_DIRECTGCN_NUM_BLOCKS           | None
-  SINGLETON_DIRECTGCN_PROJ_NUM_BASES       | None
-  SINGLETON_EVAL_EPOCHS                    | 300
-  SINGLETON_EVAL_GRADIENT_ACCUMULATION_STEPS | 1
-  SINGLETON_EVAL_LR                        | 0.01
-  SINGLETON_EVAL_MODELS_TO_RUN             | ['DirectGCN', 'GCN', 'RGCN', 'DirGNN']
-  SINGLETON_EVAL_TEST_SPLIT                | 0.2
-  SINGLETON_GAT_DROPOUT_RATE               | 0.25
-  SINGLETON_GAT_HEADS                      | 2
-  SINGLETON_GNN_DROPOUT_RATE               | 0.25
-  SINGLETON_GNN_HIDDEN_CHANNELS            | 64
-  SINGLETON_GNN_NUM_LAYERS                 | 2
-  SINGLETON_RGCN_NUM_RELATIONS             | 2
-  TEMP_PIPELINE_DIR                        | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/temp/main
-  TEMP_ROOT                                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/temp
-  TEMP_TESTS_DIR                           | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/temp/tests
-  TRANSFORMER_BASE_BATCH_SIZE              | 16
-  TRANSFORMER_CHUNK_SIZE                   | 10000
-  TRANSFORMER_INFERENCE_SAMPLE_FRACTION    | 1.0
-  TRANSFORMER_MAX_LENGTH                   | 1024
-  TRANSFORMER_MODELS_TO_RUN                | [{'name': 'ProtBERT', 'hf_id': 'Rostlab/prot_bert', 'is_t5': False, 'batch_size_multiplier': 1.0}, {'name': 'ESM2', 'hf_id': 'facebook/esm2_t6_8M_UR50D', 'is_t5': False, 'batch_size_multiplier': 1.0}]
-  TRANSFORMER_POOLING_STRATEGY             | mean
-  USE_CANONICAL_ID_MAPPING_FILE            | False
-  USE_MLFLOW                               | True
-  USE_XLA_COMPILATION                      | True
-  W2V_EPOCHS                               | 5
-  W2V_MIN_COUNT                            | 1
-  W2V_POOLING_STRATEGY                     | mean
-  W2V_VECTOR_SIZE                          | 100
-  W2V_WINDOW                               | 5
-  W2V_WORKERS                              | 31
---------------------------
-
-=====================================
-### Downsampling FASTA files (1.0%) ###
-=====================================
-
-  - Applying probabilistic sampling to 'uniprot_sprot.fasta'...
-  - Cleaning enabled for FASTA parsing.
-
-======================================
-### FASTA Downsampling Active (1.0%) ###
-======================================
+==================================
+### Aggregated Benchmark Summary ###
+==================================
 
 
-===============================================
-### PROCESSING DATASET: UNIPROT_SPROT_SAMPLED ###
-===============================================
+--- Results for Dataset: CiteSeer ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.2980           0.2931            0.2936         0.2981  None
+GraphSAGE   0.1970           0.1889            0.1890         0.1945  None
+      GIN   0.2890           0.2832            0.2855         0.2909  None
+  ChebNet   0.1900           0.1801            0.1819         0.1888  None
+ Node2Vec   0.4220           0.4127            0.4328         0.4181  None
+      GCN   0.2560           0.2453            0.2515         0.2509  None
+     RGCN   0.2250           0.2195            0.2197         0.2256  None
+   DirGNN   0.2460           0.2410            0.2482         0.2506  None
+DirectGCN   0.1850           0.1786            0.1830         0.1845  None
+DirectGCN   0.1820           0.1771            0.1784         0.1808  None
+DirectGCN   0.1730           0.1709            0.1776         0.1807  None
 
+--- Results for Dataset: CiteSeer_Undirected ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.2870           0.2800            0.2844         0.2862  None
+GraphSAGE   0.1920           0.1844            0.1948         0.1855  None
+      GIN   0.2750           0.2657            0.2682         0.2740  None
+  ChebNet   0.1740           0.1697            0.1769         0.1737  None
+      GCN   0.2550           0.2501            0.2492         0.2558  None
+     RGCN   0.2030           0.1923            0.1997         0.1956  None
+   DirGNN   0.2470           0.2409            0.2408         0.2450  None
+DirectGCN   0.2010           0.1973            0.1991         0.2024  None
+DirectGCN   0.1710           0.1694            0.1733         0.1787  None
+DirectGCN   0.1810           0.1824            0.1805         0.1866  None
 
-=== Existing Artifacts Availability ===
-Target dataset: uniprot_sprot_sampled
-You can populate the newly created results directories with artifacts from a previous run.
-Components to consider:
-  - graph_objects: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled
-  - gcn_embeddings: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/gcn_embeddings/uniprot_sprot_sampled
-  - word2vec_embeddings: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/word2vec_embeddings/uniprot_sprot_sampled
-  - lstm_embeddings: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/lstm_embeddings/uniprot_sprot_sampled
-  - transformer_embeddings: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/transformer_embeddings/uniprot_sprot_sampled
-  - evaluation_results: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/evaluation_results/uniprot_sprot_sampled
+--- Results for Dataset: Cora ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.4290           0.4280            0.4243         0.4571  None
+GraphSAGE   0.2780           0.2585            0.2686         0.2739  None
+      GIN   0.4490           0.4447            0.4354         0.4769  None
+  ChebNet   0.2070           0.2028            0.2019         0.2151  None
+ Node2Vec   0.6650           0.6605            0.6517         0.7082  None
+      GCN   0.3590           0.3556            0.3543         0.3878  None
+     RGCN   0.3670           0.3555            0.3535         0.3783  None
+   DirGNN   0.3400           0.3312            0.3313         0.3595  None
+DirectGCN   0.2610           0.2564            0.2598         0.2799  None
+DirectGCN   0.2170           0.2017            0.2048         0.2183  None
+DirectGCN   0.2140           0.2167            0.2421         0.2471  None
 
-Options:
-  1) Manual copy: I will copy all desired artifacts into the listed directories and then continue.
-  2) Auto-copy:   Copy artifacts automatically from a previous run directory I will provide.
-  3) Skip:        Do nothing and proceed normally.
+--- Results for Dataset: Cora_Undirected ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.3870           0.3985            0.3926         0.4394  None
+GraphSAGE   0.2770           0.2779            0.2773         0.3064  None
+      GIN   0.4250           0.4161            0.4228         0.4531  None
+  ChebNet   0.1970           0.1947            0.1968         0.2122  None
+      GCN   0.3270           0.3315            0.3282         0.3673  None
+     RGCN   0.3270           0.3261            0.3231         0.3621  None
+   DirGNN   0.3290           0.3310            0.3326         0.3728  None
+DirectGCN   0.2590           0.2540            0.2533         0.2698  None
+DirectGCN   0.2120           0.2037            0.2067         0.2185  None
+DirectGCN   0.2310           0.2270            0.2261         0.2408  None
 
-Choose an option [1=manual copy, 2=auto-copy, 3=skip]:   - No checkpoint found for step: 'GraphBuilding'.
+--- Results for Dataset: Cornell ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.3784           0.1217            0.0903         0.1867  None
+GraphSAGE   0.4054           0.1453            0.1800         0.2067  None
+      GIN   0.2973           0.1000            0.0759         0.1467  None
+  ChebNet   0.2703           0.1578            0.1481         0.1733  None
+ Node2Vec   0.2703           0.1954            0.2026         0.2067  None
+      GCN   0.3514           0.2504            0.2086         0.3533  None
+     RGCN   0.4595           0.2781            0.3489         0.2800  None
+   DirGNN   0.3514           0.1867            0.1467         0.2600  None
+DirectGCN   0.2973           0.1572            0.1437         0.1800  None
+DirectGCN   0.3243           0.2014            0.2108         0.2467  None
+DirectGCN   0.3243           0.1941            0.1849         0.2200  None
 
-=== Graph Objects Availability ===
-Target dataset: uniprot_sprot_sampled
-Expected graph objects directory:
-  /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled
+--- Results for Dataset: Cornell_Undirected ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.4324           0.2964            0.4481         0.2867  None
+GraphSAGE   0.4595           0.2222            0.2467         0.2533  None
+      GIN   0.4324           0.1532            0.1549         0.2200  None
+  ChebNet   0.3243           0.1724            0.1870         0.1933  None
+      GCN   0.3514           0.1355            0.1750         0.1800  None
+     RGCN   0.4595           0.2710            0.3156         0.2800  None
+   DirGNN   0.2973           0.1771            0.1878         0.1867  None
+DirectGCN   0.3514           0.1752            0.1941         0.1933  None
+DirectGCN   0.4324           0.2708            0.4023         0.2667  None
+DirectGCN   0.3243           0.1650            0.1720         0.1800  None
 
-You have three options:
-  1) Manually copy: I will copy previously built graph objects into the directory above and then continue.
-  2) Auto-copy:     Copy graph objects automatically from a previous run directory I will provide.
-  3) Rebuild:       Rebuild graph objects now (may take significant time).
+--- Results for Dataset: KarateClub ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.5909           0.6296            0.7694         0.7750  None
+GraphSAGE   0.6364           0.6471            0.7098         0.6786  None
+      GIN   0.7727           0.7685            0.7560         0.8643  None
+  ChebNet   0.3182           0.3554            0.4028         0.3869  None
+ Node2Vec   0.1786           0.1736            0.1929         0.1742  None
+      GCN   0.5909           0.6287            0.6917         0.7643  None
+     RGCN   0.6364           0.5306            0.5500         0.5893  None
+   DirGNN   0.7727           0.7750            0.7542         0.8643  None
+DirectGCN   0.6818           0.6929            0.7113         0.8143  None
+DirectGCN   0.2727           0.2724            0.4405         0.3464  None
+DirectGCN   0.5909           0.6072            0.6771         0.7643  None
 
-Choose an option [1=manual copy, 2=auto-copy, 3=rebuild]:
-Rebuild selected. Proceeding to rebuild graph objects.
+--- Results for Dataset: KarateClub_Undirected ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.4545           0.3188            0.2344         0.5000  None
+GraphSAGE   0.4091           0.3000            0.2500         0.4643  None
+      GIN   0.8182           0.8375            0.8438         0.9000  None
+  ChebNet   0.4545           0.3231            0.3125         0.3726  None
+      GCN   0.6818           0.7237            0.8021         0.8250  None
+     RGCN   0.7273           0.5619            0.5337         0.6500  None
+   DirGNN   0.7727           0.7685            0.7560         0.8643  None
+DirectGCN   0.6364           0.6517            0.6979         0.7893  None
+DirectGCN   0.4545           0.3904            0.4683         0.4679  None
+DirectGCN   0.5000           0.5517            0.6667         0.6821  None
 
-======================================================
-### Building all n-gram graphs for the main pipeline ###
-======================================================
+--- Results for Dataset: ProtGram_n1_Singleton_uniprot_sprot_sampled ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GCN   1.0000           1.0000               N/A            N/A  None
+     RGCN   0.5714           0.3636               N/A            N/A  None
+   DirGNN   1.0000           1.0000               N/A            N/A  None
+DirectGCN   0.7143           0.2778               N/A            N/A  None
 
-ProtGramDataBuilder initialized: n_max=2, configured_workers=31, output_dir='/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled'
-  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/temp/main/graph_builder
+--- Results for Dataset: PubMed ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.4040           0.3887            0.3894         0.3983  None
+GraphSAGE   0.3840           0.3354            0.3397         0.3379  None
+      GIN   0.4110           0.3376            0.3741         0.3656  None
+  ChebNet   0.3540           0.3285            0.3433         0.3514  None
+ Node2Vec   0.6900           0.6714            0.6747         0.6769  None
+      GCN   0.3540           0.3357            0.3440         0.3443  None
+     RGCN   0.3420           0.3166            0.3191         0.3183  None
+   DirGNN   0.3530           0.3385            0.3468         0.3475  None
+DirectGCN   0.3280           0.3154            0.3185         0.3228  None
+DirectGCN   0.3590           0.3072            0.3108         0.3141  None
+DirectGCN   0.3480           0.3181            0.3185         0.3182  None
 
-===================================================================================================================================================================
-### ProtGramDataBuilder Initialized (Output: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled) ###
-===================================================================================================================================================================
+--- Results for Dataset: PubMed_Undirected ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.4030           0.3911            0.4049         0.4068  None
+GraphSAGE   0.3390           0.3208            0.3345         0.3272  None
+      GIN   0.4380           0.3960            0.3991         0.3983  None
+  ChebNet   0.3310           0.3144            0.3211         0.3208  None
+      GCN   0.3570           0.3519            0.3760         0.3763  None
+     RGCN   0.3950           0.3659            0.3667         0.3669  None
+   DirGNN   0.3520           0.3462            0.3684         0.3671  None
+DirectGCN   0.3630           0.3396            0.3491         0.3466  None
+DirectGCN   0.3620           0.3448            0.3552         0.3532  None
+DirectGCN   0.3750           0.3611            0.3773         0.3695  None
 
+--- Results for Dataset: Texas ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.5135           0.2291            0.2217         0.2375  None
+GraphSAGE   0.6216           0.4457            0.5122         0.4625  None
+      GIN   0.5676           0.2746            0.2545         0.3750  None
+  ChebNet   0.4324           0.1943            0.1932         0.2062  None
+ Node2Vec   0.4865           0.2155            0.2083         0.2271  None
+      GCN   0.5405           0.1818            0.1613         0.2083  None
+     RGCN   0.7027           0.4507            0.4187         0.5062  None
+   DirGNN   0.6486           0.2983            0.4191         0.3021  None
+DirectGCN   0.4865           0.1731            0.1607         0.1875  None
+DirectGCN   0.3243           0.1696            0.1805         0.1646  None
+DirectGCN   0.5135           0.2185            0.2043         0.2375  None
 
-=============================================
-### PIPELINE STEP 1: Building N-gram Graphs ###
-=============================================
+--- Results for Dataset: Texas_Undirected ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.5135           0.2291            0.2217         0.2375  None
+GraphSAGE   0.6216           0.4457            0.5122         0.4625  None
+      GIN   0.5676           0.2746            0.2545         0.3750  None
+  ChebNet   0.4595           0.2035            0.1989         0.2167  None
+      GCN   0.5135           0.2514            0.2564         0.2500  None
+     RGCN   0.6216           0.4307            0.4350         0.4354  None
+   DirGNN   0.4865           0.1698            0.1552         0.1875  None
+DirectGCN   0.5676           0.1875            0.1641         0.2188  None
+DirectGCN   0.5135           0.3880            0.4094         0.4208  None
+DirectGCN   0.5405           0.2514            0.2286         0.2875  None
 
+--- Results for Dataset: Wisconsin ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.4314           0.1484            0.1667         0.1722  None
+GraphSAGE   0.4510           0.1942            0.1744         0.2259  None
+      GIN   0.4510           0.2935            0.2671         0.3537  None
+  ChebNet   0.4314           0.2592            0.2477         0.2778  None
+ Node2Vec   0.3529           0.1573            0.1540         0.1611  None
+      GCN   0.4510           0.3196            0.2995         0.3537  None
+     RGCN   0.4706           0.2977            0.3102         0.3102  None
+   DirGNN   0.4510           0.2930            0.3310         0.2843  None
+DirectGCN   0.4510           0.3078            0.2969         0.3519  None
+DirectGCN   0.3725           0.1980            0.2024         0.1954  None
+DirectGCN   0.4314           0.2955            0.2887         0.3454  None
 
---- Resource Alert: Graph Building ---
-  Input FASTA size is ~0.00 GB.
-  This process can generate intermediate files up to 3-5x this size (~0.01 - 0.01 GB).
-  Please ensure you have sufficient free disk space.
---------------------------------------
-
-  Info: Graph file for n=1 not found. Will proceed with full build.
-Temporary files will be stored in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/temp/main/graph_builder
-Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled
-  - Cleaning enabled for FASTA parsing.
-
-=========================================
-### Phase 1: Generating All N-Gram Maps ###
-=========================================
-
-  - Creating map for n=1...
-    Unique n-gram map for n=1 (size: 21) created.
-  - Creating map for n=2...
-    Unique n-gram map for n=2 (size: 421) created.
-
-<<< Phase 1 finished in 12.48s.
-
-===================================
-### Phase 2: Generating All Edges ###
-===================================
-
-  - Aggregating edges for n=1...
-  - Aggregating edges for n=2...
-
-<<< Phase 2 finished in 24.04s.
-
-======================================================
-### Phase 3: Building and saving final graph objects ###
-======================================================
-
-
---- Processing n = 1 for final graph object ---
-  Loaded 21 n-grams for n=1 from map file.
-  Instantiating DirectedNgramGraph object for n=1 from file...
-    Loading edges from aggregated_edges_n1.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled/ngram_graph_n1/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
-    --- Graph Statistics for n=1 ---
-      Nodes: 21
-      Edges (unique weighted): 421
-      Density (E / N^2): 0.9546
-    Generating community labels for all connected components...
-      Found 1 connected components.
-      Graph has one component, running Louvain community detection...
-      Found 10 communities across all components.
-      Homophily Ratio: 0.1286
-/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/data/protgram_helper.py:97: UserWarning: Sparse CSR tensor support is in beta state. If you miss a functionality in the sparse tensor support, please submit a feature request to https://github.com/pytorch/pytorch/issues. (Triggered internally at ../aten/src/ATen/SparseCsrTensorImpl.cpp:53.)
-  sparse_csr_tensor = graph_object.A_undirected_w.to_sparse_csr()
-      Average Degree Centrality: 1.0952
-      Average Clustering Coefficient: 1.0000
-      Degree Assortativity: -0.0476
-      - Closeness and Betweenness Centrality calculations have been disabled for performance.
-    --- End of Graph Statistics for n=1 ---
-  Graph for n=1 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
-
---- Processing n = 2 for final graph object ---
-  Loaded 421 n-grams for n=2 from map file.
-  Instantiating DirectedNgramGraph object for n=2 from file...
-    Loading edges from aggregated_edges_n2.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled/ngram_graph_n2/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
-    --- Graph Statistics for n=2 ---
-      Nodes: 421
-      Edges (unique weighted): 8399
-      Density (E / N^2): 0.0474
-    Generating community labels for all connected components...
-      Found 1 connected components.
-      Graph has one component, running Louvain community detection...
-      Found 13 communities across all components.
-      Homophily Ratio: 0.4113
-      Average Degree Centrality: 0.0929
-      Average Clustering Coefficient: 0.0951
-      Degree Assortativity: -0.0258
-      - Closeness and Betweenness Centrality calculations have been disabled for performance.
-    --- End of Graph Statistics for n=2 ---
-  Graph for n=2 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
-
-<<< Phase 3 finished in 1.99s.
-
-==========================================
-### Phase 4: Cleaning up temporary files ###
-==========================================
-
-  Temporary directory /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/temp/main/graph_builder cleaned up.
-<<< Phase 4 finished in 0.00s.
-
-==============================================
-### N-gram Graph Building FINISHED in 42.59s ###
-==============================================
-
-  ✅ Checkpoint saved for step: 'GraphBuilding'
-
-✅ Pipeline step 'Graph Building' is complete. Continue to the next step? (y/n):   - No checkpoint found for step: 'PreAnalysis'.
-No benchmark results were generated to aggregate.
+--- Results for Dataset: Wisconsin_Undirected ---
+    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
+      GAT   0.4314           0.1484            0.1667         0.1722  None
+GraphSAGE   0.4510           0.1942            0.1744         0.2259  None
+      GIN   0.4510           0.2935            0.2671         0.3537  None
+  ChebNet   0.4902           0.3070            0.2773         0.3870  None
+      GCN   0.3725           0.2356            0.2295         0.2463  None
+     RGCN   0.4902           0.2979            0.2701         0.3500  None
+   DirGNN   0.4118           0.2755            0.2549         0.3389  None
+DirectGCN   0.4118           0.2582            0.2594         0.2880  None
+DirectGCN   0.4902           0.3504            0.3850         0.3852  None
+DirectGCN   0.4510           0.3692            0.3363         0.4361  None
 
 ################################################################################
 ### PRELIMINARY ANALYSIS COMPLETE ###
 ################################################################################
-
-✅ Pipeline step 'Preliminary Analysis' is complete. Continue to the next step? (y/n):   ✅ Checkpoint saved for step: 'PreAnalysis'
+--- Interactive prompts disabled. Automatically continuing after 'Preliminary Analysis'. ---
+  ✅ Checkpoint saved for step: 'PreAnalysis'
 
 ===================================
 ### Running HPO for ProtGram-XGCN ###
 ===================================
 
 HyperparameterOptimizer initialized.
-2025/09/10 01:24:20 INFO mlflow.tracking.fluent: Experiment with name 'ProtGram-XGCN' does not exist. Creating a new experiment.
-[32m[I 2025-09-10 01:24:20,188][0m A new study created in memory with name: no-name-9c6234cf-a7f4-40c1-8840-55ecc9fdccaa[0m
-Using device: cuda
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
+2025/09/10 03:36:13 INFO mlflow.tracking.fluent: Experiment with name 'ProtGram-XGCN' does not exist. Creating a new experiment.
+[32m[I 2025-09-10 03:36:13,053][0m A new study created in memory with name: no-name-45dae721-c56f-4aa3-8623-1c82e4132e69[0m
+[33m[W 2025-09-10 03:36:13,055][0m Trial 0 failed with parameters: {'PROTGRAM_LR': 0.0010253509690168502, 'PROTGRAM_WEIGHT_DECAY': 0.006351221010640704, 'PROTGRAM_GNN_HIDDEN_CHANNELS': 32, 'PROTGRAM_GNN_NUM_LAYERS': 2} because of the following error: KeyError('PROTGRAM_GATING_COEFF_MODE').[0m
+Traceback (most recent call last):
+  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/optuna/study/_optimize.py", line 201, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/models/hyperparameter_optimizer.py", line 221, in objective
+    trial_cfg.PROTGRAM_GATING_COEFF_MODE = suggest(trial, 'PROTGRAM_GATING_COEFF_MODE')
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/models/hyperparameter_optimizer.py", line 202, in suggest
+    spec = search_space[name]
+           ~~~~~~~~~~~~^^^^^^
+KeyError: 'PROTGRAM_GATING_COEFF_MODE'
+[33m[W 2025-09-10 03:36:13,062][0m Trial 0 failed with value None.[0m
 
-=====================================================================
-### PIPELINE STEP: Training ProtGram Models & Generating Embeddings ###
-=====================================================================
 
-
-=======================================================
-### Processing Model Type: DIRECTGCN (Gating: vector) ###
-=======================================================
-
-
-==========================================================
-### Processing N-gram Level: n = 1 for model 'directgcn' ###
-==========================================================
-
-  Loading graph for n=1 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
-  Initializing n=1 features with random noise (dim=512).
-  Generating self-supervised labels for task: 'community'
-    Generating community labels for all connected components...
-      Found 1 connected components.
-      Graph has one component, running Louvain community detection...
-      Found 10 communities across all components.
-  Graph n=1 Homophily Ratio: 0.1286. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved=50, source=HPO-trial); use_cluster_training=False; cluster_threshold=3000; num_nodes=21
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: community)...
-    Epoch: 001, Loss: 2.2664, Train Acc: 0.0952, LR: 0.001025
-    Epoch: 010, Loss: 1.9835, Train Acc: 0.2381, LR: 0.001025
-    Epoch: 020, Loss: 1.6252, Train Acc: 0.4286, LR: 0.001025
-    Epoch: 030, Loss: 1.4113, Train Acc: 0.6667, LR: 0.001025
-    Epoch: 040, Loss: 1.2540, Train Acc: 0.7619, LR: 0.001025
-    Epoch: 050, Loss: 0.9773, Train Acc: 0.7143, LR: 0.001025
-  Extracting embeddings for 21 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-
-==========================================================
-### Processing N-gram Level: n = 2 for model 'directgcn' ###
-==========================================================
-
-  Loading graph for n=2 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
-  Pooling (n-1)-gram embeddings to initialize features for n=2 graph (Strategy: attention)...
-
-[A
-[A  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 421 nodes.
-
-[A
-[A  Graph n=2 Homophily Ratio: 0.0171. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved=50, source=HPO-trial); use_cluster_training=False; cluster_threshold=3000; num_nodes=421
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: next_node)...
-    Epoch: 001, Loss: 6.0807, Train Acc: 0.0024, LR: 0.001025
-    Epoch: 010, Loss: 5.7828, Train Acc: 0.0380, LR: 0.001025
-    Epoch: 020, Loss: 5.4827, Train Acc: 0.0618, LR: 0.001025
-    Epoch: 030, Loss: 5.1450, Train Acc: 0.0570, LR: 0.001025
-    Epoch: 040, Loss: 4.6671, Train Acc: 0.0499, LR: 0.001025
-    Epoch: 050, Loss: 4.3873, Train Acc: 0.0879, LR: 0.001025
-  Extracting embeddings for 421 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-  Hierarchical training complete. Starting protein-level pooling...
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=1 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=2 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-[A
-
-[A
-
-===============================================
-### ProtGram Embedding PIPELINE STEP FINISHED ###
-===============================================
-
-[32m[I 2025-09-10 01:24:27,430][0m Trial 0 finished with value: inf and parameters: {'PROTGRAM_LR': 0.0010253509690168502, 'PROTGRAM_WEIGHT_DECAY': 0.006351221010640704, 'PROTGRAM_GNN_HIDDEN_CHANNELS': 32, 'PROTGRAM_GNN_NUM_LAYERS': 2, 'PROTGRAM_GATING_COEFF_MODE': 'vector'}. Best is trial 0 with value: inf.[0m
-Using device: cuda
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-
-=====================================================================
-### PIPELINE STEP: Training ProtGram Models & Generating Embeddings ###
-=====================================================================
-
+--- ❌ ERROR processing dataset: uniprot_sprot_sampled ---
+  This dataset will be skipped. The pipeline will continue with the next one.
+  Error details: 'PROTGRAM_GATING_COEFF_MODE'
+Traceback (most recent call last):
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/entry/main.py", line 450, in run
+    best_xgcn_params = optimizer.optimize_protgram_xgcn()
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/models/hyperparameter_optimizer.py", line 256, in optimize_protgram_xgcn
+    study.optimize(objective, n_trials=getattr(self.base_config, 'HPO_N_TRIALS', 10), show_progress_bar=True)
+  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/optuna/study/study.py", line 490, in optimize
+    _optimize(
+  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/optuna/study/_optimize.py", line 63, in _optimize
+    _optimize_sequential(
+  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/optuna/study/_optimize.py", line 160, in _optimize_sequential
+    frozen_trial_id = _run_trial(study, func, catch)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/optuna/study/_optimize.py", line 258, in _run_trial
+    raise func_err
+  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/optuna/study/_optimize.py", line 201, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/models/hyperparameter_optimizer.py", line 221, in objective
+    trial_cfg.PROTGRAM_GATING_COEFF_MODE = suggest(trial, 'PROTGRAM_GATING_COEFF_MODE')
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/models/hyperparameter_optimizer.py", line 202, in suggest
+    spec = search_space[name]
+           ~~~~~~~~~~~~^^^^^^
+KeyError: 'PROTGRAM_GATING_COEFF_MODE'
 
 =====================================================
-### Processing Model Type: DIRECTGCN (Gating: none) ###
+### Full Orchestration Finished in 6542.31 seconds. ###
 =====================================================
 
 
-==========================================================
-### Processing N-gram Level: n = 1 for model 'directgcn' ###
-==========================================================
+=========================
+### Launching MLflow UI ###
+=========================
 
-  Loading graph for n=1 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
-  Initializing n=1 features with random noise (dim=512).
-  Generating self-supervised labels for task: 'community'
-    Generating community labels for all connected components...
-      Found 1 connected components.
-      Graph has one component, running Louvain community detection...
-      Found 10 communities across all components.
-  Graph n=1 Homophily Ratio: 0.1286. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved=50, source=HPO-trial); use_cluster_training=False; cluster_threshold=3000; num_nodes=21
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: community)...
-    Epoch: 001, Loss: 2.3202, Train Acc: 0.0952, LR: 0.008148
-    Epoch: 010, Loss: 2.0024, Train Acc: 0.4286, LR: 0.008148
-    Epoch: 020, Loss: 1.6438, Train Acc: 0.4286, LR: 0.008148
-    Epoch: 030, Loss: 1.6036, Train Acc: 0.5238, LR: 0.008148
-    Epoch: 040, Loss: 1.3647, Train Acc: 0.3810, LR: 0.008148
-    Epoch: 050, Loss: 1.0969, Train Acc: 0.6190, LR: 0.008148
-  Extracting embeddings for 21 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
+--- Headless/SSH environment detected. ---
+To view the MLflow UI, run the following command on your local machine:
 
-==========================================================
-### Processing N-gram Level: n = 2 for model 'directgcn' ###
-==========================================================
+  mlflow ui --backend-store-uri file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_014709/mlruns
 
-  Loading graph for n=2 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
-  Pooling (n-1)-gram embeddings to initialize features for n=2 graph (Strategy: attention)...
-
-[A
-[A  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 421 nodes.
-
-[A
-[A  Graph n=2 Homophily Ratio: 0.0171. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved=50, source=HPO-trial); use_cluster_training=False; cluster_threshold=3000; num_nodes=421
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: next_node)...
-    Epoch: 001, Loss: 6.0799, Train Acc: 0.0024, LR: 0.008148
-    Epoch: 010, Loss: 4.3702, Train Acc: 0.0523, LR: 0.008148
-    Epoch: 020, Loss: 3.9246, Train Acc: 0.0760, LR: 0.008148
-    Epoch: 030, Loss: 3.6991, Train Acc: 0.0974, LR: 0.008148
-    Epoch: 040, Loss: 3.4782, Train Acc: 0.0879, LR: 0.008148
-    Epoch: 050, Loss: 3.3229, Train Acc: 0.0641, LR: 0.008148
-  Extracting embeddings for 421 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-  Hierarchical training complete. Starting protein-level pooling...
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=1 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=2 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-[A
-
-[A
-
-===============================================
-### ProtGram Embedding PIPELINE STEP FINISHED ###
-===============================================
-
-[32m[I 2025-09-10 01:24:34,233][0m Trial 1 finished with value: inf and parameters: {'PROTGRAM_LR': 0.008148293210105292, 'PROTGRAM_WEIGHT_DECAY': 1.2087541473056965e-06, 'PROTGRAM_GNN_HIDDEN_CHANNELS': 32, 'PROTGRAM_GNN_NUM_LAYERS': 3, 'PROTGRAM_GATING_COEFF_MODE': None}. Best is trial 0 with value: inf.[0m
-
-
-================================
-### ProtGram-XGCN HPO Finished ###
-================================
-
-  Best average training loss: inf
-    - PROTGRAM_LR: 0.0010253509690168502
-    - PROTGRAM_WEIGHT_DECAY: 0.006351221010640704
-    - PROTGRAM_GNN_HIDDEN_CHANNELS: 32
-    - PROTGRAM_GNN_NUM_LAYERS: 2
-    - PROTGRAM_GATING_COEFF_MODE: vector
-  Applied best ProtGram-XGCN hyperparameters to config.
-
-=======================================
-### Preparing Pipeline: ProtGram-XGCN ###
-=======================================
-
-  - No checkpoint found for step: 'ProtGram-XGCN'.
-Using device: cuda
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-
-=====================================================================
-### PIPELINE STEP: Training ProtGram Models & Generating Embeddings ###
-=====================================================================
-
-
-=======================================================
-### Processing Model Type: DIRECTGCN (Gating: vector) ###
-=======================================================
-
-
-==========================================================
-### Processing N-gram Level: n = 1 for model 'directgcn' ###
-==========================================================
-
-  Loading graph for n=1 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
-  Initializing n=1 features with random noise (dim=512).
-  Generating self-supervised labels for task: 'community'
-    Generating community labels for all connected components...
-      Found 1 connected components.
-      Graph has one component, running Louvain community detection...
-      Found 10 communities across all components.
-  Graph n=1 Homophily Ratio: 0.1286. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved=50, source=HPO-trial); use_cluster_training=False; cluster_threshold=3000; num_nodes=21
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: community)...
-    Epoch: 001, Loss: 2.2664, Train Acc: 0.0952, LR: 0.001025
-    Epoch: 010, Loss: 1.9835, Train Acc: 0.2381, LR: 0.001025
-    Epoch: 020, Loss: 1.6252, Train Acc: 0.4286, LR: 0.001025
-    Epoch: 030, Loss: 1.4113, Train Acc: 0.6667, LR: 0.001025
-    Epoch: 040, Loss: 1.2540, Train Acc: 0.7619, LR: 0.001025
-    Epoch: 050, Loss: 0.9773, Train Acc: 0.7143, LR: 0.001025
-  Extracting embeddings for 21 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-
-==========================================================
-### Processing N-gram Level: n = 2 for model 'directgcn' ###
-==========================================================
-
-  Loading graph for n=2 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
-  Pooling (n-1)-gram embeddings to initialize features for n=2 graph (Strategy: attention)...
-  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 421 nodes.
-  Graph n=2 Homophily Ratio: 0.0171. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved=50, source=HPO-trial); use_cluster_training=False; cluster_threshold=3000; num_nodes=421
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: next_node)...
-    Epoch: 001, Loss: 6.0807, Train Acc: 0.0024, LR: 0.001025
-    Epoch: 010, Loss: 5.7828, Train Acc: 0.0380, LR: 0.001025
-    Epoch: 020, Loss: 5.4827, Train Acc: 0.0618, LR: 0.001025
-    Epoch: 030, Loss: 5.1450, Train Acc: 0.0570, LR: 0.001025
-    Epoch: 040, Loss: 4.6671, Train Acc: 0.0499, LR: 0.001025
-    Epoch: 050, Loss: 4.3873, Train Acc: 0.0879, LR: 0.001025
-  Extracting embeddings for 421 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-  Hierarchical training complete. Starting protein-level pooling...
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=1 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=2 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-
-
-
-===============================================
-### ProtGram Embedding PIPELINE STEP FINISHED ###
-===============================================
-
-  Skipping standardization, assuming generated embeddings use correct IDs.
-  ✅ Checkpoint saved for step: 'ProtGram-XGCN'
-
-✅ Pipeline step 'ProtGram-XGCN' is complete. Continue to the next step? (y/n):   Scanning for existing, pre-generated embeddings...
-    Discovered pre-existing embedding: directgcn_none_gating_n1_dim64
-    Discovered pre-existing embedding: directgcn_none_gating_n2_dim64
-
-=========================================
-### Running Hyperparameter Optimization ###
-=========================================
-
-HyperparameterOptimizer initialized.
-
-=============================================
-### Starting HPO for PPI MLP on 'directgcn' ###
-=============================================
-
-  Loading and splitting data for HPO study...
-  Memory Strategy ('high'): Attempting to load 'directgcn_vector_gating_n1_dim64.h5' into RAM.
-  Memory Strategy ('high'): Loading 'directgcn_vector_gating_n1_dim64.h5' into RAM for faster access.
-  Detected new, efficient HDF5 format for 'directgcn_vector_gating_n1_dim64.h5'.
-  Streaming-filtering pairs from: positive_interactions.parquet (label: 1)...
-Reading parquet directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/positive_interactions.parquet
-Contents: ['part.4.parquet', 'part.22.parquet', 'part.24.parquet', 'part.33.parquet', 'part.6.parquet', 'part.8.parquet', 'part.2.parquet', 'part.5.parquet', 'part.27.parquet', 'part.14.parquet', 'part.26.parquet', 'part.21.parquet', 'part.32.parquet', 'part.23.parquet', 'part.10.parquet', 'part.7.parquet', 'part.17.parquet', 'part.20.parquet', 'part.19.parquet', 'part.0.parquet', 'part.31.parquet', 'part.13.parquet', 'part.25.parquet', 'part.18.parquet', 'part.9.parquet', 'part.29.parquet', 'part.15.parquet', 'part.3.parquet', 'part.30.parquet', 'part.11.parquet', 'part.1.parquet', 'part.12.parquet', 'part.16.parquet', 'part.28.parquet']
-    Found 295 pairs with available embeddings.
-  Streaming-filtering pairs from: negative_interactions.parquet (label: 0)...
-    Applying reservoir sampling to keep up to 295 pairs...
-Reading parquet directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/negative_interactions.parquet
-Contents: ['part.287.parquet', 'part.166.parquet', 'part.106.parquet', 'part.388.parquet', 'part.72.parquet', 'part.355.parquet', 'part.245.parquet', 'part.132.parquet', 'part.4.parquet', 'part.329.parquet', 'part.110.parquet', 'part.247.parquet', 'part.98.parquet', 'part.193.parquet', 'part.56.parquet', 'part.350.parquet', 'part.258.parquet', 'part.400.parquet', 'part.307.parquet', 'part.22.parquet', 'part.356.parquet', 'part.157.parquet', 'part.340.parquet', 'part.320.parquet', 'part.362.parquet', 'part.246.parquet', 'part.342.parquet', 'part.113.parquet', 'part.323.parquet', 'part.60.parquet', 'part.364.parquet', 'part.238.parquet', 'part.67.parquet', 'part.374.parquet', 'part.146.parquet', 'part.268.parquet', 'part.341.parquet', 'part.122.parquet', 'part.231.parquet', 'part.274.parquet', 'part.286.parquet', 'part.94.parquet', 'part.391.parquet', 'part.95.parquet', 'part.148.parquet', 'part.269.parquet', 'part.319.parquet', 'part.101.parquet', 'part.334.parquet', 'part.181.parquet', 'part.345.parquet', 'part.74.parquet', 'part.219.parquet', 'part.360.parquet', 'part.201.parquet', 'part.86.parquet', 'part.377.parquet', 'part.154.parquet', 'part.379.parquet', 'part.233.parquet', 'part.326.parquet', 'part.137.parquet', 'part.267.parquet', 'part.111.parquet', 'part.175.parquet', 'part.97.parquet', 'part.422.parquet', 'part.24.parquet', 'part.143.parquet', 'part.291.parquet', 'part.33.parquet', 'part.222.parquet', 'part.264.parquet', 'part.318.parquet', 'part.90.parquet', 'part.96.parquet', 'part.206.parquet', 'part.413.parquet', 'part.152.parquet', 'part.338.parquet', 'part.171.parquet', 'part.322.parquet', 'part.399.parquet', 'part.160.parquet', 'part.223.parquet', 'part.129.parquet', 'part.6.parquet', 'part.285.parquet', 'part.249.parquet', 'part.354.parquet', 'part.303.parquet', 'part.369.parquet', 'part.120.parquet', 'part.346.parquet', 'part.190.parquet', 'part.426.parquet', 'part.53.parquet', 'part.306.parquet', 'part.107.parquet', 'part.153.parquet', 'part.83.parquet', 'part.150.parquet', 'part.235.parquet', 'part.251.parquet', 'part.283.parquet', 'part.373.parquet', 'part.133.parquet', 'part.8.parquet', 'part.2.parquet', 'part.64.parquet', 'part.411.parquet', 'part.42.parquet', 'part.48.parquet', 'part.381.parquet', 'part.280.parquet', 'part.293.parquet', 'part.45.parquet', 'part.311.parquet', 'part.430.parquet', 'part.234.parquet', 'part.198.parquet', 'part.314.parquet', 'part.192.parquet', 'part.279.parquet', 'part.5.parquet', 'part.304.parquet', 'part.278.parquet', 'part.296.parquet', 'part.328.parquet', 'part.89.parquet', 'part.292.parquet', 'part.82.parquet', 'part.321.parquet', 'part.401.parquet', 'part.299.parquet', 'part.382.parquet', 'part.173.parquet', 'part.420.parquet', 'part.271.parquet', 'part.139.parquet', 'part.138.parquet', 'part.257.parquet', 'part.367.parquet', 'part.368.parquet', 'part.263.parquet', 'part.187.parquet', 'part.212.parquet', 'part.393.parquet', 'part.109.parquet', 'part.79.parquet', 'part.65.parquet', 'part.155.parquet', 'part.259.parquet', 'part.276.parquet', 'part.58.parquet', 'part.77.parquet', 'part.205.parquet', 'part.425.parquet', 'part.390.parquet', 'part.242.parquet', 'part.140.parquet', 'part.119.parquet', 'part.88.parquet', 'part.225.parquet', 'part.180.parquet', 'part.290.parquet', 'part.27.parquet', 'part.349.parquet', 'part.197.parquet', 'part.141.parquet', 'part.214.parquet', 'part.270.parquet', 'part.224.parquet', 'part.158.parquet', 'part.199.parquet', 'part.256.parquet', 'part.380.parquet', 'part.404.parquet', 'part.185.parquet', 'part.14.parquet', 'part.333.parquet', 'part.207.parquet', 'part.228.parquet', 'part.26.parquet', 'part.21.parquet', 'part.147.parquet', 'part.396.parquet', 'part.54.parquet', 'part.217.parquet', 'part.301.parquet', 'part.305.parquet', 'part.210.parquet', 'part.32.parquet', 'part.308.parquet', 'part.237.parquet', 'part.221.parquet', 'part.227.parquet', 'part.332.parquet', 'part.395.parquet', 'part.23.parquet', 'part.131.parquet', 'part.10.parquet', 'part.117.parquet', 'part.357.parquet', 'part.309.parquet', 'part.266.parquet', 'part.298.parquet', 'part.128.parquet', 'part.273.parquet', 'part.108.parquet', 'part.7.parquet', 'part.347.parquet', 'part.179.parquet', 'part.66.parquet', 'part.39.parquet', 'part.130.parquet', 'part.44.parquet', 'part.358.parquet', 'part.169.parquet', 'part.339.parquet', 'part.226.parquet', 'part.315.parquet', 'part.183.parquet', 'part.423.parquet', 'part.284.parquet', 'part.392.parquet', 'part.218.parquet', 'part.365.parquet', 'part.195.parquet', 'part.127.parquet', 'part.17.parquet', 'part.313.parquet', 'part.168.parquet', 'part.417.parquet', 'part.125.parquet', 'part.178.parquet', 'part.402.parquet', 'part.261.parquet', 'part.397.parquet', 'part.151.parquet', 'part.405.parquet', 'part.229.parquet', 'part.384.parquet', 'part.85.parquet', 'part.124.parquet', 'part.300.parquet', 'part.51.parquet', 'part.20.parquet', 'part.162.parquet', 'part.100.parquet', 'part.55.parquet', 'part.19.parquet', 'part.243.parquet', 'part.0.parquet', 'part.325.parquet', 'part.68.parquet', 'part.31.parquet', 'part.189.parquet', 'part.40.parquet', 'part.398.parquet', 'part.297.parquet', 'part.13.parquet', 'part.419.parquet', 'part.25.parquet', 'part.371.parquet', 'part.156.parquet', 'part.428.parquet', 'part.385.parquet', 'part.277.parquet', 'part.194.parquet', 'part.421.parquet', 'part.330.parquet', 'part.383.parquet', 'part.282.parquet', 'part.62.parquet', 'part.136.parquet', 'part.255.parquet', 'part.103.parquet', 'part.18.parquet', 'part.431.parquet', 'part.61.parquet', 'part.406.parquet', 'part.312.parquet', 'part.211.parquet', 'part.9.parquet', 'part.289.parquet', 'part.36.parquet', 'part.352.parquet', 'part.403.parquet', 'part.29.parquet', 'part.15.parquet', 'part.361.parquet', 'part.200.parquet', 'part.170.parquet', 'part.165.parquet', 'part.351.parquet', 'part.220.parquet', 'part.3.parquet', 'part.104.parquet', 'part.310.parquet', 'part.30.parquet', 'part.262.parquet', 'part.184.parquet', 'part.394.parquet', 'part.41.parquet', 'part.335.parquet', 'part.203.parquet', 'part.265.parquet', 'part.57.parquet', 'part.11.parquet', 'part.93.parquet', 'part.240.parquet', 'part.370.parquet', 'part.415.parquet', 'part.1.parquet', 'part.272.parquet', 'part.149.parquet', 'part.418.parquet', 'part.182.parquet', 'part.254.parquet', 'part.34.parquet', 'part.164.parquet', 'part.59.parquet', 'part.99.parquet', 'part.410.parquet', 'part.248.parquet', 'part.424.parquet', 'part.378.parquet', 'part.46.parquet', 'part.118.parquet', 'part.50.parquet', 'part.316.parquet', 'part.331.parquet', 'part.239.parquet', 'part.73.parquet', 'part.43.parquet', 'part.70.parquet', 'part.202.parquet', 'part.363.parquet', 'part.230.parquet', 'part.260.parquet', 'part.389.parquet', 'part.215.parquet', 'part.87.parquet', 'part.188.parquet', 'part.80.parquet', 'part.115.parquet', 'part.47.parquet', 'part.376.parquet', 'part.416.parquet', 'part.12.parquet', 'part.324.parquet', 'part.204.parquet', 'part.116.parquet', 'part.344.parquet', 'part.145.parquet', 'part.159.parquet', 'part.134.parquet', 'part.348.parquet', 'part.144.parquet', 'part.241.parquet', 'part.78.parquet', 'part.75.parquet', 'part.69.parquet', 'part.236.parquet', 'part.288.parquet', 'part.121.parquet', 'part.186.parquet', 'part.295.parquet', 'part.92.parquet', 'part.232.parquet', 'part.336.parquet', 'part.408.parquet', 'part.105.parquet', 'part.213.parquet', 'part.114.parquet', 'part.208.parquet', 'part.414.parquet', 'part.16.parquet', 'part.63.parquet', 'part.71.parquet', 'part.375.parquet', 'part.172.parquet', 'part.253.parquet', 'part.302.parquet', 'part.167.parquet', 'part.216.parquet', 'part.174.parquet', 'part.176.parquet', 'part.91.parquet', 'part.387.parquet', 'part.427.parquet', 'part.49.parquet', 'part.343.parquet', 'part.76.parquet', 'part.294.parquet', 'part.135.parquet', 'part.366.parquet', 'part.372.parquet', 'part.28.parquet', 'part.123.parquet', 'part.407.parquet', 'part.126.parquet', 'part.209.parquet', 'part.412.parquet', 'part.252.parquet', 'part.177.parquet', 'part.327.parquet', 'part.191.parquet', 'part.353.parquet', 'part.161.parquet', 'part.163.parquet', 'part.37.parquet', 'part.112.parquet', 'part.81.parquet', 'part.429.parquet', 'part.359.parquet', 'part.244.parquet', 'part.38.parquet', 'part.386.parquet', 'part.337.parquet', 'part.52.parquet', 'part.409.parquet', 'part.317.parquet', 'part.275.parquet', 'part.84.parquet', 'part.102.parquet', 'part.281.parquet', 'part.196.parquet', 'part.250.parquet', 'part.35.parquet', 'part.142.parquet']
-    Found 295 pairs with available embeddings.
-  Data split: 472 training pairs, 118 validation pairs.
-  Pre-computing feature matrices for HPO study...
-
-
-  Feature matrices created. X_train shape: (472, 128)
-2025/09/10 01:25:45 INFO mlflow.tracking.fluent: Experiment with name 'PPI-Link-Prediction' does not exist. Creating a new experiment.
-/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/models/hyperparameter_optimizer.py:155: ExperimentalWarning: MLflowCallback is experimental (supported from v1.4.0). The interface can change in the future.
-  mlflow_callback = MLflowCallback(
-[32m[I 2025-09-10 01:25:45,799][0m A new study created in memory with name: no-name-ca1202a9-8334-4273-a1be-2c2a7f7ee736[0m
-PPIPipeline initialized.
-
-=========================================
-### PPI Evaluation Pipeline Initialized ###
-=========================================
-
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-    Train size: 472, Validation size: 118
-    Train class distribution: Pos=236, Neg=236
-    MLP model built with input shape: 128
-    Starting model training for 2 epochs...
-Epoch 1/2
-Epoch 2/2
-    Model training finished.
-    Evaluating model on validation set...
-[32m[I 2025-09-10 01:25:57,964][0m Trial 0 finished with value: 0.49080723929905196 and parameters: {'MLP_LEARNING_RATE': 0.0001329291894316216, 'DENSE1_UNITS': 512, 'DROPOUT1_RATE': 0.4659969709057026, 'DENSE2_UNITS': 160, 'DROPOUT2_RATE': 0.17800932022121826, 'L2_REG': 2.9375384576328313e-06, 'EVAL_BATCH_SIZE': 1024}. Best is trial 0 with value: 0.49080723929905196.[0m
-PPIPipeline initialized.
-
-=========================================
-### PPI Evaluation Pipeline Initialized ###
-=========================================
-
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-    Train size: 472, Validation size: 118
-    Train class distribution: Pos=236, Neg=236
-    MLP model built with input shape: 128
-    Starting model training for 2 epochs...
-Epoch 1/2
-Epoch 2/2
-    Model training finished.
-    Evaluating model on validation set...
-[32m[I 2025-09-10 01:26:00,013][0m Trial 1 finished with value: 0.48391266877334094 and parameters: {'MLP_LEARNING_RATE': 1.1527987128232396e-05, 'DENSE1_UNITS': 512, 'DROPOUT1_RATE': 0.5162213204002108, 'DENSE2_UNITS': 64, 'DROPOUT2_RATE': 0.19091248360355031, 'L2_REG': 3.549878832196506e-06, 'EVAL_BATCH_SIZE': 1024}. Best is trial 0 with value: 0.49080723929905196.[0m
-
-
-==========================================
-### Hyperparameter Optimization Finished ###
-==========================================
-
-  Number of finished trials: 2
-  Best trial value (AUC): 0.4908
-  Best hyperparameters found:
-    - MLP_LEARNING_RATE: 0.0001329291894316216
-    - DENSE1_UNITS: 512
-    - DROPOUT1_RATE: 0.4659969709057026
-    - DENSE2_UNITS: 160
-    - DROPOUT2_RATE: 0.17800932022121826
-    - L2_REG: 2.9375384576328313e-06
-    - EVAL_BATCH_SIZE: 1024
-  Applied best HPO hyperparameters to PPI config.
-
-================================================================
-### Running Main Evaluation for Dataset: uniprot_sprot_sampled ###
-================================================================
-
-  - No checkpoint found for step: 'PPI_Evaluation'.
-PPIPipeline initialized.
-
-=========================================
-### PPI Evaluation Pipeline Initialized ###
-=========================================
-
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-
-===============================================
-### PPI EVALUATION PIPELINE (MAIN EVALUATION) ###
-===============================================
-
-
-==================================
-### Processing Embedding: ProtT5 ###
-==================================
-
-  Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/models/per-protein.h5
-  Memory Strategy ('high'): Attempting to load 'per-protein.h5' into RAM.
-  Memory Strategy ('high'): Loading 'per-protein.h5' into RAM for faster access.
-  Found 573650 embeddings. Filtering interaction files against these IDs...
-  Applying cap on positive pairs: up to 200000 per class.
-  High-performance filtering pairs from: positive_interactions.parquet (label: 1)...
-    Applying random sampling to keep up to 200000 pairs...
-    Found 200000 pairs with available embeddings.
-  High-performance filtering pairs from: negative_interactions.parquet (label: 0)...
-    Applying random sampling to keep up to 200000 pairs...
-    Found 200000 pairs with available embeddings.
-Starting CV workflow for ProtT5. Total samples: 400000
-
-[A
-  --- Fold 1/2 for ProtT5 ---
-
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-    Train size: 200000, Validation size: 200000
-    Train class distribution: Pos=100000, Neg=100000
-    MLP model built with input shape: 2048
-    Starting model training for 2 epochs...
-Epoch 1/2
-Epoch 2/2
-    Model training finished.
-    Evaluating model on validation set...
-    Fold 1 Metrics: {'precision_sklearn': 0.7796958487464036, 'recall_sklearn': 0.83468, 'f1_sklearn': 0.8062515696539999, 'auc_sklearn': 0.88781801495, 'roc_data': (array([0.     , 0.     , 0.     , ..., 0.99979, 0.99981, 1.     ],
-      dtype=float32), array([0.     , 0.00113, 0.00847, ..., 1.     , 1.     , 1.     ],
-      dtype=float32), array([          inf, 1.0000000e+00, 9.9902344e-01, ..., 7.7342987e-04,
-       7.6150894e-04, 1.9717216e-04], dtype=float32)), 'hits_at_50': 0.0005, 'precision_at_50': 1.0, 'hits_count_at_50': 50.0, 'ndcg_at_50': 1.0, 'hits_at_100': 0.001, 'precision_at_100': 1.0, 'hits_count_at_100': 100.0, 'ndcg_at_100': 1.0, 'diagnostic_top10_preview': [(1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1)]}
-    Fold 1 completed in 17.70s.
-
-[A
-  --- Fold 2/2 for ProtT5 ---
-
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-
-[A[A
-    Train size: 200000, Validation size: 200000
-    Train class distribution: Pos=100000, Neg=100000
-    MLP model built with input shape: 2048
-    Starting model training for 2 epochs...
-Epoch 1/2
-Epoch 2/2
-    Model training finished.
-    Evaluating model on validation set...
-    Fold 2 Metrics: {'precision_sklearn': 0.779381114219727, 'recall_sklearn': 0.83015, 'f1_sklearn': 0.8039648643675489, 'auc_sklearn': 0.8867009217, 'roc_data': (array([0.     , 0.     , 0.     , ..., 0.99975, 0.99977, 1.     ],
-      dtype=float32), array([0.     , 0.00232, 0.01247, ..., 1.     , 1.     , 1.     ],
-      dtype=float32), array([          inf, 1.0000000e+00, 9.9902344e-01, ..., 1.0089874e-03,
-       9.9658966e-04, 4.0316582e-04], dtype=float32)), 'hits_at_50': 0.0005, 'precision_at_50': 1.0, 'hits_count_at_50': 50.0, 'ndcg_at_50': 1.0, 'hits_at_100': 0.001, 'precision_at_100': 1.0, 'hits_count_at_100': 100.0, 'ndcg_at_100': 1.0, 'diagnostic_top10_preview': [(1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1), (1.0, 1)]}
-    Fold 2 completed in 15.33s.
-
-[A
-[ACV workflow for ProtT5 finished in 33.17s.
---- Memory Usage (After processing ProtT5): RSS = 11024.41 MB ---
-  GPU Memory: Allocated = 64.00 MB, Reserved = 66.00 MB
-
-======================================================
-### Processing Embedding: directgcn_vector_gating_n1 ###
-======================================================
-
-  Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/gcn_embeddings/uniprot_sprot_sampled/directgcn_vector_gating_n1_dim64.h5
-  Memory Strategy ('high'): Attempting to load 'directgcn_vector_gating_n1_dim64.h5' into RAM.
-  Memory Strategy ('high'): Loading 'directgcn_vector_gating_n1_dim64.h5' into RAM for faster access.
-  Detected new, efficient HDF5 format for 'directgcn_vector_gating_n1_dim64.h5'.
-  Found 5597 embeddings. Filtering interaction files against these IDs...
-  Applying cap on positive pairs: up to 200000 per class.
-  High-performance filtering pairs from: positive_interactions.parquet (label: 1)...
-    Found 295 pairs with available embeddings.
-  High-performance filtering pairs from: negative_interactions.parquet (label: 0)...
-    Applying random sampling to keep up to 295 pairs...
-    Found 295 pairs with available embeddings.
-Starting CV workflow for directgcn_vector_gating_n1. Total samples: 590
-
-[A
-  --- Fold 1/2 for directgcn_vector_gating_n1 ---
-
-
-[A[A
-
-
-[A[A
-    Train size: 295, Validation size: 295
-    Train class distribution: Pos=147, Neg=148
-    MLP model built with input shape: 128
-    Starting model training for 2 epochs...
-Epoch 1/2
-Epoch 2/2
-    Model training finished.
-    Evaluating model on validation set...
-    Fold 1 Metrics: {'precision_sklearn': 0.85, 'recall_sklearn': 0.11486486486486487, 'f1_sklearn': 0.20238095238095238, 'auc_sklearn': 0.5983636697922413, 'roc_data': (array([0.        , 0.        , 0.        , 0.        , 0.        ,
-       0.01360544, 0.02040816, 0.05442177, 0.08163265, 0.15646258,
-       0.21088435, 0.414966  , 0.5102041 , 0.79591835, 0.88435376,
-       0.9727891 , 0.9863946 , 0.99319726, 1.        ], dtype=float32), array([0.        , 0.00675676, 0.02027027, 0.04054054, 0.05405406,
-       0.07432432, 0.11486486, 0.19594595, 0.24324325, 0.3310811 ,
-       0.38513514, 0.5878378 , 0.6418919 , 0.8040541 , 0.8581081 ,
-       0.9527027 , 0.9797297 , 0.9932432 , 1.        ], dtype=float32), array([       inf, 0.5029297 , 0.5024414 , 0.5019531 , 0.50146484,
-       0.50097656, 0.5004883 , 0.5       , 0.49951172, 0.49902344,
-       0.49853516, 0.49804688, 0.4975586 , 0.4970703 , 0.49658203,
-       0.49609375, 0.49560547, 0.4951172 , 0.49414062], dtype=float32)), 'hits_at_50': 0.25, 'precision_at_50': 0.74, 'hits_count_at_50': 37.0, 'ndcg_at_50': 0.7895869646356329, 'hits_at_100': 0.4391891891891892, 'precision_at_100': 0.65, 'hits_count_at_100': 65.0, 'ndcg_at_100': 0.7014822634170409, 'diagnostic_top10_preview': [(0.5029296875, 1), (0.50244140625, 1), (0.50244140625, 1), (0.501953125, 1), (0.501953125, 1), (0.501953125, 1), (0.50146484375, 1), (0.50146484375, 1), (0.5009765625, 1), (0.5009765625, 1)]}
-    Fold 1 completed in 2.29s.
-
-[A
-  --- Fold 2/2 for directgcn_vector_gating_n1 ---
-
-
-[A[A
-
-
-[A[A
-    Train size: 295, Validation size: 295
-    Train class distribution: Pos=148, Neg=147
-    MLP model built with input shape: 128
-    Starting model training for 2 epochs...
-Epoch 1/2
-Epoch 2/2
-    Model training finished.
-    Evaluating model on validation set...
-    Fold 2 Metrics: {'precision_sklearn': 0.4982456140350877, 'recall_sklearn': 0.9659863945578231, 'f1_sklearn': 0.6574074074074074, 'auc_sklearn': 0.5436661150946865, 'roc_data': (array([0.        , 0.        , 0.00675676, 0.01351351, 0.06081081,
-       0.10135135, 0.17567568, 0.29054055, 0.4391892 , 0.5540541 ,
-       0.6891892 , 0.777027  , 0.8310811 , 0.9662162 , 1.        ,
-       1.        ], dtype=float32), array([0.        , 0.00680272, 0.00680272, 0.02721088, 0.07482993,
-       0.12244898, 0.21088435, 0.36734694, 0.48979592, 0.5986394 ,
-       0.72789115, 0.8435374 , 0.9047619 , 0.9659864 , 0.9863946 ,
-       1.        ], dtype=float32), array([       inf, 0.50634766, 0.5058594 , 0.5053711 , 0.5048828 ,
-       0.50439453, 0.50390625, 0.50341797, 0.5029297 , 0.5024414 ,
-       0.5019531 , 0.50146484, 0.50097656, 0.5004883 , 0.5       ,
-       0.49951172], dtype=float32)), 'hits_at_50': 0.19047619047619047, 'precision_at_50': 0.56, 'hits_count_at_50': 28.0, 'ndcg_at_50': 0.5681637982317936, 'hits_at_100': 0.3877551020408163, 'precision_at_100': 0.57, 'hits_count_at_100': 57.0, 'ndcg_at_100': 0.5743147411910245, 'diagnostic_top10_preview': [(0.50634765625, 1), (0.505859375, 0), (0.50537109375, 0), (0.50537109375, 1), (0.50537109375, 1), (0.50537109375, 1), (0.5048828125, 0), (0.5048828125, 1), (0.5048828125, 0), (0.5048828125, 1)]}
-    Fold 2 completed in 2.25s.
-
-[A
-[ACV workflow for directgcn_vector_gating_n1 finished in 4.55s.
---- Memory Usage (After processing directgcn_vector_gating_n1): RSS = 10134.38 MB ---
-  GPU Memory: Allocated = 64.00 MB, Reserved = 66.00 MB
-
-======================================================
-### Processing Embedding: directgcn_vector_gating_n2 ###
-======================================================
-
-  Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/gcn_embeddings/uniprot_sprot_sampled/directgcn_vector_gating_n2_dim64.h5
-  Memory Strategy ('high'): Attempting to load 'directgcn_vector_gating_n2_dim64.h5' into RAM.
-  Memory Strategy ('high'): Loading 'directgcn_vector_gating_n2_dim64.h5' into RAM for faster access.
-  Detected new, efficient HDF5 format for 'directgcn_vector_gating_n2_dim64.h5'.
-  Found 5597 embeddings. Filtering interaction files against these IDs...
-  Applying cap on positive pairs: up to 200000 per class.
-  High-performance filtering pairs from: positive_interactions.parquet (label: 1)...
-    Found 295 pairs with available embeddings.
-  High-performance filtering pairs from: negative_interactions.parquet (label: 0)...
-    Applying random sampling to keep up to 295 pairs...
-    Found 295 pairs with available embeddings.
-Starting CV workflow for directgcn_vector_gating_n2. Total samples: 590
-
-[A
-  --- Fold 1/2 for directgcn_vector_gating_n2 ---
-
-
-[A[A
-
-
-[A[A
-    Train size: 295, Validation size: 295
-    Train class distribution: Pos=147, Neg=148
-    MLP model built with input shape: 128
-    Starting model training for 2 epochs...
-Epoch 1/2
-Epoch 2/2
-    Model training finished.
-    Evaluating model on validation set...
-    Fold 1 Metrics: {'precision_sklearn': 0.8571428571428571, 'recall_sklearn': 0.04054054054054054, 'f1_sklearn': 0.07741935483870968, 'auc_sklearn': 0.5029187350615922, 'roc_data': (array([0.        , 0.        , 0.        , 0.        , 0.01360544,
-       0.05442177, 0.06802721, 0.23129252, 0.2857143 , 0.63265306,
-       0.7346939 , 0.9319728 , 0.9659864 , 0.99319726, 1.        ,
-       1.        ], dtype=float32), array([0.        , 0.00675676, 0.02027027, 0.03378378, 0.0472973 ,
-       0.11486486, 0.12837838, 0.25675675, 0.31756756, 0.6148649 ,
-       0.6959459 , 0.9054054 , 0.9256757 , 0.9797297 , 0.9864865 ,
-       1.        ], dtype=float32), array([       inf, 0.50439453, 0.50146484, 0.50097656, 0.5       ,
-       0.49902344, 0.49853516, 0.49804688, 0.4975586 , 0.4970703 ,
-       0.49658203, 0.49609375, 0.49560547, 0.4951172 , 0.4946289 ,
-       0.49414062], dtype=float32)), 'hits_at_50': 0.1891891891891892, 'precision_at_50': 0.56, 'hits_count_at_50': 28.0, 'ndcg_at_50': 0.6264485409006975, 'hits_at_100': 0.34459459459459457, 'precision_at_100': 0.51, 'hits_count_at_100': 51.0, 'ndcg_at_100': 0.5634530215100497, 'diagnostic_top10_preview': [(0.50439453125, 1), (0.50244140625, 1), (0.50146484375, 1), (0.5009765625, 1), (0.5009765625, 1), (0.50048828125, 1), (0.50048828125, 0), (0.5, 1), (0.5, 0), (0.4990234375, 1)]}
-    Fold 1 completed in 2.44s.
-
-[A
-  --- Fold 2/2 for directgcn_vector_gating_n2 ---
-
-
-[A[A
-
-
-[A[A
-    Train size: 295, Validation size: 295
-    Train class distribution: Pos=148, Neg=147
-    MLP model built with input shape: 128
-    Starting model training for 2 epochs...
-Epoch 1/2
-Epoch 2/2
-    Model training finished.
-    Evaluating model on validation set...
-    Fold 2 Metrics: {'precision_sklearn': 0.0, 'recall_sklearn': 0.0, 'f1_sklearn': 0.0, 'auc_sklearn': 0.5140650854936569, 'roc_data': (array([0.        , 0.        , 0.00675676, 0.01351351, 0.10810811,
-       0.1418919 , 0.2635135 , 0.31756756, 0.4391892 , 0.4864865 ,
-       0.6554054 , 0.75      , 0.8716216 , 0.8986486 , 0.9662162 ,
-       0.972973  , 0.9864865 , 1.        ], dtype=float32), array([0.        , 0.00680272, 0.04761905, 0.07482993, 0.12244898,
-       0.14965986, 0.2585034 , 0.292517  , 0.46938777, 0.5102041 ,
-       0.6938776 , 0.76870745, 0.8707483 , 0.89115644, 0.9591837 ,
-       0.97959185, 1.        , 1.        ], dtype=float32), array([       inf, 0.49267578, 0.4921875 , 0.49194336, 0.49145508,
-       0.4909668 , 0.49047852, 0.48999023, 0.48950195, 0.48901367,
-       0.4885254 , 0.4880371 , 0.48754883, 0.48706055, 0.48657227,
-       0.48632812, 0.48583984, 0.48486328], dtype=float32)), 'hits_at_50': 0.17687074829931973, 'precision_at_50': 0.52, 'hits_count_at_50': 26.0, 'ndcg_at_50': 0.5735541364689465, 'hits_at_100': 0.3401360544217687, 'precision_at_100': 0.5, 'hits_count_at_100': 50.0, 'ndcg_at_100': 0.5354677793997286, 'diagnostic_top10_preview': [(0.49267578125, 1), (0.4921875, 0), (0.4921875, 1), (0.4921875, 1), (0.4921875, 1), (0.4921875, 1), (0.4921875, 1), (0.4921875, 1), (0.491943359375, 0), (0.491943359375, 1)]}
-    Fold 2 completed in 2.26s.
-
-[A
-[ACV workflow for directgcn_vector_gating_n2 finished in 4.71s.
---- Memory Usage (After processing directgcn_vector_gating_n2): RSS = 10188.45 MB ---
-  GPU Memory: Allocated = 64.00 MB, Reserved = 66.00 MB
-
-==========================================================
-### Processing Embedding: directgcn_none_gating_n1_dim64 ###
-==========================================================
-
-  Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/gcn_embeddings/uniprot_sprot_sampled/directgcn_none_gating_n1_dim64.h5
-  Memory Strategy ('high'): Attempting to load 'directgcn_none_gating_n1_dim64.h5' into RAM.
-  Memory Strategy ('high'): Loading 'directgcn_none_gating_n1_dim64.h5' into RAM for faster access.
-  Detected new, efficient HDF5 format for 'directgcn_none_gating_n1_dim64.h5'.
-  Found 5597 embeddings. Filtering interaction files against these IDs...
-  Applying cap on positive pairs: up to 200000 per class.
-  High-performance filtering pairs from: positive_interactions.parquet (label: 1)...
-    Found 295 pairs with available embeddings.
-  High-performance filtering pairs from: negative_interactions.parquet (label: 0)...
-    Applying random sampling to keep up to 295 pairs...
-    Found 295 pairs with available embeddings.
-Starting CV workflow for directgcn_none_gating_n1_dim64. Total samples: 590
-
-[A
-  --- Fold 1/2 for directgcn_none_gating_n1_dim64 ---
-
-
-[A[A
-
-
-[A[A
-    Train size: 295, Validation size: 295
-    Train class distribution: Pos=147, Neg=148
-    MLP model built with input shape: 128
-    Starting model training for 2 epochs...
-Epoch 1/2
-Epoch 2/2
-    Model training finished.
-    Evaluating model on validation set...
-    Fold 1 Metrics: {'precision_sklearn': 0.5016949152542373, 'recall_sklearn': 1.0, 'f1_sklearn': 0.6681715575620768, 'auc_sklearn': 0.6016501195072624, 'roc_data': (array([0.        , 0.        , 0.        , 0.00680272, 0.02040816,
-       0.03401361, 0.08843537, 0.17687075, 0.21088435, 0.3605442 ,
-       0.5442177 , 0.6802721 , 0.81632656, 0.89115644, 0.95238096,
-       0.97959185, 0.9863946 , 1.        , 1.        , 1.        ],
-      dtype=float32), array([0.        , 0.01351351, 0.04054054, 0.08108108, 0.11486486,
-       0.16216215, 0.2635135 , 0.38513514, 0.3918919 , 0.5067568 ,
-       0.6283784 , 0.7635135 , 0.8716216 , 0.8986486 , 0.9256757 ,
-       0.9459459 , 0.9594595 , 0.9662162 , 0.9864865 , 1.        ],
-      dtype=float32), array([       inf, 0.5161133 , 0.51416016, 0.5136719 , 0.5131836 ,
-       0.5126953 , 0.51220703, 0.51171875, 0.51123047, 0.5107422 ,
-       0.5102539 , 0.5097656 , 0.50927734, 0.50878906, 0.5083008 ,
-       0.5078125 , 0.5073242 , 0.50683594, 0.50634766, 0.50439453],
-      dtype=float32)), 'hits_at_50': 0.25675675675675674, 'precision_at_50': 0.76, 'hits_count_at_50': 38.0, 'ndcg_at_50': 0.8012626761632369, 'hits_at_100': 0.42567567567567566, 'precision_at_100': 0.63, 'hits_count_at_100': 63.0, 'ndcg_at_100': 0.6865341906004285, 'diagnostic_top10_preview': [(0.51611328125, 1), (0.51611328125, 1), (0.51513671875, 1), (0.51513671875, 1), (0.51416015625, 1), (0.51416015625, 1), (0.513671875, 0), (0.513671875, 1), (0.513671875, 1), (0.513671875, 1)]}
-    Fold 1 completed in 2.30s.
-
-[A
-  --- Fold 2/2 for directgcn_none_gating_n1_dim64 ---
-
-
-[A[A
-
-
-[A[A
-    Train size: 295, Validation size: 295
-    Train class distribution: Pos=148, Neg=147
-    MLP model built with input shape: 128
-    Starting model training for 2 epochs...
-Epoch 1/2
-Epoch 2/2
-    Model training finished.
-    Evaluating model on validation set...
-    Fold 2 Metrics: {'precision_sklearn': 0.5588235294117647, 'recall_sklearn': 0.1292517006802721, 'f1_sklearn': 0.20994475138121546, 'auc_sklearn': 0.5276015811730098, 'roc_data': (array([0.        , 0.        , 0.01351351, 0.10135135, 0.2837838 ,
-       0.33783785, 0.527027  , 0.5608108 , 0.7364865 , 0.7972973 ,
-       0.9189189 , 0.9459459 , 1.        , 1.        ], dtype=float32), array([0.        , 0.00680272, 0.02721088, 0.1292517 , 0.27891156,
-       0.3469388 , 0.5578231 , 0.63265306, 0.78911567, 0.8639456 ,
-       0.9183673 , 0.93877554, 0.9863946 , 1.        ], dtype=float32), array([       inf, 0.50146484, 0.50097656, 0.5004883 , 0.5       ,
-       0.49951172, 0.49902344, 0.49853516, 0.49804688, 0.4975586 ,
-       0.4970703 , 0.49658203, 0.49609375, 0.4951172 ], dtype=float32)), 'hits_at_50': 0.16326530612244897, 'precision_at_50': 0.48, 'hits_count_at_50': 24.0, 'ndcg_at_50': 0.5134705923387974, 'hits_at_100': 0.3469387755102041, 'precision_at_100': 0.51, 'hits_count_at_100': 51.0, 'ndcg_at_100': 0.5243388180049682, 'diagnostic_top10_preview': [(0.50146484375, 1), (0.5009765625, 0), (0.5009765625, 1), (0.5009765625, 1), (0.5009765625, 1), (0.5009765625, 0), (0.50048828125, 1), (0.50048828125, 0), (0.50048828125, 0), (0.50048828125, 0)]}
-    Fold 2 completed in 2.18s.
-
-[A
-[ACV workflow for directgcn_none_gating_n1_dim64 finished in 4.48s.
---- Memory Usage (After processing directgcn_none_gating_n1_dim64): RSS = 10209.43 MB ---
-  GPU Memory: Allocated = 64.00 MB, Reserved = 66.00 MB
-
-==========================================================
-### Processing Embedding: directgcn_none_gating_n2_dim64 ###
-==========================================================
-
-  Path: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/gcn_embeddings/uniprot_sprot_sampled/directgcn_none_gating_n2_dim64.h5
-  Memory Strategy ('high'): Attempting to load 'directgcn_none_gating_n2_dim64.h5' into RAM.
-  Memory Strategy ('high'): Loading 'directgcn_none_gating_n2_dim64.h5' into RAM for faster access.
-  Detected new, efficient HDF5 format for 'directgcn_none_gating_n2_dim64.h5'.
-  Found 5597 embeddings. Filtering interaction files against these IDs...
-  Applying cap on positive pairs: up to 200000 per class.
-  High-performance filtering pairs from: positive_interactions.parquet (label: 1)...
-    Found 295 pairs with available embeddings.
-  High-performance filtering pairs from: negative_interactions.parquet (label: 0)...
-    Applying random sampling to keep up to 295 pairs...
-    Found 295 pairs with available embeddings.
-Starting CV workflow for directgcn_none_gating_n2_dim64. Total samples: 590
-
-[A
-  --- Fold 1/2 for directgcn_none_gating_n2_dim64 ---
-
-
-[A[A
-
-
-[A[A
-    Train size: 295, Validation size: 295
-    Train class distribution: Pos=147, Neg=148
-    MLP model built with input shape: 128
-    Starting model training for 2 epochs...
-Epoch 1/2
-Epoch 2/2
-    Model training finished.
-    Evaluating model on validation set...
-    Fold 1 Metrics: {'precision_sklearn': 0.0, 'recall_sklearn': 0.0, 'f1_sklearn': 0.0, 'auc_sklearn': 0.572577679720537, 'roc_data': (array([0.        , 0.        , 0.        , 0.00680272, 0.02040816,
-       0.17687075, 0.34013605, 0.7482993 , 0.8435374 , 0.9863946 ,
-       1.        ], dtype=float32), array([0.        , 0.00675676, 0.02027027, 0.05405406, 0.08108108,
-       0.27027026, 0.3918919 , 0.8581081 , 0.9189189 , 0.9932432 ,
-       1.        ], dtype=float32), array([       inf, 0.49902344, 0.4975586 , 0.4970703 , 0.49658203,
-       0.49609375, 0.49560547, 0.4951172 , 0.4946289 , 0.49414062,
-       0.49365234], dtype=float32)), 'hits_at_50': 0.22297297297297297, 'precision_at_50': 0.66, 'hits_count_at_50': 33.0, 'ndcg_at_50': 0.7049874369613789, 'hits_at_100': 0.3918918918918919, 'precision_at_100': 0.58, 'hits_count_at_100': 58.0, 'ndcg_at_100': 0.626224874289683, 'diagnostic_top10_preview': [(0.4990234375, 1), (0.498046875, 1), (0.49755859375, 1), (0.4970703125, 0), (0.4970703125, 1), (0.4970703125, 1), (0.4970703125, 1), (0.4970703125, 1), (0.4970703125, 1), (0.49658203125, 0)]}
-    Fold 1 completed in 2.05s.
-
-[A
-  --- Fold 2/2 for directgcn_none_gating_n2_dim64 ---
-
-
-[A[A
-
-
-[A[A
-    Train size: 295, Validation size: 295
-    Train class distribution: Pos=148, Neg=147
-    MLP model built with input shape: 128
-    Starting model training for 2 epochs...
-Epoch 1/2
-Epoch 2/2
-    Model training finished.
-    Evaluating model on validation set...
-    Fold 2 Metrics: {'precision_sklearn': 0.5058823529411764, 'recall_sklearn': 0.8775510204081632, 'f1_sklearn': 0.6417910447761194, 'auc_sklearn': 0.5204541275969847, 'roc_data': (array([0.        , 0.00675676, 0.00675676, 0.01351351, 0.02702703,
-       0.0472973 , 0.08108108, 0.10810811, 0.14864865, 0.17567568,
-       0.20945945, 0.27027026, 0.33783785, 0.4189189 , 0.5067568 ,
-       0.6013514 , 0.6486486 , 0.7297297 , 0.8040541 , 0.8513514 ,
-       0.8783784 , 0.9054054 , 0.9256757 , 0.9459459 , 0.9797297 ,
-       0.9797297 , 0.9932432 , 1.        ], dtype=float32), array([0.        , 0.00680272, 0.01360544, 0.01360544, 0.01360544,
-       0.02721088, 0.05442177, 0.07482993, 0.10204082, 0.1292517 ,
-       0.14285715, 0.15646258, 0.23809524, 0.45578232, 0.6530612 ,
-       0.71428573, 0.7619048 , 0.78911567, 0.8435374 , 0.877551  ,
-       0.9183673 , 0.95238096, 0.9727891 , 0.97959185, 0.9863946 ,
-       0.99319726, 0.99319726, 1.        ], dtype=float32), array([       inf, 0.50927734, 0.50878906, 0.5083008 , 0.5078125 ,
-       0.5073242 , 0.50683594, 0.50634766, 0.5058594 , 0.5053711 ,
-       0.5048828 , 0.50439453, 0.50390625, 0.50341797, 0.5029297 ,
-       0.5024414 , 0.5019531 , 0.50146484, 0.50097656, 0.5004883 ,
-       0.5       , 0.49951172, 0.49902344, 0.49853516, 0.49804688,
-       0.4975586 , 0.49609375, 0.4951172 ], dtype=float32)), 'hits_at_50': 0.1360544217687075, 'precision_at_50': 0.4, 'hits_count_at_50': 20.0, 'ndcg_at_50': 0.4204379692537581, 'hits_at_100': 0.3197278911564626, 'precision_at_100': 0.47, 'hits_count_at_100': 47.0, 'ndcg_at_100': 0.46345602484739157, 'diagnostic_top10_preview': [(0.50927734375, 1), (0.50927734375, 0), (0.5087890625, 1), (0.50830078125, 0), (0.5078125, 0), (0.5078125, 0), (0.50732421875, 0), (0.50732421875, 0), (0.50732421875, 1), (0.50732421875, 0)]}
-    Fold 2 completed in 2.21s.
-
-[A
-[ACV workflow for directgcn_none_gating_n2_dim64 finished in 4.27s.
---- Memory Usage (After processing directgcn_none_gating_n2_dim64): RSS = 10243.39 MB ---
-  GPU Memory: Allocated = 64.00 MB, Reserved = 66.00 MB
-
-
-=========================================
-### FINAL AGGREGATE RESULTS & REPORTING ###
-=========================================
-
-Machine-readable results summary saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/evaluation_results/uniprot_sprot_sampled/evaluation_summary.csv
-Human-readable report with stats saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/evaluation_results/uniprot_sprot_sampled/evaluation_summary.txt
-  Saved ROC comparison plot to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/evaluation_results/uniprot_sprot_sampled/plots/comparison_roc_curves.png
-  Saved metrics comparison barchart to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_012311/evaluation_results/uniprot_sprot_sampled/plots/comparison_metrics_barchart.png
-
-===================================================================
-### PPI Evaluation Pipeline (MAIN EVALUATION) FINISHED in 134.37s ###
-===================================================================
-
-  ✅ Checkpoint saved for step: 'PPI_Evaluation'
-
-====================================================
-### Full Orchestration Finished in 301.12 seconds. ###
-====================================================
-
+If running on a remote server, you may need to use SSH port forwarding, for example:
+  ssh -L 5000:localhost:5000 your_user@your_server

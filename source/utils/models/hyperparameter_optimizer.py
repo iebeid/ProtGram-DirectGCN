@@ -218,7 +218,15 @@ class HyperparameterOptimizer:
             trial_cfg.PROTGRAM_WEIGHT_DECAY = suggest(trial, 'PROTGRAM_WEIGHT_DECAY')
             trial_cfg.PROTGRAM_GNN_HIDDEN_CHANNELS = suggest(trial, 'PROTGRAM_GNN_HIDDEN_CHANNELS')
             trial_cfg.PROTGRAM_GNN_NUM_LAYERS = suggest(trial, 'PROTGRAM_GNN_NUM_LAYERS')
-            trial_cfg.PROTGRAM_GATING_COEFF_MODE = suggest(trial, 'PROTGRAM_GATING_COEFF_MODE')
+            # Only suggest gating mode if present in the search space; otherwise fallback to config/default
+            if 'PROTGRAM_GATING_COEFF_MODE' in search_space:
+                    # Only suggest gating mode if present in the search space; otherwise fallback to config/default
+                    if 'PROTGRAM_GATING_COEFF_MODE' in search_space:
+                        trial_cfg.PROTGRAM_GATING_COEFF_MODE = suggest(trial, 'PROTGRAM_GATING_COEFF_MODE')
+                    else:
+                        trial_cfg.PROTGRAM_GATING_COEFF_MODE = getattr(self.base_config, 'PROTGRAM_GATING_COEFF_MODE', 'vector')
+            else:
+                trial_cfg.PROTGRAM_GATING_COEFF_MODE = getattr(self.base_config, 'PROTGRAM_GATING_COEFF_MODE', 'vector')
 
             # Speed up trial: cap epochs conservatively (HPO-only)
             try_epochs = min(getattr(self.base_config, 'PROTGRAM_EPOCHS_PER_LEVEL', 200), 50)

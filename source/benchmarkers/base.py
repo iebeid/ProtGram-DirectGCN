@@ -15,7 +15,7 @@ import torch
 from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 
 from configuration.config import Config
-from typing import Optional, Any
+from typing import Optional, Any, List
 from source.utils.data.data_utils import DataUtils
 
 
@@ -87,3 +87,74 @@ class BaseBenchmarker(ABC):
     def run(self) -> pd.DataFrame:
         """Main execution function for the benchmarker."""
         raise NotImplementedError
+
+    @staticmethod
+    def display_aggregated_benchmark_summary(all_results: List[pd.DataFrame]):
+        """
+        Standardizes, concatenates, and displays a final summary of all benchmark results.
+        DirectGCN rows are disambiguated by appending the short variant tag (if present).
+        """
+        if not all_results:
+            print("No benchmark results were generated to aggregate.")
+            return
+
+        # Make the console table readable
+        pd.set_option('display.max_rows', None)
+        pd.set_option('display.max_columns', None)
+        pd.set_option('display.width', 200)
+        pd.set_option('display.max_colwidth', None)
+
+        try:
+            final_summary_df = pd.concat(all_results, ignore_index=True)
+
+            # Compute dataset grouping (collapse _Original/_Undirected into one group)
+            def get_group_name(dataset_name):
+                if not isinstance(dataset_name, str):
+                    return "Unknown"
+                if 'ProtGram_n1_Singleton' in dataset_name:
+                    return dataset_name
+                return dataset_name.replace('_Original', '')
+
+            final_summary_df['dataset_group'] = final_summary_df['dataset'].apply(get_group_name)
+
+            # Ensure model column is string for safe suffix appending
+            final_summary_df['model'] = final_summary_df['model'].astype(str)
+
+            # Append variant suffix to DirectGCN display name when available
+            if 'variant' in final_summary_df.columns:
+                mask_dgcn = final_summary_df['model'] == 'DirectGCN'
+                has_variant = mask_dgcn & final_summary_df['variant'].notna() & (final_summary_df['variant'].astype(str).str.strip() != '')
+                final_summary_df.loc[has_variant, 'model'] = (
+                    final_summary_df.loc[has_variant, 'model'] + '[' + final_summary_df.loc[has_variant, 'variant'].astype(str) + ']'
+                )
+
+            # Columns to print
+            columns_to_print = [
+                'model', 'Accuracy', 'F1-Score (Macro)',
+                'Precision (Macro)', 'Recall (Macro)', 'error'
+            ]
+            # Backfill missing columns for robustness
+            for col in columns_to_print:
+                if col not in final_summary_df.columns:
+                    final_summary_df[col] = 'N/A'
+
+            # Sort within each dataset group by model name for stable display
+            final_summary_df = final_summary_df.sort_values(by=['dataset_group', 'model'])
+
+            DataUtils.print_header("Aggregated Benchmark Summary")
+            for group_name, group_df in final_summary_df.groupby('dataset_group', sort=False):
+                print(f"\n--- Results for Dataset: {group_name} ---")
+                formatted_group_df = group_df.copy()
+
+                # Format floats to four decimals; leave non-floats as-is
+                float_cols = formatted_group_df.select_dtypes(include=['float']).columns
+                for col in float_cols:
+                    formatted_group_df[col] = formatted_group_df[col].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
+
+                print(formatted_group_df[columns_to_print].to_string(index=False, na_rep='N/A'))
+        except Exception as e:
+            import traceback
+            print("\n--- ❌ ERROR: Could not generate the aggregated benchmark summary. ---")
+            print("This can happen if the results dataframes have an unexpected structure or contain invalid data.")
+            print(f"Error details: {e}")
+            traceback.print_exc()
