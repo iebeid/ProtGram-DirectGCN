@@ -88,6 +88,13 @@ class ProtGramXGCNTrainer:
             final_attention_logs: Dict[str, Dict] = {}  # Initialize the aggregator
             protein_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
 
+            # Ensure epochs reflect YAML for normal runs (HPO trials may override)
+            if not getattr(self.config, 'PROTGRAM_HPO_TRIAL_MODE', False):
+                if hasattr(self.config, 'PROTGRAM_EPOCHS_PER_LEVEL_ORIG'):
+                    self.config.PROTGRAM_EPOCHS_PER_LEVEL = int(self.config.PROTGRAM_EPOCHS_PER_LEVEL_ORIG)
+                if getattr(self.config, 'DEBUG_VERBOSE', False):
+                    print(f"  DEBUG: Restored epochs from YAML for trainer run: PROTGRAM_EPOCHS_PER_LEVEL={self.config.PROTGRAM_EPOCHS_PER_LEVEL}")
+
             for model_type in self.config.PROTGRAM_MODELS_TO_TRAIN:
                 if model_type == 'directgcn':
                     # Run DirectGCN exactly once using the configured gating mode

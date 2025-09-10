@@ -1,4 +1,4 @@
---- Logging all console output to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/logs/run_20250910_003705.log ---
+--- Logging all console output to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/logs/run_20250910_010444.log ---
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
 
 ========================================================
@@ -590,14 +590,14 @@
   - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.16.parquet
   - ✅ VALID: data/ground_truth/positive_interactions.parquet/part.28.parquet
   - ✅ Local data is valid.
-  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/temp/main/dask
+  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/temp/main/dask
 
 ======================================
 ### System Resource Pre-flight Check ###
 ======================================
 
-RAM: 119.68 GB Available / 125.59 GB Total
-Disk (/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705): 751.74 GB Free / 883.50 GB Total
+RAM: 119.65 GB Available / 125.59 GB Total
+Disk (/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444): 751.73 GB Free / 883.50 GB Total
 GPU(s):
   - GPU 0 (NVIDIA RTX 6000 Ada Generation): 47.36 GB Total Memory
 --------------------------------------
@@ -608,7 +608,7 @@ GPU(s):
   APPLY_PCA_TO_W2V                         | True
   BASE_CONFIG_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/configuration
   BASE_DATA_DIR                            | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data
-  BASE_OUTPUT_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705
+  BASE_OUTPUT_DIR                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444
   BENCHMARK_CHEBNET_K                      | 3
   BENCHMARK_DIRECTGCN_DECOMPOSE_PROJECTIONS | False
   BENCHMARK_DIRECTGCN_HIDDEN_LAYER_DIMS    | [64]
@@ -689,7 +689,7 @@ GPU(s):
   HPO_TARGET_EMBEDDING_MODEL               | directgcn
   ID_MAPPING_MODE                          | regex
   ID_MAPPING_PATH                          | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/mappings/id_mapping.parquet
-  LOG_DIR                                  | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/logs
+  LOG_DIR                                  | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/logs
   LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE       | [{'name': 'ProtT5', 'path': PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/models/per-protein.h5')}]
   LSTM_BATCH_SIZE                          | 64
   LSTM_DROPOUT_RATE                        | 0.5
@@ -713,7 +713,7 @@ GPU(s):
   MLFLOW_LLMS_EXPERIMENT_NAME              | LLMs
   MLFLOW_NE_BENCHMARK_EXPERIMENT_NAME      | GNN-Benchmarking
   MLFLOW_PROTGRAM_XGCN_EXPERIMENT_NAME     | ProtGram-XGCN
-  MLFLOW_TRACKING_URI                      | file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/mlruns
+  MLFLOW_TRACKING_URI                      | file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/mlruns
   NEG_INTERACTIONS_PATH                    | /home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/negative_interactions.parquet
   NEG_INTERACTIONS_RAW_PATHS               | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_1.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_2.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_3.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_4.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_5.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_6.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_7.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_8.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_9.mitab'), PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/ground_truth/neg_10.mitab')]
   ORIGINAL_SEQUENCE_FILE_PATHS             | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/sequences/uniprot_sprot.fasta')]
@@ -733,16 +733,17 @@ GPU(s):
   PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES | 3000
   PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING | 1
   PROTGRAM_DEFAULT_TASK_TYPE               | next_node
-  PROTGRAM_DIRECTGCN_PATH_SELECTION        | in_out
+  PROTGRAM_DIRECTGCN_PATH_SELECTION        | full
   PROTGRAM_DISABLE_GRAPH_COARSENING        | True
   PROTGRAM_DROPOUT_RATE                    | 0.25
   PROTGRAM_EARLY_STOPPING_MIN_DELTA        | 1e-05
   PROTGRAM_EARLY_STOPPING_PATIENCE         | 100
   PROTGRAM_EPOCHS_PER_LEVEL                | 1000
+  PROTGRAM_EPOCHS_PER_LEVEL_ORIG           | 1000
   PROTGRAM_FASTA_ALPHABET                  | protein
   PROTGRAM_FASTA_MAX_LEN                   | 10000
   PROTGRAM_FASTA_MIN_LEN                   | 50
-  PROTGRAM_GATING_COEFF_MODE               | scalar
+  PROTGRAM_GATING_COEFF_MODE               | vector
   PROTGRAM_GNN_HIDDEN_CHANNELS             | 64
   PROTGRAM_GNN_NUM_LAYERS                  | 2
   PROTGRAM_GRADIENT_ACCUMULATION_STEPS     | 1
@@ -754,8 +755,8 @@ GPU(s):
   PROTGRAM_MASKED_NODE_FRACTION            | 0.15
   PROTGRAM_MAX_CLUSTERS                    | 500
   PROTGRAM_MIN_CLUSTERS                    | 2
-  PROTGRAM_MODELS_TO_TRAIN                 | ['directgcn', 'gcn', 'dirgcn', 'rgcn']
-  PROTGRAM_NGRAM_MAX_N                     | 3
+  PROTGRAM_MODELS_TO_TRAIN                 | ['directgcn']
+  PROTGRAM_NGRAM_MAX_N                     | 4
   PROTGRAM_PARTITIONING_METHOD             | graclus
   PROTGRAM_PROTEIN_POOLING_STRATEGY        | attention
   PROTGRAM_RUN_SANITY_CHECK_PPI            | True
@@ -763,7 +764,7 @@ GPU(s):
   PROTGRAM_SANITY_CHECK_SAMPLE_SIZE        | 2000
   PROTGRAM_SANITY_CHECK_TEST_SPLIT         | 0.2
   PROTGRAM_TARGET_NODES_PER_CLUSTER        | 1500
-  PROTGRAM_TASK_TYPES_PER_LEVEL            | {1: 'community', 2: 'next_node', 3: 'next_node'}
+  PROTGRAM_TASK_TYPES_PER_LEVEL            | {1: 'community', 2: 'next_node', 3: 'next_node', 4: 'community'}
   PROTGRAM_USE_CLUSTER_TRAINING            | True
   PROTGRAM_USE_EARLY_STOPPING              | True
   PROTGRAM_USE_LR_SCHEDULER                | True
@@ -773,25 +774,25 @@ GPU(s):
   RANDOM_STATE                             | 42
   REGEX_COMPATIBILITY_SAMPLE_SIZE          | 1000
   REGEX_CONFIDENCE_THRESHOLD               | 0.95
-  RESULTS_BENCHMARKING_DIR                 | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/benchmarking_results
-  RESULTS_BENCHMARK_EMBEDDINGS_DIR         | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/benchmarking_results/embeddings
-  RESULTS_EVALUATION_DIR                   | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/evaluation_results
-  RESULTS_GCN_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/gcn_embeddings
-  RESULTS_GRAPH_OBJECTS_DIR                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects
-  RESULTS_LSTM_EMBEDDINGS_DIR              | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/lstm_embeddings
-  RESULTS_TRANSFORMER_EMBEDDINGS_DIR       | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/transformer_embeddings
-  RESULTS_W2V_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/word2vec_embeddings
+  RESULTS_BENCHMARKING_DIR                 | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/benchmarking_results
+  RESULTS_BENCHMARK_EMBEDDINGS_DIR         | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/benchmarking_results/embeddings
+  RESULTS_EVALUATION_DIR                   | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/evaluation_results
+  RESULTS_GCN_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/gcn_embeddings
+  RESULTS_GRAPH_OBJECTS_DIR                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects
+  RESULTS_LSTM_EMBEDDINGS_DIR              | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/lstm_embeddings
+  RESULTS_TRANSFORMER_EMBEDDINGS_DIR       | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/transformer_embeddings
+  RESULTS_W2V_EMBEDDINGS_DIR               | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/word2vec_embeddings
   RUN_BENCHMARKING_PIPELINE                | False
   RUN_HPO                                  | True
   RUN_INTEGRATED_TESTS                     | False
   RUN_LSTM_PIPELINE                        | False
-  RUN_MAIN_PPI_EVALUATION                  | False
+  RUN_MAIN_PPI_EVALUATION                  | True
   RUN_PROTGRAM_PIPELINE                    | True
   RUN_PROTGRAM_XGCN_PIPELINE               | True
   RUN_SINGLETON_GCN_EVAL                   | False
   RUN_TRANSFORMER_PIPELINE                 | False
   RUN_WORD2VEC_PIPELINE                    | False
-  SEQUENCE_DOWNSAMPLE_FRACTION             | 0.01
+  SEQUENCE_DOWNSAMPLE_FRACTION             | 0.05
   SEQUENCE_FILE_PATHS                      | [PosixPath('/home/iaebeid/documents/projects/ProtGram-DirectGCN/data/sequences/uniprot_sprot.fasta')]
   SINGLETON_CHEBNET_K                      | 3
   SINGLETON_DIRECTGCN_DECOMPOSE_PROJECTIONS | False
@@ -810,9 +811,9 @@ GPU(s):
   SINGLETON_GNN_HIDDEN_CHANNELS            | 64
   SINGLETON_GNN_NUM_LAYERS                 | 2
   SINGLETON_RGCN_NUM_RELATIONS             | 2
-  TEMP_PIPELINE_DIR                        | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/temp/main
-  TEMP_ROOT                                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/temp
-  TEMP_TESTS_DIR                           | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/temp/tests
+  TEMP_PIPELINE_DIR                        | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/temp/main
+  TEMP_ROOT                                | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/temp
+  TEMP_TESTS_DIR                           | /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/temp/tests
   TRANSFORMER_BASE_BATCH_SIZE              | 16
   TRANSFORMER_CHUNK_SIZE                   | 10000
   TRANSFORMER_INFERENCE_SAMPLE_FRACTION    | 1.0
@@ -831,14 +832,14 @@ GPU(s):
 --------------------------
 
 =====================================
-### Downsampling FASTA files (1.0%) ###
+### Downsampling FASTA files (5.0%) ###
 =====================================
 
   - Applying probabilistic sampling to 'uniprot_sprot.fasta'...
   - Cleaning enabled for FASTA parsing.
 
 ======================================
-### FASTA Downsampling Active (1.0%) ###
+### FASTA Downsampling Active (5.0%) ###
 ======================================
 
 
@@ -851,12 +852,12 @@ GPU(s):
 Target dataset: uniprot_sprot_sampled
 You can populate the newly created results directories with artifacts from a previous run.
 Components to consider:
-  - graph_objects: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled
-  - gcn_embeddings: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/gcn_embeddings/uniprot_sprot_sampled
-  - word2vec_embeddings: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/word2vec_embeddings/uniprot_sprot_sampled
-  - lstm_embeddings: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/lstm_embeddings/uniprot_sprot_sampled
-  - transformer_embeddings: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/transformer_embeddings/uniprot_sprot_sampled
-  - evaluation_results: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/evaluation_results/uniprot_sprot_sampled
+  - graph_objects: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled
+  - gcn_embeddings: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/gcn_embeddings/uniprot_sprot_sampled
+  - word2vec_embeddings: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/word2vec_embeddings/uniprot_sprot_sampled
+  - lstm_embeddings: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/lstm_embeddings/uniprot_sprot_sampled
+  - transformer_embeddings: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/transformer_embeddings/uniprot_sprot_sampled
+  - evaluation_results: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/evaluation_results/uniprot_sprot_sampled
 
 Options:
   1) Manual copy: I will copy all desired artifacts into the listed directories and then continue.
@@ -868,7 +869,7 @@ Choose an option [1=manual copy, 2=auto-copy, 3=skip]:   - No checkpoint found f
 === Graph Objects Availability ===
 Target dataset: uniprot_sprot_sampled
 Expected graph objects directory:
-  /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled
+  /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled
 
 You have three options:
   1) Manually copy: I will copy previously built graph objects into the directory above and then continue.
@@ -882,11 +883,11 @@ Rebuild selected. Proceeding to rebuild graph objects.
 ### Building all n-gram graphs for the main pipeline ###
 ======================================================
 
-ProtGramDataBuilder initialized: n_max=3, configured_workers=31, output_dir='/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled'
-  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/temp/main/graph_builder
+ProtGramDataBuilder initialized: n_max=4, configured_workers=31, output_dir='/home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled'
+  - Dask temporary directory set to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/temp/main/graph_builder
 
 ===================================================================================================================================================================
-### ProtGramDataBuilder Initialized (Output: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled) ###
+### ProtGramDataBuilder Initialized (Output: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled) ###
 ===================================================================================================================================================================
 
 
@@ -896,14 +897,14 @@ ProtGramDataBuilder initialized: n_max=3, configured_workers=31, output_dir='/ho
 
 
 --- Resource Alert: Graph Building ---
-  Input FASTA size is ~0.00 GB.
-  This process can generate intermediate files up to 3-5x this size (~0.01 - 0.01 GB).
+  Input FASTA size is ~0.01 GB.
+  This process can generate intermediate files up to 3-5x this size (~0.03 - 0.05 GB).
   Please ensure you have sufficient free disk space.
 --------------------------------------
 
   Info: Graph file for n=1 not found. Will proceed with full build.
-Temporary files will be stored in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/temp/main/graph_builder
-Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled
+Temporary files will be stored in: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/temp/main/graph_builder
+Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled
   - Cleaning enabled for FASTA parsing.
 
 =========================================
@@ -915,9 +916,11 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
   - Creating map for n=2...
     Unique n-gram map for n=2 (size: 421) created.
   - Creating map for n=3...
-    Unique n-gram map for n=3 (size: 8,399) created.
+    Unique n-gram map for n=3 (size: 8,401) created.
+  - Creating map for n=4...
+    Unique n-gram map for n=4 (size: 165,315) created.
 
-<<< Phase 1 finished in 27.32s.
+<<< Phase 1 finished in 174.77s.
 
 ===================================
 ### Phase 2: Generating All Edges ###
@@ -926,8 +929,9 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
   - Aggregating edges for n=1...
   - Aggregating edges for n=2...
   - Aggregating edges for n=3...
+  - Aggregating edges for n=4...
 
-<<< Phase 2 finished in 43.72s.
+<<< Phase 2 finished in 310.49s.
 
 ======================================================
 ### Phase 3: Building and saving final graph objects ###
@@ -938,8 +942,8 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
   Loaded 21 n-grams for n=1 from map file.
   Instantiating DirectedNgramGraph object for n=1 from file...
     Loading edges from aggregated_edges_n1.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n1/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
+  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n1/metadata.json
+  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
     --- Graph Statistics for n=1 ---
       Nodes: 21
       Edges (unique weighted): 421
@@ -947,8 +951,8 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
     Generating community labels for all connected components...
       Found 1 connected components.
       Graph has one component, running Louvain community detection...
-      Found 10 communities across all components.
-      Homophily Ratio: 0.1286
+      Found 9 communities across all components.
+      Homophily Ratio: 0.1143
 /home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/data/protgram_helper.py:97: UserWarning: Sparse CSR tensor support is in beta state. If you miss a functionality in the sparse tensor support, please submit a feature request to https://github.com/pytorch/pytorch/issues. (Triggered internally at ../aten/src/ATen/SparseCsrTensorImpl.cpp:53.)
   sparse_csr_tensor = graph_object.A_undirected_w.to_sparse_csr()
       Average Degree Centrality: 1.0952
@@ -956,64 +960,86 @@ Final graph objects will be saved to: /home/iaebeid/documents/projects/ProtGram-
       Degree Assortativity: -0.0476
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=1 ---
-  Graph for n=1 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
+  Graph for n=1 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
 
 --- Processing n = 2 for final graph object ---
   Loaded 421 n-grams for n=2 from map file.
   Instantiating DirectedNgramGraph object for n=2 from file...
     Loading edges from aggregated_edges_n2.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n2/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
+  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n2/metadata.json
+  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
     --- Graph Statistics for n=2 ---
       Nodes: 421
-      Edges (unique weighted): 8399
+      Edges (unique weighted): 8401
       Density (E / N^2): 0.0474
     Generating community labels for all connected components...
       Found 1 connected components.
       Graph has one component, running Louvain community detection...
-      Found 13 communities across all components.
-      Homophily Ratio: 0.4113
+      Found 14 communities across all components.
+      Homophily Ratio: 0.3985
       Average Degree Centrality: 0.0929
       Average Clustering Coefficient: 0.0951
-      Degree Assortativity: -0.0258
+      Degree Assortativity: -0.0255
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=2 ---
-  Graph for n=2 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
+  Graph for n=2 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
 
 --- Processing n = 3 for final graph object ---
-  Loaded 8399 n-grams for n=3 from map file.
+  Loaded 8401 n-grams for n=3 from map file.
   Instantiating DirectedNgramGraph object for n=3 from file...
     Loading edges from aggregated_edges_n3.parquet...
-  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n3/metadata.json
-  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
+  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n3/metadata.json
+  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
     --- Graph Statistics for n=3 ---
-      Nodes: 8399
-      Edges (unique weighted): 153635
-      Density (E / N^2): 0.0022
+      Nodes: 8401
+      Edges (unique weighted): 165315
+      Density (E / N^2): 0.0023
     Generating community labels for all connected components...
       Found 1 connected components.
       Graph has one component, running Louvain community detection...
-      Found 19 communities across all components.
-      Homophily Ratio: 0.5136
-      Average Degree Centrality: 0.0044
-      Average Clustering Coefficient: 0.0046
-      Degree Assortativity: 0.2335
+      Found 18 communities across all components.
+      Homophily Ratio: 0.5127
+      Average Degree Centrality: 0.0047
+      Average Clustering Coefficient: 0.0047
+      Degree Assortativity: -0.0135
       - Closeness and Betweenness Centrality calculations have been disabled for performance.
     --- End of Graph Statistics for n=3 ---
-  Graph for n=3 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
+  Graph for n=3 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
 
-<<< Phase 3 finished in 14.55s.
+--- Processing n = 4 for final graph object ---
+  Loaded 165315 n-grams for n=4 from map file.
+  Instantiating DirectedNgramGraph object for n=4 from file...
+    Loading edges from aggregated_edges_n4.parquet...
+  JSON data saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n4/metadata.json
+  Graph components saved to directory: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n4
+    --- Graph Statistics for n=4 ---
+      Nodes: 165315
+      Edges (unique weighted): 2193681
+      Density (E / N^2): 0.0001
+    Generating community labels for all connected components...
+      Found 1 connected components.
+      Graph has one component, running Louvain community detection...
+      Found 24 communities across all components.
+      Homophily Ratio: 0.5622
+      Average Degree Centrality: 0.0002
+      Average Clustering Coefficient: 0.0002
+      Degree Assortativity: 0.5462
+      - Closeness and Betweenness Centrality calculations have been disabled for performance.
+    --- End of Graph Statistics for n=4 ---
+  Graph for n=4 saved to /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n4
+
+<<< Phase 3 finished in 249.35s.
 
 ==========================================
 ### Phase 4: Cleaning up temporary files ###
 ==========================================
 
-  Temporary directory /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/temp/main/graph_builder cleaned up.
+  Temporary directory /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/temp/main/graph_builder cleaned up.
 <<< Phase 4 finished in 0.01s.
 
-==============================================
-### N-gram Graph Building FINISHED in 89.66s ###
-==============================================
+===============================================
+### N-gram Graph Building FINISHED in 738.96s ###
+===============================================
 
   ✅ Checkpoint saved for step: 'GraphBuilding'
 
@@ -1031,8 +1057,8 @@ No benchmark results were generated to aggregate.
 ===================================
 
 HyperparameterOptimizer initialized.
-2025/09/10 00:38:58 INFO mlflow.tracking.fluent: Experiment with name 'ProtGram-XGCN' does not exist. Creating a new experiment.
-[32m[I 2025-09-10 00:38:58,236][0m A new study created in memory with name: no-name-1d7bf758-0ce6-4b9b-b8e3-13a6ce0dcde1[0m
+2025/09/10 01:17:35 INFO mlflow.tracking.fluent: Experiment with name 'ProtGram-XGCN' does not exist. Creating a new experiment.
+[32m[I 2025-09-10 01:17:35,591][0m A new study created in memory with name: no-name-5d48b3fa-80e5-4851-9042-c20a164a5757[0m
 Using device: cuda
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
 
@@ -1050,25 +1076,25 @@ Using device: cuda
 ### Processing N-gram Level: n = 1 for model 'directgcn' ###
 ==========================================================
 
-  Loading graph for n=1 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
+  Loading graph for n=1 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
   Initializing n=1 features with random noise (dim=512).
   Generating self-supervised labels for task: 'community'
     Generating community labels for all connected components...
       Found 1 connected components.
       Graph has one component, running Louvain community detection...
-      Found 10 communities across all components.
-  Graph n=1 Homophily Ratio: 0.1286. Is Heterophilic? -> False
+      Found 9 communities across all components.
+  Graph n=1 Homophily Ratio: 0.1143. Is Heterophilic? -> False
   Creating new instance of 'directgcn' for context 'protgram'.
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=False; cluster_threshold=3000; num_nodes=21
+  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved=50, source=HPO-trial); use_cluster_training=False; cluster_threshold=3000; num_nodes=21
   Preparing specialized graph views for 'directgcn'.
   Starting full-batch training for up to 50 epochs (Task: community)...
-    Epoch: 001, Loss: 2.2664, Train Acc: 0.0952, LR: 0.001025
-    Epoch: 010, Loss: 1.9781, Train Acc: 0.2857, LR: 0.001025
-    Epoch: 020, Loss: 1.6165, Train Acc: 0.4286, LR: 0.001025
-    Epoch: 030, Loss: 1.4130, Train Acc: 0.6190, LR: 0.001025
-    Epoch: 040, Loss: 1.2443, Train Acc: 0.7619, LR: 0.001025
-    Epoch: 050, Loss: 0.9806, Train Acc: 0.7143, LR: 0.001025
+    Epoch: 001, Loss: 2.1734, Train Acc: 0.1905, LR: 0.001025
+    Epoch: 010, Loss: 1.8690, Train Acc: 0.3810, LR: 0.001025
+    Epoch: 020, Loss: 1.6362, Train Acc: 0.5238, LR: 0.001025
+    Epoch: 030, Loss: 1.4449, Train Acc: 0.7143, LR: 0.001025
+    Epoch: 040, Loss: 0.9338, Train Acc: 1.0000, LR: 0.001025
+    Epoch: 050, Loss: 1.0780, Train Acc: 0.8095, LR: 0.001025
   Extracting embeddings for 21 nodes using full-batch inference...
   Preparing specialized graph views for 'directgcn'.
 
@@ -1076,7 +1102,7 @@ Using device: cuda
 ### Processing N-gram Level: n = 2 for model 'directgcn' ###
 ==========================================================
 
-  Loading graph for n=2 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
+  Loading graph for n=2 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
   Pooling (n-1)-gram embeddings to initialize features for n=2 graph (Strategy: attention)...
 
 [A
@@ -1084,18 +1110,18 @@ Using device: cuda
     Generating next_node labels for all 421 nodes.
 
 [A
-[A  Graph n=2 Homophily Ratio: 0.0171. Is Heterophilic? -> False
+[A  Graph n=2 Homophily Ratio: 0.0199. Is Heterophilic? -> False
   Creating new instance of 'directgcn' for context 'protgram'.
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=False; cluster_threshold=3000; num_nodes=421
+  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved=50, source=HPO-trial); use_cluster_training=False; cluster_threshold=3000; num_nodes=421
   Preparing specialized graph views for 'directgcn'.
   Starting full-batch training for up to 50 epochs (Task: next_node)...
-    Epoch: 001, Loss: 6.0774, Train Acc: 0.0024, LR: 0.001025
-    Epoch: 010, Loss: 5.7887, Train Acc: 0.0356, LR: 0.001025
-    Epoch: 020, Loss: 5.4708, Train Acc: 0.0689, LR: 0.001025
-    Epoch: 030, Loss: 5.1199, Train Acc: 0.0523, LR: 0.001025
-    Epoch: 040, Loss: 4.6390, Train Acc: 0.0546, LR: 0.001025
-    Epoch: 050, Loss: 4.3456, Train Acc: 0.0831, LR: 0.001025
+    Epoch: 001, Loss: 6.1169, Train Acc: 0.0000, LR: 0.001025
+    Epoch: 010, Loss: 5.8484, Train Acc: 0.0095, LR: 0.001025
+    Epoch: 020, Loss: 5.5461, Train Acc: 0.0356, LR: 0.001025
+    Epoch: 030, Loss: 5.1524, Train Acc: 0.0428, LR: 0.001025
+    Epoch: 040, Loss: 4.5842, Train Acc: 0.0808, LR: 0.001025
+    Epoch: 050, Loss: 4.2324, Train Acc: 0.0546, LR: 0.001025
   Extracting embeddings for 421 nodes using full-batch inference...
   Preparing specialized graph views for 'directgcn'.
 
@@ -1103,282 +1129,13 @@ Using device: cuda
 ### Processing N-gram Level: n = 3 for model 'directgcn' ###
 ==========================================================
 
-  Loading graph for n=3 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
+  Loading graph for n=3 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
   Pooling (n-1)-gram embeddings to initialize features for n=3 graph (Strategy: attention)...
 
 [A
 [A
 [A  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 8399 nodes.
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A  Graph n=3 Homophily Ratio: 0.0007. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=True; cluster_threshold=3000; num_nodes=8399
-  Partitioning graph with 8399 nodes for clustered training (Method: graclus)...
-  - Graph coarsening disabled by config. Falling back to Louvain partitioning.
-  - WARNING: Undirected matrix not available for Louvain. Returning single partition.
-  Stochastic multiple partitions enabled. Grouping 5 clusters per batch.
-  Starting Cluster-GCN style training for up to 50 epochs on 1 subgraphs (Task: next_node). EarlyStopping=ON (patience=100, min_delta=1e-05).
-
-[A
-[A
-[A    Epoch: 001, Avg Batch Loss: 9.0656, Train Acc: 0.0000, LR: 0.001025
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 010, Avg Batch Loss: 9.0369, Train Acc: 0.0002, LR: 0.001025
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 020, Avg Batch Loss: 9.0254, Train Acc: 0.0010, LR: 0.001025
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 030, Avg Batch Loss: 9.0083, Train Acc: 0.0008, LR: 0.001025
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 040, Avg Batch Loss: 8.9800, Train Acc: 0.0006, LR: 0.001025
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 050, Avg Batch Loss: 8.9335, Train Acc: 0.0020, LR: 0.001025
-  Extracting embeddings for 8399 nodes using clustered inference...
-  Partitioning graph with 8399 nodes for clustered training (Method: graclus)...
-  - Graph coarsening disabled by config. Falling back to Louvain partitioning.
-  - WARNING: Undirected matrix not available for Louvain. Returning single partition.
-
-[A
-[A  Hierarchical training complete. Starting protein-level pooling...
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=1 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=2 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=3 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-=====================================================
-### Processing Model Type: DIRECTGCN (Gating: none) ###
-=====================================================
-
-
-==========================================================
-### Processing N-gram Level: n = 1 for model 'directgcn' ###
-==========================================================
-
-  Initializing n=1 features with random noise (dim=512).
-  Generating self-supervised labels for task: 'community'
-    Generating community labels for all connected components...
-      Found 1 connected components.
-      Graph has one component, running Louvain community detection...
-      Found 10 communities across all components.
-  Graph n=1 Homophily Ratio: 0.1286. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=False; cluster_threshold=3000; num_nodes=21
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: community)...
-    Epoch: 001, Loss: 2.3859, Train Acc: 0.0476, LR: 0.001025
-    Epoch: 010, Loss: 2.0502, Train Acc: 0.3810, LR: 0.001025
-    Epoch: 020, Loss: 1.8147, Train Acc: 0.5714, LR: 0.001025
-    Epoch: 030, Loss: 1.4552, Train Acc: 0.6190, LR: 0.001025
-    Epoch: 040, Loss: 1.2391, Train Acc: 0.7143, LR: 0.001025
-    Epoch: 050, Loss: 1.0015, Train Acc: 0.7619, LR: 0.001025
-  Extracting embeddings for 21 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-
-==========================================================
-### Processing N-gram Level: n = 2 for model 'directgcn' ###
-==========================================================
-
-  Pooling (n-1)-gram embeddings to initialize features for n=2 graph (Strategy: attention)...
-
-[A
-[A  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 421 nodes.
-
-[A
-[A  Graph n=2 Homophily Ratio: 0.0171. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=False; cluster_threshold=3000; num_nodes=421
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: next_node)...
-    Epoch: 001, Loss: 6.0803, Train Acc: 0.0000, LR: 0.001025
-    Epoch: 010, Loss: 5.7544, Train Acc: 0.0285, LR: 0.001025
-    Epoch: 020, Loss: 5.4614, Train Acc: 0.0618, LR: 0.001025
-    Epoch: 030, Loss: 5.0549, Train Acc: 0.0713, LR: 0.001025
-    Epoch: 040, Loss: 4.5240, Train Acc: 0.0523, LR: 0.001025
-    Epoch: 050, Loss: 4.1489, Train Acc: 0.0831, LR: 0.001025
-  Extracting embeddings for 421 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-
-==========================================================
-### Processing N-gram Level: n = 3 for model 'directgcn' ###
-==========================================================
-
-  Pooling (n-1)-gram embeddings to initialize features for n=3 graph (Strategy: attention)...
-
-[A
-[A
-[A  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 8399 nodes.
+    Generating next_node labels for all 8401 nodes.
 
 [A
 [A
@@ -1402,34 +1159,17 @@ Using device: cuda
 [A  Graph n=3 Homophily Ratio: 0.0007. Is Heterophilic? -> False
   Creating new instance of 'directgcn' for context 'protgram'.
   Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=True; cluster_threshold=3000; num_nodes=8399
-  Partitioning graph with 8399 nodes for clustered training (Method: graclus)...
+  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved=50, source=HPO-trial); use_cluster_training=True; cluster_threshold=3000; num_nodes=8401
+  Partitioning graph with 8401 nodes for clustered training (Method: graclus)...
   - Graph coarsening disabled by config. Falling back to Louvain partitioning.
-  - WARNING: Undirected matrix not available for Louvain. Returning single partition.
+    Louvain algorithm found 14 communities.
+    Created 14 partitions.
   Stochastic multiple partitions enabled. Grouping 5 clusters per batch.
-  Starting Cluster-GCN style training for up to 50 epochs on 1 subgraphs (Task: next_node). EarlyStopping=ON (patience=100, min_delta=1e-05).
-
-[A
-[A    Epoch: 001, Avg Batch Loss: 9.0763, Train Acc: 0.0002, LR: 0.001025
+  Starting Cluster-GCN style training for up to 50 epochs on 14 subgraphs (Task: next_node). EarlyStopping=ON (patience=100, min_delta=1e-05).
 
 [A
 [A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 010, Avg Batch Loss: 9.0357, Train Acc: 0.0004, LR: 0.001025
+[A    Epoch: 001, Avg Batch Loss: 9.0658, Train Acc: 0.0001, LR: 0.001025
 
 [A
 [A
@@ -1450,7 +1190,7 @@ Using device: cuda
 [A
 [A
 [A
-[A    Epoch: 020, Avg Batch Loss: 9.0266, Train Acc: 0.0005, LR: 0.001025
+[A    Epoch: 010, Avg Batch Loss: 9.0146, Train Acc: 0.0007, LR: 0.001025
 
 [A
 [A
@@ -1471,7 +1211,10 @@ Using device: cuda
 [A
 [A
 [A
-[A    Epoch: 030, Avg Batch Loss: 9.0117, Train Acc: 0.0006, LR: 0.001025
+[A
+[A
+[A
+[A    Epoch: 020, Avg Batch Loss: 8.8984, Train Acc: 0.0040, LR: 0.001025
 
 [A
 [A
@@ -1492,7 +1235,15 @@ Using device: cuda
 [A
 [A
 [A
-[A    Epoch: 040, Avg Batch Loss: 8.9897, Train Acc: 0.0004, LR: 0.001025
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A    Epoch: 030, Avg Batch Loss: 8.3849, Train Acc: 0.0018, LR: 0.001025
 
 [A
 [A
@@ -1513,996 +1264,105 @@ Using device: cuda
 [A
 [A
 [A
-[A    Epoch: 050, Avg Batch Loss: 8.9427, Train Acc: 0.0015, LR: 0.001025
-  Extracting embeddings for 8399 nodes using clustered inference...
-  Partitioning graph with 8399 nodes for clustered training (Method: graclus)...
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A    Epoch: 040, Avg Batch Loss: 7.8731, Train Acc: 0.0033, LR: 0.001025
+
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A    Epoch: 050, Avg Batch Loss: 7.7756, Train Acc: 0.0031, LR: 0.001025
+  Extracting embeddings for 8401 nodes using clustered inference...
+  Partitioning graph with 8401 nodes for clustered training (Method: graclus)...
   - Graph coarsening disabled by config. Falling back to Louvain partitioning.
-  - WARNING: Undirected matrix not available for Louvain. Returning single partition.
-
-[A
-[A  Hierarchical training complete. Starting protein-level pooling...
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=1 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
+    Louvain algorithm found 14 communities.
+    Created 14 partitions.
 
 [A
 [A
 [A
-[A
-[A
-[A
-[A
-[A
-[A
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=2 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=3 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-[A
-Applying IncrementalPCA to file: 'directgcn_vector_gating_n1_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_vector_gating_n1_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_vector_gating_n1_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_vector_gating_n1_dim64.h5
-
-[A
-Applying IncrementalPCA to file: 'directgcn_vector_gating_n2_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_vector_gating_n2_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_vector_gating_n2_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_vector_gating_n2_dim64.h5
-
-[A
-Applying IncrementalPCA to file: 'directgcn_vector_gating_n3_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_vector_gating_n3_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_vector_gating_n3_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_vector_gating_n3_dim64.h5
-
-[A
-Applying IncrementalPCA to file: 'directgcn_none_gating_n1_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_none_gating_n1_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_none_gating_n1_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_none_gating_n1_dim64.h5
-
-[A
-Applying IncrementalPCA to file: 'directgcn_none_gating_n2_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_none_gating_n2_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_none_gating_n2_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_none_gating_n2_dim64.h5
-
-[A
-Applying IncrementalPCA to file: 'directgcn_none_gating_n3_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_none_gating_n3_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_none_gating_n3_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_none_gating_n3_dim64.h5
-
-===============================================
-### ProtGram Embedding PIPELINE STEP FINISHED ###
-===============================================
-
-[32m[I 2025-09-10 00:39:23,812][0m Trial 0 finished with value: inf and parameters: {'PROTGRAM_LR': 0.0010253509690168502, 'PROTGRAM_WEIGHT_DECAY': 0.006351221010640704, 'PROTGRAM_GNN_HIDDEN_CHANNELS': 32, 'PROTGRAM_GNN_NUM_LAYERS': 2, 'PROTGRAM_GATING_COEFF_MODE': 'vector'}. Best is trial 0 with value: inf.[0m
-Using device: cuda
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-
-=====================================================================
-### PIPELINE STEP: Training ProtGram Models & Generating Embeddings ###
-=====================================================================
-
-
-=======================================================
-### Processing Model Type: DIRECTGCN (Gating: vector) ###
-=======================================================
-
-
 ==========================================================
-### Processing N-gram Level: n = 1 for model 'directgcn' ###
+### Processing N-gram Level: n = 4 for model 'directgcn' ###
 ==========================================================
 
-  Loading graph for n=1 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
-  Initializing n=1 features with random noise (dim=512).
-  Generating self-supervised labels for task: 'community'
+  Loading graph for n=4 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_010444/graph_objects/uniprot_sprot_sampled/ngram_graph_n4
+  Pooling (n-1)-gram embeddings to initialize features for n=4 graph (Strategy: attention)...
+
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A
+[A  Generating self-supervised labels for task: 'community'
     Generating community labels for all connected components...
-      Found 1 connected components.
-      Graph has one component, running Louvain community detection...
-      Found 10 communities across all components.
-  Graph n=1 Homophily Ratio: 0.1286. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=False; cluster_threshold=3000; num_nodes=21
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: community)...
-    Epoch: 001, Loss: 2.2664, Train Acc: 0.0952, LR: 0.008148
-    Epoch: 010, Loss: 1.8385, Train Acc: 0.4286, LR: 0.008148
-    Epoch: 020, Loss: 1.3589, Train Acc: 0.4762, LR: 0.008148
-    Epoch: 030, Loss: 0.9475, Train Acc: 0.6667, LR: 0.008148
-    Epoch: 040, Loss: 0.6532, Train Acc: 0.7619, LR: 0.008148
-    Epoch: 050, Loss: 0.6196, Train Acc: 0.7143, LR: 0.008148
-  Extracting embeddings for 21 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-
-==========================================================
-### Processing N-gram Level: n = 2 for model 'directgcn' ###
-==========================================================
-
-  Loading graph for n=2 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
-  Pooling (n-1)-gram embeddings to initialize features for n=2 graph (Strategy: attention)...
-
-[A
-[A  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 421 nodes.
-
-[A
-[A  Graph n=2 Homophily Ratio: 0.0171. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=False; cluster_threshold=3000; num_nodes=421
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: next_node)...
-    Epoch: 001, Loss: 6.0890, Train Acc: 0.0024, LR: 0.008148
-    Epoch: 010, Loss: 4.4708, Train Acc: 0.0546, LR: 0.008148
-    Epoch: 020, Loss: 3.9460, Train Acc: 0.0594, LR: 0.008148
-    Epoch: 030, Loss: 3.7333, Train Acc: 0.0831, LR: 0.008148
-    Epoch: 040, Loss: 3.5469, Train Acc: 0.0784, LR: 0.008148
-    Epoch: 050, Loss: 3.2875, Train Acc: 0.0974, LR: 0.008148
-  Extracting embeddings for 421 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-
-==========================================================
-### Processing N-gram Level: n = 3 for model 'directgcn' ###
-==========================================================
-
-  Loading graph for n=3 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
-  Pooling (n-1)-gram embeddings to initialize features for n=3 graph (Strategy: attention)...
-
-[A
-[A
-[A  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 8399 nodes.
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A  Graph n=3 Homophily Ratio: 0.0007. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=True; cluster_threshold=3000; num_nodes=8399
-  Partitioning graph with 8399 nodes for clustered training (Method: graclus)...
-  - Graph coarsening disabled by config. Falling back to Louvain partitioning.
-  - WARNING: Undirected matrix not available for Louvain. Returning single partition.
-  Stochastic multiple partitions enabled. Grouping 5 clusters per batch.
-  Starting Cluster-GCN style training for up to 50 epochs on 1 subgraphs (Task: next_node). EarlyStopping=ON (patience=100, min_delta=1e-05).
-
-[A
-[A    Epoch: 001, Avg Batch Loss: 9.0660, Train Acc: 0.0000, LR: 0.008148
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 010, Avg Batch Loss: 8.3932, Train Acc: 0.0012, LR: 0.008148
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 020, Avg Batch Loss: 7.9540, Train Acc: 0.0018, LR: 0.008148
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 030, Avg Batch Loss: 7.6926, Train Acc: 0.0033, LR: 0.008148
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 040, Avg Batch Loss: 7.3050, Train Acc: 0.0048, LR: 0.008148
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 050, Avg Batch Loss: 6.8019, Train Acc: 0.0083, LR: 0.008148
-  Extracting embeddings for 8399 nodes using clustered inference...
-  Partitioning graph with 8399 nodes for clustered training (Method: graclus)...
-  - Graph coarsening disabled by config. Falling back to Louvain partitioning.
-  - WARNING: Undirected matrix not available for Louvain. Returning single partition.
-
-[A
-[A  Hierarchical training complete. Starting protein-level pooling...
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=1 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=2 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=3 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-=====================================================
-### Processing Model Type: DIRECTGCN (Gating: none) ###
-=====================================================
-
-
-==========================================================
-### Processing N-gram Level: n = 1 for model 'directgcn' ###
-==========================================================
-
-  Initializing n=1 features with random noise (dim=512).
-  Generating self-supervised labels for task: 'community'
-    Generating community labels for all connected components...
-      Found 1 connected components.
-      Graph has one component, running Louvain community detection...
-      Found 10 communities across all components.
-  Graph n=1 Homophily Ratio: 0.1286. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=False; cluster_threshold=3000; num_nodes=21
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: community)...
-    Epoch: 001, Loss: 2.3859, Train Acc: 0.0476, LR: 0.008148
-    Epoch: 010, Loss: 1.6900, Train Acc: 0.5714, LR: 0.008148
-    Epoch: 020, Loss: 1.1983, Train Acc: 0.5238, LR: 0.008148
-    Epoch: 030, Loss: 0.7961, Train Acc: 0.7143, LR: 0.008148
-    Epoch: 040, Loss: 0.4954, Train Acc: 0.9048, LR: 0.008148
-    Epoch: 050, Loss: 0.6500, Train Acc: 0.6667, LR: 0.008148
-  Extracting embeddings for 21 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-
-==========================================================
-### Processing N-gram Level: n = 2 for model 'directgcn' ###
-==========================================================
-
-  Pooling (n-1)-gram embeddings to initialize features for n=2 graph (Strategy: attention)...
-
-[A
-[A  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 421 nodes.
-
-[A
-[A  Graph n=2 Homophily Ratio: 0.0171. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=False; cluster_threshold=3000; num_nodes=421
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: next_node)...
-    Epoch: 001, Loss: 6.0782, Train Acc: 0.0024, LR: 0.008148
-    Epoch: 010, Loss: 4.3499, Train Acc: 0.0594, LR: 0.008148
-    Epoch: 020, Loss: 3.9608, Train Acc: 0.0594, LR: 0.008148
-    Epoch: 030, Loss: 3.7408, Train Acc: 0.1116, LR: 0.008148
-    Epoch: 040, Loss: 3.4745, Train Acc: 0.0808, LR: 0.008148
-    Epoch: 050, Loss: 3.3418, Train Acc: 0.1045, LR: 0.008148
-  Extracting embeddings for 421 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-
-==========================================================
-### Processing N-gram Level: n = 3 for model 'directgcn' ###
-==========================================================
-
-  Pooling (n-1)-gram embeddings to initialize features for n=3 graph (Strategy: attention)...
-
-[A
-[A
-[A  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 8399 nodes.
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A  Graph n=3 Homophily Ratio: 0.0007. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=True; cluster_threshold=3000; num_nodes=8399
-  Partitioning graph with 8399 nodes for clustered training (Method: graclus)...
-  - Graph coarsening disabled by config. Falling back to Louvain partitioning.
-  - WARNING: Undirected matrix not available for Louvain. Returning single partition.
-  Stochastic multiple partitions enabled. Grouping 5 clusters per batch.
-  Starting Cluster-GCN style training for up to 50 epochs on 1 subgraphs (Task: next_node). EarlyStopping=ON (patience=100, min_delta=1e-05).
-
-[A
-[A    Epoch: 001, Avg Batch Loss: 9.0726, Train Acc: 0.0001, LR: 0.008148
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 010, Avg Batch Loss: 8.2583, Train Acc: 0.0017, LR: 0.008148
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 020, Avg Batch Loss: 7.9408, Train Acc: 0.0011, LR: 0.008148
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 030, Avg Batch Loss: 7.7474, Train Acc: 0.0033, LR: 0.008148
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 040, Avg Batch Loss: 7.4957, Train Acc: 0.0031, LR: 0.008148
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A    Epoch: 050, Avg Batch Loss: 7.3161, Train Acc: 0.0033, LR: 0.008148
-  Extracting embeddings for 8399 nodes using clustered inference...
-  Partitioning graph with 8399 nodes for clustered training (Method: graclus)...
-  - Graph coarsening disabled by config. Falling back to Louvain partitioning.
-  - WARNING: Undirected matrix not available for Louvain. Returning single partition.
-
-[A
-[A  Hierarchical training complete. Starting protein-level pooling...
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=1 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=2 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=3 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-[A
-
-[A
-Applying IncrementalPCA to file: 'directgcn_vector_gating_n1_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_vector_gating_n1_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_vector_gating_n1_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_vector_gating_n1_dim64.h5
-
-[A
-Applying IncrementalPCA to file: 'directgcn_vector_gating_n2_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_vector_gating_n2_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_vector_gating_n2_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_vector_gating_n2_dim64.h5
-
-[A
-Applying IncrementalPCA to file: 'directgcn_vector_gating_n3_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_vector_gating_n3_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_vector_gating_n3_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_vector_gating_n3_dim64.h5
-
-[A
-Applying IncrementalPCA to file: 'directgcn_none_gating_n1_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_none_gating_n1_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_none_gating_n1_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_none_gating_n1_dim64.h5
-
-[A
-Applying IncrementalPCA to file: 'directgcn_none_gating_n2_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_none_gating_n2_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_none_gating_n2_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_none_gating_n2_dim64.h5
-
-[A
-Applying IncrementalPCA to file: 'directgcn_none_gating_n3_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_none_gating_n3_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_none_gating_n3_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_none_gating_n3_dim64.h5
-
-===============================================
-### ProtGram Embedding PIPELINE STEP FINISHED ###
-===============================================
-
-[32m[I 2025-09-10 00:39:48,635][0m Trial 1 finished with value: inf and parameters: {'PROTGRAM_LR': 0.008148293210105292, 'PROTGRAM_WEIGHT_DECAY': 1.2087541473056965e-06, 'PROTGRAM_GNN_HIDDEN_CHANNELS': 32, 'PROTGRAM_GNN_NUM_LAYERS': 3, 'PROTGRAM_GATING_COEFF_MODE': None}. Best is trial 0 with value: inf.[0m
-
-
-================================
-### ProtGram-XGCN HPO Finished ###
-================================
-
-  Best average training loss: inf
-    - PROTGRAM_LR: 0.0010253509690168502
-    - PROTGRAM_WEIGHT_DECAY: 0.006351221010640704
-    - PROTGRAM_GNN_HIDDEN_CHANNELS: 32
-    - PROTGRAM_GNN_NUM_LAYERS: 2
-    - PROTGRAM_GATING_COEFF_MODE: vector
-  Applied best ProtGram-XGCN hyperparameters to config.
-
-=======================================
-### Preparing Pipeline: ProtGram-XGCN ###
-=======================================
-
-  - No checkpoint found for step: 'ProtGram-XGCN'.
-Using device: cuda
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-
-=====================================================================
-### PIPELINE STEP: Training ProtGram Models & Generating Embeddings ###
-=====================================================================
-
-
-=======================================================
-### Processing Model Type: DIRECTGCN (Gating: vector) ###
-=======================================================
-
-
-==========================================================
-### Processing N-gram Level: n = 1 for model 'directgcn' ###
-==========================================================
-
-  Loading graph for n=1 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
-  Initializing n=1 features with random noise (dim=512).
-  Generating self-supervised labels for task: 'community'
-    Generating community labels for all connected components...
-      Found 1 connected components.
-      Graph has one component, running Louvain community detection...
-      Found 10 communities across all components.
-  Graph n=1 Homophily Ratio: 0.1286. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=False; cluster_threshold=3000; num_nodes=21
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: community)...
-    Epoch: 001, Loss: 2.2664, Train Acc: 0.0952, LR: 0.001025
-    Epoch: 010, Loss: 1.9781, Train Acc: 0.2857, LR: 0.001025
-    Epoch: 020, Loss: 1.6165, Train Acc: 0.4286, LR: 0.001025
-    Epoch: 030, Loss: 1.4130, Train Acc: 0.6190, LR: 0.001025
-    Epoch: 040, Loss: 1.2443, Train Acc: 0.7619, LR: 0.001025
-    Epoch: 050, Loss: 0.9806, Train Acc: 0.7143, LR: 0.001025
-  Extracting embeddings for 21 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-
-==========================================================
-### Processing N-gram Level: n = 2 for model 'directgcn' ###
-==========================================================
-
-  Loading graph for n=2 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
-  Pooling (n-1)-gram embeddings to initialize features for n=2 graph (Strategy: attention)...
-  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 421 nodes.
-  Graph n=2 Homophily Ratio: 0.0171. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=False; cluster_threshold=3000; num_nodes=421
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: next_node)...
-    Epoch: 001, Loss: 6.0774, Train Acc: 0.0024, LR: 0.001025
-    Epoch: 010, Loss: 5.7887, Train Acc: 0.0356, LR: 0.001025
-    Epoch: 020, Loss: 5.4708, Train Acc: 0.0689, LR: 0.001025
-    Epoch: 030, Loss: 5.1199, Train Acc: 0.0523, LR: 0.001025
-    Epoch: 040, Loss: 4.6390, Train Acc: 0.0546, LR: 0.001025
-    Epoch: 050, Loss: 4.3456, Train Acc: 0.0831, LR: 0.001025
-  Extracting embeddings for 421 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-
-==========================================================
-### Processing N-gram Level: n = 3 for model 'directgcn' ###
-==========================================================
-
-  Loading graph for n=3 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_003705/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
-  Pooling (n-1)-gram embeddings to initialize features for n=3 graph (Strategy: attention)...
-  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 8399 nodes.
-  Graph n=3 Homophily Ratio: 0.0007. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=True; cluster_threshold=3000; num_nodes=8399
-  Partitioning graph with 8399 nodes for clustered training (Method: graclus)...
-  - Graph coarsening disabled by config. Falling back to Louvain partitioning.
-  - WARNING: Undirected matrix not available for Louvain. Returning single partition.
-  Stochastic multiple partitions enabled. Grouping 5 clusters per batch.
-  Starting Cluster-GCN style training for up to 50 epochs on 1 subgraphs (Task: next_node). EarlyStopping=ON (patience=100, min_delta=1e-05).
-    Epoch: 001, Avg Batch Loss: 9.0656, Train Acc: 0.0000, LR: 0.001025
-    Epoch: 010, Avg Batch Loss: 9.0369, Train Acc: 0.0002, LR: 0.001025
-    Epoch: 020, Avg Batch Loss: 9.0254, Train Acc: 0.0010, LR: 0.001025
-    Epoch: 030, Avg Batch Loss: 9.0083, Train Acc: 0.0008, LR: 0.001025
-    Epoch: 040, Avg Batch Loss: 8.9800, Train Acc: 0.0006, LR: 0.001025
-    Epoch: 050, Avg Batch Loss: 8.9335, Train Acc: 0.0020, LR: 0.001025
-  Extracting embeddings for 8399 nodes using clustered inference...
-  Partitioning graph with 8399 nodes for clustered training (Method: graclus)...
-  - Graph coarsening disabled by config. Falling back to Louvain partitioning.
-  - WARNING: Undirected matrix not available for Louvain. Returning single partition.
-  Hierarchical training complete. Starting protein-level pooling...
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=1 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=2 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=3 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-
-=====================================================
-### Processing Model Type: DIRECTGCN (Gating: none) ###
-=====================================================
-
-
-==========================================================
-### Processing N-gram Level: n = 1 for model 'directgcn' ###
-==========================================================
-
-  Initializing n=1 features with random noise (dim=512).
-  Generating self-supervised labels for task: 'community'
-    Generating community labels for all connected components...
-      Found 1 connected components.
-      Graph has one component, running Louvain community detection...
-      Found 10 communities across all components.
-  Graph n=1 Homophily Ratio: 0.1286. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=False; cluster_threshold=3000; num_nodes=21
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: community)...
-    Epoch: 001, Loss: 2.3859, Train Acc: 0.0476, LR: 0.001025
-    Epoch: 010, Loss: 2.0502, Train Acc: 0.3810, LR: 0.001025
-    Epoch: 020, Loss: 1.8147, Train Acc: 0.5714, LR: 0.001025
-    Epoch: 030, Loss: 1.4552, Train Acc: 0.6190, LR: 0.001025
-    Epoch: 040, Loss: 1.2391, Train Acc: 0.7143, LR: 0.001025
-    Epoch: 050, Loss: 1.0015, Train Acc: 0.7619, LR: 0.001025
-  Extracting embeddings for 21 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-
-==========================================================
-### Processing N-gram Level: n = 2 for model 'directgcn' ###
-==========================================================
-
-  Pooling (n-1)-gram embeddings to initialize features for n=2 graph (Strategy: attention)...
-  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 421 nodes.
-  Graph n=2 Homophily Ratio: 0.0171. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=False; cluster_threshold=3000; num_nodes=421
-  Preparing specialized graph views for 'directgcn'.
-  Starting full-batch training for up to 50 epochs (Task: next_node)...
-    Epoch: 001, Loss: 6.0803, Train Acc: 0.0000, LR: 0.001025
-    Epoch: 010, Loss: 5.7544, Train Acc: 0.0285, LR: 0.001025
-    Epoch: 020, Loss: 5.4614, Train Acc: 0.0618, LR: 0.001025
-    Epoch: 030, Loss: 5.0549, Train Acc: 0.0713, LR: 0.001025
-    Epoch: 040, Loss: 4.5240, Train Acc: 0.0523, LR: 0.001025
-    Epoch: 050, Loss: 4.1489, Train Acc: 0.0831, LR: 0.001025
-  Extracting embeddings for 421 nodes using full-batch inference...
-  Preparing specialized graph views for 'directgcn'.
-
-==========================================================
-### Processing N-gram Level: n = 3 for model 'directgcn' ###
-==========================================================
-
-  Pooling (n-1)-gram embeddings to initialize features for n=3 graph (Strategy: attention)...
-  Generating self-supervised labels for task: 'next_node'
-    Generating next_node labels for all 8399 nodes.
-  Graph n=3 Homophily Ratio: 0.0007. Is Heterophilic? -> False
-  Creating new instance of 'directgcn' for context 'protgram'.
-  Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
-  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = 50; use_cluster_training=True; cluster_threshold=3000; num_nodes=8399
-  Partitioning graph with 8399 nodes for clustered training (Method: graclus)...
-  - Graph coarsening disabled by config. Falling back to Louvain partitioning.
-  - WARNING: Undirected matrix not available for Louvain. Returning single partition.
-  Stochastic multiple partitions enabled. Grouping 5 clusters per batch.
-  Starting Cluster-GCN style training for up to 50 epochs on 1 subgraphs (Task: next_node). EarlyStopping=ON (patience=100, min_delta=1e-05).
-    Epoch: 001, Avg Batch Loss: 9.0763, Train Acc: 0.0002, LR: 0.001025
-    Epoch: 010, Avg Batch Loss: 9.0357, Train Acc: 0.0004, LR: 0.001025
-    Epoch: 020, Avg Batch Loss: 9.0266, Train Acc: 0.0005, LR: 0.001025
-    Epoch: 030, Avg Batch Loss: 9.0117, Train Acc: 0.0006, LR: 0.001025
-    Epoch: 040, Avg Batch Loss: 8.9897, Train Acc: 0.0004, LR: 0.001025
-    Epoch: 050, Avg Batch Loss: 8.9427, Train Acc: 0.0015, LR: 0.001025
-  Extracting embeddings for 8399 nodes using clustered inference...
-  Partitioning graph with 8399 nodes for clustered training (Method: graclus)...
-  - Graph coarsening disabled by config. Falling back to Louvain partitioning.
-  - WARNING: Undirected matrix not available for Louvain. Returning single partition.
-  Hierarchical training complete. Starting protein-level pooling...
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=1 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=2 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-
-================================================================
-### Step 3: Pooling N-Gram Embeddings to Protein Level for n=3 ###
-================================================================
-
-  Starting protein-level pooling (Strategy: attention)...
-
-
-Applying IncrementalPCA to file: 'directgcn_vector_gating_n1_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_vector_gating_n1_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_vector_gating_n1_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_vector_gating_n1_dim64.h5
-
-Applying IncrementalPCA to file: 'directgcn_vector_gating_n2_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_vector_gating_n2_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_vector_gating_n2_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_vector_gating_n2_dim64.h5
-
-Applying IncrementalPCA to file: 'directgcn_vector_gating_n3_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_vector_gating_n3_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_vector_gating_n3_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_vector_gating_n3_dim64.h5
-
-Applying IncrementalPCA to file: 'directgcn_none_gating_n1_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_none_gating_n1_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_none_gating_n1_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_none_gating_n1_dim64.h5
-
-Applying IncrementalPCA to file: 'directgcn_none_gating_n2_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_none_gating_n2_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_none_gating_n2_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_none_gating_n2_dim64.h5
-
-Applying IncrementalPCA to file: 'directgcn_none_gating_n3_dim64.h5'. Target dimension: 64
-  Phase 1: Fitting IncrementalPCA model on data chunks...
-  Memory Strategy ('low'): Using lazy loading for 'directgcn_none_gating_n3_dim64.h5'.
-  Detected new, efficient HDF5 format for 'directgcn_none_gating_n3_dim64.h5'.
-  PCA Skipped: Target dimension (64) is >= original dimension (64).
-Closed H5 file: directgcn_none_gating_n3_dim64.h5
-
-===============================================
-### ProtGram Embedding PIPELINE STEP FINISHED ###
-===============================================
-
-  Skipping standardization, assuming generated embeddings use correct IDs.
-  ✅ Checkpoint saved for step: 'ProtGram-XGCN'
-
-✅ Pipeline step 'ProtGram-XGCN' is complete. Continue to the next step? (y/n):   Scanning for existing, pre-generated embeddings...
-  Info: Skipping HPO. It requires both RUN_PROTGRAM_XGCN_PIPELINE and RUN_MAIN_PPI_EVALUATION to be enabled.
-
-====================================================
-### Full Orchestration Finished in 193.01 seconds. ###
-====================================================
-
+[33m[W 2025-09-10 01:18:01,232][0m Trial 0 failed with parameters: {'PROTGRAM_LR': 0.0010253509690168502, 'PROTGRAM_WEIGHT_DECAY': 0.006351221010640704, 'PROTGRAM_GNN_HIDDEN_CHANNELS': 32, 'PROTGRAM_GNN_NUM_LAYERS': 2, 'PROTGRAM_GATING_COEFF_MODE': 'vector'} because of the following error: KeyboardInterrupt().[0m
+Traceback (most recent call last):
+  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/optuna/study/_optimize.py", line 201, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/models/hyperparameter_optimizer.py", line 234, in objective
+    trainer.run()
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/trainers/protgram_xgcn.py", line 99, in run
+    ngram_embeddings_per_level, attention_logs_for_model = self._train_gnns_hierarchically(
+                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/trainers/protgram_xgcn.py", line 230, in _train_gnns_hierarchically
+    labels, num_classes_for_task = self.label_generator.generate_task_labels(graph_obj, task_type)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/data_builders/xgcn.py", line 42, in generate_task_labels
+    return DataUtils.generate_community_labels(community_graph_data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/data/data_utils.py", line 152, in generate_community_labels
+    G = to_networkx(graph_data, to_undirected=True, edge_attrs=['edge_attr'])
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/torch_geometric/utils/convert.py", line 171, in to_networkx
+    for i, (v, w) in enumerate(edge_store.edge_index.t().tolist()):
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+[33m[W 2025-09-10 01:18:01,252][0m Trial 0 failed with value None.[0m
+
+
+Interrupted by user. Exiting gracefully.
