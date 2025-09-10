@@ -215,9 +215,11 @@ class HyperparameterOptimizer:
             trial_cfg.PROTGRAM_GNN_NUM_LAYERS = suggest(trial, 'PROTGRAM_GNN_NUM_LAYERS')
             trial_cfg.PROTGRAM_GATING_COEFF_MODE = suggest(trial, 'PROTGRAM_GATING_COEFF_MODE')
 
-            # Speed up trial: cap epochs conservatively
+            # Speed up trial: cap epochs conservatively (HPO-only)
             try_epochs = min(getattr(self.base_config, 'PROTGRAM_EPOCHS_PER_LEVEL', 200), 50)
             trial_cfg.PROTGRAM_EPOCHS_PER_LEVEL = try_epochs
+            # Mark this config as HPO trial mode so trainers don't reuse this cap later
+            trial_cfg.PROTGRAM_HPO_TRIAL_MODE = True
 
             # Restrict models to 'directgcn' for trial speed unless explicitly set
             trial_cfg.PROTGRAM_MODELS_TO_TRAIN = ['directgcn']

@@ -634,6 +634,8 @@ class Config:
         self.PROTGRAM_GATING_COEFF_MODE = params['PROTGRAM_GATING_COEFF_MODE']
         self.PROTGRAM_DIRECTGCN_PATH_SELECTION = params.get('PROTGRAM_DIRECTGCN_PATH_SELECTION', 'full')
         self.PROTGRAM_EPOCHS_PER_LEVEL = params['PROTGRAM_EPOCHS_PER_LEVEL']
+        # Preserve the original YAML value for use outside HPO trials
+        self.PROTGRAM_EPOCHS_PER_LEVEL_ORIG = int(self.PROTGRAM_EPOCHS_PER_LEVEL)
         self.PROTGRAM_LR = params['PROTGRAM_LR']
         self.PROTGRAM_DROPOUT_RATE = params['PROTGRAM_DROPOUT_RATE']
         self.PROTGRAM_WEIGHT_DECAY = params['PROTGRAM_WEIGHT_DECAY']

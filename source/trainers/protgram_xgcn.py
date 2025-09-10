@@ -90,24 +90,25 @@ class ProtGramXGCNTrainer:
 
             for model_type in self.config.PROTGRAM_MODELS_TO_TRAIN:
                 if model_type == 'directgcn':
-                    for gating_mode in ['vector', None]:
-                        gating_mode_str = gating_mode if gating_mode is not None else 'none'
-                        DataUtils.print_header(f"Processing Model Type: {model_type.upper()} (Gating: {gating_mode_str})")
+                    # Run DirectGCN exactly once using the configured gating mode
+                    gating_mode = getattr(self.config, 'PROTGRAM_GATING_COEFF_MODE', 'vector')
+                    gating_mode_str = gating_mode if gating_mode is not None else 'none'
+                    DataUtils.print_header(f"Processing Model Type: {model_type.upper()} (Gating: {gating_mode_str})")
 
-                        # Correctly capture the attention logs from the hierarchical trainer
-                        ngram_embeddings_per_level, attention_logs_for_model = self._train_gnns_hierarchically(
-                            model_type, gating_coeff_mode=gating_mode
-                        )
-                        final_attention_logs.update(attention_logs_for_model)  # Aggregate logs
+                    # Correctly capture the attention logs from the hierarchical trainer
+                    ngram_embeddings_per_level, attention_logs_for_model = self._train_gnns_hierarchically(
+                        model_type, gating_coeff_mode=gating_mode
+                    )
+                    final_attention_logs.update(attention_logs_for_model)  # Aggregate logs
 
-                        # All hierarchical training for this model is complete; proceed to protein-level pooling.
-                        print("  Hierarchical training complete. Starting protein-level pooling...")
-                        pooled_results = self._pool_to_protein_level(
-                            ngram_embeddings_per_level, protein_sequences,
-                            level_ngram_to_idx=self._get_level_ngram_maps()
-                        )
-                        for n, (pooled_embeddings, _) in pooled_results.items():
-                            final_protein_embeddings_per_model[f"{model_type}_{gating_mode_str}_gating_n{n}"] = pooled_embeddings
+                    # All hierarchical training for this model is complete; proceed to protein-level pooling.
+                    print("  Hierarchical training complete. Starting protein-level pooling...")
+                    pooled_results = self._pool_to_protein_level(
+                        ngram_embeddings_per_level, protein_sequences,
+                        level_ngram_to_idx=self._get_level_ngram_maps()
+                    )
+                    for n, (pooled_embeddings, _) in pooled_results.items():
+                        final_protein_embeddings_per_model[f"{model_type}_{gating_mode_str}_gating_n{n}"] = pooled_embeddings
                 else:
                     DataUtils.print_header(f"Processing Model Type: {model_type.upper()}")
 
@@ -183,16 +184,6 @@ class ProtGramXGCNTrainer:
 
             FileUtils.write_h5(embeddings, output_path, f"Writing H5 for {model_name}")
             output_paths[model_name] = str(output_path)
-
-            if self.config.PCA_TARGET_DIMENSION > 0:
-                pca_path = EmbeddingProcessor.apply_pca_to_h5(
-                    input_h5_path=output_path,
-                    output_dir=output_dir,
-                    target_dimension=self.config.PCA_TARGET_DIMENSION,
-                    random_seed=self.config.RANDOM_STATE
-                )
-                if str(pca_path) != str(output_path):
-                    output_paths[f"{model_name}_pca"] = str(pca_path)
         return output_paths
 
 
@@ -302,10 +293,16 @@ class ProtGramXGCNTrainer:
         task_type = self.config.PROTGRAM_TASK_TYPES_PER_LEVEL.get(graph_obj.n_value, self.config.PROTGRAM_DEFAULT_TASK_TYPE)
 
         # Resolve epochs once and add a diagnostic log
-        resolved_epochs = int(self.config.PROTGRAM_EPOCHS_PER_LEVEL)
+        # Use original YAML epochs unless we are inside an HPO trial
+        if getattr(self.config, 'PROTGRAM_HPO_TRIAL_MODE', False):
+            resolved_epochs = int(self.config.PROTGRAM_EPOCHS_PER_LEVEL)
+            source_note = "HPO-trial"
+        else:
+            resolved_epochs = int(getattr(self.config, 'PROTGRAM_EPOCHS_PER_LEVEL_ORIG', self.config.PROTGRAM_EPOCHS_PER_LEVEL))
+            source_note = "YAML"
         if self.config.DEBUG_VERBOSE:
             will_cluster = bool(self.config.PROTGRAM_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES)
-            print(f"  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = {resolved_epochs}; "
+            print(f"  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved={resolved_epochs}, source={source_note}); "
                   f"use_cluster_training={will_cluster}; "
                   f"cluster_threshold={self.config.PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES}; "
                   f"num_nodes={graph_obj.number_of_nodes}")
@@ -672,12 +669,26 @@ class ProtGramXGCNTrainer:
         elif method == 'louvain':
             import community as community_louvain
             import networkx as nx
-            # Use the undirected, unweighted graph for community detection as it's standard.
-            if graph_obj.A_undirected_norm_sparse is None or graph_obj.A_undirected_norm_sparse._nnz() == 0:
-                print("  - WARNING: Undirected matrix not available for Louvain. Returning single partition.")
+            # Use an undirected, unweighted graph for Louvain; fall back gracefully if normalized is missing.
+            edge_index = None
+            if getattr(graph_obj, 'A_undirected_norm_sparse', None) is not None and graph_obj.A_undirected_norm_sparse._nnz() > 0:
+                edge_index = graph_obj.A_undirected_norm_sparse.indices().cpu().numpy()
+            else:
+                # Try raw undirected matrix if available
+                if hasattr(graph_obj, 'A_undirected_w') and graph_obj.A_undirected_w is not None and graph_obj.A_undirected_w._nnz() > 0:
+                    edge_index = graph_obj.A_undirected_w.indices().cpu().numpy()
+                else:
+                    # Last resort: symmetrize directed out adjacency
+                    A_out = getattr(graph_obj, 'A_out_w', None)
+                    if A_out is not None and A_out._nnz() > 0:
+                        A_undir = (A_out + A_out.t()).coalesce()
+                        if A_undir._nnz() > 0:
+                            edge_index = A_undir.indices().cpu().numpy()
+
+            if edge_index is None:
+                print("  - WARNING: Undirected matrix not available for Louvain (even after fallback). Returning single partition.")
                 return [list(range(graph_obj.number_of_nodes))]
 
-            edge_index = graph_obj.A_undirected_norm_sparse.indices().cpu().numpy()
             G_nx = nx.Graph()
             G_nx.add_nodes_from(range(graph_obj.number_of_nodes))
             G_nx.add_edges_from(edge_index.T)
