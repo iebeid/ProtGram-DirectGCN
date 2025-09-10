@@ -301,13 +301,22 @@ class ProtGramXGCNTrainer:
         # Determine the task type for this level (e.g., community detection, masked node prediction)
         task_type = self.config.PROTGRAM_TASK_TYPES_PER_LEVEL.get(graph_obj.n_value, self.config.PROTGRAM_DEFAULT_TASK_TYPE)
 
+        # Resolve epochs once and add a diagnostic log
+        resolved_epochs = int(self.config.PROTGRAM_EPOCHS_PER_LEVEL)
+        if self.config.DEBUG_VERBOSE:
+            will_cluster = bool(self.config.PROTGRAM_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES)
+            print(f"  DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved) = {resolved_epochs}; "
+                  f"use_cluster_training={will_cluster}; "
+                  f"cluster_threshold={self.config.PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES}; "
+                  f"num_nodes={graph_obj.number_of_nodes}")
+
         # If the graph is very large, use clustered training to avoid OOM errors.
         # Otherwise, use standard full-batch training.
         if self.config.PROTGRAM_USE_CLUSTER_TRAINING and graph_obj.number_of_nodes > self.config.PROTGRAM_CLUSTER_TRAINING_THRESHOLD_NODES:
             node_partitions = self._partition_graph(graph_obj)
-            self._train_single_level_clustered(model, data, node_partitions, optimizer, self.config.PROTGRAM_EPOCHS_PER_LEVEL, task_type)
+            self._train_single_level_clustered(model, data, node_partitions, optimizer, resolved_epochs, task_type)
         else:
-            self._train_single_level_full_batch(model, data, optimizer, self.config.PROTGRAM_EPOCHS_PER_LEVEL, task_type)
+            self._train_single_level_full_batch(model, data, optimizer, resolved_epochs, task_type)
 
     def _train_single_level_full_batch(self, model: nn.Module, data: Data, optimizer: torch.optim.Optimizer, epochs: int,
                                        task_type: str):
@@ -472,7 +481,12 @@ class ProtGramXGCNTrainer:
             print(f"  Stochastic multiple partitions enabled. Grouping {group_size} clusters per batch.")
 
         criterion = F.cross_entropy
-        print(f"  Starting Cluster-GCN style training for up to {epochs} epochs on {len(node_partitions)} subgraphs (Task: {task_type})...")
+        print(
+            f"  Starting Cluster-GCN style training for up to {int(epochs)} epochs on {len(node_partitions)} subgraphs "
+            f"(Task: {task_type}). EarlyStopping={'ON' if self.config.PROTGRAM_USE_EARLY_STOPPING else 'OFF'} "
+            f"(patience={self.config.PROTGRAM_EARLY_STOPPING_PATIENCE}, "
+            f"min_delta={self.config.PROTGRAM_EARLY_STOPPING_MIN_DELTA})."
+        )
 
         for epoch in range(1, epochs + 1):
             random.shuffle(node_partitions)
@@ -618,6 +632,10 @@ class ProtGramXGCNTrainer:
         """
         method = self.config.PROTGRAM_PARTITIONING_METHOD
         print(f"  Partitioning graph with {graph_obj.number_of_nodes} nodes for clustered training (Method: {method})...")
+        # If coarsening is disabled, force Louvain regardless of the configured method
+        if getattr(self.config, 'PROTGRAM_DISABLE_GRAPH_COARSENING', False) and method == 'graclus':
+            print("  - Graph coarsening disabled by config. Falling back to Louvain partitioning.")
+            method = 'louvain'
 
         if method == 'graclus':
             from source.data_structures.coarsener import GraphCoarsener
