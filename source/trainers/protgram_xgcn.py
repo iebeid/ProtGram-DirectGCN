@@ -88,6 +88,14 @@ class ProtGramXGCNTrainer:
             final_attention_logs: Dict[str, Dict] = {}  # Initialize the aggregator
             protein_sequences = list(FastaUtils.parse_sequences(self.config.SEQUENCE_FILE_PATHS))
 
+            # Ensure normal runs never inherit HPO trial settings
+            if hasattr(self.config, 'PROTGRAM_HPO_TRIAL_MODE') and self.config.PROTGRAM_HPO_TRIAL_MODE:
+                self.config.PROTGRAM_HPO_TRIAL_MODE = False
+            if hasattr(self.config, 'PROTGRAM_EPOCHS_PER_LEVEL_ORIG'):
+                self.config.PROTGRAM_EPOCHS_PER_LEVEL = int(self.config.PROTGRAM_EPOCHS_PER_LEVEL_ORIG)
+                if self.config.DEBUG_VERBOSE:
+                    print(f"  DEBUG: Trainer restoring epochs to YAML value: PROTGRAM_EPOCHS_PER_LEVEL={self.config.PROTGRAM_EPOCHS_PER_LEVEL}")
+
             # Ensure epochs reflect YAML for normal runs (HPO trials may override)
             if not getattr(self.config, 'PROTGRAM_HPO_TRIAL_MODE', False):
                 if hasattr(self.config, 'PROTGRAM_EPOCHS_PER_LEVEL_ORIG'):

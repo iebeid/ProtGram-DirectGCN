@@ -138,7 +138,7 @@ protgram_gcn:
   PROTGRAM_1GRAM_INIT_DIM: 512
   PROTGRAM_GNN_HIDDEN_CHANNELS: 64
   PROTGRAM_GNN_NUM_LAYERS: 2
-  PROTGRAM_GATING_COEFF_MODE: "vector"
+  PROTGRAM_GATING_COEFF_MODE: "scalar"
   PROTGRAM_DIRECTGCN_PATH_SELECTION: 'full'  # Options: 'full' | 'undirected' | 'in_out'; 'in_out' disables undirected path
   PROTGRAM_EPOCHS_PER_LEVEL: 300
   PROTGRAM_LR: 0.005

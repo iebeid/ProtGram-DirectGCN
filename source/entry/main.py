@@ -453,6 +453,11 @@ class PipelineOrchestrator:
                                 for k, v in best_xgcn_params.items():
                                     if hasattr(config, k):
                                         setattr(config, k, v)
+                                # Ensure no HPO trial settings leak into main run
+                                if hasattr(config, 'PROTGRAM_HPO_TRIAL_MODE'):
+                                    config.PROTGRAM_HPO_TRIAL_MODE = False
+                                if hasattr(config, 'PROTGRAM_EPOCHS_PER_LEVEL_ORIG'):
+                                    config.PROTGRAM_EPOCHS_PER_LEVEL = int(config.PROTGRAM_EPOCHS_PER_LEVEL_ORIG)
                                 print("  Applied best ProtGram-XGCN hyperparameters to config.")
 
                         # Main embedding generation
