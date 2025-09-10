@@ -56,8 +56,9 @@ class ProtGramXGCNTrainer:
        sequence to generate a final, fixed-size vector for each protein.
     """
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, hpo_mode: bool = False):
         self.config = config
+        self.hpo_mode = bool(hpo_mode)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.label_generator = XGCNDataBuilder(config)
         # --- NEW: Use the centralized model factory ---
@@ -308,8 +309,8 @@ class ProtGramXGCNTrainer:
         task_type = self.config.PROTGRAM_TASK_TYPES_PER_LEVEL.get(graph_obj.n_value, self.config.PROTGRAM_DEFAULT_TASK_TYPE)
 
         # Resolve epochs once and add a diagnostic log
-        # Use original YAML epochs unless we are inside an HPO trial
-        if getattr(self.config, 'PROTGRAM_HPO_TRIAL_MODE', False):
+        # Use original YAML epochs unless this trainer was created for HPO trials
+        if self.hpo_mode:
             resolved_epochs = int(self.config.PROTGRAM_EPOCHS_PER_LEVEL)
             source_note = "HPO-trial"
         else:

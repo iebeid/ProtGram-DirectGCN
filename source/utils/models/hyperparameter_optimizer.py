@@ -183,15 +183,20 @@ class HyperparameterOptimizer:
         from copy import deepcopy
         from source.trainers.protgram_xgcn import ProtGramXGCNTrainer
 
-        # Default search space if not provided in Config
+        # Default search space if not provided in Config (do not tune gating mode)
         default_space = {
             'PROTGRAM_LR': {'type': 'loguniform', 'low': 1e-4, 'high': 5e-2},
             'PROTGRAM_WEIGHT_DECAY': {'type': 'loguniform', 'low': 1e-6, 'high': 1e-2},
             'PROTGRAM_GNN_HIDDEN_CHANNELS': {'type': 'categorical', 'choices': [32, 64, 128]},
             'PROTGRAM_GNN_NUM_LAYERS': {'type': 'categorical', 'choices': [2, 3]},
-            'PROTGRAM_GATING_COEFF_MODE': {'type': 'categorical', 'choices': ['vector', None]},
         }
-        search_space = getattr(self.base_config, 'HPO_PROTGRAM_XGCN_SEARCH_SPACE', default_space)
+        # Start from user-provided space if available, but drop gating mode if present
+        search_space = dict(getattr(self.base_config, 'HPO_PROTGRAM_XGCN_SEARCH_SPACE', default_space))
+        if 'PROTGRAM_GATING_COEFF_MODE' in search_space:
+            try:
+                del search_space['PROTGRAM_GATING_COEFF_MODE']
+            except Exception:
+                pass
 
         def suggest(trial: optuna.Trial, name: str):
             spec = search_space[name]
@@ -229,7 +234,7 @@ class HyperparameterOptimizer:
             # Disable MLflow inside trainer during HPO to avoid nested run conflicts
             trial_cfg.USE_MLFLOW = False
 
-            trainer = ProtGramXGCNTrainer(trial_cfg)
+            trainer = ProtGramXGCNTrainer(trial_cfg, hpo_mode=True)
             try:
                 trainer.run()
                 stats = trainer.get_training_metrics()
