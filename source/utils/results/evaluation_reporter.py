@@ -98,42 +98,70 @@ class EvaluationReporter:
     @staticmethod
     def _calculate_ranking_metrics(y_true: np.ndarray, y_score: np.ndarray, k_list: List[int]) -> Dict[str, float]:
         """
-        Calculates ranking metrics like Hits@k (as Recall@k) and NDCG@k.
+        Calculates ranking metrics:
+          - hits_at_k: Recall@K (positives in top-K / total positives)
+          - precision_at_k: Precision@K (positives in top-K / K)
+          - hits_count_at_k: raw count of positives in top-K
+          - ndcg_at_k: DCG@K normalized by IDCG@K (binary relevance)
+        Notes:
+          - Computations are done in float64 for numerical stability.
         """
         if len(y_true) != len(y_score):
             raise ValueError("y_true and y_score must have the same length.")
 
-        combined = np.stack([y_score, y_true], axis=1)
-        sorted_combined = combined[np.argsort(combined[:, 0])[::-1]]
-        sorted_true_labels = sorted_combined[:, 1]
+        # Ensure stable dtypes
+        y_true = np.asarray(y_true).astype(np.float64)
+        y_score = np.asarray(y_score).astype(np.float64)
 
-        metrics = {}
-        total_positives = np.sum(y_true)
+        # Sort by predicted scores descending
+        order = np.argsort(y_score)[::-1]
+        sorted_true_labels = y_true[order]
 
-        if total_positives == 0:
+        metrics: Dict[str, float] = {}
+        total_positives = float(np.sum(y_true))
+
+        # If no positives, all metrics are zero
+        if total_positives == 0.0:
             for k in k_list:
                 metrics[f'hits_at_{k}'] = 0.0
+                metrics[f'precision_at_{k}'] = 0.0
+                metrics[f'hits_count_at_{k}'] = 0.0
                 metrics[f'ndcg_at_{k}'] = 0.0
             return metrics
 
+        # Ideal ordering by true labels for IDCG computation (binary relevance)
         ideal_ranking = np.sort(y_true)[::-1]
 
         for k in k_list:
-            actual_k = min(k, len(sorted_true_labels))
-            if actual_k == 0:
+            actual_k = int(min(k, len(sorted_true_labels)))
+            if actual_k <= 0:
                 metrics[f'hits_at_{k}'] = 0.0
+                metrics[f'precision_at_{k}'] = 0.0
+                metrics[f'hits_count_at_{k}'] = 0.0
                 metrics[f'ndcg_at_{k}'] = 0.0
                 continue
 
-            hits_in_top_k = np.sum(sorted_true_labels[:actual_k])
+            topk_labels = sorted_true_labels[:actual_k]
+            hits_in_top_k = float(np.sum(topk_labels))
+
+            # Recall@K (keep legacy name hits_at_k)
             metrics[f'hits_at_{k}'] = hits_in_top_k / total_positives
+            # Precision@K and raw count
+            metrics[f'precision_at_{k}'] = hits_in_top_k / float(actual_k)
+            metrics[f'hits_count_at_{k}'] = hits_in_top_k
 
-            ranks = np.arange(1, actual_k + 1)
-            discounts = np.log2(ranks + 1)
-            dcg = np.sum(sorted_true_labels[:actual_k] / discounts)
-            idcg = np.sum(ideal_ranking[:actual_k] / discounts)
+            # DCG/IDCG with binary gains; use (2^rel - 1) / log2(1+rank)
+            ranks = np.arange(1, actual_k + 1, dtype=np.float64)
+            discounts = np.log2(ranks + 1.0)
 
-            metrics[f'ndcg_at_{k}'] = dcg / idcg if idcg > 0 else 0.0
+            gains = (2.0 ** topk_labels - 1.0)
+            dcg = float(np.sum(gains / discounts))
+
+            ideal_topk = ideal_ranking[:actual_k]
+            ideal_gains = (2.0 ** ideal_topk - 1.0)
+            idcg = float(np.sum(ideal_gains / discounts))
+
+            metrics[f'ndcg_at_{k}'] = (dcg / idcg) if idcg > 0.0 else 0.0
 
         return metrics
 
@@ -151,8 +179,14 @@ class EvaluationReporter:
                 "F1 StdDev": res.get('test_f1_sklearn_std', 0.0)
             }
             for k_val in self.k_vals_table:
+                # Existing: recall@K named Hits@K for backward compatibility
                 row[f"Hits@{k_val}"] = res.get(f'test_hits_at_{k_val}', 0.0)
                 row[f"NDCG@{k_val}"] = res.get(f'test_ndcg_at_{k_val}', 0.0)
+                # New (optional): Precision@K and Hit Count@K if available
+                if f'test_precision_at_{k_val}' in res:
+                    row[f"Precision@{k_val}"] = res.get(f'test_precision_at_{k_val}', 0.0)
+                if f'test_hits_count_at_{k_val}' in res:
+                    row[f"HitsCount@{k_val}"] = res.get(f'test_hits_count_at_{k_val}', 0.0)
             rows_data.append(row)
 
         return pd.DataFrame(rows_data)

@@ -186,21 +186,35 @@ class PPIPipeline:
 
             # --- Evaluate Model ---
             print("    Evaluating model on validation set...")
-            y_pred_proba = model.predict(X_val, batch_size=self.config.EVAL_BATCH_SIZE).flatten()
-            y_true = y_val
-            y_pred_class = (y_pred_proba > 0.5).astype(int)
+            y_pred_proba = model.predict(X_val, batch_size=self.config.EVAL_BATCH_SIZE).flatten().astype(np.float32)
+            y_true = y_val.astype(np.int32)
+            y_pred_class = (y_pred_proba > 0.5).astype(np.int32)
 
             metrics = {'precision_sklearn': precision_score(y_true, y_pred_class, zero_division=0),
                        'recall_sklearn': recall_score(y_true, y_pred_class, zero_division=0),
                        'f1_sklearn': f1_score(y_true, y_pred_class, zero_division=0)}
             if len(np.unique(y_true)) > 1:
-                metrics['auc_sklearn'] = roc_auc_score(y_true, y_pred_proba)
-                metrics['roc_data'] = roc_curve(y_true, y_pred_proba)
+                metrics['auc_sklearn'] = float(roc_auc_score(y_true, y_pred_proba))
+                fpr, tpr, thresh = roc_curve(y_true, y_pred_proba)
+                # Keep ROC arrays as float32 for stable logging and file size
+                metrics['roc_data'] = (fpr.astype(np.float32), tpr.astype(np.float32), thresh.astype(np.float32))
             else:
                 metrics['auc_sklearn'] = 0.5
-                metrics['roc_data'] = (np.array([0, 1]), np.array([0, 1]), 0.5)
+                metrics['roc_data'] = (np.array([0, 1], dtype=np.float32), np.array([0, 1], dtype=np.float32), np.array([0.5], dtype=np.float32))
 
-            metrics.update(EvaluationReporter._calculate_ranking_metrics(y_true=y_true, y_score=y_pred_proba, k_list=self.config.EVAL_K_VALUES_FOR_TABLE))
+            # Add ranking metrics (recall@K, precision@K, counts, ndcg@K)
+            rank_metrics = EvaluationReporter._calculate_ranking_metrics(y_true=y_true, y_score=y_pred_proba, k_list=self.config.EVAL_K_VALUES_FOR_TABLE)
+            metrics.update(rank_metrics)
+
+            # Small diagnostic: show top-10 predictions (score, label) to validate ranking logic
+            try:
+                order = np.argsort(y_pred_proba)[::-1]
+                top_n = min(10, len(order))
+                top_pairs_preview = [(float(y_pred_proba[idx]), int(y_true[idx])) for idx in order[:top_n]]
+                metrics['diagnostic_top10_preview'] = top_pairs_preview
+            except Exception:
+                pass
+
             return metrics, history.history, model
 
         finally:
@@ -344,6 +358,102 @@ class PPIPipeline:
         print(f"CV workflow for {embedding_name} finished in {time.monotonic() - cv_start_time:.2f}s.")
         return aggregated_results
 
+    def _inductive_split_pairs_by_protein(
+            self,
+            pos_pairs: List[Tuple[str, str, int]],
+            neg_pairs: List[Tuple[str, str, int]],
+            val_fraction: float
+    ) -> Tuple[List[Tuple[str, str, int]], List[Tuple[str, str, int]]]:
+        """
+        Inductive split: build train/val sets by splitting proteins (not edges) independently
+        for positives and negatives, then keep only pairs whose endpoints both belong to the
+        corresponding split set. Negatives are downsampled to match the number of positives
+        per split (if possible).
+        """
+        rng = random.Random(self.config.RANDOM_STATE)
+
+        def split_proteins(pairs: List[Tuple[str, str, int]]) -> Tuple[set, set]:
+            prots = set()
+            for a, b, _ in pairs:
+                prots.add(a)
+                prots.add(b)
+            prots = list(prots)
+            rng.shuffle(prots)
+            cut = max(1, int(len(prots) * (1.0 - val_fraction)))
+            train_set = set(prots[:cut])
+            val_set = set(prots[cut:]) if cut < len(prots) else set()
+            if len(val_set) == 0:
+                # ensure non-empty val set where possible
+                if len(train_set) > 1:
+                    moved = next(iter(train_set))
+                    train_set.remove(moved)
+                    val_set.add(moved)
+            return train_set, val_set
+
+        pos_train_prots, pos_val_prots = split_proteins(pos_pairs)
+        neg_train_prots, neg_val_prots = split_proteins(neg_pairs)
+
+        # Filter pairs: both endpoints must lie within the split's protein set
+        pos_train_pairs = [(a, b, y) for (a, b, y) in pos_pairs if a in pos_train_prots and b in pos_train_prots]
+        pos_val_pairs = [(a, b, y) for (a, b, y) in pos_pairs if a in pos_val_prots and b in pos_val_prots]
+        neg_train_pairs_all = [(a, b, y) for (a, b, y) in neg_pairs if a in neg_train_prots and b in neg_train_prots]
+        neg_val_pairs_all = [(a, b, y) for (a, b, y) in neg_pairs if a in neg_val_prots and b in neg_val_prots]
+
+        # Balance: sample negatives to match positives per split
+        def sample_negatives(neg_pool: List[Tuple[str, str, int]], target_n: int) -> List[Tuple[str, str, int]]:
+            if target_n <= 0 or not neg_pool:
+                return []
+            if len(neg_pool) <= target_n:
+                return neg_pool
+            return rng.sample(neg_pool, target_n)
+
+        neg_train_pairs = sample_negatives(neg_train_pairs_all, len(pos_train_pairs))
+        neg_val_pairs = sample_negatives(neg_val_pairs_all, len(pos_val_pairs))
+
+        train_pairs = pos_train_pairs + neg_train_pairs
+        val_pairs = pos_val_pairs + neg_val_pairs
+        return train_pairs, val_pairs
+
+    def _run_single_split_workflow(
+            self,
+            embedding_name: str,
+            train_pairs: List[Tuple[str, str, int]],
+            val_pairs: List[Tuple[str, str, int]],
+            embedding_loader: EmbeddingLoader
+    ) -> Dict[str, Any]:
+        """
+        Trains once on the inductive training pairs and evaluates on the inductive validation pairs.
+        """
+        start_t = time.monotonic()
+        print(f"Starting Inductive workflow for {embedding_name}. Train={len(train_pairs)} Val={len(val_pairs)}")
+        aggregated_results: Dict[str, Any] = {'embedding_name': embedding_name, 'history_dict_fold1': {}, 'notes': "inductive_split"}
+
+        if not train_pairs or not val_pairs:
+            print("  Warning: Inductive split yielded an empty train or validation set.")
+            aggregated_results['notes'] = "inductive_split_empty_sets"
+            return aggregated_results
+
+        # Build features
+        X_train, y_train = EmbeddingProcessor.create_edge_features(train_pairs, embedding_loader, self.config.EVAL_EDGE_EMBEDDING_METHOD)
+        X_val, y_val = EmbeddingProcessor.create_edge_features(val_pairs, embedding_loader, self.config.EVAL_EDGE_EMBEDDING_METHOD)
+
+        # Train and evaluate
+        metrics, history, trained_model = self._train_and_evaluate_fold(
+            X_train=X_train, y_train=y_train, X_val=X_val, y_val=y_val, fold_num=0
+        )
+        aggregated_results['history_dict_fold1'] = history if isinstance(history, dict) else {}
+        # Store test_* metrics and lists for compatibility with reporter
+        for k, v in metrics.items():
+            if isinstance(v, (int, float, np.floating)):
+                aggregated_results[f'test_{k}'] = float(v)
+        aggregated_results['fold_f1_scores'] = [metrics.get('f1_sklearn', np.nan)]
+        aggregated_results['fold_auc_scores'] = [metrics.get('auc_sklearn', np.nan)]
+        if 'roc_data' in metrics:
+            aggregated_results['roc_data_representative'] = metrics['roc_data']
+
+        print(f"Inductive workflow for {embedding_name} finished in {time.monotonic() - start_t:.2f}s.")
+        return aggregated_results
+
     def run(self):
         """
         The main public entry point for the PPI evaluation pipeline.
@@ -384,13 +494,9 @@ class PPIPipeline:
                     # This allows the loader to dynamically choose its loading strategy (lazy vs. in-memory).
                     with EmbeddingLoader(emb_path, config=self.config) as protein_embeddings_loader:
                         # --- DEFINITIVE FIX for Scalability: Stream and filter interaction pairs ---
-                        # Instead of loading all interaction pairs into memory, we first get the IDs
-                        # available in the current embedding file. Then, we stream the interaction
-                        # files and only load the pairs for which we have embeddings. This dramatically
-                        # reduces memory usage.
                         available_ids = protein_embeddings_loader.get_keys()
                         if not available_ids:
-                            print(f"  No embeddings found in H5 file for {emb_name}. Skipping CV.")
+                            print(f"  No embeddings found in H5 file for {emb_name}. Skipping evaluation.")
                             continue
 
                         print(f"  Found {len(available_ids)} embeddings. Filtering interaction files against these IDs...")
@@ -406,12 +512,26 @@ class PPIPipeline:
                             neg_fp, 0, available_ids, sample_n=num_pos_for_sampling, random_state=self.config.RANDOM_STATE, config=self.config
                         )
 
-                        all_pairs = pos_pairs + neg_pairs
-                        if not all_pairs:
-                            print(f"  No interaction pairs remain after filtering against available embeddings for {emb_name}. Skipping CV.")
+                        if not pos_pairs or not neg_pairs:
+                            print(f"  No interaction pairs remain after filtering for {emb_name}. Skipping.")
                             continue
 
-                        results = self._run_cv_workflow(emb_name, all_pairs, protein_embeddings_loader)
+                        # Branch: inductive split vs CV
+                        use_inductive = bool(getattr(self.config, 'EVAL_USE_INDUCTIVE_SPLIT', False))
+                        if use_inductive:
+                            val_frac = float(getattr(self.config, 'EVAL_INDUCTIVE_VAL_FRACTION',
+                                                     getattr(self.config, 'PROTGRAM_SANITY_CHECK_TEST_SPLIT', 0.2) or 0.2))
+                            train_pairs, val_pairs = self._inductive_split_pairs_by_protein(pos_pairs, neg_pairs, val_frac)
+                            if not train_pairs or not val_pairs:
+                                print("  Inductive split resulted in empty sets; falling back to standard CV.")
+                                all_pairs = pos_pairs + neg_pairs
+                                results = self._run_cv_workflow(emb_name, all_pairs, protein_embeddings_loader)
+                            else:
+                                results = self._run_single_split_workflow(emb_name, train_pairs, val_pairs, protein_embeddings_loader)
+                        else:
+                            all_pairs = pos_pairs + neg_pairs
+                            results = self._run_cv_workflow(emb_name, all_pairs, protein_embeddings_loader)
+
                         all_cv_results_list.append(results)
 
                         if mlflow_active and run and results:

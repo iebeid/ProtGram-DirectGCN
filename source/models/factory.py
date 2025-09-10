@@ -9,6 +9,7 @@ import inspect
 from typing import Optional, Dict, Any, Callable, Type
 
 import torch.nn as nn
+from torch_geometric.utils import homophily
 
 from configuration.config import Config
 from source.utils.data.data_utils import DataUtils
@@ -95,7 +96,10 @@ class ModelFactory:
             params = {'hidden_channels': self.config.PROTGRAM_GNN_HIDDEN_CHANNELS, 'num_layers': self.config.PROTGRAM_GNN_NUM_LAYERS,
                       'dropout_rate': self.config.PROTGRAM_DROPOUT_RATE, }
             if model_name_lower == 'rgcn': params['num_relations'] = 2
-            elif model_name_lower == 'directgcn': params['layer_dims_config'] = self.config.DIRECTGCN_HIDDEN_LAYER_DIMS
+            elif model_name_lower == 'directgcn':
+                params['layer_dims_config'] = self.config.DIRECTGCN_HIDDEN_LAYER_DIMS
+                # Configure path selection: 'full' | 'undirected' | 'in_out'
+                params['path_selection'] = getattr(self.config, 'PROTGRAM_DIRECTGCN_PATH_SELECTION', 'full')
 
         # Add common DirectGCN parameters if it's the requested model
         if model_name_lower == 'directgcn':
@@ -161,6 +165,18 @@ class ModelFactory:
                 constructor_args['num_graph_nodes'] = 0
             if 'l2_eps' in model_signature.parameters and 'l2_eps' not in constructor_args:
                 constructor_args['l2_eps'] = 1e-06
+
+            # Auto-derive use_homo_hetero_paths if not explicitly provided, using the configured threshold
+            if 'use_homo_hetero_paths' not in constructor_args or constructor_args['use_homo_hetero_paths'] is None:
+                data_obj = kwargs.get('data', None)
+                try:
+                    # If a data object is provided with labels, compute homophily and derive the flag
+                    if data_obj is not None and hasattr(data_obj, 'edge_index') and hasattr(data_obj, 'y') and getattr(data_obj, 'y', None) is not None:
+                        ratio = homophily(data_obj.edge_index, data_obj.y, method='edge')
+                        constructor_args['use_homo_hetero_paths'] = bool(ratio < getattr(self.config, 'GCN_HETEROPHILY_THRESHOLD', 0.6))
+                except Exception:
+                    # If homophily cannot be computed here, leave the default as-is
+                    pass
 
         valid_args = {k: v for k, v in constructor_args.items() if k in model_signature.parameters}
 

@@ -399,10 +399,15 @@ class DirectGCN(nn.Module):
                                              enable_in=enable_in, enable_out=enable_out, enable_undirected=enable_undirected))
 
         else: # Original logic for the main ProtGram pipeline
+            # Honor path_selection in the main pipeline as well
+            enable_in = self.path_selection in ('full', 'in_out')
+            enable_out = self.path_selection in ('full', 'in_out')
+            enable_undirected = self.path_selection in ('full', 'undirected')
             for i in range(len(layer_dims) - 1):
                 in_dim, out_dim = layer_dims[i], layer_dims[i + 1]
                 self.convs.append(DirectGCNLayer(in_dim, out_dim, num_graph_nodes, gating_mode,
-                                                 use_homo_hetero_paths, num_bases=num_bases, num_blocks=num_blocks))
+                                                 use_homo_hetero_paths, num_bases=num_bases, num_blocks=num_blocks,
+                                                 enable_in=enable_in, enable_out=enable_out, enable_undirected=enable_undirected))
                 self.res_projs.append(nn.Linear(in_dim, out_dim) if in_dim != out_dim else nn.Identity())
                 self.layer_norms.append(nn.LayerNorm(out_dim))
 

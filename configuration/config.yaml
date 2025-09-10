@@ -28,17 +28,17 @@ data_urls:
 
 # 3. PIPELINE CONTROL FLAGS
 pipeline_flags:
-  RUN_PROTGRAM_XGCN_PIPELINE: false
+  RUN_PROTGRAM_XGCN_PIPELINE: true
   RUN_LSTM_PIPELINE: false
   RUN_WORD2VEC_PIPELINE: false
   RUN_TRANSFORMER_PIPELINE: false
   RUN_BENCHMARKING_PIPELINE: false
-  RUN_PROTGRAM_PIPELINE: false
+  RUN_PROTGRAM_PIPELINE: true
   
-  RUN_MAIN_PPI_EVALUATION: true
+  RUN_MAIN_PPI_EVALUATION: false
   RUN_INTEGRATED_TESTS: false
   RUN_SINGLETON_GCN_EVAL: false
-  SEQUENCE_DOWNSAMPLE_FRACTION: 0.99
+  SEQUENCE_DOWNSAMPLE_FRACTION: 0.01
   
   ENABLE_FILE_LOGGING: true
   DISABLE_INTERACTIVE_PROMPTS: false
@@ -100,7 +100,7 @@ gnn_benchmarking:
     - "Node2Vec"
   SAVE_EMBEDDINGS: true
   TEST_ON_UNDIRECTED: true
-  SPLIT_RATIOS: {train: 0.1, val: 0.1, test: 0.8}
+  SPLIT_RATIOS: {train: 0.2, val: 0.2, test: 0.6}
   PCA_TARGET_DIM: 64
   NE_LEARNING_RATE: 0.01
   NE_BATCH_SIZE: 128
@@ -118,7 +118,7 @@ gnn_benchmarking:
 
 # 6. ProtGram-DirectGCN PIPELINE PARAMETERS
 protgram_gcn:
-  PROTGRAM_NGRAM_MAX_N: 3
+  PROTGRAM_NGRAM_MAX_N: 4
   FASTA_FILE_TO_PROCESS: "UNIPROT_SPROT_FASTA"
   ID_MAPPING_MODE: 'regex'
   USE_CANONICAL_ID_MAPPING_FILE: false # Set to true ONLY for non-standard FASTA files like UniRef50
@@ -128,7 +128,7 @@ protgram_gcn:
   REGEX_COMPATIBILITY_SAMPLE_SIZE: 1000
   API_MAPPING_FROM_DB: null
   API_MAPPING_TO_DB: "UniProtKB"
-  PROTGRAM_MODELS_TO_TRAIN: ['directgcn', 'gcn']
+  PROTGRAM_MODELS_TO_TRAIN: ['directgcn', 'gcn', 'dirgcn', 'rgcn']
   DIRECTGCN_HIDDEN_LAYER_DIMS: [512, 256, 128, 64]
   # DirectGCN decomposition controls for ProtGram context
   DIRECTGCN_NUM_BASES: null
@@ -138,21 +138,22 @@ protgram_gcn:
   PROTGRAM_1GRAM_INIT_DIM: 512
   PROTGRAM_GNN_HIDDEN_CHANNELS: 64
   PROTGRAM_GNN_NUM_LAYERS: 2
-  PROTGRAM_GATING_COEFF_MODE: "vector"
+  PROTGRAM_GATING_COEFF_MODE: "scalar"
+  PROTGRAM_DIRECTGCN_PATH_SELECTION: 'in_out'  # Options: 'full' | 'undirected' | 'in_out'; 'in_out' disables undirected path
   PROTGRAM_EPOCHS_PER_LEVEL: 1000
   PROTGRAM_LR: 0.005
   PROTGRAM_DROPOUT_RATE: 0.25
   PROTGRAM_WEIGHT_DECAY: 0.0001
-  PROTGRAM_USE_LR_SCHEDULER: false
+  PROTGRAM_USE_LR_SCHEDULER: true
   PROTGRAM_LR_SCHEDULER_PATIENCE: 10
   PROTGRAM_LR_SCHEDULER_FACTOR: 0.5
   PROTGRAM_USE_EARLY_STOPPING: true
   PROTGRAM_EARLY_STOPPING_PATIENCE: 100
   PROTGRAM_EARLY_STOPPING_MIN_DELTA: 0.00001
   PROTGRAM_GRADIENT_ACCUMULATION_STEPS: 1
-  PROTGRAM_TASK_TYPES_PER_LEVEL: {1: "next_node", 2: "next_node", 3: "next_node"}
+  PROTGRAM_TASK_TYPES_PER_LEVEL: {1: "community", 2: "next_node", 3: "next_node", 4: "community"}
   PROTGRAM_DEFAULT_TASK_TYPE: "next_node"
-  GCN_HETEROPHILY_THRESHOLD: 0.5
+  GCN_HETEROPHILY_THRESHOLD: 0.0
   GCN_PROPAGATION_EPSILON: 1.0e-9
   PROTGRAM_CLOSEST_AA_K_HOPS: 3
   PROTGRAM_MASKED_NODE_FRACTION: 0.15
@@ -165,7 +166,7 @@ protgram_gcn:
   PROTGRAM_PARTITIONING_METHOD: 'graclus'
   PROTGRAM_COARSENING_LEVEL_FOR_PARTITIONING: 1
   PROTGRAM_VALIDATE_COARSENING: true
-  PROTGRAM_TARGET_NODES_PER_CLUSTER: 2000
+  PROTGRAM_TARGET_NODES_PER_CLUSTER: 1500
   PROTGRAM_MIN_CLUSTERS: 2
   PROTGRAM_MAX_CLUSTERS: 500
   PROTGRAM_CLUSTER_GROUP_SIZE: 5
@@ -235,7 +236,7 @@ ppi_evaluation:
   EVAL_GENERATE_SHAP_SUMMARY: true
   EARLY_STOPPING_PATIENCE: 10
   EDGE_EMBEDDING_METHOD: 'concatenate'
-  N_FOLDS: 10
+  N_FOLDS: 2
   # Limit the number of positive and negative pairs used (per class) to avoid OOM.
   # Set to null to use all available pairs.
   MAX_PAIRS_PER_CLASS: 200000
@@ -245,7 +246,7 @@ ppi_evaluation:
   MLP_DROPOUT2_RATE: 0.4
   MLP_L2_REG: 0.00001
   EVAL_BATCH_SIZE: 512
-  EPOCHS: 10
+  EPOCHS: 2
   MLP_LEARNING_RATE: 0.001
   K_VALUES_FOR_TABLE: [50, 100]
   MAIN_EMBEDDING_FOR_STATS: "directgcn"
@@ -263,7 +264,7 @@ mlflow:
 # 12. HYPERPARAMETER OPTIMIZATION (Optuna)
 hyperparameter_optimization:
   RUN_HPO: true
-  HPO_N_TRIALS: 10 # Number of trials for Optuna to run
+  HPO_N_TRIALS: 2 # Number of trials for Optuna to run
   # --- DEFINITIVE FIX: Use the model's base name to match generated filenames ---
   # The trainer creates files like 'directgcn_...' not 'ProtGramDirectgcn_...'.
   HPO_TARGET_EMBEDDING_MODEL: "directgcn" # Which embedding to optimize the MLP for
