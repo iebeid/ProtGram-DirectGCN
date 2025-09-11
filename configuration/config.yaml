@@ -38,7 +38,7 @@ pipeline_flags:
   RUN_MAIN_PPI_EVALUATION: true
   RUN_INTEGRATED_TESTS: false
   RUN_SINGLETON_GCN_EVAL: false
-  SEQUENCE_DOWNSAMPLE_FRACTION: 0.99
+  SEQUENCE_DOWNSAMPLE_FRACTION: 1.0
   
   ENABLE_FILE_LOGGING: true
   DISABLE_INTERACTIVE_PROMPTS: false
@@ -68,10 +68,10 @@ _base_gnn_params: &base_gnn_params
   RGCN_NUM_RELATIONS: 2
   DIRECTGCN_HIDDEN_LAYER_DIMS: [64] # Use a single hidden layer for a 2-layer benchmark model
   # DirectGCN decomposition controls (only one of NUM_BASES or NUM_BLOCKS should be set)
-  DIRECTGCN_NUM_BASES: 16
+  DIRECTGCN_NUM_BASES: 32
   DIRECTGCN_NUM_BLOCKS: null
   # Optional: apply basis decomposition to projection layers
-  DIRECTGCN_DECOMPOSE_PROJECTIONS: false
+  DIRECTGCN_DECOMPOSE_PROJECTIONS: true
   DIRECTGCN_PROJ_NUM_BASES: null
   EPOCHS: 200
   LEARNING_RATE: 0.01
@@ -118,7 +118,7 @@ gnn_benchmarking:
 
 # 6. ProtGram-DirectGCN PIPELINE PARAMETERS
 protgram_gcn:
-  PROTGRAM_NGRAM_MAX_N: 2
+  PROTGRAM_NGRAM_MAX_N: 3
   FASTA_FILE_TO_PROCESS: "UNIPROT_SPROT_FASTA"
   ID_MAPPING_MODE: 'regex'
   USE_CANONICAL_ID_MAPPING_FILE: false # Set to true ONLY for non-standard FASTA files like UniRef50
@@ -129,7 +129,7 @@ protgram_gcn:
   API_MAPPING_FROM_DB: null
   API_MAPPING_TO_DB: "UniProtKB"
   PROTGRAM_MODELS_TO_TRAIN: ['directgcn']
-  DIRECTGCN_HIDDEN_LAYER_DIMS: [64, 64]
+  DIRECTGCN_HIDDEN_LAYER_DIMS: [128, 128, 64]
   # DirectGCN decomposition controls for ProtGram context
   DIRECTGCN_NUM_BASES: null
   DIRECTGCN_NUM_BLOCKS: null
@@ -140,19 +140,19 @@ protgram_gcn:
   PROTGRAM_GNN_NUM_LAYERS: 2
   PROTGRAM_GATING_COEFF_MODE: "scalar"
   PROTGRAM_DIRECTGCN_PATH_SELECTION: 'in_out'  # Options: 'full' | 'undirected' | 'in_out'; 'in_out' disables undirected path
-  PROTGRAM_EPOCHS_PER_LEVEL: 50
-  PROTGRAM_LR: 0.001
+  PROTGRAM_EPOCHS_PER_LEVEL: 500
+  PROTGRAM_LR: 0.0005
   PROTGRAM_DROPOUT_RATE: 0.3
   PROTGRAM_WEIGHT_DECAY: 0.0001
   PROTGRAM_GRADIENT_CLIP_NORM: 1.0
-  PROTGRAM_USE_CROSS_VALIDATION: false  # Enable k-fold CV for small graphs
+  PROTGRAM_USE_CROSS_VALIDATION: true  # Enable k-fold CV for small graphs
   PROTGRAM_CV_FOLDS: 5                 # Number of CV folds (each epoch uses different fold)
   PROTGRAM_CV_THRESHOLD_NODES: 1000    # Use CV if nodes < threshold
   PROTGRAM_USE_LR_SCHEDULER: true
   PROTGRAM_LR_SCHEDULER_PATIENCE: 20
   PROTGRAM_LR_SCHEDULER_FACTOR: 0.5
   PROTGRAM_USE_EARLY_STOPPING: true
-  PROTGRAM_EARLY_STOPPING_PATIENCE: 100  # Increased for CV (should be > CV_FOLDS * 10)
+  PROTGRAM_EARLY_STOPPING_PATIENCE: 200  # Increased for CV (should be > CV_FOLDS * 10)
   PROTGRAM_EARLY_STOPPING_MIN_DELTA: 0.001
   PROTGRAM_GRADIENT_ACCUMULATION_STEPS: 1
   PROTGRAM_TASK_TYPES_PER_LEVEL: {1: "next_node", 2: "next_node"}
@@ -178,7 +178,7 @@ protgram_gcn:
   PCA_TARGET_DIMENSION: 64
   PROTGRAM_PROTEIN_POOLING_STRATEGY: 'attention'
   PROTGRAM_HIERARCHICAL_POOLING_STRATEGY: 'attention'
-  PROTGRAM_LOG_ATTENTION_WEIGHTS: false
+  PROTGRAM_LOG_ATTENTION_WEIGHTS: true
   PROTGRAM_RUN_SANITY_CHECK_PPI: true
   PROTGRAM_SANITY_CHECK_EPOCHS: 5
   PROTGRAM_SANITY_CHECK_TEST_SPLIT: 0.2
@@ -240,17 +240,17 @@ ppi_evaluation:
   EVAL_GENERATE_SHAP_SUMMARY: true
   EARLY_STOPPING_PATIENCE: 10
   EDGE_EMBEDDING_METHOD: 'concatenate'
-  N_FOLDS: 2
+  N_FOLDS: 5
   # Limit the number of positive and negative pairs used (per class) to avoid OOM.
   # Set to null to use all available pairs.
   MAX_PAIRS_PER_CLASS: 200000
-  MLP_DENSE1_UNITS: 128
+  MLP_DENSE1_UNITS: 256
   MLP_DROPOUT1_RATE: 0.4
-  MLP_DENSE2_UNITS: 64
+  MLP_DENSE2_UNITS: 128
   MLP_DROPOUT2_RATE: 0.4
   MLP_L2_REG: 0.00001
   EVAL_BATCH_SIZE: 512
-  EPOCHS: 2
+  EPOCHS: 5
   MLP_LEARNING_RATE: 0.001
   K_VALUES_FOR_TABLE: [50, 100]
   MAIN_EMBEDDING_FOR_STATS: "directgcn"
