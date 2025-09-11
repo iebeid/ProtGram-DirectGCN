@@ -593,7 +593,7 @@ class Config:
         self.ORIGINAL_SEQUENCE_FILE_PATHS = self.SEQUENCE_FILE_PATHS.copy()
 
         self.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE = [
-            {"name": "ProtT5", "path": self.PROTT5_MODEL_PATH},
+            # {"name": "ProtT5", "path": self.PROTT5_MODEL_PATH},  # Disabled for testing
         ]
         # --- NEW: Define dependencies for smart data restoration ---
         # This maps a processed file to the raw source file(s) it replaces.
