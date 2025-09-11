@@ -144,11 +144,11 @@ protgram_gcn:
   PROTGRAM_LR: 0.005
   PROTGRAM_DROPOUT_RATE: 0.5
   PROTGRAM_WEIGHT_DECAY: 0.0001
-  PROTGRAM_USE_LR_SCHEDULER: false
-  PROTGRAM_LR_SCHEDULER_PATIENCE: 100
+  PROTGRAM_USE_LR_SCHEDULER: true
+  PROTGRAM_LR_SCHEDULER_PATIENCE: 200
   PROTGRAM_LR_SCHEDULER_FACTOR: 0.5
-  PROTGRAM_USE_EARLY_STOPPING: false
-  PROTGRAM_EARLY_STOPPING_PATIENCE: 100
+  PROTGRAM_USE_EARLY_STOPPING: true
+  PROTGRAM_EARLY_STOPPING_PATIENCE: 300
   PROTGRAM_EARLY_STOPPING_MIN_DELTA: 0.00001
   PROTGRAM_GRADIENT_ACCUMULATION_STEPS: 1
   PROTGRAM_TASK_TYPES_PER_LEVEL: {1: "next_node", 2: "next_node", 3: "next_node"}
@@ -280,7 +280,7 @@ hyperparameter_optimization:
   # Search space for the ProtGram-XGCN trainer (choose which ProtGram params to tune)
   # Note: Intentionally exclude PROTGRAM_GATING_COEFF_MODE to avoid training gating/no-gating variants during HPO.
   HPO_PROTGRAM_XGCN_SEARCH_SPACE:
-    PROTGRAM_LR: {type: 'categorical', choices: [0.005]}
+    PROTGRAM_LR: {type: 'loguniform', low: 1.0e-4, high: 5.0e-2}
     PROTGRAM_WEIGHT_DECAY: {type: 'loguniform', low: 1.0e-6, high: 1.0e-2}
     PROTGRAM_GNN_HIDDEN_CHANNELS: {type: 'categorical', choices: [32, 64, 128]}
     PROTGRAM_GNN_NUM_LAYERS: {type: 'categorical', choices: [2, 3]}
