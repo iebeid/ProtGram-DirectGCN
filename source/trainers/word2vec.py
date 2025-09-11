@@ -189,13 +189,5 @@ class Word2VecEmbedder:
         FileUtils.write_h5(embeddings, output_path, f"Writing H5 for {model_name}")
         output_paths[model_name] = str(output_path)
 
-        if self.config.APPLY_PCA_TO_W2V and self.config.PCA_TARGET_DIMENSION > 0:
-            pca_path = EmbeddingProcessor.apply_pca_to_h5(
-                input_h5_path=output_path,
-                output_dir=output_dir,
-                target_dimension=self.config.PCA_TARGET_DIMENSION,
-                random_seed=self.config.RANDOM_STATE
-            )
-            if str(pca_path) != str(output_path):
-                output_paths[f"{model_name}_pca"] = str(pca_path)
+
         return output_paths

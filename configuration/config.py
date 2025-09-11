@@ -155,7 +155,6 @@ class Word2VecParams(BaseModel):
     W2V_MIN_COUNT: int = Field(ge=1)
     W2V_EPOCHS: int = Field(gt=0)
     W2V_POOLING_STRATEGY: str
-    APPLY_PCA_TO_W2V: bool
 
 class TransformerParams(BaseModel):
     MODELS_TO_RUN: List[Dict[str, Any]]
@@ -692,7 +691,6 @@ class Config:
         if not hasattr(self, 'W2V_WORKERS') or self.W2V_WORKERS is None:
             self.W2V_WORKERS = max(1, cpu_cores - 4) if cpu_cores is not None else 1
         self.W2V_POOLING_STRATEGY = params['W2V_POOLING_STRATEGY']
-        self.APPLY_PCA_TO_W2V = params['APPLY_PCA_TO_W2V']
 
     def _setup_transformer_params(self):
         """Sets Transformer parameters statically from the YAML config."""

@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (MiKTeX 25.4) (preloaded format=pdflatex 2025.6.13)  8 SEP 2025 18:19
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (MiKTeX 25.4) (preloaded format=pdflatex 2025.6.13)  10 SEP 2025 18:04
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1087,7 +1087,7 @@ Package epstopdf Info: Source file: <./logo1.eps>
 d-to.pdf ./logo1.eps>
 (epstopdf)             \includegraphics on input line 29.
 Package epstopdf Info: Output file is already uptodate.
-<./logo1-eps-converted-to.pdf, id=90, 284.06125pt x 80.3pt>
+<./logo1-eps-converted-to.pdf, id=98, 284.06125pt x 80.3pt>
 File: ./logo1-eps-converted-to.pdf Graphic file (type pdf)
 <use ./logo1-eps-converted-to.pdf>
 Package pdftex.def Info: ./logo1-eps-converted-to.pdf  used on input line 29.
@@ -1172,7 +1172,7 @@ Overfull \vbox (3.49998pt too high) has occurred while \output is active []
 
 
 [4]
-<images/fig1.jpg, id=201, 577.40718pt x 430.60875pt>
+<images/fig1.jpg, id=209, 577.40718pt x 430.60875pt>
 File: images/fig1.jpg Graphic file (type jpg)
 <use images/fig1.jpg>
 Package pdftex.def Info: images/fig1.jpg  used on input line 80.
@@ -1216,11 +1216,33 @@ Package hyperref Warning: Token not allowed in a PDF string (Unicode):
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 102.
+(hyperref)                removing `math shift' on input line 91.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 102.
+(hyperref)                removing `math shift' on input line 91.
+
+LaTeX Font Info:    Font shape `OT1/phv/b/it' in size <12> not available
+(Font)              Font shape `OT1/phv/b/sl' tried instead on input line 92.
+
+LaTeX Font Warning: Font shape `OT1/cmr/m/n' in size <11.5> not available
+(Font)              size <12> substituted on input line 92.
+
+
+LaTeX Font Warning: Font shape `OML/cmm/m/it' in size <11.5> not available
+(Font)              size <12> substituted on input line 92.
+
+
+LaTeX Font Warning: Font shape `OMS/cmsy/m/n' in size <11.5> not available
+(Font)              size <12> substituted on input line 92.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 92.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 92.
 
 
 
@@ -1230,6 +1252,18 @@ Overfull \vbox (3.49998pt too high) has occurred while \output is active []
 
 [6]
 
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 104.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 104.
+
+
+Underfull \vbox (badness 10000) has occurred while \output is active []
+
+
+
 
 Overfull \vbox (3.49998pt too high) has occurred while \output is active []
 
@@ -1237,32 +1271,32 @@ Overfull \vbox (3.49998pt too high) has occurred while \output is active []
 [7]
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 141.
+(hyperref)                removing `math shift' on input line 143.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 141.
+(hyperref)                removing `math shift' on input line 143.
 
-<images/ProtGram-DirectGCN-Part-1.png, id=242, 698.61pt x 399.4925pt>
+<images/ProtGram-DirectGCN-Part-1.png, id=249, 698.61pt x 399.4925pt>
 File: images/ProtGram-DirectGCN-Part-1.png Graphic file (type png)
 <use images/ProtGram-DirectGCN-Part-1.png>
 Package pdftex.def Info: images/ProtGram-DirectGCN-Part-1.png  used on input li
-ne 155.
+ne 157.
 (pdftex.def)             Requested size: 352.79846pt x 201.74516pt.
-<images/ProtGram-DirectGCN-Part-2.png, id=243, 512.66531pt x 355.3275pt>
+<images/ProtGram-DirectGCN-Part-2.png, id=250, 512.66531pt x 355.3275pt>
 File: images/ProtGram-DirectGCN-Part-2.png Graphic file (type png)
 <use images/ProtGram-DirectGCN-Part-2.png>
 Package pdftex.def Info: images/ProtGram-DirectGCN-Part-2.png  used on input li
-ne 159.
+ne 161.
 (pdftex.def)             Requested size: 241.91785pt x 167.67082pt.
-<images/ProtGram-DirectGCN-Part-3.png, id=244, 389.20406pt x 278.54062pt>
+<images/ProtGram-DirectGCN-Part-3.png, id=251, 389.20406pt x 278.54062pt>
 File: images/ProtGram-DirectGCN-Part-3.png Graphic file (type png)
 <use images/ProtGram-DirectGCN-Part-3.png>
 Package pdftex.def Info: images/ProtGram-DirectGCN-Part-3.png  used on input li
-ne 160.
+ne 162.
 (pdftex.def)             Requested size: 241.91785pt x 173.1354pt.
 
-Overfull \hbox (15.08537pt too wide) in paragraph at lines 154--171
+Overfull \hbox (15.08537pt too wide) in paragraph at lines 156--173
  [][] 
  []
 
@@ -1285,11 +1319,11 @@ Overfull \vbox (3.49998pt too high) has occurred while \output is active []
 .png> <./images/ProtGram-DirectGCN-Part-3.png>]
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 185.
+(hyperref)                removing `math shift' on input line 187.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 185.
+(hyperref)                removing `math shift' on input line 187.
 
 
 
@@ -1304,23 +1338,23 @@ Overfull \vbox (3.49998pt too high) has occurred while \output is active []
 [11]
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 264.
+(hyperref)                removing `math shift' on input line 266.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 264.
+(hyperref)                removing `math shift' on input line 266.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 264.
+(hyperref)                removing `math shift' on input line 266.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 264.
+(hyperref)                removing `subscript' on input line 266.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 264.
+(hyperref)                removing `math shift' on input line 266.
 
 
 Underfull \vbox (badness 10000) has occurred while \output is active []
@@ -1334,31 +1368,31 @@ Overfull \vbox (3.49998pt too high) has occurred while \output is active []
 [12]
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 287.
+(hyperref)                removing `math shift' on input line 289.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 287.
+(hyperref)                removing `math shift' on input line 289.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 287.
+(hyperref)                removing `math shift' on input line 289.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `subscript' on input line 287.
+(hyperref)                removing `subscript' on input line 289.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 287.
+(hyperref)                removing `math shift' on input line 289.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 297.
+(hyperref)                removing `math shift' on input line 299.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 297.
+(hyperref)                removing `math shift' on input line 299.
 
 
 
@@ -1368,12 +1402,12 @@ Overfull \vbox (3.49998pt too high) has occurred while \output is active []
 
 [13]
 
-LaTeX Warning: Reference `fig:5' on page 14 undefined on input line 312.
+LaTeX Warning: Reference `fig:5' on page 14 undefined on input line 314.
 
-<images/fig3.jpg, id=317, 722.7pt x 578.16pt>
+<images/fig3.jpg, id=325, 722.7pt x 578.16pt>
 File: images/fig3.jpg Graphic file (type jpg)
 <use images/fig3.jpg>
-Package pdftex.def Info: images/fig3.jpg  used on input line 317.
+Package pdftex.def Info: images/fig3.jpg  used on input line 319.
 (pdftex.def)             Requested size: 453.59692pt x 362.87532pt.
 
 Underfull \vbox (badness 10000) has occurred while \output is active []
@@ -1385,10 +1419,10 @@ Overfull \vbox (3.49998pt too high) has occurred while \output is active []
 
 
 [14]
-<images/fig4.jpg, id=326, 867.24pt x 361.35pt>
+<images/fig4.jpg, id=334, 867.24pt x 361.35pt>
 File: images/fig4.jpg Graphic file (type jpg)
 <use images/fig4.jpg>
-Package pdftex.def Info: images/fig4.jpg  used on input line 324.
+Package pdftex.def Info: images/fig4.jpg  used on input line 326.
 (pdftex.def)             Requested size: 453.59692pt x 189.00032pt.
 
 
@@ -1397,14 +1431,14 @@ Overfull \vbox (3.49998pt too high) has occurred while \output is active []
 
 
 [15 <./images/fig3.jpg>]
-Underfull \hbox (badness 3375) in paragraph at lines 353--354
+Underfull \hbox (badness 3375) in paragraph at lines 355--356
 []\OT1/ptm/b/n/12 (+20) Intrinsic Eval-u-a-tion of $\OML/cmm/m/it/12 DirectGCN$
 \OT1/ptm/m/n/12 (+20) : The bench-mark re-sults in Ta-ble []2[] con-firm that
  []
 
 
 LaTeX Warning: Reference `tab:ppi_performance' on page 16 undefined on input li
-ne 357.
+ne 359.
 
 
 
@@ -1413,7 +1447,7 @@ Overfull \vbox (3.49998pt too high) has occurred while \output is active []
 
 
 [16 <./images/fig4.jpg>]
-Underfull \hbox (badness 1107) in paragraph at lines 372--373
+Underfull \hbox (badness 1107) in paragraph at lines 374--375
 []\OT1/ptm/m/n/12 (+20) The im-proved pre-dic-tive per-for-mance for PPIs. The 
 pro-tein em-bed-dings de-rived from our
  []
@@ -1441,7 +1475,7 @@ Overfull \vbox (3.49998pt too high) has occurred while \output is active []
 
 [19]
 LaTeX Font Info:    Trying to load font information for OT1+pcr on input line 4
-18.
+20.
  (C:\Users\iebeid\AppData\Local\Programs\MiKTeX\tex/latex/psnfss\ot1pcr.fd
 File: ot1pcr.fd 2001/06/04 font definitions for OT1/pcr.
 )
@@ -1450,7 +1484,7 @@ Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
 
-Underfull \hbox (badness 2486) in paragraph at lines 418--419
+Underfull \hbox (badness 2486) in paragraph at lines 420--421
 \OT1/ptm/m/n/12 (+20) The datasets and codes for this study can be found at []$
 \OT1/pcr/m/n/12 https : / / github . com / iebeid /
  []
@@ -1492,14 +1526,14 @@ LaTeX Font Warning: Size substitutions with differences
 LaTeX Warning: There were undefined references.
 
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: EA96AE207671B10D0AAEBA02F8EE72ED;3758.
+(rerunfilecheck)             Checksum: E5C6ACDF473F26653DECF5E54BA96109;3988.
  ) 
 Here is how much of TeX's memory you used:
- 29118 strings out of 468224
- 542824 string characters out of 5432468
+ 29158 strings out of 468224
+ 543487 string characters out of 5432468
  983823 words of memory out of 5000000
- 56616 multiletter control sequences out of 15000+600000
- 683614 words of font info for 367 fonts, out of 8000000 for 9000
+ 56642 multiletter control sequences out of 15000+600000
+ 686712 words of font info for 376 fonts, out of 8000000 for 9000
  1145 hyphenation exceptions out of 8191
  87i,18n,131p,2203b,666s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <C:/Users/iebeid/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm
@@ -1531,9 +1565,9 @@ rams/MiKTeX/fonts/type1/urw/helvetic/uhvro8a.pfb><C:/Users/iebeid/AppData/Local
 /Programs/MiKTeX/fonts/type1/urw/times/utmb8a.pfb><C:/Users/iebeid/AppData/Loca
 l/Programs/MiKTeX/fonts/type1/urw/times/utmr8a.pfb><C:/Users/iebeid/AppData/Loc
 al/Programs/MiKTeX/fonts/type1/urw/times/utmri8a.pfb>
-Output written on main.pdf (22 pages, 763908 bytes).
+Output written on main.pdf (22 pages, 768036 bytes).
 PDF statistics:
- 515 PDF objects out of 1000 (max. 8388607)
- 101 named destinations out of 1000 (max. 500000)
- 79064 words of extra memory for PDF output out of 89155 (max. 10000000)
+ 524 PDF objects out of 1000 (max. 8388607)
+ 103 named destinations out of 1000 (max. 500000)
+ 83688 words of extra memory for PDF output out of 89155 (max. 10000000)
 

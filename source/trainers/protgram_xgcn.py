@@ -123,8 +123,13 @@ class ProtGramXGCNTrainer:
                         ngram_embeddings_per_level, protein_sequences,
                         level_ngram_to_idx=self._get_level_ngram_maps()
                     )
-                    for n, (pooled_embeddings, _) in pooled_results.items():
-                        final_protein_embeddings_per_model[f"{model_type}_{gating_mode_str}_gating_n{n}"] = pooled_embeddings
+                    for n, (pooled_embeddings, attention_log) in pooled_results.items():
+                        model_key = f"{model_type}_{gating_mode_str}_gating_n{n}"
+                        final_protein_embeddings_per_model[model_key] = pooled_embeddings
+                        # Save protein-level attention logs so PPI can generate heatmaps
+                        if self.config.PROTGRAM_LOG_ATTENTION_WEIGHTS and attention_log:
+                            # Overwrite any hierarchical entry for this model_key with the protein-level log
+                            final_attention_logs[model_key] = attention_log
                 else:
                     DataUtils.print_header(f"Processing Model Type: {model_type.upper()}")
 
@@ -138,8 +143,12 @@ class ProtGramXGCNTrainer:
                         ngram_embeddings_per_level, protein_sequences,
                         level_ngram_to_idx=self._get_level_ngram_maps()
                     )
-                    for n, (pooled_embeddings, _) in pooled_results.items():
-                        final_protein_embeddings_per_model[f"{model_type}_n{n}"] = pooled_embeddings
+                    for n, (pooled_embeddings, attention_log) in pooled_results.items():
+                        model_key = f"{model_type}_n{n}"
+                        final_protein_embeddings_per_model[model_key] = pooled_embeddings
+                        # Save protein-level attention logs so PPI can generate heatmaps
+                        if self.config.PROTGRAM_LOG_ATTENTION_WEIGHTS and attention_log:
+                            final_attention_logs[model_key] = attention_log
 
             # This function now saves the raw (unmapped) embeddings and returns their paths.
             output_paths = self._save_final_embeddings(final_protein_embeddings_per_model)
