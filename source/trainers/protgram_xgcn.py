@@ -424,6 +424,7 @@ class ProtGramXGCNTrainer:
 
             # --- Compute VALIDATION loss (no grad) ---
             val_loss_value = float('nan')
+            val_acc_value = float('nan')
             if use_val and val_mask is not None:
                 model.eval()
                 with torch.no_grad():
@@ -441,13 +442,28 @@ class ProtGramXGCNTrainer:
                         if sel is not None and torch.any(sel):
                             out_v, _ = model(data=epoch_val)
                             val_loss_value = float(criterion(out_v[masked_indices_v[sel]], original_labels_v[sel]).item())
+                            # --- NEW: Validation accuracy ---
+                            preds_v = out_v[masked_indices_v[sel]].argmax(dim=-1)
+                            correct_v = (preds_v == original_labels_v[sel]).sum().item()
+                            total_v = int(sel.sum().item())
+                            val_acc_value = (correct_v / total_v) if total_v > 0 else float('nan')
                         else:
                             # Fallback: evaluate on all masked positions
                             out_v, _ = model(data=epoch_val)
                             val_loss_value = float(criterion(out_v[masked_indices_v], original_labels_v).item())
+                            # --- NEW: Validation accuracy ---
+                            preds_v = out_v[masked_indices_v].argmax(dim=-1)
+                            correct_v = (preds_v == original_labels_v).sum().item()
+                            total_v = len(original_labels_v)
+                            val_acc_value = (correct_v / total_v) if total_v > 0 else float('nan')
                     else:
                         out_v, _ = model(data=full_data_gpu)
                         val_loss_value = float(criterion(out_v[val_mask], full_data_gpu.y[val_mask]).item())
+                        # --- NEW: Validation accuracy ---
+                        preds_v = out_v[val_mask].argmax(dim=-1)
+                        correct_v = (preds_v == full_data_gpu.y[val_mask]).sum().item()
+                        total_v = int(val_mask.sum().item())
+                        val_acc_value = (correct_v / total_v) if total_v > 0 else float('nan')
                 model.train()
 
             # --- NEW: Calculate training metrics for more detailed logging ---
@@ -508,6 +524,7 @@ class ProtGramXGCNTrainer:
                     log_str = (f"    Epoch: {epoch:03d}, Train Loss: {unnormalized_loss:.4f}, "
                                f"Val Loss: {val_loss_value:.4f}, "
                                f"Train Acc: {train_metrics.get('train_acc', 0.0):.4f}, "
+                               f"Val Acc: {val_acc_value if not math.isnan(val_acc_value) else float('nan'):.4f}, "
                                f"LR: {current_lr:.6f}")
                 else:
                     log_str = (f"    Epoch: {epoch:03d}, Loss: {unnormalized_loss:.4f}, "
@@ -680,11 +697,14 @@ class ProtGramXGCNTrainer:
 
             # --- NEW: Compute validation loss on validation partitions (no grad) ---
             avg_val_loss = float('nan')
+            avg_val_acc = float('nan')
             if use_val and val_partitions:
                 model.eval()
                 with torch.no_grad():
                     val_groups = 0
                     val_loss_sum = 0.0
+                    val_correct_sum = 0
+                    val_total = 0
                     # Evaluate in groups to reuse batching path
                     grouped_val = [
                         val_partitions[i:i + group_size]
@@ -702,12 +722,19 @@ class ProtGramXGCNTrainer:
                             A_homo_norm=getattr(full_data, 'A_homo_norm', None),
                             A_hetero_norm=getattr(full_data, 'A_hetero_norm', None)
                         ).to(self.device)
-                        # Reuse the same helper to compute loss
-                        loss_v, _, _ = self._calculate_loss(model, subgraph_val, criterion, task_type)
+                        # Reuse the same helper to compute loss AND predictions
+                        loss_v, preds_v, labels_v = self._calculate_loss(model, subgraph_val, criterion, task_type)
                         val_loss_sum += float(loss_v.item())
+                        # --- NEW: accumulate for validation accuracy ---
+                        preds_np = preds_v.cpu().numpy()
+                        labels_np = labels_v.cpu().numpy()
+                        if len(labels_np) > 0:
+                            val_correct_sum += int((preds_np == labels_np).sum())
+                            val_total += int(len(labels_np))
                         val_groups += 1
                     if val_groups > 0:
                         avg_val_loss = val_loss_sum / val_groups
+                        avg_val_acc = (val_correct_sum / val_total) if val_total > 0 else float('nan')
                 model.train()
 
             if self.config.DEBUG_VERBOSE and (epoch == 1 or epoch % 10 == 0 or epoch == epochs):
@@ -724,6 +751,7 @@ class ProtGramXGCNTrainer:
                     log_str = (f"    Epoch: {epoch:03d}, Avg Train Loss: {avg_epoch_loss:.4f}, "
                                f"Avg Val Loss: {avg_val_loss:.4f}, "
                                f"Train Acc: {train_acc:.4f}, "
+                               f"Val Acc: {avg_val_acc if not math.isnan(avg_val_acc) else float('nan'):.4f}, "
                                f"LR: {current_lr:.6f}")
                 else:
                     log_str = (f"    Epoch: {epoch:03d}, Avg Batch Loss: {avg_epoch_loss:.4f}, "
