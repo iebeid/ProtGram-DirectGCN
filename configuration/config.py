@@ -113,6 +113,10 @@ class ProtGramGCNParams(BaseModel):
     PROTGRAM_LR: float = Field(gt=0)
     PROTGRAM_DROPOUT_RATE: float = Field(ge=0.0, lt=1.0)
     PROTGRAM_WEIGHT_DECAY: float = Field(ge=0.0)
+    PROTGRAM_GRADIENT_CLIP_NORM: float = Field(gt=0.0, description="Maximum norm for gradient clipping")
+    PROTGRAM_USE_CROSS_VALIDATION: bool = Field(default=False, description="Enable cross-validation for small graphs")
+    PROTGRAM_CV_FOLDS: int = Field(default=5, gt=1, description="Number of cross-validation folds")
+    PROTGRAM_CV_THRESHOLD_NODES: int = Field(default=1000, gt=0, description="Use CV if nodes < threshold")
     PROTGRAM_USE_LR_SCHEDULER: bool
     PROTGRAM_LR_SCHEDULER_PATIENCE: int = Field(gt=0)
     PROTGRAM_LR_SCHEDULER_FACTOR: float = Field(gt=0, lt=1.0)
@@ -640,6 +644,10 @@ class Config:
         self.PROTGRAM_LR = params['PROTGRAM_LR']
         self.PROTGRAM_DROPOUT_RATE = params['PROTGRAM_DROPOUT_RATE']
         self.PROTGRAM_WEIGHT_DECAY = params['PROTGRAM_WEIGHT_DECAY']
+        self.PROTGRAM_GRADIENT_CLIP_NORM = params['PROTGRAM_GRADIENT_CLIP_NORM']
+        self.PROTGRAM_USE_CROSS_VALIDATION = params.get('PROTGRAM_USE_CROSS_VALIDATION', False)
+        self.PROTGRAM_CV_FOLDS = params.get('PROTGRAM_CV_FOLDS', 5)
+        self.PROTGRAM_CV_THRESHOLD_NODES = params.get('PROTGRAM_CV_THRESHOLD_NODES', 1000)
         self.PROTGRAM_USE_LR_SCHEDULER = params['PROTGRAM_USE_LR_SCHEDULER']
         self.PROTGRAM_LR_SCHEDULER_PATIENCE = params['PROTGRAM_LR_SCHEDULER_PATIENCE']
         self.PROTGRAM_LR_SCHEDULER_FACTOR = params['PROTGRAM_LR_SCHEDULER_FACTOR']

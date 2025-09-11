@@ -1,277 +1,154 @@
+I am trying to train the model which is @source/models/gnn/spectral/directgcn.py  and @source/trainers/protgram_xgcn.py  and I am getting this output and I am trying to tune the model and it seems that the validation loss is 
+divergant can you provide suggestions on how to stabalize the model here is the log @config.yaml
+ 
+
+> =====================================================================
+  ### PIPELINE STEP: Training ProtGram Models & Generating Embeddings ###
+  =====================================================================
+
+    DEBUG: Trainer restoring epochs to YAML value: PROTGRAM_EPOCHS_PER_LEVEL=1000
+    DEBUG: Restored epochs from YAML for trainer run: PROTGRAM_EPOCHS_PER_LEVEL=1000
+
+  =======================================================
+  ### Processing Model Type: DIRECTGCN (Gating: vector) ###
+  =======================================================
 
 
+  ==========================================================
+  ### Processing N-gram Level: n = 1 for model 'directgcn' ###
+  ==========================================================
 
-==================================
-### Aggregated Benchmark Summary ###
-==================================
+    Loading graph for n=1 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250911_211246/graph_objects/uniprot_sprot_sampled/ngram_graph_n1
+    Initializing n=1 features with random noise (dim=512).
+    Generating self-supervised labels for task: 'next_node'
+      Generating next_node labels for all 21 nodes.
+    Graph n=1 Homophily Ratio: 0.7333. Is Heterophilic? -> False
+    Creating new instance of 'directgcn' for context 'protgram'.
+    Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
+    DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved=1000, source=YAML); use_cluster_training=False; cluster_threshold=3000; num_nodes=21
+    Preparing specialized graph views for 'directgcn'.
+    Starting full-batch training for up to 1000 epochs (Task: next_node)...
+      Epoch: 001, Train Loss: 3.1934, Val Loss: 3.2684, Train Acc: 0.0526, Val Acc: 0.0000, LR: 0.002000
+      Epoch: 010, Train Loss: 1.5848, Val Loss: 1.5142, Train Acc: 0.8421, Val Acc: 1.0000, LR: 0.002000
+      Epoch: 020, Train Loss: 0.9659, Val Loss: 0.5163, Train Acc: 0.8947, Val Acc: 1.0000, LR: 0.002000
+      Epoch: 030, Train Loss: 0.3887, Val Loss: 0.0822, Train Acc: 1.0000, Val Acc: 1.0000, LR: 0.002000
+      Epoch: 040, Train Loss: 0.2477, Val Loss: 0.0120, Train Acc: 0.9474, Val Acc: 1.0000, LR: 0.002000
+      Epoch: 050, Train Loss: 0.1349, Val Loss: 1.0484, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.002000
+      Epoch: 060, Train Loss: 0.0850, Val Loss: 0.7373, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.002000
+      Epoch: 070, Train Loss: 0.0623, Val Loss: 1.5569, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.002000
+      Epoch: 080, Train Loss: 0.0809, Val Loss: 1.9190, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.002000
+      Epoch: 090, Train Loss: 0.0130, Val Loss: 2.4806, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.001000
+      Epoch: 100, Train Loss: 0.1176, Val Loss: 2.6572, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.001000
+      Epoch: 110, Train Loss: 0.0041, Val Loss: 2.8219, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.001000
+      Epoch: 120, Train Loss: 0.0147, Val Loss: 2.9047, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.001000
+      Epoch: 130, Train Loss: 0.0826, Val Loss: 3.0293, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.001000
+      Epoch: 140, Train Loss: 0.0504, Val Loss: 3.1278, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.001000
+      Epoch: 150, Train Loss: 0.0013, Val Loss: 3.1479, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000500
+      Epoch: 160, Train Loss: 0.0039, Val Loss: 3.1037, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000500
+      Epoch: 170, Train Loss: 0.0441, Val Loss: 3.0286, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000500
+      Epoch: 180, Train Loss: 0.1709, Val Loss: 2.7749, Train Acc: 0.9474, Val Acc: 0.5000, LR: 0.000500
+      Epoch: 190, Train Loss: 0.0467, Val Loss: 2.1418, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000500
+      Epoch: 200, Train Loss: 0.0046, Val Loss: 1.5647, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000250
+      Epoch: 210, Train Loss: 0.0013, Val Loss: 1.1859, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000250
+      Epoch: 220, Train Loss: 0.0102, Val Loss: 1.2058, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000250
+      Epoch: 230, Train Loss: 0.0029, Val Loss: 1.3592, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000250
+      Epoch: 240, Train Loss: 0.0432, Val Loss: 1.2548, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000250
+      Epoch: 250, Train Loss: 0.0102, Val Loss: 1.1528, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000125
+      Epoch: 260, Train Loss: 0.0048, Val Loss: 1.0623, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000125
+      Epoch: 270, Train Loss: 0.0022, Val Loss: 0.9623, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000125
+      Epoch: 280, Train Loss: 0.0314, Val Loss: 0.8414, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000125
+      Epoch: 290, Train Loss: 0.0474, Val Loss: 0.6877, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000125
+      Epoch: 300, Train Loss: 0.0371, Val Loss: 0.5222, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000125
+      Epoch: 310, Train Loss: 0.0465, Val Loss: 0.4333, Train Acc: 1.0000, Val Acc: 0.5000, LR: 0.000063
+      Epoch: 320, Train Loss: 0.0563, Val Loss: 0.3763, Train Acc: 0.9474, Val Acc: 0.5000, LR: 0.000063
+      Epoch: 330, Train Loss: 0.0724, Val Loss: 0.3292, Train Acc: 0.9474, Val Acc: 1.0000, LR: 0.000063
+    Early stopping triggered at epoch 339. Best loss: 0.0099
+    Extracting embeddings for 21 nodes using full-batch inference...
+    Preparing specialized graph views for 'directgcn'.
 
+  ==========================================================
+  ### Processing N-gram Level: n = 2 for model 'directgcn' ###
+  ==========================================================
 
---- Results for Dataset: CiteSeer ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.2980           0.2931            0.2936         0.2981  None
-GraphSAGE   0.1970           0.1889            0.1890         0.1945  None
-      GIN   0.2890           0.2832            0.2855         0.2909  None
-  ChebNet   0.1900           0.1801            0.1819         0.1888  None
- Node2Vec   0.4220           0.4127            0.4328         0.4181  None
-      GCN   0.2560           0.2453            0.2515         0.2509  None
-     RGCN   0.2250           0.2195            0.2197         0.2256  None
-   DirGNN   0.2460           0.2410            0.2482         0.2506  None
-DirectGCN   0.1850           0.1786            0.1830         0.1845  None
-DirectGCN   0.1820           0.1771            0.1784         0.1808  None
-DirectGCN   0.1730           0.1709            0.1776         0.1807  None
+    Loading graph for n=2 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250911_211246/graph_objects/uniprot_sprot_sampled/ngram_graph_n2
+    Pooling (n-1)-gram embeddings to initialize features for n=2 graph (Strategy: attention)...
+    Generating self-supervised labels for task: 'next_node'
+      Generating next_node labels for all 421 nodes.
+    Graph n=2 Homophily Ratio: 0.0205. Is Heterophilic? -> False
+    Creating new instance of 'directgcn' for context 'protgram'.
+    Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
+    DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved=1000, source=YAML); use_cluster_training=False; cluster_threshold=3000; num_nodes=421
+    Preparing specialized graph views for 'directgcn'.
+    Starting full-batch training for up to 1000 epochs (Task: next_node)...
+      Epoch: 001, Train Loss: 6.0640, Val Loss: 6.0731, Train Acc: 0.0106, Val Acc: 0.0000, LR: 0.002000
+      Epoch: 010, Train Loss: 5.5348, Val Loss: 5.5236, Train Acc: 0.0528, Val Acc: 0.0238, LR: 0.002000
+      Epoch: 020, Train Loss: 4.8272, Val Loss: 4.8040, Train Acc: 0.0554, Val Acc: 0.0476, LR: 0.002000
+      Epoch: 030, Train Loss: 4.2099, Val Loss: 4.2233, Train Acc: 0.0712, Val Acc: 0.0476, LR: 0.002000
+      Epoch: 040, Train Loss: 3.9304, Val Loss: 4.0843, Train Acc: 0.1003, Val Acc: 0.0238, LR: 0.002000
+      Epoch: 050, Train Loss: 3.7908, Val Loss: 4.0078, Train Acc: 0.0950, Val Acc: 0.0238, LR: 0.002000
+      Epoch: 060, Train Loss: 3.6252, Val Loss: 3.9895, Train Acc: 0.1187, Val Acc: 0.0476, LR: 0.002000
+      Epoch: 070, Train Loss: 3.5709, Val Loss: 4.0274, Train Acc: 0.1082, Val Acc: 0.0476, LR: 0.002000
+      Epoch: 080, Train Loss: 3.5086, Val Loss: 4.0756, Train Acc: 0.1187, Val Acc: 0.0476, LR: 0.002000
+      Epoch: 090, Train Loss: 3.3694, Val Loss: 4.1125, Train Acc: 0.1135, Val Acc: 0.0476, LR: 0.002000
+      Epoch: 100, Train Loss: 3.3375, Val Loss: 4.1228, Train Acc: 0.1108, Val Acc: 0.0238, LR: 0.002000
+      Epoch: 110, Train Loss: 3.2286, Val Loss: 4.2305, Train Acc: 0.1319, Val Acc: 0.0476, LR: 0.001000
+      Epoch: 120, Train Loss: 3.0853, Val Loss: 4.3059, Train Acc: 0.1504, Val Acc: 0.0476, LR: 0.001000
+      Epoch: 130, Train Loss: 2.8763, Val Loss: 4.3985, Train Acc: 0.1689, Val Acc: 0.0238, LR: 0.001000
+      Epoch: 140, Train Loss: 2.6543, Val Loss: 4.3998, Train Acc: 0.2876, Val Acc: 0.0238, LR: 0.001000
+      Epoch: 150, Train Loss: 2.5032, Val Loss: 4.5103, Train Acc: 0.3166, Val Acc: 0.0238, LR: 0.001000
+      Epoch: 160, Train Loss: 2.2703, Val Loss: 4.5406, Train Acc: 0.3958, Val Acc: 0.0714, LR: 0.001000
+      Epoch: 170, Train Loss: 2.0441, Val Loss: 4.5628, Train Acc: 0.4538, Val Acc: 0.0714, LR: 0.000500
+      Epoch: 180, Train Loss: 1.9811, Val Loss: 4.8138, Train Acc: 0.5066, Val Acc: 0.0714, LR: 0.000500
+      Epoch: 190, Train Loss: 1.8336, Val Loss: 4.6978, Train Acc: 0.5145, Val Acc: 0.0714, LR: 0.000500
+      Epoch: 200, Train Loss: 1.6874, Val Loss: 4.7888, Train Acc: 0.5805, Val Acc: 0.0714, LR: 0.000500
+      Epoch: 210, Train Loss: 1.7483, Val Loss: 4.8998, Train Acc: 0.5620, Val Acc: 0.0714, LR: 0.000500
+      Epoch: 220, Train Loss: 1.5909, Val Loss: 4.8801, Train Acc: 0.6069, Val Acc: 0.0714, LR: 0.000250
+      Epoch: 230, Train Loss: 1.6262, Val Loss: 4.9186, Train Acc: 0.5805, Val Acc: 0.0714, LR: 0.000250
+      Epoch: 240, Train Loss: 1.4919, Val Loss: 4.9947, Train Acc: 0.6253, Val Acc: 0.0714, LR: 0.000250
+      Epoch: 250, Train Loss: 1.4676, Val Loss: 5.0045, Train Acc: 0.6253, Val Acc: 0.0714, LR: 0.000250
+      Epoch: 260, Train Loss: 1.4253, Val Loss: 5.0216, Train Acc: 0.6438, Val Acc: 0.0714, LR: 0.000250
+      Epoch: 270, Train Loss: 1.4551, Val Loss: 5.0891, Train Acc: 0.6201, Val Acc: 0.0714, LR: 0.000125
+      Epoch: 280, Train Loss: 1.3753, Val Loss: 5.0120, Train Acc: 0.6306, Val Acc: 0.0714, LR: 0.000125
+      Epoch: 290, Train Loss: 1.3488, Val Loss: 5.1966, Train Acc: 0.6385, Val Acc: 0.0714, LR: 0.000125
+      Epoch: 300, Train Loss: 1.3546, Val Loss: 5.0873, Train Acc: 0.6438, Val Acc: 0.0714, LR: 0.000125
+      Epoch: 310, Train Loss: 1.3013, Val Loss: 5.1163, Train Acc: 0.6596, Val Acc: 0.0714, LR: 0.000125
+      Epoch: 320, Train Loss: 1.3406, Val Loss: 5.1694, Train Acc: 0.6728, Val Acc: 0.0714, LR: 0.000125
+      Epoch: 330, Train Loss: 1.3183, Val Loss: 5.0940, Train Acc: 0.6570, Val Acc: 0.0714, LR: 0.000063
+      Epoch: 340, Train Loss: 1.3749, Val Loss: 5.2231, Train Acc: 0.6649, Val Acc: 0.0714, LR: 0.000063
+      Epoch: 350, Train Loss: 1.2947, Val Loss: 5.1738, Train Acc: 0.6702, Val Acc: 0.0714, LR: 0.000063
+    Early stopping triggered at epoch 359. Best loss: 3.9891
+    Extracting embeddings for 421 nodes using full-batch inference...
+    Preparing specialized graph views for 'directgcn'.
 
---- Results for Dataset: CiteSeer_Undirected ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.2870           0.2800            0.2844         0.2862  None
-GraphSAGE   0.1920           0.1844            0.1948         0.1855  None
-      GIN   0.2750           0.2657            0.2682         0.2740  None
-  ChebNet   0.1740           0.1697            0.1769         0.1737  None
-      GCN   0.2550           0.2501            0.2492         0.2558  None
-     RGCN   0.2030           0.1923            0.1997         0.1956  None
-   DirGNN   0.2470           0.2409            0.2408         0.2450  None
-DirectGCN   0.2010           0.1973            0.1991         0.2024  None
-DirectGCN   0.1710           0.1694            0.1733         0.1787  None
-DirectGCN   0.1810           0.1824            0.1805         0.1866  None
+  ==========================================================
+  ### Processing N-gram Level: n = 3 for model 'directgcn' ###
+  ==========================================================
 
---- Results for Dataset: Cora ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.4290           0.4280            0.4243         0.4571  None
-GraphSAGE   0.2780           0.2585            0.2686         0.2739  None
-      GIN   0.4490           0.4447            0.4354         0.4769  None
-  ChebNet   0.2070           0.2028            0.2019         0.2151  None
- Node2Vec   0.6650           0.6605            0.6517         0.7082  None
-      GCN   0.3590           0.3556            0.3543         0.3878  None
-     RGCN   0.3670           0.3555            0.3535         0.3783  None
-   DirGNN   0.3400           0.3312            0.3313         0.3595  None
-DirectGCN   0.2610           0.2564            0.2598         0.2799  None
-DirectGCN   0.2170           0.2017            0.2048         0.2183  None
-DirectGCN   0.2140           0.2167            0.2421         0.2471  None
-
---- Results for Dataset: Cora_Undirected ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.3870           0.3985            0.3926         0.4394  None
-GraphSAGE   0.2770           0.2779            0.2773         0.3064  None
-      GIN   0.4250           0.4161            0.4228         0.4531  None
-  ChebNet   0.1970           0.1947            0.1968         0.2122  None
-      GCN   0.3270           0.3315            0.3282         0.3673  None
-     RGCN   0.3270           0.3261            0.3231         0.3621  None
-   DirGNN   0.3290           0.3310            0.3326         0.3728  None
-DirectGCN   0.2590           0.2540            0.2533         0.2698  None
-DirectGCN   0.2120           0.2037            0.2067         0.2185  None
-DirectGCN   0.2310           0.2270            0.2261         0.2408  None
-
---- Results for Dataset: Cornell ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.3784           0.1217            0.0903         0.1867  None
-GraphSAGE   0.4054           0.1453            0.1800         0.2067  None
-      GIN   0.2973           0.1000            0.0759         0.1467  None
-  ChebNet   0.2703           0.1578            0.1481         0.1733  None
- Node2Vec   0.2703           0.1954            0.2026         0.2067  None
-      GCN   0.3514           0.2504            0.2086         0.3533  None
-     RGCN   0.4595           0.2781            0.3489         0.2800  None
-   DirGNN   0.3514           0.1867            0.1467         0.2600  None
-DirectGCN   0.2973           0.1572            0.1437         0.1800  None
-DirectGCN   0.3243           0.2014            0.2108         0.2467  None
-DirectGCN   0.3243           0.1941            0.1849         0.2200  None
-
---- Results for Dataset: Cornell_Undirected ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.4324           0.2964            0.4481         0.2867  None
-GraphSAGE   0.4595           0.2222            0.2467         0.2533  None
-      GIN   0.4324           0.1532            0.1549         0.2200  None
-  ChebNet   0.3243           0.1724            0.1870         0.1933  None
-      GCN   0.3514           0.1355            0.1750         0.1800  None
-     RGCN   0.4595           0.2710            0.3156         0.2800  None
-   DirGNN   0.2973           0.1771            0.1878         0.1867  None
-DirectGCN   0.3514           0.1752            0.1941         0.1933  None
-DirectGCN   0.4324           0.2708            0.4023         0.2667  None
-DirectGCN   0.3243           0.1650            0.1720         0.1800  None
-
---- Results for Dataset: KarateClub ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.5909           0.6296            0.7694         0.7750  None
-GraphSAGE   0.6364           0.6471            0.7098         0.6786  None
-      GIN   0.7727           0.7685            0.7560         0.8643  None
-  ChebNet   0.3182           0.3554            0.4028         0.3869  None
- Node2Vec   0.1786           0.1736            0.1929         0.1742  None
-      GCN   0.5909           0.6287            0.6917         0.7643  None
-     RGCN   0.6364           0.5306            0.5500         0.5893  None
-   DirGNN   0.7727           0.7750            0.7542         0.8643  None
-DirectGCN   0.6818           0.6929            0.7113         0.8143  None
-DirectGCN   0.2727           0.2724            0.4405         0.3464  None
-DirectGCN   0.5909           0.6072            0.6771         0.7643  None
-
---- Results for Dataset: KarateClub_Undirected ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.4545           0.3188            0.2344         0.5000  None
-GraphSAGE   0.4091           0.3000            0.2500         0.4643  None
-      GIN   0.8182           0.8375            0.8438         0.9000  None
-  ChebNet   0.4545           0.3231            0.3125         0.3726  None
-      GCN   0.6818           0.7237            0.8021         0.8250  None
-     RGCN   0.7273           0.5619            0.5337         0.6500  None
-   DirGNN   0.7727           0.7685            0.7560         0.8643  None
-DirectGCN   0.6364           0.6517            0.6979         0.7893  None
-DirectGCN   0.4545           0.3904            0.4683         0.4679  None
-DirectGCN   0.5000           0.5517            0.6667         0.6821  None
-
---- Results for Dataset: ProtGram_n1_Singleton_uniprot_sprot_sampled ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GCN   1.0000           1.0000               N/A            N/A  None
-     RGCN   0.5714           0.3636               N/A            N/A  None
-   DirGNN   1.0000           1.0000               N/A            N/A  None
-DirectGCN   0.7143           0.2778               N/A            N/A  None
-
---- Results for Dataset: PubMed ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.4040           0.3887            0.3894         0.3983  None
-GraphSAGE   0.3840           0.3354            0.3397         0.3379  None
-      GIN   0.4110           0.3376            0.3741         0.3656  None
-  ChebNet   0.3540           0.3285            0.3433         0.3514  None
- Node2Vec   0.6900           0.6714            0.6747         0.6769  None
-      GCN   0.3540           0.3357            0.3440         0.3443  None
-     RGCN   0.3420           0.3166            0.3191         0.3183  None
-   DirGNN   0.3530           0.3385            0.3468         0.3475  None
-DirectGCN   0.3280           0.3154            0.3185         0.3228  None
-DirectGCN   0.3590           0.3072            0.3108         0.3141  None
-DirectGCN   0.3480           0.3181            0.3185         0.3182  None
-
---- Results for Dataset: PubMed_Undirected ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.4030           0.3911            0.4049         0.4068  None
-GraphSAGE   0.3390           0.3208            0.3345         0.3272  None
-      GIN   0.4380           0.3960            0.3991         0.3983  None
-  ChebNet   0.3310           0.3144            0.3211         0.3208  None
-      GCN   0.3570           0.3519            0.3760         0.3763  None
-     RGCN   0.3950           0.3659            0.3667         0.3669  None
-   DirGNN   0.3520           0.3462            0.3684         0.3671  None
-DirectGCN   0.3630           0.3396            0.3491         0.3466  None
-DirectGCN   0.3620           0.3448            0.3552         0.3532  None
-DirectGCN   0.3750           0.3611            0.3773         0.3695  None
-
---- Results for Dataset: Texas ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.5135           0.2291            0.2217         0.2375  None
-GraphSAGE   0.6216           0.4457            0.5122         0.4625  None
-      GIN   0.5676           0.2746            0.2545         0.3750  None
-  ChebNet   0.4324           0.1943            0.1932         0.2062  None
- Node2Vec   0.4865           0.2155            0.2083         0.2271  None
-      GCN   0.5405           0.1818            0.1613         0.2083  None
-     RGCN   0.7027           0.4507            0.4187         0.5062  None
-   DirGNN   0.6486           0.2983            0.4191         0.3021  None
-DirectGCN   0.4865           0.1731            0.1607         0.1875  None
-DirectGCN   0.3243           0.1696            0.1805         0.1646  None
-DirectGCN   0.5135           0.2185            0.2043         0.2375  None
-
---- Results for Dataset: Texas_Undirected ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.5135           0.2291            0.2217         0.2375  None
-GraphSAGE   0.6216           0.4457            0.5122         0.4625  None
-      GIN   0.5676           0.2746            0.2545         0.3750  None
-  ChebNet   0.4595           0.2035            0.1989         0.2167  None
-      GCN   0.5135           0.2514            0.2564         0.2500  None
-     RGCN   0.6216           0.4307            0.4350         0.4354  None
-   DirGNN   0.4865           0.1698            0.1552         0.1875  None
-DirectGCN   0.5676           0.1875            0.1641         0.2188  None
-DirectGCN   0.5135           0.3880            0.4094         0.4208  None
-DirectGCN   0.5405           0.2514            0.2286         0.2875  None
-
---- Results for Dataset: Wisconsin ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.4314           0.1484            0.1667         0.1722  None
-GraphSAGE   0.4510           0.1942            0.1744         0.2259  None
-      GIN   0.4510           0.2935            0.2671         0.3537  None
-  ChebNet   0.4314           0.2592            0.2477         0.2778  None
- Node2Vec   0.3529           0.1573            0.1540         0.1611  None
-      GCN   0.4510           0.3196            0.2995         0.3537  None
-     RGCN   0.4706           0.2977            0.3102         0.3102  None
-   DirGNN   0.4510           0.2930            0.3310         0.2843  None
-DirectGCN   0.4510           0.3078            0.2969         0.3519  None
-DirectGCN   0.3725           0.1980            0.2024         0.1954  None
-DirectGCN   0.4314           0.2955            0.2887         0.3454  None
-
---- Results for Dataset: Wisconsin_Undirected ---
-    model Accuracy F1-Score (Macro) Precision (Macro) Recall (Macro) error
-      GAT   0.4314           0.1484            0.1667         0.1722  None
-GraphSAGE   0.4510           0.1942            0.1744         0.2259  None
-      GIN   0.4510           0.2935            0.2671         0.3537  None
-  ChebNet   0.4902           0.3070            0.2773         0.3870  None
-      GCN   0.3725           0.2356            0.2295         0.2463  None
-     RGCN   0.4902           0.2979            0.2701         0.3500  None
-   DirGNN   0.4118           0.2755            0.2549         0.3389  None
-DirectGCN   0.4118           0.2582            0.2594         0.2880  None
-DirectGCN   0.4902           0.3504            0.3850         0.3852  None
-DirectGCN   0.4510           0.3692            0.3363         0.4361  None
-
-################################################################################
-### PRELIMINARY ANALYSIS COMPLETE ###
-################################################################################
---- Interactive prompts disabled. Automatically continuing after 'Preliminary Analysis'. ---
-  ✅ Checkpoint saved for step: 'PreAnalysis'
-
-===================================
-### Running HPO for ProtGram-XGCN ###
-===================================
-
-HyperparameterOptimizer initialized.
-2025/09/10 03:36:13 INFO mlflow.tracking.fluent: Experiment with name 'ProtGram-XGCN' does not exist. Creating a new experiment.
-[32m[I 2025-09-10 03:36:13,053][0m A new study created in memory with name: no-name-45dae721-c56f-4aa3-8623-1c82e4132e69[0m
-[33m[W 2025-09-10 03:36:13,055][0m Trial 0 failed with parameters: {'PROTGRAM_LR': 0.0010253509690168502, 'PROTGRAM_WEIGHT_DECAY': 0.006351221010640704, 'PROTGRAM_GNN_HIDDEN_CHANNELS': 32, 'PROTGRAM_GNN_NUM_LAYERS': 2} because of the following error: KeyError('PROTGRAM_GATING_COEFF_MODE').[0m
-Traceback (most recent call last):
-  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/optuna/study/_optimize.py", line 201, in _run_trial
-    value_or_values = func(trial)
-                      ^^^^^^^^^^^
-  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/models/hyperparameter_optimizer.py", line 221, in objective
-    trial_cfg.PROTGRAM_GATING_COEFF_MODE = suggest(trial, 'PROTGRAM_GATING_COEFF_MODE')
-                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/models/hyperparameter_optimizer.py", line 202, in suggest
-    spec = search_space[name]
-           ~~~~~~~~~~~~^^^^^^
-KeyError: 'PROTGRAM_GATING_COEFF_MODE'
-[33m[W 2025-09-10 03:36:13,062][0m Trial 0 failed with value None.[0m
-
-
---- ❌ ERROR processing dataset: uniprot_sprot_sampled ---
-  This dataset will be skipped. The pipeline will continue with the next one.
-  Error details: 'PROTGRAM_GATING_COEFF_MODE'
-Traceback (most recent call last):
-  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/entry/main.py", line 450, in run
-    best_xgcn_params = optimizer.optimize_protgram_xgcn()
-                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/models/hyperparameter_optimizer.py", line 256, in optimize_protgram_xgcn
-    study.optimize(objective, n_trials=getattr(self.base_config, 'HPO_N_TRIALS', 10), show_progress_bar=True)
-  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/optuna/study/study.py", line 490, in optimize
-    _optimize(
-  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/optuna/study/_optimize.py", line 63, in _optimize
-    _optimize_sequential(
-  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/optuna/study/_optimize.py", line 160, in _optimize_sequential
-    frozen_trial_id = _run_trial(study, func, catch)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/optuna/study/_optimize.py", line 258, in _run_trial
-    raise func_err
-  File "/home/iaebeid/.conda/envs/ppi-env/lib/python3.11/site-packages/optuna/study/_optimize.py", line 201, in _run_trial
-    value_or_values = func(trial)
-                      ^^^^^^^^^^^
-  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/models/hyperparameter_optimizer.py", line 221, in objective
-    trial_cfg.PROTGRAM_GATING_COEFF_MODE = suggest(trial, 'PROTGRAM_GATING_COEFF_MODE')
-                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/iaebeid/documents/projects/ProtGram-DirectGCN/source/utils/models/hyperparameter_optimizer.py", line 202, in suggest
-    spec = search_space[name]
-           ~~~~~~~~~~~~^^^^^^
-KeyError: 'PROTGRAM_GATING_COEFF_MODE'
-
-=====================================================
-### Full Orchestration Finished in 6542.31 seconds. ###
-=====================================================
-
-
-=========================
-### Launching MLflow UI ###
-=========================
-
---- Headless/SSH environment detected. ---
-To view the MLflow UI, run the following command on your local machine:
-
-  mlflow ui --backend-store-uri file:///home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250910_014709/mlruns
-
-If running on a remote server, you may need to use SSH port forwarding, for example:
-  ssh -L 5000:localhost:5000 your_user@your_server
+    Loading graph for n=3 from: /home/iaebeid/documents/projects/ProtGram-DirectGCN/results/run_20250911_211246/graph_objects/uniprot_sprot_sampled/ngram_graph_n3
+    Pooling (n-1)-gram embeddings to initialize features for n=3 graph (Strategy: attention)...
+    Generating self-supervised labels for task: 'next_node'
+      Generating next_node labels for all 8401 nodes.
+    Graph n=3 Homophily Ratio: 0.0007. Is Heterophilic? -> False
+    Creating new instance of 'directgcn' for context 'protgram'.
+    Seeds set to 42 for reproducibility. PyTorch CUDA deterministic mode is ON.
+    DEBUG: PROTGRAM_EPOCHS_PER_LEVEL (resolved=1000, source=YAML); use_cluster_training=True; cluster_threshold=3000; num_nodes=8401
+    Partitioning graph with 8401 nodes for clustered training (Method: louvain)...
+      Louvain algorithm found 18 communities.
+      Created 18 partitions.
+    Stochastic multiple partitions enabled. Grouping 5 clusters per batch.
+    Starting Cluster-GCN style training for up to 1000 epochs on 18 subgraphs (Task: next_node). EarlyStopping=ON (patience=300, min_delta=1e-05).
+      Epoch: 001, Avg Train Loss: 9.0481, Avg Val Loss: 9.0203, Train Acc: 0.0002, Val Acc: 0.0000, LR: 0.002000
+      Epoch: 010, Avg Train Loss: 7.9969, Avg Val Loss: 9.3294, Train Acc: 0.0023, Val Acc: 0.0000, LR: 0.002000
+      Epoch: 020, Avg Train Loss: 7.3693, Avg Val Loss: 9.4798, Train Acc: 0.0041, Val Acc: 0.0000, LR: 0.002000
+      Epoch: 030, Avg Train Loss: 6.7560, Avg Val Loss: 10.0549, Train Acc: 0.0108, Val Acc: 0.0000, LR: 0.002000
+      Epoch: 040, Avg Train Loss: 6.1777, Avg Val Loss: 10.4474, Train Acc: 0.0209, Val Acc: 0.0000, LR: 0.002000
+      Epoch: 050, Avg Train Loss: 5.7886, Avg Val Loss: 11.2521, Train Acc: 0.0323, Val Acc: 0.0000, LR: 0.002000
+      Epoch: 060, Avg Train Loss: 5.2902, Avg Val Loss: 11.9377, Train Acc: 0.0514, Val Acc: 0.0000, LR: 0.001000
+      Epoch: 070, Avg Train Loss: 5.1771, Avg Val Loss: 12.2575, Train Acc: 0.0564, Val Acc: 0.0000, LR: 0.001000
+      Epoch: 080, Avg Train Loss: 5.0821, Avg Val Loss: 12.8397, Train Acc: 0.0645, Val Acc: 0.0000, LR: 0.001000
+      Epoch: 090, Avg Train Loss: 5.0074, Avg Val Loss: 12.8165, Train Acc: 0.0745, Val Acc: 0.0000, LR: 0.001000
+      Epoch: 100, Avg Train Loss: 4.9349, Avg Val Loss: 13.2145, Train Acc: 0.0909, Val Acc: 0.0000, LR: 0.001000
+      Epoch: 110, Avg Train Loss: 4.6635, Avg Val Loss: 13.3679, Train Acc: 0.0936, Val Acc: 0.0000, LR: 0.000500
+      Epoch: 120, Avg Train Loss: 4.6181, Avg Val Loss: 14.0193, Train Acc: 0.1001, Val Acc: 0.0000, LR: 0.000500
+      Epoch: 130, Avg Train Loss: 4.6064, Avg Val Loss: 14.1068, Train Acc: 0.1040, Val Acc: 0.0000, LR: 0.000500
+      Epoch: 140, Avg Train Loss: 4.4967, Avg Val Loss: 14.4274, Train Acc: 0.1127, Val Acc: 0.0000, LR: 0.000500

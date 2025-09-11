@@ -70,6 +70,35 @@ class ProtGramXGCNTrainer:
         # --- NEW: Collect per-level training losses for HPO ---
         self._training_metrics: Dict[int, float] = {}
 
+    def _create_cv_folds(self, n_nodes: int, n_folds: int) -> List[Tuple[torch.Tensor, torch.Tensor]]:
+        """Create deterministic cross-validation folds for node indices."""
+        gen = torch.Generator(device='cpu')
+        gen.manual_seed(self.config.RANDOM_STATE)
+        perm = torch.randperm(n_nodes, generator=gen)
+        
+        folds = []
+        fold_size = n_nodes // n_folds
+        
+        for fold_idx in range(n_folds):
+            start_idx = fold_idx * fold_size
+            if fold_idx == n_folds - 1:  # Last fold gets remaining nodes
+                end_idx = n_nodes
+            else:
+                end_idx = (fold_idx + 1) * fold_size
+            
+            val_indices = perm[start_idx:end_idx]
+            train_indices = torch.cat([perm[:start_idx], perm[end_idx:]])
+            
+            # Ensure we have at least one training and validation sample
+            if len(train_indices) == 0:
+                train_indices = torch.tensor([0] if val_indices[0] != 0 else [1])
+            if len(val_indices) == 0:
+                val_indices = torch.tensor([0])
+            
+            folds.append((train_indices, val_indices))
+        
+        return folds
+
     def run(self) -> Dict[str, str]:
         """
         Main execution function. Loops through n-gram levels, trains models,
@@ -370,31 +399,53 @@ class ProtGramXGCNTrainer:
 
         criterion = F.cross_entropy
 
-        # --- NEW: Create a deterministic node-level validation split (full-batch mode) ---
-        use_val = bool(getattr(self.config, 'PROTGRAM_USE_VALIDATION', True))
-        val_frac = float(getattr(self.config, 'PROTGRAM_VAL_SPLIT_FRACTION', 0.1))
-        train_mask = None
-        val_mask = None
-        if use_val and 0.0 < val_frac < 1.0:
-            N_nodes = int(full_data_gpu.y.shape[0])
-            # Ensure both sets are non-empty
-            val_count = max(1, int(N_nodes * val_frac))
-            if val_count >= N_nodes:
-                val_count = max(1, N_nodes - 1)
-            gen = torch.Generator(device='cpu')
-            gen.manual_seed(int(getattr(self.config, 'RANDOM_STATE', 42)) + int(getattr(full_data_gpu.graph_obj, 'n_value', 0)))
-            perm = torch.randperm(N_nodes, generator=gen)
-            val_idx = perm[:val_count]
-            train_idx = perm[val_count:]
-            train_mask = torch.zeros(N_nodes, dtype=torch.bool, device=self.device)
-            val_mask = torch.zeros(N_nodes, dtype=torch.bool, device=self.device)
-            train_mask[train_idx.to(self.device)] = True
-            val_mask[val_idx.to(self.device)] = True
+        # --- NEW: Cross-validation or regular validation split logic ---
+        N_nodes = int(full_data_gpu.y.shape[0])
+        use_cv = (self.config.PROTGRAM_USE_CROSS_VALIDATION and 
+                  N_nodes < self.config.PROTGRAM_CV_THRESHOLD_NODES)
+        
+        if use_cv:
+            print(f"  Using {self.config.PROTGRAM_CV_FOLDS}-fold cross-validation for {N_nodes} nodes")
+            # Create CV folds
+            cv_folds = self._create_cv_folds(N_nodes, self.config.PROTGRAM_CV_FOLDS)
+            use_val = True
+            current_fold = 0
         else:
-            use_val = False
+            # Regular validation split
+            use_val = bool(getattr(self.config, 'PROTGRAM_USE_VALIDATION', True))
+            val_frac = float(getattr(self.config, 'PROTGRAM_VAL_SPLIT_FRACTION', 0.1))
+            train_mask = None
+            val_mask = None
+            if use_val and 0.0 < val_frac < 1.0:
+                # Ensure both sets are non-empty
+                val_count = max(1, int(N_nodes * val_frac))
+                if val_count >= N_nodes:
+                    val_count = max(1, N_nodes - 1)
+                gen = torch.Generator(device='cpu')
+                gen.manual_seed(int(getattr(self.config, 'RANDOM_STATE', 42)) + int(getattr(full_data_gpu.graph_obj, 'n_value', 0)))
+                perm = torch.randperm(N_nodes, generator=gen)
+                val_idx = perm[:val_count]
+                train_idx = perm[val_count:]
+                train_mask = torch.zeros(N_nodes, dtype=torch.bool, device=self.device)
+                val_mask = torch.zeros(N_nodes, dtype=torch.bool, device=self.device)
+                train_mask[train_idx.to(self.device)] = True
+                val_mask[val_idx.to(self.device)] = True
+            else:
+                use_val = False
 
         print(f"  Starting full-batch training for up to {epochs} epochs (Task: {task_type})...")
         for epoch in range(1, epochs + 1):  # noqa
+            # --- NEW: Handle cross-validation fold rotation ---
+            if use_cv:
+                current_fold = (epoch - 1) % self.config.PROTGRAM_CV_FOLDS
+                train_indices, val_indices = cv_folds[current_fold]
+                train_mask = torch.zeros(N_nodes, dtype=torch.bool, device=self.device)
+                val_mask = torch.zeros(N_nodes, dtype=torch.bool, device=self.device)
+                train_mask[train_indices.to(self.device)] = True
+                val_mask[val_indices.to(self.device)] = True
+                
+                if epoch == 1 or (epoch - 1) % self.config.PROTGRAM_CV_FOLDS == 0:
+                    print(f"    CV: Using fold {current_fold} for validation (val_nodes: {len(val_indices)}, train_nodes: {len(train_indices)})")
             # --- CONCEPTUAL CHANGE FOR MASKED NODE PREDICTION ---
             # If the task is 'masked_node', we need to generate a new mask for each epoch.
             if task_type == 'masked_node':
@@ -492,7 +543,7 @@ class ProtGramXGCNTrainer:
 
             if (epoch % accumulation_steps) == 0 or (epoch == epochs):
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=self.config.PROTGRAM_GRADIENT_CLIP_NORM)
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
@@ -686,7 +737,7 @@ class ProtGramXGCNTrainer:
                 # Update weights only after accumulating gradients for `accumulation_steps` batches
                 if (i + 1) % accumulation_steps == 0 or (i + 1) == len(grouped_partitions):
                     scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=self.config.PROTGRAM_GRADIENT_CLIP_NORM)
                     scaler.step(optimizer)
                     scaler.update()
                     optimizer.zero_grad()
