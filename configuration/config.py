@@ -240,6 +240,8 @@ class HPOParams(BaseModel):
     HPO_N_TRIALS: int = Field(default=50, gt=0)
     HPO_TARGET_EMBEDDING_MODEL: str = ""
     HPO_PPI_MLP_SEARCH_SPACE: Dict[str, HPOSearchSpaceItem] = Field(default_factory=dict)
+    # Optional: ProtGram-XGCN HPO search space (to choose which ProtGram params to tune)
+    HPO_PROTGRAM_XGCN_SEARCH_SPACE: Dict[str, HPOSearchSpaceItem] = Field(default_factory=dict)
 
 class ValidationSchema(BaseModel):
     """The root model for validating the entire
@@ -789,6 +791,8 @@ class Config:
         self.HPO_N_TRIALS = params['HPO_N_TRIALS']
         self.HPO_TARGET_EMBEDDING_MODEL = params['HPO_TARGET_EMBEDDING_MODEL']
         self.HPO_PPI_MLP_SEARCH_SPACE = params['HPO_PPI_MLP_SEARCH_SPACE']
+        # Optional: ProtGram-XGCN HPO search space
+        self.HPO_PROTGRAM_XGCN_SEARCH_SPACE = params.get('HPO_PROTGRAM_XGCN_SEARCH_SPACE', {})
 
     def _validate_config(self):
         """

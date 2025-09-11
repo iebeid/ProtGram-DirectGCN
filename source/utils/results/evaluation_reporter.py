@@ -371,18 +371,40 @@ class EvaluationReporter:
             print("  SHAP library not installed. Skipping SHAP summary generation.")
             return None
 
+        # Ensure plots directory exists
+        try:
+            self.plots_output_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
         plot_filename = self.plots_output_dir / f"shap_summary_{model_name.replace(' ', '_')}_Fold{fold_num}.png"
         print(f"  Generating SHAP summary plot for {model_name}...")
 
         try:
-            explainer = shap.DeepExplainer(model, background_data)
-            shap_values = explainer.shap_values(background_data)
-
-            if isinstance(shap_values, list):
-                shap_values = shap_values[0]
+            # Prefer Explainer() API; fallback to DeepExplainer/KernelExplainer as needed
+            try:
+                explainer = shap.Explainer(model, background_data)
+                shap_values = explainer(background_data)
+                vals = shap_values.values if hasattr(shap_values, 'values') else shap_values
+                data = shap_values.data if hasattr(shap_values, 'data') else background_data
+            except Exception:
+                try:
+                    deep_explainer = shap.DeepExplainer(model, background_data)
+                    vals = deep_explainer.shap_values(background_data)
+                    if isinstance(vals, list):
+                        vals = vals[0]
+                    data = background_data
+                except Exception:
+                    # KernelExplainer fallback using model.predict
+                    f = lambda X: model.predict(X, batch_size=1024).flatten()
+                    kernel_explainer = shap.KernelExplainer(f, background_data)
+                    M = background_data.shape[0]
+                    eval_rows = background_data[: min(M, 1000)]
+                    vals = kernel_explainer.shap_values(eval_rows, nsamples="auto")
+                    data = eval_rows
 
             plt.figure()
-            shap.summary_plot(shap_values, background_data, show=False, plot_type="bar", max_display=20)
+            shap.summary_plot(vals, data, show=False, plot_type="bar", max_display=20)
             plt.title(f"SHAP Feature Importance\n({model_name} - Fold {fold_num})")
             plt.tight_layout()
             plt.savefig(plot_filename)

@@ -32,7 +32,7 @@ pipeline_flags:
   RUN_LSTM_PIPELINE: false
   RUN_WORD2VEC_PIPELINE: false
   RUN_TRANSFORMER_PIPELINE: false
-  RUN_BENCHMARKING_PIPELINE: true
+  RUN_BENCHMARKING_PIPELINE: false
   RUN_PROTGRAM_PIPELINE: true
   
   RUN_MAIN_PPI_EVALUATION: true
@@ -138,14 +138,14 @@ protgram_gcn:
   PROTGRAM_1GRAM_INIT_DIM: 512
   PROTGRAM_GNN_HIDDEN_CHANNELS: 64
   PROTGRAM_GNN_NUM_LAYERS: 2
-  PROTGRAM_GATING_COEFF_MODE: "scalar"
+  PROTGRAM_GATING_COEFF_MODE: "vector"
   PROTGRAM_DIRECTGCN_PATH_SELECTION: 'in_out'  # Options: 'full' | 'undirected' | 'in_out'; 'in_out' disables undirected path
   PROTGRAM_EPOCHS_PER_LEVEL: 1000
   PROTGRAM_LR: 0.005
   PROTGRAM_DROPOUT_RATE: 0.25
   PROTGRAM_WEIGHT_DECAY: 0.0001
   PROTGRAM_USE_LR_SCHEDULER: true
-  PROTGRAM_LR_SCHEDULER_PATIENCE: 10
+  PROTGRAM_LR_SCHEDULER_PATIENCE: 100
   PROTGRAM_LR_SCHEDULER_FACTOR: 0.5
   PROTGRAM_USE_EARLY_STOPPING: true
   PROTGRAM_EARLY_STOPPING_PATIENCE: 100
@@ -264,7 +264,7 @@ mlflow:
 # 12. HYPERPARAMETER OPTIMIZATION (Optuna)
 hyperparameter_optimization:
   RUN_HPO: true
-  HPO_N_TRIALS: 10 # Number of trials for Optuna to run
+  HPO_N_TRIALS: 2 # Number of trials for Optuna to run
   # --- DEFINITIVE FIX: Use the model's base name to match generated filenames ---
   # The trainer creates files like 'directgcn_...' not 'ProtGramDirectgcn_...'.
   HPO_TARGET_EMBEDDING_MODEL: "directgcn" # Which embedding to optimize the MLP for
@@ -277,3 +277,10 @@ hyperparameter_optimization:
     DROPOUT2_RATE: {type: 'uniform', low: 0.1, high: 0.6}
     L2_REG: {type: 'loguniform', low: 1.0e-6, high: 1.0e-3}
     EVAL_BATCH_SIZE: {type: 'categorical', choices: [512, 1024, 2048, 4096]}
+  # Search space for the ProtGram-XGCN trainer (choose which ProtGram params to tune)
+  # Note: Intentionally exclude PROTGRAM_GATING_COEFF_MODE to avoid training gating/no-gating variants during HPO.
+  HPO_PROTGRAM_XGCN_SEARCH_SPACE:
+    PROTGRAM_LR: {type: 'loguniform', low: 1.0e-4, high: 5.0e-2}
+    PROTGRAM_WEIGHT_DECAY: {type: 'loguniform', low: 1.0e-6, high: 1.0e-2}
+    PROTGRAM_GNN_HIDDEN_CHANNELS: {type: 'categorical', choices: [32, 64, 128]}
+    PROTGRAM_GNN_NUM_LAYERS: {type: 'categorical', choices: [2, 3]}

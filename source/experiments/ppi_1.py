@@ -218,10 +218,13 @@ class PPIPipeline:
             return metrics, history.history, model
 
         finally:
-            # Ensure the Keras session is cleared to prevent memory leaks.
-            del model
+            # Defer heavy cleanup until after SHAP generation to keep model usable.
+            try:
+                del class_weight
+            except Exception:
+                pass
             gc.collect()
-            tf_keras.backend.clear_session()
+            # Do not clear Keras session here; it will be cleared after SHAP.
 
     def _run_cv_workflow(
             self,
@@ -314,8 +317,16 @@ class PPIPipeline:
                 mlflow.set_experiment(self.config.MLFLOW_INTERPRETABILITY_EXPERIMENT_NAME)
                 with mlflow.start_run(run_name=f"SHAP_{embedding_name}", nested=True):
                     print(f"  Generating SHAP summary for main model '{embedding_name}'...")
-                    shap_sample = shap.sample(X_train_for_shap, 1000) if len(X_train_for_shap) > 1000 else X_train_for_shap
-                    background_summary = shap.kmeans(shap_sample, 50).data
+                    shap_sample = shap.sample(X_train_for_shap, 2000) if len(X_train_for_shap) > 2000 else X_train_for_shap
+                    # Build k-means background via sklearn for robustness
+                    try:
+                        from sklearn.cluster import KMeans
+                        kmeans = KMeans(n_clusters=min(50, len(shap_sample)), random_state=self.config.RANDOM_STATE)
+                        kmeans.fit(shap_sample)
+                        background_summary = kmeans.cluster_centers_
+                    except Exception:
+                        background_summary = shap_sample
+
                     reporter = EvaluationReporter(str(self.config.RESULTS_EVALUATION_DIR), self.config.EVAL_K_VALUES_FOR_TABLE)
                     shap_plot_path = reporter.generate_shap_summary(
                         model=model_for_shap, background_data=background_summary,
@@ -326,15 +337,34 @@ class PPIPipeline:
                 mlflow.set_experiment(self.config.MLFLOW_EXPERIMENT_NAME)  # Switch back
             except Exception as e_shap:
                 print(f"    WARNING: SHAP summary generation failed with error: {e_shap}")
+            finally:
+                # Clear session AFTER SHAP to free resources
+                try:
+                    tf_keras.backend.clear_session()
+                except Exception:
+                    pass
 
         # --- NEW: Generate and log attention heatmap for ProtGram models ---
         if "protgram" in embedding_name.lower() or "directgcn" in embedding_name.lower() or "gcn" in embedding_name.lower():
             # Ensure plots go under the dataset-specific evaluation directory
             local_reporter = EvaluationReporter(base_output_dir=str(self.config.RESULTS_EVALUATION_DIR), k_vals_table=self.config.EVAL_K_VALUES_FOR_TABLE)
             attention_log_path = self.config.RESULTS_GCN_EMBEDDINGS_DIR / f"attention_log_{embedding_name}.json"
+            resolved_attention_path = None
             if attention_log_path.exists():
+                resolved_attention_path = attention_log_path
+            else:
+                # Try to discover attention logs by fuzzy name matching
+                candidates = list(self.config.RESULTS_GCN_EMBEDDINGS_DIR.glob(f"attention_log_{embedding_name}*.json"))
+                if not candidates:
+                    candidates = list(self.config.RESULTS_GCN_EMBEDDINGS_DIR.glob(f"attention_log_*{embedding_name}*.json"))
+                if candidates:
+                    resolved_attention_path = candidates[0]
+                else:
+                    print(f"    WARNING: Attention log not found for '{embedding_name}' in {self.config.RESULTS_GCN_EMBEDDINGS_DIR}.")
+
+            if resolved_attention_path:
                 try:
-                    with open(attention_log_path, 'r') as f:
+                    with open(resolved_attention_path, 'r') as f:
                         attention_data = json.load(f)
                     heatmap_path = local_reporter.plot_attention_heatmap(attention_data, embedding_name)
                     if heatmap_path and mlflow.active_run():

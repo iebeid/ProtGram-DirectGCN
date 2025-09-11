@@ -369,12 +369,37 @@ class ProtGramXGCNTrainer:
         optimizer.zero_grad()
 
         criterion = F.cross_entropy
+
+        # --- NEW: Create a deterministic node-level validation split (full-batch mode) ---
+        use_val = bool(getattr(self.config, 'PROTGRAM_USE_VALIDATION', True))
+        val_frac = float(getattr(self.config, 'PROTGRAM_VAL_SPLIT_FRACTION', 0.1))
+        train_mask = None
+        val_mask = None
+        if use_val and 0.0 < val_frac < 1.0:
+            N_nodes = int(full_data_gpu.y.shape[0])
+            # Ensure both sets are non-empty
+            val_count = max(1, int(N_nodes * val_frac))
+            if val_count >= N_nodes:
+                val_count = max(1, N_nodes - 1)
+            gen = torch.Generator(device='cpu')
+            gen.manual_seed(int(getattr(self.config, 'RANDOM_STATE', 42)) + int(getattr(full_data_gpu.graph_obj, 'n_value', 0)))
+            perm = torch.randperm(N_nodes, generator=gen)
+            val_idx = perm[:val_count]
+            train_idx = perm[val_count:]
+            train_mask = torch.zeros(N_nodes, dtype=torch.bool, device=self.device)
+            val_mask = torch.zeros(N_nodes, dtype=torch.bool, device=self.device)
+            train_mask[train_idx.to(self.device)] = True
+            val_mask[val_idx.to(self.device)] = True
+        else:
+            use_val = False
+
         print(f"  Starting full-batch training for up to {epochs} epochs (Task: {task_type})...")
         for epoch in range(1, epochs + 1):  # noqa
             # --- CONCEPTUAL CHANGE FOR MASKED NODE PREDICTION ---
             # If the task is 'masked_node', we need to generate a new mask for each epoch.
             if task_type == 'masked_node':
-                masked_features, masked_indices, original_labels = self.label_generator.generate_masked_node_task(                    graph_obj=full_data_gpu.graph_obj, features=data.x,
+                masked_features, masked_indices, original_labels = self.label_generator.generate_masked_node_task(
+                    graph_obj=full_data_gpu.graph_obj, features=data.x,
                     # The task is to predict the original node IDs from the masked features
                     masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION
                 )
@@ -388,11 +413,42 @@ class ProtGramXGCNTrainer:
 
             with torch.amp.autocast(device_type=self.device.type, enabled=use_amp):
                 output, _ = model(data=epoch_data)
-                # Calculate loss based on the specific task for this level
+                # Calculate TRAIN loss based on the specific task for this level
                 if task_type == 'masked_node':
-                    loss = criterion(output[masked_indices], original_labels)
-                else: # Original 'next_node' or 'community' logic
-                    loss = criterion(output, epoch_data.y)
+                    train_loss_tensor = criterion(output[masked_indices], original_labels)
+                else:  # Original 'next_node' or 'community' logic
+                    if use_val and train_mask is not None:
+                        train_loss_tensor = criterion(output[train_mask], epoch_data.y[train_mask])
+                    else:
+                        train_loss_tensor = criterion(output, epoch_data.y)
+
+            # --- Compute VALIDATION loss (no grad) ---
+            val_loss_value = float('nan')
+            if use_val and val_mask is not None:
+                model.eval()
+                with torch.no_grad():
+                    if task_type == 'masked_node':
+                        masked_features_v, masked_indices_v, original_labels_v = self.label_generator.generate_masked_node_task(
+                            graph_obj=full_data_gpu.graph_obj, features=data.x,
+                            masking_fraction=self.config.PROTGRAM_MASKED_NODE_FRACTION
+                        )
+                        epoch_val = full_data_gpu.clone()
+                        epoch_val.x = masked_features_v.to(self.device)
+                        masked_indices_v = masked_indices_v.to(self.device)
+                        original_labels_v = original_labels_v.to(self.device)
+                        # Restrict to validation nodes if any selected
+                        sel = val_mask[masked_indices_v] if val_mask is not None else None
+                        if sel is not None and torch.any(sel):
+                            out_v, _ = model(data=epoch_val)
+                            val_loss_value = float(criterion(out_v[masked_indices_v[sel]], original_labels_v[sel]).item())
+                        else:
+                            # Fallback: evaluate on all masked positions
+                            out_v, _ = model(data=epoch_val)
+                            val_loss_value = float(criterion(out_v[masked_indices_v], original_labels_v).item())
+                    else:
+                        out_v, _ = model(data=full_data_gpu)
+                        val_loss_value = float(criterion(out_v[val_mask], full_data_gpu.y[val_mask]).item())
+                model.train()
 
             # --- NEW: Calculate training metrics for more detailed logging ---
             train_metrics = {}
@@ -404,12 +460,15 @@ class ProtGramXGCNTrainer:
                     train_metrics['train_acc'] = correct / total if total > 0 else 0.0
                 else:
                     preds = output.argmax(dim=-1)
-                    correct = (preds == epoch_data.y).sum().item()
-                    total = len(epoch_data.y)
+                    ref_y = epoch_data.y if not use_val or train_mask is None else epoch_data.y[train_mask]
+                    ref_preds = preds if not use_val or train_mask is None else preds[train_mask]
+                    correct = (ref_preds == ref_y).sum().item()
+                    total = len(ref_y)
                     train_metrics['train_acc'] = correct / total if total > 0 else 0.0
 
             # --- Backward pass & Gradient Accumulation ---
-            unnormalized_loss = loss.item()
+            unnormalized_loss = float(train_loss_tensor.item())
+            loss = train_loss_tensor
             if accumulation_steps > 1:
                 loss = loss / accumulation_steps
 
@@ -422,29 +481,56 @@ class ProtGramXGCNTrainer:
                 scaler.update()
                 optimizer.zero_grad()
 
-            if scheduler: scheduler.step(unnormalized_loss)
+            # --- Guarded LR scheduling to prevent premature zero LR (monitor validation if available) ---
+            monitor_loss = val_loss_value if (use_val and not math.isnan(val_loss_value)) else unnormalized_loss
+            if scheduler:
+                warmup_epochs = int(getattr(self.config, 'PROTGRAM_LR_WARMUP_EPOCHS', 3))
+                min_lr = float(getattr(self.config, 'PROTGRAM_LR_SCHEDULER_MIN_LR', 1e-6))
+                # Initialize safer scheduler knobs once (backward-compatible)
+                if not hasattr(scheduler, '_pg_safe_inited'):
+                    scheduler.cooldown = int(getattr(self.config, 'PROTGRAM_LR_SCHEDULER_COOLDOWN', 2))
+                    scheduler.threshold = float(getattr(self.config, 'PROTGRAM_LR_SCHEDULER_THRESHOLD', 1e-4))
+                    scheduler.threshold_mode = getattr(self.config, 'PROTGRAM_LR_SCHEDULER_THRESHOLD_MODE', 'rel')
+                    scheduler._pg_safe_inited = True
+                # Apply decay only after warmup; clamp LR at floor and disable further decay
+                if epoch > warmup_epochs:
+                    scheduler.step(monitor_loss)
+                    current_lr = optimizer.param_groups[0]['lr']
+                    if current_lr < min_lr:
+                        for pg in optimizer.param_groups:
+                            pg['lr'] = min_lr
+                        scheduler = None
+
             # --- NEW: Enhanced logging with more metrics ---
             if self.config.DEBUG_VERBOSE and (epoch == 1 or epoch % 10 == 0 or epoch == epochs):
                 current_lr = optimizer.param_groups[0]['lr']
-                log_str = (f"    Epoch: {epoch:03d}, Loss: {unnormalized_loss:.4f}, "
-                           f"Train Acc: {train_metrics.get('train_acc', 0.0):.4f}, "
-                           f"LR: {current_lr:.6f}")
+                if use_val and not math.isnan(val_loss_value):
+                    log_str = (f"    Epoch: {epoch:03d}, Train Loss: {unnormalized_loss:.4f}, "
+                               f"Val Loss: {val_loss_value:.4f}, "
+                               f"Train Acc: {train_metrics.get('train_acc', 0.0):.4f}, "
+                               f"LR: {current_lr:.6f}")
+                else:
+                    log_str = (f"    Epoch: {epoch:03d}, Loss: {unnormalized_loss:.4f}, "
+                               f"Train Acc: {train_metrics.get('train_acc', 0.0):.4f}, "
+                               f"LR: {current_lr:.6f}")
                 print(log_str)
-            if early_stopper and early_stopper.early_stop(unnormalized_loss):
+
+            # Early stopping now monitors validation loss if available
+            if early_stopper and early_stopper.early_stop(monitor_loss):
                 print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
-                # --- NEW: Record per-level best loss for HPO ---
+                # --- NEW: Record per-level best monitored loss for HPO ---
                 try:
                     level_id = int(getattr(full_data_gpu.graph_obj, 'n_value', 0))
-                    best_loss = float(early_stopper.best_loss) if early_stopper and early_stopper.best_loss is not None else float(unnormalized_loss)
+                    best_loss = float(early_stopper.best_loss) if early_stopper and early_stopper.best_loss is not None else float(monitor_loss)
                     self._training_metrics[level_id] = best_loss
                 except Exception:
                     pass
                 break
-        # --- NEW: If no early stop, record last loss ---
+        # --- NEW: If no early stop, record last monitored loss ---
         if getattr(early_stopper, 'best_loss', None) is None:
             try:
                 level_id = int(getattr(full_data_gpu.graph_obj, 'n_value', 0))
-                self._training_metrics[level_id] = float(unnormalized_loss)
+                self._training_metrics[level_id] = float(monitor_loss)
             except Exception:
                 pass
 
@@ -510,13 +596,33 @@ class ProtGramXGCNTrainer:
             f"min_delta={self.config.PROTGRAM_EARLY_STOPPING_MIN_DELTA})."
         )
 
-        for epoch in range(1, epochs + 1):
-            random.shuffle(node_partitions)
+        # --- NEW: Split partitions into train/validation sets deterministically ---
+        use_val = bool(getattr(self.config, 'PROTGRAM_USE_VALIDATION', True))
+        val_frac = float(getattr(self.config, 'PROTGRAM_VAL_SPLIT_FRACTION', 0.1))
+        if use_val and 0.0 < val_frac < 1.0 and len(node_partitions) > 1:
+            rng = random.Random(int(getattr(self.config, 'RANDOM_STATE', 42)) + int(getattr(full_data, 'n_value', getattr(full_data, 'graph_obj', 0)).n_value if hasattr(getattr(full_data, 'graph_obj', None), 'n_value') else 0))
+            parts = list(node_partitions)
+            rng.shuffle(parts)
+            val_count = max(1, int(len(parts) * val_frac))
+            if val_count >= len(parts):
+                val_count = max(1, len(parts) - 1)
+            val_partitions = parts[:val_count]
+            train_partitions = parts[val_count:]
+        else:
+            use_val = False
+            train_partitions = list(node_partitions)
+            val_partitions = []
 
-            # Group partitions into mini-batches as per the paper's strategy
+        for epoch in range(1, epochs + 1):
+            # Shuffle training partitions each epoch
+            rng_epoch = random.Random(int(getattr(self.config, 'RANDOM_STATE', 42)) + epoch)
+            parts_epoch = list(train_partitions)
+            rng_epoch.shuffle(parts_epoch)
+
+            # Group partitions into mini-batches as per the paper's strategy (TRAIN)
             grouped_partitions = [
-                node_partitions[i:i + group_size]
-                for i in range(0, len(node_partitions), group_size)
+                parts_epoch[i:i + group_size]
+                for i in range(0, len(parts_epoch), group_size)
             ]
 
             # --- NEW: Add accumulators for epoch-level metrics ---
@@ -529,7 +635,8 @@ class ProtGramXGCNTrainer:
                 # Create a self-contained PyG Data object for the current subgraph
                 # --- DEFINITIVE FIX: Pass the homophily/heterophily matrices to the subgraph creator ---
                 combined_node_indices = [node for partition in partition_group for node in partition]
-                if not combined_node_indices: continue
+                if not combined_node_indices: 
+                    continue
 
                 subgraph_data = full_data.graph_obj.create_subgraph_data_for_model(
                     model_type=model.__class__.__name__.lower(),
@@ -570,6 +677,39 @@ class ProtGramXGCNTrainer:
 
             # --- NEW: Calculate and log epoch-level metrics ---
             avg_epoch_loss = epoch_loss / len(grouped_partitions) if grouped_partitions else 0.0
+
+            # --- NEW: Compute validation loss on validation partitions (no grad) ---
+            avg_val_loss = float('nan')
+            if use_val and val_partitions:
+                model.eval()
+                with torch.no_grad():
+                    val_groups = 0
+                    val_loss_sum = 0.0
+                    # Evaluate in groups to reuse batching path
+                    grouped_val = [
+                        val_partitions[i:i + group_size]
+                        for i in range(0, len(val_partitions), group_size)
+                    ]
+                    for partition_group in grouped_val:
+                        combined_node_indices = [node for partition in partition_group for node in partition]
+                        if not combined_node_indices:
+                            continue
+                        subgraph_val = full_data.graph_obj.create_subgraph_data_for_model(
+                            model_type=model.__class__.__name__.lower(),
+                            full_features=full_data.x,
+                            full_labels=full_data.y,
+                            node_subset=torch.tensor(combined_node_indices, dtype=torch.long),
+                            A_homo_norm=getattr(full_data, 'A_homo_norm', None),
+                            A_hetero_norm=getattr(full_data, 'A_hetero_norm', None)
+                        ).to(self.device)
+                        # Reuse the same helper to compute loss
+                        loss_v, _, _ = self._calculate_loss(model, subgraph_val, criterion, task_type)
+                        val_loss_sum += float(loss_v.item())
+                        val_groups += 1
+                    if val_groups > 0:
+                        avg_val_loss = val_loss_sum / val_groups
+                model.train()
+
             if self.config.DEBUG_VERBOSE and (epoch == 1 or epoch % 10 == 0 or epoch == epochs):
                 current_lr = optimizer.param_groups[0]['lr']
                 # Calculate accuracy from accumulated predictions
@@ -580,26 +720,50 @@ class ProtGramXGCNTrainer:
                     if len(y_true) > 0:
                         train_acc = (y_pred == y_true).mean()
 
-                log_str = (f"    Epoch: {epoch:03d}, Avg Batch Loss: {avg_epoch_loss:.4f}, "
-                           f"Train Acc: {train_acc:.4f}, "
-                           f"LR: {current_lr:.6f}")
+                if use_val and not math.isnan(avg_val_loss):
+                    log_str = (f"    Epoch: {epoch:03d}, Avg Train Loss: {avg_epoch_loss:.4f}, "
+                               f"Avg Val Loss: {avg_val_loss:.4f}, "
+                               f"Train Acc: {train_acc:.4f}, "
+                               f"LR: {current_lr:.6f}")
+                else:
+                    log_str = (f"    Epoch: {epoch:03d}, Avg Batch Loss: {avg_epoch_loss:.4f}, "
+                               f"Train Acc: {train_acc:.4f}, "
+                               f"LR: {current_lr:.6f}")
                 print(log_str)
-            if scheduler: scheduler.step(avg_epoch_loss)
-            if early_stopper and early_stopper.early_stop(avg_epoch_loss):
+
+            # --- Guarded LR scheduling to prevent premature zero LR (monitor validation if available) ---
+            monitor_loss = avg_val_loss if (use_val and not math.isnan(avg_val_loss)) else avg_epoch_loss
+            if scheduler:
+                warmup_epochs = int(getattr(self.config, 'PROTGRAM_LR_WARMUP_EPOCHS', 3))
+                min_lr = float(getattr(self.config, 'PROTGRAM_LR_SCHEDULER_MIN_LR', 1e-6))
+                if not hasattr(scheduler, '_pg_safe_inited'):
+                    scheduler.cooldown = int(getattr(self.config, 'PROTGRAM_LR_SCHEDULER_COOLDOWN', 2))
+                    scheduler.threshold = float(getattr(self.config, 'PROTGRAM_LR_SCHEDULER_THRESHOLD', 1e-4))
+                    scheduler.threshold_mode = getattr(self.config, 'PROTGRAM_LR_SCHEDULER_THRESHOLD_MODE', 'rel')
+                    scheduler._pg_safe_inited = True
+                if epoch > warmup_epochs:
+                    scheduler.step(monitor_loss)
+                    current_lr = optimizer.param_groups[0]['lr']
+                    if current_lr < min_lr:
+                        for pg in optimizer.param_groups:
+                            pg['lr'] = min_lr
+                        scheduler = None
+
+            if early_stopper and early_stopper.early_stop(monitor_loss):
                 print(f"  Early stopping triggered at epoch {epoch}. Best loss: {early_stopper.best_loss:.4f}")
-                # --- NEW: Record per-level best loss for HPO ---
+                # --- NEW: Record per-level best monitored loss for HPO ---
                 try:
                     level_id = int(getattr(full_data, 'graph_obj', getattr(full_data, 'n_value', 0)).n_value if hasattr(full_data, 'graph_obj') else getattr(full_data, 'n_value', 0))
-                    best_loss = float(early_stopper.best_loss) if early_stopper and early_stopper.best_loss is not None else float(avg_epoch_loss)
+                    best_loss = float(early_stopper.best_loss) if early_stopper and early_stopper.best_loss is not None else float(monitor_loss)
                     self._training_metrics[level_id] = best_loss
                 except Exception:
                     pass
                 break
-        # --- NEW: If no early stop, record last average batch loss ---
+        # --- NEW: If no early stop, record last monitored loss ---
         if getattr(early_stopper, 'best_loss', None) is None:
             try:
                 level_id = int(getattr(full_data, 'graph_obj', getattr(full_data, 'n_value', 0)).n_value if hasattr(full_data, 'graph_obj') else getattr(full_data, 'n_value', 0))
-                self._training_metrics[level_id] = float(avg_epoch_loss)
+                self._training_metrics[level_id] = float(monitor_loss)
             except Exception:
                 pass
 
