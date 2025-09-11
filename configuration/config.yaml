@@ -254,7 +254,7 @@ ppi_evaluation:
 
 # 11. MLFLOW & EXPERIMENT TRACKING
 mlflow:
-  USE_MLFLOW: true
+  USE_MLFLOW: false
   EXPERIMENT_NAME: "PPI-Link-Prediction"
   BENCHMARK_EXPERIMENT_NAME: "GNN-Benchmarking"
   LLMS_EXPERIMENT_NAME: "LLMs"
@@ -263,7 +263,7 @@ mlflow:
 
 # 12. HYPERPARAMETER OPTIMIZATION (Optuna)
 hyperparameter_optimization:
-  RUN_HPO: true
+  RUN_HPO: false
   HPO_N_TRIALS: 2 # Number of trials for Optuna to run
   # --- DEFINITIVE FIX: Use the model's base name to match generated filenames ---
   # The trainer creates files like 'directgcn_...' not 'ProtGramDirectgcn_...'.
