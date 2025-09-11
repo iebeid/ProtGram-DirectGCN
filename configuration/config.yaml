@@ -12,7 +12,7 @@ data_urls:
   UNIPROT_SPROT_FASTA: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz"
   # UNIREF_50_FASTA: "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz"
   BIOGRID_INTERACTIONS: "https://downloads.thebiogrid.org/Download/BioGRID/Release-Archive/BIOGRID-4.4.248/BIOGRID-ALL-4.4.248.mitab.zip"
-  PROTT5_MODEL: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5"
+#  PROTT5_MODEL: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/uniprot_sprot/per-protein.h5"
   UNIPROT_ID_MAPPING: "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/idmapping.dat.gz"
   NEG_INTERACTIONS:
     - "https://www.russelllab.org/negatives/16169070_neg.mitab.gz"
@@ -118,7 +118,7 @@ gnn_benchmarking:
 
 # 6. ProtGram-DirectGCN PIPELINE PARAMETERS
 protgram_gcn:
-  PROTGRAM_NGRAM_MAX_N: 3
+  PROTGRAM_NGRAM_MAX_N: 2
   FASTA_FILE_TO_PROCESS: "UNIPROT_SPROT_FASTA"
   ID_MAPPING_MODE: 'regex'
   USE_CANONICAL_ID_MAPPING_FILE: false # Set to true ONLY for non-standard FASTA files like UniRef50
@@ -129,33 +129,33 @@ protgram_gcn:
   API_MAPPING_FROM_DB: null
   API_MAPPING_TO_DB: "UniProtKB"
   PROTGRAM_MODELS_TO_TRAIN: ['directgcn']
-  DIRECTGCN_HIDDEN_LAYER_DIMS: [256, 128, 64]
+  DIRECTGCN_HIDDEN_LAYER_DIMS: [64, 64]
   # DirectGCN decomposition controls for ProtGram context
   DIRECTGCN_NUM_BASES: null
   DIRECTGCN_NUM_BLOCKS: null
   DIRECTGCN_DECOMPOSE_PROJECTIONS: false
   DIRECTGCN_PROJ_NUM_BASES: null
-  PROTGRAM_1GRAM_INIT_DIM: 256
+  PROTGRAM_1GRAM_INIT_DIM: 64
   PROTGRAM_GNN_HIDDEN_CHANNELS: 64
   PROTGRAM_GNN_NUM_LAYERS: 2
   PROTGRAM_GATING_COEFF_MODE: "scalar"
   PROTGRAM_DIRECTGCN_PATH_SELECTION: 'in_out'  # Options: 'full' | 'undirected' | 'in_out'; 'in_out' disables undirected path
-  PROTGRAM_EPOCHS_PER_LEVEL: 200
-  PROTGRAM_LR: 0.0001
-  PROTGRAM_DROPOUT_RATE: 0.5
-  PROTGRAM_WEIGHT_DECAY: 0.001
+  PROTGRAM_EPOCHS_PER_LEVEL: 50
+  PROTGRAM_LR: 0.001
+  PROTGRAM_DROPOUT_RATE: 0.3
+  PROTGRAM_WEIGHT_DECAY: 0.0001
   PROTGRAM_GRADIENT_CLIP_NORM: 1.0
-  PROTGRAM_USE_CROSS_VALIDATION: true  # Enable k-fold CV for small graphs
+  PROTGRAM_USE_CROSS_VALIDATION: false  # Enable k-fold CV for small graphs
   PROTGRAM_CV_FOLDS: 5                 # Number of CV folds (each epoch uses different fold)
   PROTGRAM_CV_THRESHOLD_NODES: 1000    # Use CV if nodes < threshold
   PROTGRAM_USE_LR_SCHEDULER: true
-  PROTGRAM_LR_SCHEDULER_PATIENCE: 50
+  PROTGRAM_LR_SCHEDULER_PATIENCE: 20
   PROTGRAM_LR_SCHEDULER_FACTOR: 0.5
   PROTGRAM_USE_EARLY_STOPPING: true
   PROTGRAM_EARLY_STOPPING_PATIENCE: 100  # Increased for CV (should be > CV_FOLDS * 10)
   PROTGRAM_EARLY_STOPPING_MIN_DELTA: 0.001
   PROTGRAM_GRADIENT_ACCUMULATION_STEPS: 1
-  PROTGRAM_TASK_TYPES_PER_LEVEL: {1: "next_node", 2: "next_node", 3: "next_node"}
+  PROTGRAM_TASK_TYPES_PER_LEVEL: {1: "next_node", 2: "next_node"}
   PROTGRAM_DEFAULT_TASK_TYPE: "next_node"
   GCN_HETEROPHILY_THRESHOLD: 0.0
   GCN_PROPAGATION_EPSILON: 1.0e-9
@@ -178,7 +178,7 @@ protgram_gcn:
   PCA_TARGET_DIMENSION: 64
   PROTGRAM_PROTEIN_POOLING_STRATEGY: 'attention'
   PROTGRAM_HIERARCHICAL_POOLING_STRATEGY: 'attention'
-  PROTGRAM_LOG_ATTENTION_WEIGHTS: true
+  PROTGRAM_LOG_ATTENTION_WEIGHTS: false
   PROTGRAM_RUN_SANITY_CHECK_PPI: true
   PROTGRAM_SANITY_CHECK_EPOCHS: 5
   PROTGRAM_SANITY_CHECK_TEST_SPLIT: 0.2
@@ -240,7 +240,7 @@ ppi_evaluation:
   EVAL_GENERATE_SHAP_SUMMARY: true
   EARLY_STOPPING_PATIENCE: 10
   EDGE_EMBEDDING_METHOD: 'concatenate'
-  N_FOLDS: 10
+  N_FOLDS: 2
   # Limit the number of positive and negative pairs used (per class) to avoid OOM.
   # Set to null to use all available pairs.
   MAX_PAIRS_PER_CLASS: 200000
@@ -250,7 +250,7 @@ ppi_evaluation:
   MLP_DROPOUT2_RATE: 0.4
   MLP_L2_REG: 0.00001
   EVAL_BATCH_SIZE: 512
-  EPOCHS: 10
+  EPOCHS: 2
   MLP_LEARNING_RATE: 0.001
   K_VALUES_FOR_TABLE: [50, 100]
   MAIN_EMBEDDING_FOR_STATS: "directgcn"
