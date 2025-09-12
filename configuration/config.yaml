@@ -30,18 +30,18 @@ data_urls:
 pipeline_flags:
   RUN_PROTGRAM_XGCN_PIPELINE: true
   RUN_LSTM_PIPELINE: false
-  RUN_WORD2VEC_PIPELINE: false
-  RUN_TRANSFORMER_PIPELINE: false
-  RUN_BENCHMARKING_PIPELINE: false
+  RUN_WORD2VEC_PIPELINE: true
+  RUN_TRANSFORMER_PIPELINE: true
+  RUN_BENCHMARKING_PIPELINE: true
   RUN_PROTGRAM_PIPELINE: true
   
   RUN_MAIN_PPI_EVALUATION: true
-  RUN_INTEGRATED_TESTS: false
-  RUN_SINGLETON_GCN_EVAL: false
+  RUN_INTEGRATED_TESTS: true
+  RUN_SINGLETON_GCN_EVAL: true
   SEQUENCE_DOWNSAMPLE_FRACTION: 1.0
   
   ENABLE_FILE_LOGGING: true
-  DISABLE_INTERACTIVE_PROMPTS: false
+  DISABLE_INTERACTIVE_PROMPTS: true
   PROCESS_ID_MAPPING_FILE: false
 
 # 4. RESOURCE MANAGEMENT
@@ -131,15 +131,15 @@ protgram_gcn:
   PROTGRAM_MODELS_TO_TRAIN: ['directgcn']
   DIRECTGCN_HIDDEN_LAYER_DIMS: [256, 128, 64]
   # DirectGCN decomposition controls for ProtGram context
-  DIRECTGCN_NUM_BASES: null
+  DIRECTGCN_NUM_BASES: 16
   DIRECTGCN_NUM_BLOCKS: null
-  DIRECTGCN_DECOMPOSE_PROJECTIONS: false
+  DIRECTGCN_DECOMPOSE_PROJECTIONS: true
   DIRECTGCN_PROJ_NUM_BASES: null
   PROTGRAM_1GRAM_INIT_DIM: 256
   PROTGRAM_GNN_HIDDEN_CHANNELS: 128
   PROTGRAM_GNN_NUM_LAYERS: 2
   PROTGRAM_GATING_COEFF_MODE: "scalar"
-  PROTGRAM_DIRECTGCN_PATH_SELECTION: 'in_out'  # Options: 'full' | 'undirected' | 'in_out'; 'in_out' disables undirected path
+  PROTGRAM_DIRECTGCN_PATH_SELECTION: 'full'  # Options: 'full' | 'undirected' | 'in_out'; 'in_out' disables undirected path
   PROTGRAM_EPOCHS_PER_LEVEL: 500
   PROTGRAM_LR: 0.001
   PROTGRAM_DROPOUT_RATE: 0.5
@@ -155,7 +155,7 @@ protgram_gcn:
   PROTGRAM_EARLY_STOPPING_PATIENCE: 50  # Increased for CV (should be > CV_FOLDS * 10)
   PROTGRAM_EARLY_STOPPING_MIN_DELTA: 0.001
   PROTGRAM_GRADIENT_ACCUMULATION_STEPS: 1
-  PROTGRAM_TASK_TYPES_PER_LEVEL: {1: "community", 2: "next_node", 3: "next_node"}
+  PROTGRAM_TASK_TYPES_PER_LEVEL: {1: "next_node", 2: "next_node", 3: "next_node"}
   PROTGRAM_DEFAULT_TASK_TYPE: "next_node"
   GCN_HETEROPHILY_THRESHOLD: 0.0
   GCN_PROPAGATION_EPSILON: 1.0e-9
@@ -240,7 +240,7 @@ ppi_evaluation:
   EVAL_GENERATE_SHAP_SUMMARY: true
   EARLY_STOPPING_PATIENCE: 10
   EDGE_EMBEDDING_METHOD: 'hadamard'
-  N_FOLDS: 5
+  N_FOLDS: 10
   # Limit the number of positive and negative pairs used (per class) to avoid OOM.
   # Set to null to use all available pairs.
   MAX_PAIRS_PER_CLASS: 200000
@@ -250,15 +250,15 @@ ppi_evaluation:
   MLP_DROPOUT2_RATE: 0.4
   MLP_L2_REG: 0.00001
   EVAL_BATCH_SIZE: 512
-  EPOCHS: 5
+  EPOCHS: 10
   MLP_LEARNING_RATE: 0.001
   K_VALUES_FOR_TABLE: [50, 100]
-  MAIN_EMBEDDING_FOR_STATS: "directgcn_scalar_gating_n2"
+  MAIN_EMBEDDING_FOR_STATS: "directgcn_scalar_gating_n3"
   STATISTICAL_TEST_ALPHA: 0.05
 
 # 11. MLFLOW & EXPERIMENT TRACKING
 mlflow:
-  USE_MLFLOW: false
+  USE_MLFLOW: true
   EXPERIMENT_NAME: "PPI-Link-Prediction"
   BENCHMARK_EXPERIMENT_NAME: "GNN-Benchmarking"
   LLMS_EXPERIMENT_NAME: "LLMs"
@@ -267,11 +267,11 @@ mlflow:
 
 # 12. HYPERPARAMETER OPTIMIZATION (Optuna)
 hyperparameter_optimization:
-  RUN_HPO: false
-  HPO_N_TRIALS: 2 # Number of trials for Optuna to run
+  RUN_HPO: true
+  HPO_N_TRIALS: 10 # Number of trials for Optuna to run
   # --- DEFINITIVE FIX: Use the model's base name to match generated filenames ---
   # The trainer creates files like 'directgcn_...' not 'ProtGramDirectgcn_...'.
-  HPO_TARGET_EMBEDDING_MODEL: "directgcn" # Which embedding to optimize the MLP for
+  HPO_TARGET_EMBEDDING_MODEL: "directgcn_scalar_gating_n3" # Which embedding to optimize the MLP for
   # Search space for the PPI evaluation MLP
   HPO_PPI_MLP_SEARCH_SPACE:
     MLP_LEARNING_RATE: {type: 'loguniform', low: 1.0e-5, high: 1.0e-2}
