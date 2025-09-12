@@ -240,7 +240,7 @@ ppi_evaluation:
   EVAL_GENERATE_SHAP_SUMMARY: true
   EARLY_STOPPING_PATIENCE: 10
   EDGE_EMBEDDING_METHOD: 'concatenate'
-  N_FOLDS: 10
+  N_FOLDS: 2
   # Limit the number of positive and negative pairs used (per class) to avoid OOM.
   # Set to null to use all available pairs.
   MAX_PAIRS_PER_CLASS: 200000
@@ -250,7 +250,7 @@ ppi_evaluation:
   MLP_DROPOUT2_RATE: 0.4
   MLP_L2_REG: 0.00001
   EVAL_BATCH_SIZE: 512
-  EPOCHS: 10
+  EPOCHS: 2
   MLP_LEARNING_RATE: 0.001
   K_VALUES_FOR_TABLE: [50, 100]
   MAIN_EMBEDDING_FOR_STATS: "directgcn_scalar_gating_n3"
@@ -268,7 +268,7 @@ mlflow:
 # 12. HYPERPARAMETER OPTIMIZATION (Optuna)
 hyperparameter_optimization:
   RUN_HPO: true
-  HPO_N_TRIALS: 10 # Number of trials for Optuna to run
+  HPO_N_TRIALS: 2 # Number of trials for Optuna to run
   # --- DEFINITIVE FIX: Use the model's base name to match generated filenames ---
   # The trainer creates files like 'directgcn_...' not 'ProtGramDirectgcn_...'.
   HPO_TARGET_EMBEDDING_MODEL: "protgram_directgcn" # Which embedding to optimize the MLP for
