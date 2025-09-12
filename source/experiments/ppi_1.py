@@ -549,18 +549,18 @@ class PPIPipeline:
                         # Branch: inductive split vs CV
                         # use_inductive = bool(getattr(self.config, 'EVAL_USE_INDUCTIVE_SPLIT', False))
                         # if use_inductive:
-                        val_frac = float(getattr(self.config, 'EVAL_INDUCTIVE_VAL_FRACTION',
-                                                 getattr(self.config, 'PROTGRAM_SANITY_CHECK_TEST_SPLIT', 0.2) or 0.2))
-                        train_pairs, val_pairs = self._inductive_split_pairs_by_protein(pos_pairs, neg_pairs, val_frac)
-                        if not train_pairs or not val_pairs:
-                            print("  Inductive split resulted in empty sets; falling back to standard CV.")
-                            all_pairs = pos_pairs + neg_pairs
-                            results = self._run_cv_workflow(emb_name, all_pairs, protein_embeddings_loader)
-                        else:
-                            results = self._run_single_split_workflow(emb_name, train_pairs, val_pairs, protein_embeddings_loader)
-                        # else:
+                        # val_frac = float(getattr(self.config, 'EVAL_INDUCTIVE_VAL_FRACTION',
+                        #                          getattr(self.config, 'PROTGRAM_SANITY_CHECK_TEST_SPLIT', 0.2) or 0.2))
+                        # train_pairs, val_pairs = self._inductive_split_pairs_by_protein(pos_pairs, neg_pairs, val_frac)
+                        # if not train_pairs or not val_pairs:
+                        #     print("  Inductive split resulted in empty sets; falling back to standard CV.")
                         #     all_pairs = pos_pairs + neg_pairs
                         #     results = self._run_cv_workflow(emb_name, all_pairs, protein_embeddings_loader)
+                        # else:
+                        #     results = self._run_single_split_workflow(emb_name, train_pairs, val_pairs, protein_embeddings_loader)
+                        # else:
+                        all_pairs = pos_pairs + neg_pairs
+                        results = self._run_cv_workflow(emb_name, all_pairs, protein_embeddings_loader)
 
                         all_cv_results_list.append(results)
 

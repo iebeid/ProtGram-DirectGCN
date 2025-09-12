@@ -470,7 +470,7 @@ class PipelineOrchestrator:
                         config.LP_EMBEDDING_FILES_TO_EVALUATE = config.LP_EXTERNAL_EMBEDDINGS_TO_EVALUATE + generated_files
 
                         # Hyperparameter Optimization
-                        if config.RUN_HPO and config.RUN_PROTGRAM_XGCN_PIPELINE and config.RUN_MAIN_PPI_EVALUATION:
+                        if config.RUN_HPO and config.RUN_MAIN_PPI_EVALUATION:
                             DataUtils.print_header("Running Hyperparameter Optimization")
                             optimizer = HyperparameterOptimizer(config)
                             target_model_name = config.HPO_TARGET_EMBEDDING_MODEL
