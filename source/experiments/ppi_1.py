@@ -74,51 +74,51 @@ class PPIPipeline:
         # --- NEW: Set seeds for reproducibility of MLP initialization and training ---
         DataUtils.set_seeds(self.config.RANDOM_STATE)
 
-    def _preprocess_embeddings_with_pca(self, emb_configs: List[Dict]) -> List[Dict]:
-        """
-        Applies PCA mandatorily to all embedding files before evaluation, saving
-        the results to a new directory and returning updated configurations.
-        """
-        DataUtils.print_header("Pre-processing: Applying Mandatory PCA to All Embeddings")
-        target_dim = self.config.PCA_TARGET_DIMENSION
-
-        # FIX: Place processed embeddings inside the dataset-specific evaluation directory to prevent overwriting.
-        processed_emb_dir = self.config.RESULTS_EVALUATION_DIR / "pca_processed_embeddings"
-        processed_emb_dir.mkdir(parents=True, exist_ok=True)
-        print(f"  Target dimension set to: {target_dim}")
-        print(f"  Processed files will be stored in: {processed_emb_dir}")
-
-        processed_configs = []
-        for config_item in emb_configs:
-            original_path = Path(config_item['path'])
-            new_config = config_item.copy()
-
-            # --- FIX: Avoid re-running PCA on an already processed file ---
-            if f".pca_{target_dim}" in original_path.name:
-                print(f"  Skipping PCA for '{original_path.name}' as it appears to be already processed.")
-                processed_configs.append(new_config)
-                continue
-
-            if not original_path.exists():
-                print(f"  Skipping non-existent file: {original_path}")
-                processed_configs.append(new_config)
-                continue
-
-            print(f"  Processing '{config_item['name']}' for mandatory PCA...")
-            # --- FIX: Check if PCA returned the original path, indicating a failure/skip ---
-            original_path_str = str(original_path)
-            new_path = EmbeddingProcessor.apply_pca_to_h5(
-                input_h5_path=original_path,
-                output_dir=processed_emb_dir,
-                target_dimension=target_dim,
-                random_seed=self.config.RANDOM_STATE
-            )
-            new_config['path'] = str(new_path)
-            if str(new_path) == original_path_str:
-                print(f"    - Note: PCA was skipped or failed for {original_path.name}. The original file will be used in the evaluation.")
-            processed_configs.append(new_config)
-
-        return processed_configs
+    # def _preprocess_embeddings_with_pca(self, emb_configs: List[Dict]) -> List[Dict]:
+    #     """
+    #     Applies PCA mandatorily to all embedding files before evaluation, saving
+    #     the results to a new directory and returning updated configurations.
+    #     """
+    #     DataUtils.print_header("Pre-processing: Applying Mandatory PCA to All Embeddings")
+    #     target_dim = self.config.PCA_TARGET_DIMENSION
+    #
+    #     # FIX: Place processed embeddings inside the dataset-specific evaluation directory to prevent overwriting.
+    #     processed_emb_dir = self.config.RESULTS_EVALUATION_DIR / "pca_processed_embeddings"
+    #     processed_emb_dir.mkdir(parents=True, exist_ok=True)
+    #     print(f"  Target dimension set to: {target_dim}")
+    #     print(f"  Processed files will be stored in: {processed_emb_dir}")
+    #
+    #     processed_configs = []
+    #     for config_item in emb_configs:
+    #         original_path = Path(config_item['path'])
+    #         new_config = config_item.copy()
+    #
+    #         # --- FIX: Avoid re-running PCA on an already processed file ---
+    #         if f".pca_{target_dim}" in original_path.name:
+    #             print(f"  Skipping PCA for '{original_path.name}' as it appears to be already processed.")
+    #             processed_configs.append(new_config)
+    #             continue
+    #
+    #         if not original_path.exists():
+    #             print(f"  Skipping non-existent file: {original_path}")
+    #             processed_configs.append(new_config)
+    #             continue
+    #
+    #         print(f"  Processing '{config_item['name']}' for mandatory PCA...")
+    #         # --- FIX: Check if PCA returned the original path, indicating a failure/skip ---
+    #         original_path_str = str(original_path)
+    #         new_path = EmbeddingProcessor.apply_pca_to_h5(
+    #             input_h5_path=original_path,
+    #             output_dir=processed_emb_dir,
+    #             target_dimension=target_dim,
+    #             random_seed=self.config.RANDOM_STATE
+    #         )
+    #         new_config['path'] = str(new_path)
+    #         if str(new_path) == original_path_str:
+    #             print(f"    - Note: PCA was skipped or failed for {original_path.name}. The original file will be used in the evaluation.")
+    #         processed_configs.append(new_config)
+    #
+    #     return processed_configs
 
     def _train_and_evaluate_fold(
             self,
@@ -547,20 +547,20 @@ class PPIPipeline:
                             continue
 
                         # Branch: inductive split vs CV
-                        use_inductive = bool(getattr(self.config, 'EVAL_USE_INDUCTIVE_SPLIT', False))
-                        if use_inductive:
-                            val_frac = float(getattr(self.config, 'EVAL_INDUCTIVE_VAL_FRACTION',
-                                                     getattr(self.config, 'PROTGRAM_SANITY_CHECK_TEST_SPLIT', 0.2) or 0.2))
-                            train_pairs, val_pairs = self._inductive_split_pairs_by_protein(pos_pairs, neg_pairs, val_frac)
-                            if not train_pairs or not val_pairs:
-                                print("  Inductive split resulted in empty sets; falling back to standard CV.")
-                                all_pairs = pos_pairs + neg_pairs
-                                results = self._run_cv_workflow(emb_name, all_pairs, protein_embeddings_loader)
-                            else:
-                                results = self._run_single_split_workflow(emb_name, train_pairs, val_pairs, protein_embeddings_loader)
-                        else:
+                        # use_inductive = bool(getattr(self.config, 'EVAL_USE_INDUCTIVE_SPLIT', False))
+                        # if use_inductive:
+                        val_frac = float(getattr(self.config, 'EVAL_INDUCTIVE_VAL_FRACTION',
+                                                 getattr(self.config, 'PROTGRAM_SANITY_CHECK_TEST_SPLIT', 0.2) or 0.2))
+                        train_pairs, val_pairs = self._inductive_split_pairs_by_protein(pos_pairs, neg_pairs, val_frac)
+                        if not train_pairs or not val_pairs:
+                            print("  Inductive split resulted in empty sets; falling back to standard CV.")
                             all_pairs = pos_pairs + neg_pairs
                             results = self._run_cv_workflow(emb_name, all_pairs, protein_embeddings_loader)
+                        else:
+                            results = self._run_single_split_workflow(emb_name, train_pairs, val_pairs, protein_embeddings_loader)
+                        # else:
+                        #     all_pairs = pos_pairs + neg_pairs
+                        #     results = self._run_cv_workflow(emb_name, all_pairs, protein_embeddings_loader)
 
                         all_cv_results_list.append(results)
 
