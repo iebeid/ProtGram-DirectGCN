@@ -312,7 +312,7 @@
 		
 		\item \textbf{Link Prediction Model}: A standard Multi-Layer Perceptron (MLP) was used as the classifier. For a pair of proteins $(P_a, P_b)$, the input to the MLP was the concatenation of their embedding vectors.
 		
-		\item \textbf{Evaluation and Baselines}: The model's performance is rigorously assessed using a 5-fold stratified cross-validation scheme to ensure that results are robust and not dependent on a single random data split. We measure performance using a suite of standard binary classification and ranking metrics, including Area Under the ROC Curve (AUC), F1-Score, Precision, Recall. To contextualize our results, we compare the performance of our $ProtGramDirectGCN$-derived embeddings against ProtT5 \cite{elnaggar_prottrans_2022} available via UniProt. The exact same MLP architecture and evaluation protocol are used for all embedding types to ensure a fair comparison. See Table \ref{tab:ppi_performance_results}, Figure \ref{fig:3},\ref{fig:4},\ref{fig:5}.
+		\item \textbf{Evaluation and Baselines}: The model's performance is rigorously assessed using a 5-fold stratified cross-validation scheme to ensure that results are robust and not dependent on a single random data split. We measure performance using a suite of standard binary classification and ranking metrics, including Area Under the ROC Curve (AUC), F1-Score, Precision, Recall. To contextualize our results, we compare the performance of our $ProtGram-DirectGCN$-derived embeddings against ProtT5 \cite{elnaggar_prottrans_2022} available via UniProt. In addition to we compare it against ESM \cite{rao} where we performed the inference and the embedding generation manually. The exact same MLP architecture and evaluation protocol are used for all embedding types to ensure a fair comparison. See table \ref{tab:ppi_performance_results} and figure \ref{fig:3}.
 	\end{itemize}
 	
 	\begin{figure}
@@ -340,7 +340,8 @@
 				\textbf{Embedding Method} & \textbf{AUC}      & \textbf{F1}       & \textbf{Precision} & \textbf{Recall} \\
 				\midrule
 				ProtT5                    & 0.9325$\pm$0.0005 & 0.9490$\pm$0.0021 & 0.9957             & 0.9065          \\
-				ProtGramDirectGCN         & 0.8138$\pm$0.0052 & 0.8481$\pm$0.0074 & 0.9927             & 0.7403          \\
+				ProtESM2                  & 0.9073$\pm$0.0005 & 0.8214$\pm$0.0021 & 0.8278             & 0.8158          \\
+				ProtGram-DirectGCN         & 0.8138$\pm$0.0052 & 0.8481$\pm$0.0074 & 0.9927             & 0.7403          \\
 				\bottomrule
 			\end{tabular}
 		}

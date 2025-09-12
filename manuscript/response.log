@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (MiKTeX 25.4) (preloaded format=pdflatex 2025.6.13)  31 AUG 2025 15:50
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (MiKTeX 25.4) (preloaded format=pdflatex 2025.6.13)  12 SEP 2025 16:54
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -524,7 +524,7 @@ ase-lines (ProtT5, ESM-
 ]
 
 LaTeX Warning: Citation `jumper_highly_2021' on page 9 undefined on input line 
-267.
+266.
 
 
 
@@ -546,9 +546,9 @@ Package rerunfilecheck Info: File `response.out' has not changed.
 (rerunfilecheck)             Checksum: E9B77FCBE504A5B396F594F6B3D0886B;3220.
  ) 
 Here is how much of TeX's memory you used:
- 12949 strings out of 468224
- 195697 string characters out of 5432468
- 862694 words of memory out of 5000000
+ 12948 strings out of 468224
+ 195690 string characters out of 5432468
+ 862697 words of memory out of 5000000
  41243 multiletter control sequences out of 15000+600000
  635523 words of font info for 72 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
@@ -566,9 +566,9 @@ sers/iebeid/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr9.p
 fb><C:/Users/iebeid/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/c
 m/cmsy10.pfb><C:/Users/iebeid/AppData/Local/Programs/MiKTeX/fonts/type1/public/
 amsfonts/cm/cmti10.pfb>
-Output written on response.pdf (9 pages, 197080 bytes).
+Output written on response.pdf (9 pages, 196808 bytes).
 PDF statistics:
- 232 PDF objects out of 1000 (max. 8388607)
- 82 named destinations out of 1000 (max. 500000)
+ 231 PDF objects out of 1000 (max. 8388607)
+ 81 named destinations out of 1000 (max. 500000)
  113 words of extra memory for PDF output out of 10000 (max. 10000000)
 

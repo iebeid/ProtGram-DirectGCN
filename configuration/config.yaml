@@ -28,20 +28,20 @@ data_urls:
 
 # 3. PIPELINE CONTROL FLAGS
 pipeline_flags:
-  RUN_PROTGRAM_XGCN_PIPELINE: true
+  RUN_PROTGRAM_XGCN_PIPELINE: false
   RUN_LSTM_PIPELINE: false
-  RUN_WORD2VEC_PIPELINE: true
-  RUN_TRANSFORMER_PIPELINE: true
-  RUN_BENCHMARKING_PIPELINE: true
-  RUN_PROTGRAM_PIPELINE: true
+  RUN_WORD2VEC_PIPELINE: false
+  RUN_TRANSFORMER_PIPELINE: false
+  RUN_BENCHMARKING_PIPELINE: false
+  RUN_PROTGRAM_PIPELINE: false
   
   RUN_MAIN_PPI_EVALUATION: true
-  RUN_INTEGRATED_TESTS: true
-  RUN_SINGLETON_GCN_EVAL: true
+  RUN_INTEGRATED_TESTS: false
+  RUN_SINGLETON_GCN_EVAL: false
   SEQUENCE_DOWNSAMPLE_FRACTION: 1.0
   
   ENABLE_FILE_LOGGING: true
-  DISABLE_INTERACTIVE_PROMPTS: true
+  DISABLE_INTERACTIVE_PROMPTS: false
   PROCESS_ID_MAPPING_FILE: false
 
 # 4. RESOURCE MANAGEMENT
@@ -239,7 +239,7 @@ ppi_evaluation:
   PERFORM_H5_INTEGRITY_CHECK: true
   EVAL_GENERATE_SHAP_SUMMARY: true
   EARLY_STOPPING_PATIENCE: 10
-  EDGE_EMBEDDING_METHOD: 'hadamard'
+  EDGE_EMBEDDING_METHOD: 'concatenate'
   N_FOLDS: 10
   # Limit the number of positive and negative pairs used (per class) to avoid OOM.
   # Set to null to use all available pairs.
@@ -258,7 +258,7 @@ ppi_evaluation:
 
 # 11. MLFLOW & EXPERIMENT TRACKING
 mlflow:
-  USE_MLFLOW: true
+  USE_MLFLOW: false
   EXPERIMENT_NAME: "PPI-Link-Prediction"
   BENCHMARK_EXPERIMENT_NAME: "GNN-Benchmarking"
   LLMS_EXPERIMENT_NAME: "LLMs"
@@ -271,7 +271,7 @@ hyperparameter_optimization:
   HPO_N_TRIALS: 10 # Number of trials for Optuna to run
   # --- DEFINITIVE FIX: Use the model's base name to match generated filenames ---
   # The trainer creates files like 'directgcn_...' not 'ProtGramDirectgcn_...'.
-  HPO_TARGET_EMBEDDING_MODEL: "directgcn_scalar_gating_n3" # Which embedding to optimize the MLP for
+  HPO_TARGET_EMBEDDING_MODEL: "protgram_directgcn" # Which embedding to optimize the MLP for
   # Search space for the PPI evaluation MLP
   HPO_PPI_MLP_SEARCH_SPACE:
     MLP_LEARNING_RATE: {type: 'loguniform', low: 1.0e-5, high: 1.0e-2}
