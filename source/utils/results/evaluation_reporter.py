@@ -419,19 +419,72 @@ class EvaluationReporter:
     def plot_attention_heatmap(self, attention_data: Dict[str, Dict[str, float]], model_name: str, num_top_proteins: int = 20, num_top_ngrams: int = 25) -> Optional[Path]:
         """
         Generates and saves a heatmap of n-gram attention weights for the proteins
-        with the highest overall attention variance.
+        with the highest overall attention variance using streaming processing to avoid memory issues.
         """
-        print(f"  Generating attention heatmap for '{model_name}'...")
+        print(f"  Generating attention heatmap for '{model_name}' (streaming mode)...")
         try:
-            df = pd.DataFrame.from_dict(attention_data, orient='index').fillna(0)
-            if df.empty:
+            # Early exit if no data
+            if not attention_data:
                 print("    - WARNING: Attention data is empty. Cannot generate heatmap.")
                 return None
 
-            top_proteins = df.var(axis=1).nlargest(num_top_proteins).index
-            top_ngrams = df.loc[top_proteins].mean(axis=0).nlargest(num_top_ngrams).index
-            heatmap_data = df.loc[top_proteins, top_ngrams]
-
+            print(f"    - Processing {len(attention_data)} proteins in streaming mode...")
+            
+            # Step 1: Sample data to manageable size to avoid memory overflow
+            max_proteins_to_process = min(5000, len(attention_data))  # Limit to 5K proteins max
+            if len(attention_data) > max_proteins_to_process:
+                print(f"    - Sampling {max_proteins_to_process} proteins from {len(attention_data)} total")
+                import random
+                sampled_keys = random.sample(list(attention_data.keys()), max_proteins_to_process)
+                attention_data = {k: attention_data[k] for k in sampled_keys}
+            
+            # Step 2: Stream processing to find top proteins and n-grams without loading full DataFrame
+            all_ngrams = set()
+            protein_variances = {}
+            
+            # Collect all n-gram names and calculate variances in chunks
+            chunk_size = 1000
+            protein_keys = list(attention_data.keys())
+            
+            for i in range(0, len(protein_keys), chunk_size):
+                chunk_keys = protein_keys[i:i + chunk_size]
+                chunk_data = {k: attention_data[k] for k in chunk_keys}
+                
+                # Create small DataFrame for this chunk
+                chunk_df = pd.DataFrame.from_dict(chunk_data, orient='index').fillna(0)
+                
+                # Update n-gram set
+                all_ngrams.update(chunk_df.columns)
+                
+                # Calculate variances for this chunk
+                chunk_variances = chunk_df.var(axis=1).to_dict()
+                protein_variances.update(chunk_variances)
+                
+                # Clear chunk DataFrame to free memory
+                del chunk_df, chunk_data
+            
+            # Step 3: Find top proteins by variance
+            top_protein_ids = sorted(protein_variances.keys(), 
+                                   key=lambda x: protein_variances[x], 
+                                   reverse=True)[:num_top_proteins]
+            
+            print(f"    - Selected top {len(top_protein_ids)} proteins by attention variance")
+            
+            # Step 4: Create small DataFrame with only top proteins
+            top_proteins_data = {pid: attention_data[pid] for pid in top_protein_ids if pid in attention_data}
+            df = pd.DataFrame.from_dict(top_proteins_data, orient='index').fillna(0)
+            
+            if df.empty:
+                print("    - WARNING: No valid attention data for top proteins. Cannot generate heatmap.")
+                return None
+            
+            # Step 5: Find top n-grams from the selected proteins
+            top_ngrams = df.mean(axis=0).nlargest(num_top_ngrams).index
+            heatmap_data = df[top_ngrams]
+            
+            print(f"    - Creating heatmap with {heatmap_data.shape[0]} proteins x {heatmap_data.shape[1]} n-grams")
+            
+            # Step 6: Generate the heatmap
             plt.style.use('seaborn-v0_8-whitegrid')
             fig, ax = plt.subplots(figsize=(18, 12))
             sns.heatmap(heatmap_data, ax=ax, cmap="viridis", annot=False)
@@ -447,8 +500,11 @@ class EvaluationReporter:
             plt.close(fig)
             print(f"    - Attention heatmap saved to: {output_path.name}")
             return output_path
+            
         except Exception as e:
             print(f"    - ❌ ERROR: Could not generate attention heatmap: {e}")
+            import traceback
+            print(f"    - Traceback: {traceback.format_exc()}")
             return None
 
     def plot_tsne_from_embedding_file(self, h5_path: str, embedding_type: str = 'per_protein') -> Optional[Path]:

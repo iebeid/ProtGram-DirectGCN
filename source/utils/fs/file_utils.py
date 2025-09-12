@@ -113,7 +113,7 @@ class FileUtils:
                 pbar.update(1)
 
                 # Store embeddings as a single, large numerical dataset
-                hf.create_dataset('embeddings', data=embedding_vectors, chunks=True, compression="gzip")
+                hf.create_dataset('embeddings', data=embedding_vectors, chunks=True, compression=None)
                 pbar.update(1)
 
             # Move the completed local file to the final destination URI
