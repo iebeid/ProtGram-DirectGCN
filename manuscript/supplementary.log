@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (MiKTeX 25.4) (preloaded format=pdflatex 2025.6.13)  31 AUG 2025 13:42
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (MiKTeX 25.4) (preloaded format=pdflatex 2025.6.13)  13 SEP 2025 23:27
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -921,13 +921,13 @@ Package rerunfilecheck Info: File `supplementary.out' has not changed.
 (rerunfilecheck)             Checksum: B5030A5CE1E4794E57D1828CA98A8E22;1416.
  ) 
 Here is how much of TeX's memory you used:
- 16060 strings out of 468224
- 254445 string characters out of 5432468
- 713533 words of memory out of 5000000
- 44002 multiletter control sequences out of 15000+600000
- 672143 words of font info for 267 fonts, out of 8000000 for 9000
+ 16067 strings out of 468224
+ 255234 string characters out of 5432468
+ 713593 words of memory out of 5000000
+ 44007 multiletter control sequences out of 15000+600000
+ 672259 words of font info for 268 fonts, out of 8000000 for 9000
  1145 hyphenation exceptions out of 8191
- 87i,10n,93p,1628b,580s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 87i,10n,93p,1697b,580s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <C:/Users/iebeid/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm
 /cmbsy10.pfb><C:/Users/iebeid/AppData/Local/Programs/MiKTeX/fonts/type1/public/
 amsfonts/cm/cmex10.pfb><C:/Users/iebeid/AppData/Local/Programs/MiKTeX/fonts/typ
@@ -947,9 +947,9 @@ s/MiKTeX/fonts/type1/urw/helvetic/uhvbo8a.pfb><C:/Users/iebeid/AppData/Local/Pr
 ograms/MiKTeX/fonts/type1/urw/times/utmb8a.pfb><C:/Users/iebeid/AppData/Local/P
 rograms/MiKTeX/fonts/type1/urw/times/utmr8a.pfb><C:/Users/iebeid/AppData/Local/
 Programs/MiKTeX/fonts/type1/urw/times/utmri8a.pfb>
-Output written on supplementary.pdf (9 pages, 263263 bytes).
+Output written on supplementary.pdf (9 pages, 264811 bytes).
 PDF statistics:
- 218 PDF objects out of 1000 (max. 8388607)
- 49 named destinations out of 1000 (max. 500000)
+ 221 PDF objects out of 1000 (max. 8388607)
+ 50 named destinations out of 1000 (max. 500000)
  67134 words of extra memory for PDF output out of 74296 (max. 10000000)
 
