@@ -459,9 +459,11 @@ class DirectGCN(nn.Module):
             # The previous implementation had the activation and dropout outside the loop,
             # and did not update the hidden state `h` in each iteration.
             for i, conv in enumerate(self.convs):
-                h_residual = self.res_projs[i](h)
-                h_pre_act = conv(h, data) + h_residual
-                h_norm = self.layer_norms[i](h_pre_act)
+                h_residual = self.res_projsi # Project residual
+                h_gcn = conv(h, data)             # Apply GCN layer
+                # --- DEFINITIVE FIX: Correctly combine GCN output and residual before normalization ---
+                h_pre_norm = h_gcn + h_residual
+                h_norm = self.layer_norms[i](h_pre_norm)
                 h = F.leaky_relu(h_norm)
                 h = F.dropout(h, p=self.dropout_rate, training=self.training)
 
