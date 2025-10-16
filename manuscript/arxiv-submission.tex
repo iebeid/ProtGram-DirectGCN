@@ -1,8 +1,22 @@
-\documentclass[utf8]{FrontiersinHarvard}
+\documentclass[utf8]{article}
+\usepackage{arxiv}
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{lipsum}		% Can be removed after putting your text content
+\usepackage{graphicx}
+\usepackage{natbib}
+\usepackage{doi}
+
 
 
 \usepackage[english]{babel}
-\usepackage{url,hyperref,lineno,microtype,subcaption}
+\usepackage{url,hyperref,microtype,subcaption}
 \usepackage[onehalfspacing]{setspace}
 \usepackage{booktabs} % For professional quality tables
 \usepackage{longtable} % For tables that span multiple pages
@@ -11,41 +25,47 @@
 \usepackage{subcaption}
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, calc}
-\linenumbers
+
 \def\keyFont{\fontsize{8}{11}\helveticabold }
-\def\firstAuthorLast{Ebeid {et~al.}}
-\def\Authors{Islam Akef Ebeid\,$^{1,*}$, Haoteng Tang\,$^{2}$ and Pengfei Gu\,$^{2}$}
-\def\Address{$^{1}$Texas Woman's University, The Division of Computer Science, Denton, TX, USA \\
-	$^{2}$The University of Texas Rio Grande Valley, The Department of Computer Science, Edinburg, TX, USA }
-\def\corrAuthor{Islam Akef Ebeid}
-\def\corrEmail{iebeid@twu.edu}
+
+\author{
+	Islam Akef Ebeid \\
+	Division of Computer Science \\
+	Texas Woman's University \\
+	\texttt{iebeid@twu.edu} \\
+	\And
+	Haoteng Tang \\
+	Department of Computer Science \\
+	The University of Texas Rio Grande Valley \\
+	\And
+	Pengfei Gu \\
+	Department of Computer Science \\
+	The University of Texas Rio Grande Valley \\
+}
+\date{}
 \begin{document}
-	\onecolumn
-	\firstpage{1}
-	\title[ProtGram-DirectGCN]{Inferred global dense residue transition graphs from primary structure sequences enable protein interaction prediction via directed graph convolutional neural networks} 
-	\author[\firstAuthorLast ]{\Authors}
-	\address{}
-	\correspondance{}
-	\extraAuth{}
+
+	\title{Inferred global dense residue transition graphs from primary structure sequences enable protein interaction prediction via directed graph convolutional neural networks} 
+	%\author[\firstAuthorLast ]{\Authors}
+
 	\maketitle
 	\begin{abstract}
-Introduction
-
-Accurate prediction of protein-protein interactions (PPIs) is crucial for understanding cellular functions and advancing the development of drugs. While existing \textit{in-silico} methods leverage direct sequence embeddings from Protein Language Models (PLMs) or apply Graph Neural Networks (GNNs) to 3D protein structures, the main focus of this study is to investigate less computationally intensive alternatives. This work introduces a novel framework for the downstream task of PPI prediction via link prediction.
-
-Methods
-
-We introduce a two-stage graph representation learning framework, $ProtGram-DirectGCN$. First, we developed $ProtGram$, a novel approach that models a protein's primary structure as a hierarchy of globally inferred n-gram graphs. In these graphs, residue transition probabilities, aggregated from a large sequence corpus, define the edge weights of a directed graph of paired residues. Second, we propose a custom directed graph convolutional neural network, $DirectGCN$, which features a unique convolutional layer that processes information through separate path-specific (incoming, outgoing, undirected) and shared transformations, combined via a learnable gating mechanism. $DirectGCN$ is applied to the $ProtGram$ graphs to learn residue-level embeddings, which are then pooled via an attention mechanism to generate protein-level embeddings for the prediction task.
-
-Results
-
-The efficacy of the $DirectGCN$ model was first established on standard node classification benchmarks, where its performance is comparable to that of established methods on general datasets, while demonstrating specialization for complex, directed, and dense heterophilic graph structures. When applied to PPI prediction, the full $ProtGram-DirectGCN$ framework achieves robust predictive power despite being trained on limited data.
-
-Discussion
-
-Our results suggest that a globally inferred, directed graph-based representation of sequence transitions offers a potent and computationally distinct alternative to resource-intensive PLMs for the task of PPI prediction. Future work will involve testing $ProtGram-DirectGCN$ on a wider range of bioinformatics tasks.
-		\tiny
-		\keyFont{ \section{Keywords:} uniprot, biogrid, russellab, graph theory, graph representation learning, graph neural networks, graph convolution networks, link prediction, proteomics, protein-protein interaction prediction, large language models, sequence-to-sequence modeling}
+		Introduction
+		
+		Accurate prediction of protein-protein interactions (PPIs) is crucial for understanding cellular functions and advancing the development of drugs. While existing \textit{in-silico} methods leverage direct sequence embeddings from Protein Language Models (PLMs) or apply Graph Neural Networks (GNNs) to 3D protein structures, the main focus of this study is to investigate less computationally intensive alternatives. This work introduces a novel framework for the downstream task of PPI prediction via link prediction.
+		
+		Methods
+		
+		We introduce a two-stage graph representation learning framework, $ProtGram-DirectGCN$. First, we developed $ProtGram$, a novel approach that models a protein's primary structure as a hierarchy of globally inferred n-gram graphs. In these graphs, residue transition probabilities, aggregated from a large sequence corpus, define the edge weights of a directed graph of paired residues. Second, we propose a custom directed graph convolutional neural network, $DirectGCN$, which features a unique convolutional layer that processes information through separate path-specific (incoming, outgoing, undirected) and shared transformations, combined via a learnable gating mechanism. $DirectGCN$ is applied to the $ProtGram$ graphs to learn residue-level embeddings, which are then pooled via an attention mechanism to generate protein-level embeddings for the prediction task.
+		
+		Results
+		
+		The efficacy of the $DirectGCN$ model was first established on standard node classification benchmarks, where its performance is comparable to that of established methods on general datasets, while demonstrating specialization for complex, directed, and dense heterophilic graph structures. When applied to PPI prediction, the full $ProtGram-DirectGCN$ framework achieves robust predictive power despite being trained on limited data.
+		
+		Discussion
+		
+		Our results suggest that a globally inferred, directed graph-based representation of sequence transitions offers a potent and computationally distinct alternative to resource-intensive PLMs for the task of PPI prediction. Future work will involve testing $ProtGram-DirectGCN$ on a wider range of bioinformatics tasks.
+		\keywords{uniprot, biogrid, russellab, graph theory, graph representation learning, graph neural networks, graph convolution networks, link prediction, proteomics, protein-protein interaction prediction, large language models, sequence-to-sequence modeling}
 	\end{abstract}
 	
 	\section{Introduction}
@@ -164,12 +184,12 @@ Our results suggest that a globally inferred, directed graph-based representatio
 	\begin{figure*}[t!]
 		\centering
 		\begin{tabular}{c}
-			\includegraphics[width=0.7\linewidth]{images/fig2-ProtGram-DirectGCN-Part-1.jpg} \\
+			\includegraphics[width=0.7\linewidth]{fig2-ProtGram-DirectGCN-Part-1.jpg} \\
 			\textbf{(a)} $ProtGram$: our unique probabilistic approach in modeling protein sequences. \\
 			\vspace{1em}
 			\begin{tabular}{cc}
-				\includegraphics[width=0.48\linewidth]{images/fig2-ProtGram-DirectGCN-Part-2.jpg} &   
-				\includegraphics[width=0.48\linewidth]{images/fig2-ProtGram-DirectGCN-Part-3.jpg} \\
+				\includegraphics[width=0.48\linewidth]{fig2-ProtGram-DirectGCN-Part-2.jpg} &   
+				\includegraphics[width=0.48\linewidth]{fig2-ProtGram-DirectGCN-Part-3.jpg} \\
 				\begin{minipage}[t]{0.48\linewidth}
 					\centering
 					\textbf{(b)} $DirectGCN$: the layer is composed of multiple paths extracted from the graph; unstructured, directional in addition to a positional identity. The paths are then aggregated and transformed via a final feed forward layer and is trained on a next node prediction classification task.
@@ -358,7 +378,7 @@ Our results suggest that a globally inferred, directed graph-based representatio
 				\midrule
 				ProtT5                    & 0.9494$\pm$0.0011 & 0.8727$\pm$0.0019 & 0.8736             & 0.8720          \\
 				ESM                  & 0.9146$\pm$0.0006 & 0.8293$\pm$0.0019 & 0.8351             & 0.8238          \\
-								\textit{\textbf{ProtGram-DirectGCN}}         & \textit{\textbf{0.8588}}$\pm$0.0014 & \textit{\textbf{0.7659}}$\pm$0.0049 & \textit{\textbf{0.7998}}             & \textit{\textbf{0.7349}}          \\
+				\textit{\textbf{ProtGram-DirectGCN}}         & \textit{\textbf{0.8588}}$\pm$0.0014 & \textit{\textbf{0.7659}}$\pm$0.0049 & \textit{\textbf{0.7998}}             & \textit{\textbf{0.7349}}          \\
 				Word2Vec                  & 0.7912$\pm$0.0017 & 0.7159$\pm$0.0029 & 0.7085             & 0.7236          \\
 				\bottomrule
 			\end{tabular}
@@ -368,7 +388,7 @@ Our results suggest that a globally inferred, directed graph-based representatio
 	\subsection{Ablation Study of $ProtGram-DirectGCN$}
 	Here we are going to understand the properties of the n-gram graph and its generated residue representation by training the model on a subset of the available sequence data on different model configuration. This step is crucial as the smallest pertubation in the data or the model affect the final per protein embeddings due to the hierarchical nature of the model.
 	
-		\begin{figure*}[t!]
+	\begin{figure*}[t!]
 		\centering
 		\begin{tabular}{c}
 			\begin{tabular}{cc}
@@ -388,19 +408,19 @@ Our results suggest that a globally inferred, directed graph-based representatio
 		\label{fig:three_images}
 	\end{figure*}
 	
-The $ProtGram-DirectGCN$ model uses a hierarchical approach. Embeddings from lower-order n-grams initialize features for higher-order n-gram graphs. Increasing n allows the model to capture richer protein sequence context. The ablation phase used just $5\%$ of UniProt-Sprot to test data augmentation and prediction capabilities in low-data settings we varied two key model components. First, we changed the size of the hierarchical graph; specifically, the value of n in the n-gram. Second, we studied the effect of the gating mechanism in 3 configurations: vector-based, where each graph node has a single gating score; scalar, where each path of the DirectGCN 3-paths has one gating score; and no gating at all. We present the results of this step in figure \ref{fig:three_images} and conclude from our study the following.
-
-\begin{itemize}
-	\item{No Gating}: The lack of gating has shown a consistent reduction in predictive power, with AUC scores closer to $50\%$. This suggests a substantial drop in classification ability. In the context of limited and less diverse data, the model struggles to overcome the weaker signal. These results indicate that even in sparse data settings, including some form of gating provides significant benefit, regardless of the model's complexity. 
+	The $ProtGram-DirectGCN$ model uses a hierarchical approach. Embeddings from lower-order n-grams initialize features for higher-order n-gram graphs. Increasing n allows the model to capture richer protein sequence context. The ablation phase used just $5\%$ of UniProt-Sprot to test data augmentation and prediction capabilities in low-data settings we varied two key model components. First, we changed the size of the hierarchical graph; specifically, the value of n in the n-gram. Second, we studied the effect of the gating mechanism in 3 configurations: vector-based, where each graph node has a single gating score; scalar, where each path of the DirectGCN 3-paths has one gating score; and no gating at all. We present the results of this step in figure \ref{fig:three_images} and conclude from our study the following.
 	
-	\item{Scalar Gating}: With scalar gating, AUC modestly increases with n. Notably, $n=3$ shows a statistically significant improvement over $n=1$ and $n=2$, suggesting that 3-grams are more helpful in some cases. While the AUC rises with n, n1 (0.5521), n2 (0.5902), and n3 (0.6016), we occasionally observed diminishing returns or negative impacts when increasing to 3-grams. This suggests that, under certain conditions, 3-grams can introduce noise, lead to overfitting, or result in overly specific features. The shift from 2-grams to 3-grams, therefore, does not universally strengthen performance, emphasizing the need for careful tuning.
+	\begin{itemize}
+		\item{No Gating}: The lack of gating has shown a consistent reduction in predictive power, with AUC scores closer to $50\%$. This suggests a substantial drop in classification ability. In the context of limited and less diverse data, the model struggles to overcome the weaker signal. These results indicate that even in sparse data settings, including some form of gating provides significant benefit, regardless of the model's complexity. 
+		
+		\item{Scalar Gating}: With scalar gating, AUC modestly increases with n. Notably, $n=3$ shows a statistically significant improvement over $n=1$ and $n=2$, suggesting that 3-grams are more helpful in some cases. While the AUC rises with n, n1 (0.5521), n2 (0.5902), and n3 (0.6016), we occasionally observed diminishing returns or negative impacts when increasing to 3-grams. This suggests that, under certain conditions, 3-grams can introduce noise, lead to overfitting, or result in overly specific features. The shift from 2-grams to 3-grams, therefore, does not universally strengthen performance, emphasizing the need for careful tuning.
+		
+		\item{Vector Gating}: For vector gating, the AUC increases from n1 (0.6376) to n2 (0.6616), then drops at n3 (0.6367). F1 shows a similar trend. Increasing n from 1 to 2 brings improvement, but going to 3 does not consistently help. This underlines diminishing returns for higher-order n-grams in low-data settings. The transition from 1-grams to 2-grams often enhances both gating types. Moving from 2-grams to 3-grams, however, can result in a decrease in performance. The best n-gram level varies by task or dataset, and higher n may require adjustments to the model or training.
+	\end{itemize}
 	
-	\item{Vector Gating}: For vector gating, the AUC increases from n1 (0.6376) to n2 (0.6616), then drops at n3 (0.6367). F1 shows a similar trend. Increasing n from 1 to 2 brings improvement, but going to 3 does not consistently help. This underlines diminishing returns for higher-order n-grams in low-data settings. The transition from 1-grams to 2-grams often enhances both gating types. Moving from 2-grams to 3-grams, however, can result in a decrease in performance. The best n-gram level varies by task or dataset, and higher n may require adjustments to the model or training.
-\end{itemize}
-
-Overall, vector gating consistently outperforms scalar gating across all n-gram levels and test settings. Here, "vector gating" refers to the use of node-specific, learnable gating vectors (the coefficients $C_{*}(l)$ in Equation 7) that allow each node in the graph to control how much information it integrates from each of its neighbors within the DirectGCN layers. This process is analogous to combining multiple features at each node. These coefficients enable the model to adjust the influence of each neighbor at each node, yielding robust and accurate vector representations of nodes. Collectively, our findings indicate that incorporating higher-order n-grams (capped at 2) generally increases diversity in the information processed and strengthens the signal, underscoring the importance of considering the order of residues, or sequence context, in the model. However, increasing n to 3 can bring diminishing or negative returns. Notably, vector gating remains a better mode, highlighting the importance of learnable, node-wise gating in effectively integrating information in complex protein n-gram graphs.
-
-Altogether, these findings demonstrate that $ProtGram-DirectGCN$’s performance is sensitive to both n-gram level and gating mode. Variations in experimental factors can produce notable differences. This reinforces the need for careful model tuning and thorough evaluation before deploying the model. In summary, gating proves crucial. Simply increasing n beyond an optimal point does not always lead to improved predictive power.
+	Overall, vector gating consistently outperforms scalar gating across all n-gram levels and test settings. Here, "vector gating" refers to the use of node-specific, learnable gating vectors (the coefficients $C_{*}(l)$ in Equation 7) that allow each node in the graph to control how much information it integrates from each of its neighbors within the DirectGCN layers. This process is analogous to combining multiple features at each node. These coefficients enable the model to adjust the influence of each neighbor at each node, yielding robust and accurate vector representations of nodes. Collectively, our findings indicate that incorporating higher-order n-grams (capped at 2) generally increases diversity in the information processed and strengthens the signal, underscoring the importance of considering the order of residues, or sequence context, in the model. However, increasing n to 3 can bring diminishing or negative returns. Notably, vector gating remains a better mode, highlighting the importance of learnable, node-wise gating in effectively integrating information in complex protein n-gram graphs.
+	
+	Altogether, these findings demonstrate that $ProtGram-DirectGCN$’s performance is sensitive to both n-gram level and gating mode. Variations in experimental factors can produce notable differences. This reinforces the need for careful model tuning and thorough evaluation before deploying the model. In summary, gating proves crucial. Simply increasing n beyond an optimal point does not always lead to improved predictive power.
 	
 	\section{Discussion}
 	This study introduced and evaluated a novel $ProtGramDirectGCN$ model for learning representations from a globally constructed, directed, dense, and weighted graph of amino acid residues $G_{n}$ derived from the UniProt dataset. The primary objective was to assess the efficacy of this approach for generating informative protein embeddings applicable to downstream biological prediction tasks, particularly Protein-Protein Interaction (PPI) link prediction. This section discusses the main findings, their implications, the limitations of the current work, and promising avenues for future research.
@@ -431,7 +451,7 @@ Altogether, these findings demonstrate that $ProtGram-DirectGCN$’s performance
 	
 	One motivation behind $ProtGram-DirectGCN$ is to address the limited context window size in PLMs. By explicitly modeling broad sequence patterns and transition dynamics through n-gram graphs, the model is designed to capture longer-range dependencies that PLMs might miss due to their window size. The attention heatmaps help visualize how the model uses this broader context. They highlight important n-grams that traditional PLMs might overlook because they fall outside their immediate scope.
 	
-		\begin{figure*}[t!]
+	\begin{figure*}[t!]
 		\centering
 		\begin{tabular}{c}
 			\begin{tabular}{cc}
@@ -450,7 +470,7 @@ Altogether, these findings demonstrate that $ProtGram-DirectGCN$’s performance
 		\caption{The attention pooling results described in section \ref{subsec:link} highlight attention scores after pooling residue-level (n-gram) embeddings to protein-level embeddings. These heatmaps are generated by identifying n-gram attention weights for proteins with the highest overall variance in attention. The X-axis of such a heatmap represents various n-grams, and the Y-axis represents specific protein IDs, with the color intensity in each cell indicating the attention score assigned to a particular n-gram within a given protein.}
 		\label{fig:heatmaps}
 	\end{figure*}
-
+	
 	\subsection{Limitations}
 	While this study presents promising results, several limitations should be acknowledged:
 	\begin{itemize}
@@ -464,7 +484,7 @@ Altogether, these findings demonstrate that $ProtGram-DirectGCN$’s performance
 	\end{itemize}
 	
 	\subsection{Future Work}
-The findings and limitations of this study open several avenues for future research. First, future iterations will explore constructing $G_{n}$ with richer edge definitions. For example, we could move beyond simple transitions to incorporate longer-range co-occurrences, apply weights from substitution matrices, or use more informative initial node features for amino acids. Also, $ProtGram-DirectGCN$ could be extended by incorporating attention mechanisms within its directional layers. In addition, we could explore more complex architectures with advanced normalization schemes. Another focus will be on introducing and crafting training tasks that are more specific to proteins and their interactions. We also plan to adapt the model to other tasks, such as predicting Gene Ontology labels for individual proteins. This work focuses solely on the limitations of training data and information, which are represented by relying on a limited subset of protein sequences. To address this, we could use predicted contact maps to inform the edges in $G_{n}$ or in peptide-level graphs similar to \cite{sledzieski_dscripttranslatesgenome_2021}, or incorporate residue-level structural features into the initial residue embeddings. Expanding the framework to explicitly model the hierarchical nature of protein organization (residues $\rightarrow$ peptides $\rightarrow$ proteins $\rightarrow$ interactions $\rightarrow$ interaction networks) and exploring second-degree graphs (graphs of interactions) presents a compelling research direction \cite{jeh_simrankmeasurestructuralcontext_2002} as well. Lastly, investing in advanced interpretability techniques will help understand the "black box," and further optimizing the construction of $G_{n}$ and training $ProtGram-DirectGCN$ for even larger sequence datasets will maximize the information captured.
+	The findings and limitations of this study open several avenues for future research. First, future iterations will explore constructing $G_{n}$ with richer edge definitions. For example, we could move beyond simple transitions to incorporate longer-range co-occurrences, apply weights from substitution matrices, or use more informative initial node features for amino acids. Also, $ProtGram-DirectGCN$ could be extended by incorporating attention mechanisms within its directional layers. In addition, we could explore more complex architectures with advanced normalization schemes. Another focus will be on introducing and crafting training tasks that are more specific to proteins and their interactions. We also plan to adapt the model to other tasks, such as predicting Gene Ontology labels for individual proteins. This work focuses solely on the limitations of training data and information, which are represented by relying on a limited subset of protein sequences. To address this, we could use predicted contact maps to inform the edges in $G_{n}$ or in peptide-level graphs similar to \cite{sledzieski_dscripttranslatesgenome_2021}, or incorporate residue-level structural features into the initial residue embeddings. Expanding the framework to explicitly model the hierarchical nature of protein organization (residues $\rightarrow$ peptides $\rightarrow$ proteins $\rightarrow$ interactions $\rightarrow$ interaction networks) and exploring second-degree graphs (graphs of interactions) presents a compelling research direction \cite{jeh_simrankmeasurestructuralcontext_2002} as well. Lastly, investing in advanced interpretability techniques will help understand the "black box," and further optimizing the construction of $G_{n}$ and training $ProtGram-DirectGCN$ for even larger sequence datasets will maximize the information captured.
 	
 	Finally,  its worth mentioning that a notable class of modern PPI prediction methods leverages 3D structural information, either from experimental sources or high-fidelity predictions from models like AlphaFold2 \cite{jumper_highlyaccurateprotein_2021}. These geometric deep learning approaches, such as GearNet and GVP-GNN , have demonstrated state-of-the-art performance by directly encoding the physical and chemical properties of protein surfaces. While these methods are powerful, their applicability is contingent on the availability of accurate structural data. Our work, with $ProtGram-DirectGCN$, intentionally explores a different and complementary direction. We focus exclusively on the protein's primary sequence, aiming to develop a method that is (1) universally applicable to any protein, including those with unknown or poorly predicted structures, and (2) computationally less intensive, as it does not require the computationally expensive step of structure prediction or the storage of large structural files. By constructing a global n-gram graph, our approach seeks to infer higher-order sequence motifs that serve as a proxy for structural and functional information, providing a robust and scalable alternative for large-scale proteome analysis where structural information may be sparse or unavailable. Hence future work could also explore hybrid models that fuse our learned n-gram representations with structural features for proteins where both are available.
 	
