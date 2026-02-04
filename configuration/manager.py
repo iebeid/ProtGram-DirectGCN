@@ -21,7 +21,7 @@ import requests
 from torch_geometric.datasets import Planetoid, WebKB, Actor, KarateClub
 from tqdm.auto import tqdm
 
-from .processor import DataProcessor
+from source.utils.data.processor import DataProcessor
 from source.utils.data.id_mapper import IDMapper
 # --- DEFINITIVE FIX for "Zero Pairs" Error: Import the GroundTruthLoader ---
 from source.utils.data.ground_truth_loader import GroundTruthLoader
